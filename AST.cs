@@ -9,6 +9,19 @@ namespace MyCompiler
     // Intermediate category
     public abstract class ExpressionNode : Node { }
     public abstract class StatementNode : Node { }
+    public abstract class FunctionNode : Node { }
+
+    // Represents Random function
+    public class RandomNode : FunctionNode {
+        public ExpressionNode MinValue { get; set; }
+        public ExpressionNode MaxValue { get; set; }
+
+        public RandomNode(ExpressionNode minValue, ExpressionNode maxValue)
+        {
+            MinValue = minValue;
+            MaxValue = maxValue;
+        } 
+    }
 
     // Represents a single number (e.g., 10)
     public class NumberNode : ExpressionNode {
@@ -40,7 +53,7 @@ namespace MyCompiler
 
     // Represents an assignment (e.g., x = 10)
     public class AssignNode : StatementNode {
-        public string Id { get; set; }
+        public string Id { get; set; }  // ID = expr  -->   x = 10 
         public ExpressionNode Expression { get; set; }
         public AssignNode(string id, ExpressionNode expr) {
             Id = id; Expression = expr;

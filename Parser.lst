@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 05-02-2026 15:47:33>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 10-02-2026 16:13:41>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 05-02-2026 15:48:59
+//  DateTime: 10-02-2026 16:28:09
 // ==========================================================================
 
 
@@ -19,7 +19,8 @@
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON LPAREN RPAREN IF ELSE
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE RANDOM
+%token GE LE EQ NE GT LT
 
 %nonassoc IF
 %nonassoc ELSE
@@ -28,7 +29,7 @@
 %left MULT DIV
 %left GE LE EQ NE GT LT
 
-%type <node> expr Statement Prog
+%type <node> expr Statement Prog functions
 
 /* This tells the parser which C# variable stores the final tree */
 %{
@@ -36,12 +37,8 @@
 %}
 
 %%
-// Error: There are 1 non-terminating NonTerminal Symbols
-   //  {expre}
-// Warning: Terminating expre fixes the following size-1 NonTerminal set
-   // {expre}
-// Error: NonTerminal symbol "expre" has no productions
-// ---------------------------------------------------------------------
+// Warning: NonTerminal symbol "functions" is unreachable
+// ------------------------------------------------------
 
 Prog
     : /* empty */              { $$ = new SequenceNode(); RootNode = $$; }
@@ -69,16 +66,19 @@ expr
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
     | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
 
-    | expre GE expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">=", $3 as ExpressionNode); }    
-    | expre LE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<=", $3 as ExpressionNode); }
-    | expre EQ expr       { $$ = new ComparisonNode($1 as ExpressionNode, "==", $3 as ExpressionNode); }    
-    | expre NE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "!=", $3 as ExpressionNode); }
-    | expre GT expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
-    | expre LT expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
-    
+    | expr GE expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">=", $3 as ExpressionNode); }    
+    | expr LE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<=", $3 as ExpressionNode); }
+    | expr EQ expr       { $$ = new ComparisonNode($1 as ExpressionNode, "==", $3 as ExpressionNode); }    
+    | expr NE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "!=", $3 as ExpressionNode); }
+    | expr GT expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
+    | expr LT expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
+
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
 
+functions
+    : RANDOM LPAREN expr COMMA expr RPAREN    { $$ = new RandomNode($3 as ExpressionNode, $5 as ExpressionNode); }
+    ;
 %%
 
 internal Parser(Scanner s) : base(s) { }

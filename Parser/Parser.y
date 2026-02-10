@@ -10,7 +10,7 @@
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON LPAREN RPAREN IF ELSE
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE RANDOM
 %token GE LE EQ NE GT LT
 
 %nonassoc IF
@@ -50,6 +50,8 @@ expr
     | NUMBER              { $$ = new NumberNode((int)$1); }
     | STRING              { $$ = new StringNode((string)$1); }
     | ID                  { $$ = new IdNode((string)$1); }
+    | RANDOM LPAREN expr COMMA expr RPAREN    
+                          { $$ = new RandomNode($3 as ExpressionNode, $5 as ExpressionNode); }
     | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
     | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }

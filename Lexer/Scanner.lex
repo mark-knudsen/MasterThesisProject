@@ -9,7 +9,7 @@
 "else"          { return (int)Tokens.ELSE; }
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }
 "false"         { yylval.boolVal = false; return (int)Tokens.BOOL_LITERAL; }
-
+"Random"        { return (int)Tokens.RANDOM; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
@@ -30,6 +30,8 @@
 "("             { return (int)Tokens.LPAREN; }
 ")"             { return (int)Tokens.RPAREN; }
 ";"             { return (int)Tokens.SEMICOLON; }
+","             { return (int)Tokens.COMMA; }
+
 
 [ \t\r\n]       { /* skip */ }
 .               { return (int)Tokens.error; }
