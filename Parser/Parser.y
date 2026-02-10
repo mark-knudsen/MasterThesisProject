@@ -11,6 +11,7 @@
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON LPAREN RPAREN IF ELSE
+%token GE LE EQ NE GT LT
 
 %nonassoc IF
 %nonassoc ELSE

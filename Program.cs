@@ -1,12 +1,13 @@
 ﻿using System;
 using System.IO;
 using System.Text;
-using MyCompiler;
 
 namespace MyCompiler {
     class Program {
         static void Main(string[] args) {
             Console.WriteLine("--- AST Compiler Shell ---");
+            Interpreter interpreter = new Interpreter();
+
             while (true) {
                 Console.Write("\n> ");
                 string input = Console.ReadLine();
@@ -15,15 +16,18 @@ namespace MyCompiler {
                 using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(input))) {
                     Scanner scanner = new Scanner(stream);
                     Parser parser = new Parser(scanner);
-
+                    
                     if (parser.Parse()) {
                         Console.WriteLine("AST Structure:");
                         PrintNode(parser.RootNode, 0);
                     } else {
                         Console.WriteLine("Syntax Error!");
                     }
+                    object result = interpreter.Evaluate(parser.RootNode);
+                    Console.WriteLine("Result: " + result);
                 }
             }
+
         }
 
         // Simple recursive function to visualize the tree
