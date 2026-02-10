@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 05-02-2026 15:51:02
-// Input file <Parser/Parser.y - 05-02-2026 15:49:57>
+// DateTime: 10-02-2026 14:43:43
+// Input file <Parser/Parser.y - 10-02-2026 12:00:21>
 
 // options: lines gplex
 
@@ -52,11 +52,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 05-02-2026 15:49:57
-#line 26 "Parser/Parser.y"
+  // Verbatim content from Parser/Parser.y - 10-02-2026 12:00:21
+#line 27 "Parser/Parser.y"
     public MyCompiler.Node RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 05-02-2026 15:49:57
+  // End verbatim content from Parser/Parser.y - 10-02-2026 12:00:21
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -151,112 +151,112 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     switch (action)
     {
       case 2: // Prog -> /* empty */
-#line 32 "Parser/Parser.y"
+#line 33 "Parser/Parser.y"
                                { CurrentSemanticValue.node = new SequenceNode(); RootNode = CurrentSemanticValue.node; }
 #line default
         break;
       case 3: // Prog -> Prog, Statement
-#line 33 "Parser/Parser.y"
+#line 34 "Parser/Parser.y"
                                { ((SequenceNode)ValueStack[ValueStack.Depth-2].node).Statements.Add(ValueStack[ValueStack.Depth-1].node); CurrentSemanticValue.node = ValueStack[ValueStack.Depth-2].node; RootNode = CurrentSemanticValue.node; }
 #line default
         break;
       case 4: // Prog -> Prog, Statement, SEMICOLON
-#line 34 "Parser/Parser.y"
+#line 35 "Parser/Parser.y"
                                { ((SequenceNode)ValueStack[ValueStack.Depth-3].node).Statements.Add(ValueStack[ValueStack.Depth-2].node); CurrentSemanticValue.node = ValueStack[ValueStack.Depth-3].node; RootNode = CurrentSemanticValue.node; }
 #line default
         break;
       case 5: // Statement -> ID, ASSIGN, expr
-#line 39 "Parser/Parser.y"
+#line 40 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new AssignNode((string)ValueStack[ValueStack.Depth-3].obj, ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 6: // Statement -> expr
-#line 40 "Parser/Parser.y"
+#line 41 "Parser/Parser.y"
                           { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-1].node; }
 #line default
         break;
       case 7: // Statement -> IF, LPAREN, expr, RPAREN, Statement
-#line 42 "Parser/Parser.y"
+#line 43 "Parser/Parser.y"
       { CurrentSemanticValue.node = new IfNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 8: // Statement -> IF, LPAREN, expr, RPAREN, Statement, ELSE, Statement
-#line 44 "Parser/Parser.y"
+#line 45 "Parser/Parser.y"
       { CurrentSemanticValue.node = new IfNode(ValueStack[ValueStack.Depth-5].node as ExpressionNode, ValueStack[ValueStack.Depth-3].node, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 9: // expr -> BOOL_LITERAL
-#line 48 "Parser/Parser.y"
+#line 49 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BooleanNode((bool)ValueStack[ValueStack.Depth-1].boolVal); }
 #line default
         break;
       case 10: // expr -> NUMBER
-#line 49 "Parser/Parser.y"
+#line 50 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new NumberNode((int)ValueStack[ValueStack.Depth-1].obj); }
 #line default
         break;
       case 11: // expr -> STRING
-#line 50 "Parser/Parser.y"
+#line 51 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new StringNode((string)ValueStack[ValueStack.Depth-1].obj); }
 #line default
         break;
       case 12: // expr -> ID
-#line 51 "Parser/Parser.y"
+#line 52 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new IdNode((string)ValueStack[ValueStack.Depth-1].obj); }
 #line default
         break;
       case 13: // expr -> expr, PLUS, expr
-#line 52 "Parser/Parser.y"
+#line 53 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "+", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 14: // expr -> expr, MINUS, expr
-#line 53 "Parser/Parser.y"
+#line 54 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "-", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 15: // expr -> expr, MULT, expr
-#line 54 "Parser/Parser.y"
+#line 55 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "*", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 16: // expr -> expr, DIV, expr
-#line 55 "Parser/Parser.y"
+#line 56 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "/", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 17: // expr -> expr, GE, expr
-#line 57 "Parser/Parser.y"
+#line 58 "Parser/Parser.y"
                          { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, ">=", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 18: // expr -> expr, LE, expr
-#line 58 "Parser/Parser.y"
+#line 59 "Parser/Parser.y"
                          { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "<=", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 19: // expr -> expr, EQ, expr
-#line 59 "Parser/Parser.y"
+#line 60 "Parser/Parser.y"
                          { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "==", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 20: // expr -> expr, NE, expr
-#line 60 "Parser/Parser.y"
+#line 61 "Parser/Parser.y"
                          { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "!=", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 21: // expr -> expr, GT, expr
-#line 61 "Parser/Parser.y"
+#line 62 "Parser/Parser.y"
                          { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, ">", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 22: // expr -> expr, LT, expr
-#line 62 "Parser/Parser.y"
+#line 63 "Parser/Parser.y"
                          { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "<", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 23: // expr -> LPAREN, expr, RPAREN
-#line 64 "Parser/Parser.y"
+#line 65 "Parser/Parser.y"
                           { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-2].node; }
 #line default
         break;
@@ -274,7 +274,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         return CharToString((char)terminal);
   }
 
-#line 68 "Parser/Parser.y"
+#line 69 "Parser/Parser.y"
 
 internal Parser(Scanner s) : base(s) { }
 #line default
