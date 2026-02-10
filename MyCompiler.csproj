@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>disable</Nullable> 
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="YaccLexTools" Version="1.2.3" />
+  </ItemGroup>
+
+  <Target Name="GenerateParser" BeforeTargets="BeforeBuild">
+    <Exec Command="dotnet &quot;$(UserProfile)\.nuget\packages\yacclextools.gplex\1.2.3.1\tools\net8.0\Gplex.dll&quot;  /out:Generated/Scanner.cs Lexer/Scanner.lex" />
+    <Exec Command="dotnet &quot;$(UserProfile)\.nuget\packages\yacclextools.gppg\1.5.3.1\tools\net8.0\Gppg.dll&quot; /gplex /internal /out:Generated/Parser.cs Parser/Parser.y" />
+  </Target>
+
+</Project>

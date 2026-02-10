@@ -1,0 +1,86 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 05-02-2026 15:47:33>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 05-02-2026 15:48:59
+// ==========================================================================
+
+
+%namespace MyCompiler
+%output=Parser.cs
+%visibility internal
+
+%union { 
+    public object obj; 
+    public bool boolVal;
+    public MyCompiler.Node node; // Add this to hold AST pieces
+}
+
+%token <obj> NUMBER STRING ID
+%token <boolVal> BOOL_LITERAL
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON LPAREN RPAREN IF ELSE
+
+%nonassoc IF
+%nonassoc ELSE
+
+%left PLUS MINUS
+%left MULT DIV
+%left GE LE EQ NE GT LT
+
+%type <node> expr Statement Prog
+
+/* This tells the parser which C# variable stores the final tree */
+%{
+    public MyCompiler.Node RootNode;
+%}
+
+%%
+// Error: There are 1 non-terminating NonTerminal Symbols
+   //  {expre}
+// Warning: Terminating expre fixes the following size-1 NonTerminal set
+   // {expre}
+// Error: NonTerminal symbol "expre" has no productions
+// ---------------------------------------------------------------------
+
+Prog
+    : /* empty */              { $$ = new SequenceNode(); RootNode = $$; }
+    | Prog Statement           { ((SequenceNode)$1).Statements.Add($2); $$ = $1; RootNode = $$; }
+    | Prog Statement SEMICOLON { ((SequenceNode)$1).Statements.Add($2); $$ = $1; RootNode = $$; }
+    ;
+
+
+Statement
+    : ID ASSIGN expr      { $$ = new AssignNode((string)$1, $3 as ExpressionNode); }
+    | expr                { $$ = $1; }
+    | IF LPAREN expr RPAREN Statement %prec IF
+      { $$ = new IfNode($3 as ExpressionNode, $5); }
+    | IF LPAREN expr RPAREN Statement ELSE Statement
+      { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
+    ;
+
+expr
+    : BOOL_LITERAL        { $$ = new BooleanNode((bool)$1); }
+    | NUMBER              { $$ = new NumberNode((int)$1); }
+    | STRING              { $$ = new StringNode((string)$1); }
+    | ID                  { $$ = new IdNode((string)$1); }
+    | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
+    | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
+    | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
+    | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
+
+    | expre GE expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">=", $3 as ExpressionNode); }    
+    | expre LE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<=", $3 as ExpressionNode); }
+    | expre EQ expr       { $$ = new ComparisonNode($1 as ExpressionNode, "==", $3 as ExpressionNode); }    
+    | expre NE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "!=", $3 as ExpressionNode); }
+    | expre GT expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
+    | expre LT expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
+    
+    | LPAREN expr RPAREN  { $$ = $2; }
+    ;
+
+%%
+
+internal Parser(Scanner s) : base(s) { }
+// ==========================================================================
+
