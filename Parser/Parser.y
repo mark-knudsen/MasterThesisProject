@@ -10,8 +10,8 @@
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE RANDOM
-%token GE LE EQ NE GT LT
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE RANDOM FOR INC DECR
+%token GE LE EQ NE GT LT 
 
 %nonassoc IF
 %nonassoc ELSE
@@ -20,7 +20,7 @@
 %left MULT DIV
 %left GE LE EQ NE GT LT
 
-%type <node> expr Statement Prog
+%type <node> expr Statement StatementList Prog Assignment
 
 /* This tells the parser which C# variable stores the final tree */
 %{
@@ -30,19 +30,29 @@
 %%
 
 Prog
-    : /* empty */              { $$ = new SequenceNode(); RootNode = $$; }
-    | Prog Statement           { ((SequenceNode)$1).Statements.Add($2); $$ = $1; RootNode = $$; }
-    | Prog Statement SEMICOLON { ((SequenceNode)$1).Statements.Add($2); $$ = $1; RootNode = $$; }
+    : StatementList { $$ = $1; RootNode = $$; }
     ;
 
+StatementList
+    : Statement { $$ = new SequenceNode(); ((SequenceNode)$$).Statements.Add($1); }
+    | StatementList SEMICOLON Statement { ((SequenceNode)$1).Statements.Add($3); $$ = $1; }
+    | StatementList SEMICOLON { $$ = $1; }
+    ;
 
 Statement
-    : ID ASSIGN expr      { $$ = new AssignNode((string)$1, $3 as ExpressionNode); }
+    : Assignment          { $$ = $1; }
     | expr                { $$ = $1; }
     | IF LPAREN expr RPAREN Statement %prec IF
       { $$ = new IfNode($3 as ExpressionNode, $5); }
     | IF LPAREN expr RPAREN Statement ELSE Statement
       { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
+    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement { $$ = new ForLoopNode($3 as StatementNode, $5 as ExpressionNode, $7 as StatementNode, $9 as ExpressionNode); }
+    ;
+
+Assignment 
+    : ID ASSIGN expr      { $$ = new AssignNode((string)$1, $3 as ExpressionNode); } 
+    | ID INC              { $$ = new IncrementNode((string)$1); }
+    | ID DECR             { $$ = new DecrementNode((string)$1); }
     ;
 
 expr

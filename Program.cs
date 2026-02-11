@@ -27,7 +27,6 @@ namespace MyCompiler {
                     Console.WriteLine("Result: " + result);
                 }
             }
-
         }
 
         // Simple recursive function to visualize the tree
@@ -41,29 +40,29 @@ namespace MyCompiler {
                 foreach (var stmt in seq.Statements) PrintNode(stmt, indent);
             } 
             else if (node is IfNode ifNode) {
-                Console.WriteLine($"{space}IF Statement:");
-                Console.WriteLine($"{space}  Condition:");
+                Console.WriteLine($"{space} IF Statement:");
+                Console.WriteLine($"{space} Condition:");
                 PrintNode(ifNode.Condition, indent + 2);
                 
-                Console.WriteLine($"{space}  Then:");
+                Console.WriteLine($"{space} Then:");
                 PrintNode(ifNode.ThenPart, indent + 2);
 
                 if (ifNode.ElsePart != null) {
-                    Console.WriteLine($"{space}  Else:");
+                    Console.WriteLine($"{space} Else:");
                     PrintNode(ifNode.ElsePart, indent + 2);
                 }
             }
             else if (node is AssignNode assign) {
-                Console.WriteLine($"{space}Assignment: {assign.Id} =");
+                Console.WriteLine($"{space} Assignment: {assign.Id} =");
                 PrintNode(assign.Expression, indent + 1);
             } 
             else if (node is BinaryOpNode bin) {
-                Console.WriteLine($"{space}Op: {bin.Operator}");
+                Console.WriteLine($"{space} Op: {bin.Operator}");
                 PrintNode(bin.Left, indent + 1);
                 PrintNode(bin.Right, indent + 1);
             } 
             else if (node is ComparisonNode comp) {
-                Console.WriteLine($"{space}Comparison: {comp.Operator}");
+                Console.WriteLine($"{space} Comparison: {comp.Operator}");
                 PrintNode(comp.Left, indent + 1);
                 PrintNode(comp.Right, indent + 1);
             }
@@ -78,6 +77,17 @@ namespace MyCompiler {
             } 
             else if (node is StringNode str) {
                 Console.WriteLine($"{space}String: \"{str.Value}\"");
+            }
+            else if (node is ForLoopNode forNode) {
+                Console.WriteLine($"{space}FOR Loop:");
+                Console.WriteLine($"{space}  Init:");
+                PrintNode(forNode.Initialization, indent + 2);
+                Console.WriteLine($"{space}  Condition:");
+                PrintNode(forNode.Condition, indent + 2);
+                Console.WriteLine($"{space}  Step:");
+                PrintNode(forNode.Step, indent + 2);
+                Console.WriteLine($"{space}  Body:");
+                PrintNode(forNode.Body, indent + 2);
             }
         }
     }

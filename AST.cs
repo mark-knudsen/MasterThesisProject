@@ -60,6 +60,23 @@ namespace MyCompiler
         }
     }
 
+    public class IncrementNode : StatementNode
+    {
+        public string Id { get; set; }
+        public IncrementNode(string id)
+        {
+            Id = id;
+        }
+    }
+    public class DecrementNode : StatementNode
+    {
+        public string Id { get; set; }
+        public DecrementNode(string id)
+        {
+            Id = id;
+        }
+    }
+
     // A list of statements (the whole program)
     public class SequenceNode : Node {
         public List<Node> Statements { get; } = new List<Node>();
@@ -70,12 +87,28 @@ namespace MyCompiler
         public ExpressionNode Condition;
         public Node ThenPart;
         public Node ElsePart; // Can be null
-
         
         public IfNode(ExpressionNode cond, Node thenP, Node elseP = null) {
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
+        }
+    }
+
+    public class ForLoopNode : StatementNode
+    {
+        public StatementNode Initialization;   // for(x=0;x<5;x++)x
+
+        public ExpressionNode Condition;
+        public StatementNode Step;
+        public ExpressionNode Body;
+
+        public ForLoopNode(StatementNode init, ExpressionNode cond, StatementNode step, ExpressionNode body)
+        {
+            Initialization = init;
+            Condition = cond;
+            Step = step;    
+            Body = body;
         }
     }
 
@@ -88,9 +121,6 @@ namespace MyCompiler
         {
             Value = value;
         }
-
-        // Optional: Useful for debugging
-        //public override string ToString() => Value.ToString().ToLower();
     }
     public class ComparisonNode: ExpressionNode
     {

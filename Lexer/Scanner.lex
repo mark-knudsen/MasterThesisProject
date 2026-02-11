@@ -10,6 +10,7 @@
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }
 "false"         { yylval.boolVal = false; return (int)Tokens.BOOL_LITERAL; }
 "Random"        { return (int)Tokens.RANDOM; }
+"for"           { return (int)Tokens.FOR; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
@@ -17,10 +18,12 @@
 "!="            { return (int)Tokens.NE; }
 ">"             { return (int)Tokens.GT; }
 "<"             { return (int)Tokens.LT; }
+"++"            { return (int)Tokens.INC; }
+"--"            { return (int)Tokens.DECR; }
 
 [0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
 \"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING; }
-[a-zA-Z_][a-zA-Z0-9_]* { yylval.obj = yytext; return (int)Tokens.ID; }
+[a-zA-Z_][a-zA-Z0-9_]* { yylval.obj = yytext; return (int)Tokens.ID; }    
 
 "+"             { return (int)Tokens.PLUS; }
 "-"             { return (int)Tokens.MINUS; }
@@ -31,7 +34,6 @@
 ")"             { return (int)Tokens.RPAREN; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
-
 
 [ \t\r\n]       { /* skip */ }
 .               { return (int)Tokens.error; }
