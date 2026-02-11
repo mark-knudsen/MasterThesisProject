@@ -10,10 +10,17 @@
   <ItemGroup>
     <PackageReference Include="YaccLexTools" Version="1.2.3" />
   </ItemGroup>
+  <PropertyGroup>
+    <GplexVersion>1.2.3.1</GplexVersion>
+    <GppgVersion>1.5.3.1</GppgVersion>
+  </PropertyGroup>
+
 
   <Target Name="GenerateParser" BeforeTargets="BeforeBuild">
-    <Exec Command="dotnet &quot;$(UserProfile)\.nuget\packages\yacclextools.gplex\1.2.3.1\tools\net8.0\Gplex.dll&quot;  /out:Generated/Scanner.cs Lexer/Scanner.lex" />
-    <Exec Command="dotnet &quot;$(UserProfile)\.nuget\packages\yacclextools.gppg\1.5.3.1\tools\net8.0\Gppg.dll&quot; /gplex /internal /out:Generated/Parser.cs Parser/Parser.y" />
+    <Exec Command="dotnet &quot;$(NuGetPackageRoot)yacclextools.gplex/$(GplexVersion)/tools/net8.0/Gplex.dll&quot; /out:Generated/Scanner.cs Lexer/Scanner.lex" />
+    <Exec Command="dotnet &quot;$(NuGetPackageRoot)yacclextools.gppg/$(GppgVersion)/tools/net8.0/Gppg.dll&quot; /gplex /internal /out:Generated/Parser.cs Parser/Parser.y" />
   </Target>
+
+
 
 </Project>

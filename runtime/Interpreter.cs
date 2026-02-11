@@ -143,6 +143,7 @@ namespace MyCompiler
         private object eval_assign_expr(AssignNode assignNode)
         {
             var expr  = Evaluate(assignNode.Expression);
+            return null;
         }
 
         public object Evaluate(Node node)
