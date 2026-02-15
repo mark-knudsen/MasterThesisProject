@@ -8,6 +8,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="libLLVM" Version="21.1.8" />
+    <PackageReference Include="LLVMSharp" Version="20.1.2" />
+    <PackageReference Include="LLVMSharp.Interop" Version="20.1.2" />
     <PackageReference Include="YaccLexTools" Version="1.2.3" />
   </ItemGroup>
   <PropertyGroup>

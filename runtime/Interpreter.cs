@@ -1,261 +1,173 @@
 using System;
-using System.Collections;
 using System.Collections.Generic;
-using System.Linq.Expressions;
 
 namespace MyCompiler
 {
-    public class Interpreter
+    public class Interpreter : IVisitor<object>
     {
-        Dictionary<string, object> variables = new Dictionary<string, object>();
+        private Dictionary<string, object> variables = new Dictionary<string, object>();
 
-        private object eval_numaric_binary_expr(int left, int right, string _operator){
-            switch (_operator)
-            {
-                case "+":
-                    return left + right;
-                case "-":
-                    return left - right;
-                case "*":
-                    return left * right;
-                case "/":
-                    return left / right;
-                default:
-                    return "Invalid operator!";
-            }
-        }
-
-          private string eval_string_binary_expr(string left, string right, string _operator){
-            switch (_operator)
-            {
-                case "+": 
-                    return left + right;
-                    default:
-                        return "Invalid operator!";
-            }
-        }
-
-        private object eval_binary_expr(BinaryOpNode binaryOpNode)
+        // The entry point is now much cleaner
+        public object Evaluate(Node node)
         {
-            var left = Evaluate(binaryOpNode.Left);
-            var right = Evaluate(binaryOpNode.Right);
-            
-            if (left is int && right is int)
-                return eval_numaric_binary_expr((int)left, (int)right, binaryOpNode.Operator);
-            else if (left is string && right is string)
-                return eval_string_binary_expr((string)left, (string)right, binaryOpNode.Operator);
-            else if (left is int && right is string)
-                return eval_string_binary_expr(left.ToString(), (string)right, binaryOpNode.Operator);
-            else if (left is string && right is int)
-                return eval_string_binary_expr((string)left, right.ToString(), binaryOpNode.Operator);
-  
-            return "Invalid binary expression!";
+            if (node == null) return null;
+            return node.Accept(this);
         }
 
-        private object eval_sequence_expr(SequenceNode sequenceNode)
-        {          
-            var result = (object)null;
-            foreach (var stmt in sequenceNode.Statements)
+        public object Visit(SequenceNode node)
+        {
+            object result = null;
+            foreach (var stmt in node.Statements)
             {
-                result = Evaluate(stmt);
+                result = stmt.Accept(this);
             }
             return result;
         }
 
-        private object eval_numeric_comparison_expr(int left, int right, string _operator)
+        public object Visit(NumberNode node) => node.Value;
+
+        public object Visit(StringNode node) => node.Value;
+
+        public object Visit(BooleanNode node) => node.Value;
+
+        public object Visit(IdNode node)
         {
-            switch (_operator)
-            {
-                case "==":
-                    if (left == right) return true;
-                        else return false;
-                case "!=":
-                    if (left != right) return true;
-                        else return false;
-                case "<=":
-                     if (left <= right) return true;
-                        else return false;
-                case ">=": 
-                    if (left >= right) return true;
-                        else return false;
-                case "<":
-                     if (left < right) return true;
-                        else return false;
-                case ">": 
-                    if (left > right) return true;
-                        else return false;
-                default:
-                    return "Invalid numeric operator!";
-            }
+            return variables.ContainsKey(node.Name) ? variables[node.Name] : "undefined";
         }
 
-        private object eval_string_comparison_expr(string left, string right, string _operator)
+        public object Visit(AssignNode node)
         {
-            switch (_operator)
-            {
-                case "==":
-                    if (left == right) return true;
-                        else return false;
-                case "!=":
-                    if (left != right) return true;
-                        else return false;
- 
-                default:
-                    return "Invalid string operator!";
-            }
+            var value = node.Expression.Accept(this);
+            variables[node.Id] = value;
+            return value;
         }
-        private object eval_comparison_expr(ComparisonNode comparisonNode)
-        {   
-            var left = Evaluate(comparisonNode.Left);
-            var right = Evaluate(comparisonNode.Right);   
 
+        public object Visit(BinaryOpNode node)
+        {
+            var left = node.Left.Accept(this);
+            var right = node.Right.Accept(this);
 
-            if (left is int && right is int)                
-                return eval_numeric_comparison_expr((int)left, (int)right, comparisonNode.Operator);
-
-            else if (left is string && right is string)
-                return eval_string_comparison_expr((string)left, (string)right, comparisonNode.Operator);
+            if (left is int lInt && right is int rInt)
+            {
+                return node.Operator switch
+                {
+                    "+" => lInt + rInt,
+                    "-" => lInt - rInt,
+                    "*" => lInt * rInt,
+                    "/" => lInt / rInt,
+                    _ => "Invalid operator!"
+                };
+            }
             
-            else if (left is bool && right is bool)
-                return eval_string_comparison_expr(left.ToString(), right.ToString(), comparisonNode.Operator);
+            // String concatenation logic
+            if (node.Operator == "+")
+            {
+                return left.ToString() + right.ToString();
+            }
+
+            return "Invalid binary expression!";
+        }
+
+        public object Visit(ComparisonNode node)
+        {
+            var left = node.Left.Accept(this);
+            var right = node.Right.Accept(this);
+
+            if (left is int l && right is int r)
+            {
+                return node.Operator switch
+                {
+                    "==" => l == r,
+                    "!=" => l != r,
+                    "<=" => l <= r,
+                    ">=" => l >= r,
+                    "<" => l < r,
+                    ">" => l > r,
+                    _ => "Invalid numeric operator!"
+                };
+            }
+
+            if (left is string || right is string || left is bool)
+            {
+                return node.Operator switch
+                {
+                    "==" => left.ToString() == right.ToString(),
+                    "!=" => left.ToString() != right.ToString(),
+                    _ => "Invalid comparison operator!"
+                };
+            }
 
             return "Invalid comparison expression!";
         }
 
-        private object eval_random_expr(RandomNode randomNode)
+        public object Visit(IfNode node)
         {
-            var minValue = Evaluate(randomNode.MinValue);
-            var maxValue = Evaluate(randomNode.MaxValue);
-
-            try
+            var condition = node.Condition.Accept(this);
+            if (condition is bool b)
             {
-                if (minValue is int && maxValue is int)
-                    return new Random().Next((int)minValue, (int)maxValue);
-                return "Invalid arguments!";
-            }
-            catch (System.Exception e)
-            {
-                return e;
-            } 
-        }
-
-        private object eval_assign_expr(AssignNode assignNode)
-        {
-            var expr  = Evaluate(assignNode.Expression);
-            variables[assignNode.Id] = expr;
-            
-            return expr;
-        }
-
-        private object eval_if_expr(IfNode ifNode)
-        {
-            var condition = Evaluate(ifNode.Condition);
-            if (condition is bool)
-            {
-                if ((bool)condition) return Evaluate(ifNode.ThenPart);
-                else if (ifNode.ElsePart != null) return Evaluate(ifNode.ElsePart);
-                else return null;
+                if (b) return node.ThenPart.Accept(this);
+                else return node.ElsePart?.Accept(this);
             }
             return "Invalid condition!";
         }
 
-        private object eval_for_loop_expr(ForLoopNode forLoopNode)
+        public object Visit(ForLoopNode node)
         {
-            object result = null;   
-  
-            for (Evaluate(forLoopNode.Initialization); (bool)Evaluate(forLoopNode.Condition); Evaluate(forLoopNode.Step)) 
+            object result = null;
+            // Initialization
+            node.Initialization.Accept(this);
+
+            // Condition, Step, Body
+            while (true)
             {
-                result = Evaluate(forLoopNode.Body);
+                var condition = node.Condition.Accept(this);
+                if (condition is bool b && b)
+                {
+                    result = node.Body.Accept(this);
+                    node.Step.Accept(this);
+                }
+                else break;
             }
-    
             return result;
         }
 
-        private object eval_increment_variable(string id)
+        public object Visit(IncrementNode node)
         {
-            if (variables.ContainsKey(id) && variables[id] is int)
+            if (variables.ContainsKey(node.Id) && variables[node.Id] is int val)
             {
-                variables[id] = (int)variables[id] + 1;
-                return variables[id];
+                variables[node.Id] = val + 1;
+                return variables[node.Id];
             }
             return "Invalid increment operation!";
         }
 
-        private object eval_decrement_variable(string id)
+        public object Visit(DecrementNode node)
         {
-            if (variables.ContainsKey(id) && variables[id] is int)
+            if (variables.ContainsKey(node.Id) && variables[node.Id] is int val)
             {
-                variables[id] = (int)variables[id] - 1;
-                return variables[id];
+                variables[node.Id] = val - 1;
+                return variables[node.Id];
             }
             return "Invalid decrement operation!";
         }
 
-        private object eval_print_expr(PrintNode pn)
+        public object Visit(PrintNode node)
         {
-
-            var resultOfPrint = Evaluate(pn.Expression);
-            if (resultOfPrint is int) resultOfPrint = resultOfPrint.ToString();
-            if (resultOfPrint is string)
-            {
-                Console.WriteLine(resultOfPrint);
-                return resultOfPrint;                
-            }
-
-            return "Invalid print call!";
+            var val = node.Expression.Accept(this);
+            Console.WriteLine(val?.ToString());
+            return val;
         }
 
-        public object Evaluate(Node node)
+        public object Visit(RandomNode node)
         {
+            var min = node.MinValue.Accept(this);
+            var max = node.MaxValue.Accept(this);
 
-            Console.WriteLine(node);
-            switch (node)
+            if (min is int minVal && max is int maxVal)
             {
-                case BinaryOpNode binaryOpNode:
-                    return eval_binary_expr(binaryOpNode);
-
-                case NumberNode numberNode:
-                    return numberNode.Value;
-
-                case StringNode stringNode:
-                    return stringNode.Value;
-
-                case SequenceNode seq:
-                    return eval_sequence_expr(seq);
-
-                case IdNode idNode:
-                    return variables.ContainsKey(idNode.Name) ? variables[idNode.Name] : "undefined";
-
-                case AssignNode assignNode:
-                    return eval_assign_expr(assignNode);
-
-                case IncrementNode incrementNode:
-                    return eval_increment_variable(incrementNode.Id);
-
-                case DecrementNode decrementNode:
-                    return eval_decrement_variable(decrementNode.Id);
-
-                case IfNode ifNode:
-                    return eval_if_expr(ifNode);
-
-                case BooleanNode booleanNode:
-                    return booleanNode.Value;
-
-                case ForLoopNode forLoopNode:
-                    return eval_for_loop_expr(forLoopNode);
-
-                case ComparisonNode comparisonNode:
-                    return eval_comparison_expr(comparisonNode);
-
-                case RandomNode randomNode:
-                    return eval_random_expr(randomNode);
-
-                case PrintNode pn:
-                    return eval_print_expr(pn);
-
-                default:
-                    return "Invalid node!";
+                return new Random().Next(minVal, maxVal);
             }
+            return "Invalid random arguments!";
         }
     }
 }
