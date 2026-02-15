@@ -5,7 +5,7 @@
 %union { 
     public object obj; 
     public bool boolVal;
-    public MyCompiler.Node node; // Add this to hold AST pieces
+    public MyCompiler.NodeExpr node; // Add this to hold AST pieces
 }
 
 %token <obj> NUMBER STRING ID
@@ -24,7 +24,7 @@
 
 /* This tells the parser which C# variable stores the final tree */
 %{
-    public MyCompiler.Node RootNode;
+    public MyCompiler.NodeExpr RootNode;
 %}
 
 %%
@@ -34,8 +34,8 @@ Prog
     ;
 
 StatementList
-    : Statement { $$ = new SequenceNode(); ((SequenceNode)$$).Statements.Add($1); }
-    | StatementList SEMICOLON Statement { ((SequenceNode)$1).Statements.Add($3); $$ = $1; }
+    : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
+    | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
     | StatementList SEMICOLON { $$ = $1; }
     ;
 
@@ -43,38 +43,38 @@ Statement
     : Assignment          { $$ = $1; }
     | expr                { $$ = $1; }
     | IF LPAREN expr RPAREN Statement %prec IF
-      { $$ = new IfNode($3 as ExpressionNode, $5); }
+      { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5); }
     | IF LPAREN expr RPAREN Statement ELSE Statement
-      { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
-    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement { $$ = new ForLoopNode($3 as StatementNode, $5 as ExpressionNode, $7 as StatementNode, $9 as ExpressionNode); }
+      { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5, $7); }
+    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $9 as ExpressionNodeExpr); }
     ;
 
 Assignment 
-    : ID ASSIGN expr      { $$ = new AssignNode((string)$1, $3 as ExpressionNode); } 
-    | ID INC              { $$ = new IncrementNode((string)$1); }
-    | ID DECR             { $$ = new DecrementNode((string)$1); }
+    : ID ASSIGN expr      { $$ = new AssignNodeExpr((string)$1, $3 as ExpressionNodeExpr); } 
+    | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
+    | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
     ;
 
 expr
-    : BOOL_LITERAL        { $$ = new BooleanNode((bool)$1); }
-    | NUMBER              { $$ = new NumberNode((int)$1); }
-    | STRING              { $$ = new StringNode((string)$1); }
-    | ID                  { $$ = new IdNode((string)$1); }
+    : BOOL_LITERAL        { $$ = new BooleanNodeExpr((bool)$1); }
+    | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
+    | STRING              { $$ = new StringNodeExpr((string)$1); }
+    | ID                  { $$ = new IdNodeExpr((string)$1); }
     | PRINT LPAREN expr RPAREN 
-                          { $$ = new PrintNode($3 as ExpressionNode); }
+                          { $$ = new PrintNodeExpr($3 as ExpressionNodeExpr); }
     | RANDOM LPAREN expr COMMA expr RPAREN    
-                          { $$ = new RandomNode($3 as ExpressionNode, $5 as ExpressionNode); }
-    | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
-    | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
-    | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
-    | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
+                          { $$ = new RandomNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr PLUS expr      { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "+", $3 as ExpressionNodeExpr); }
+    | expr MINUS expr     { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "-", $3 as ExpressionNodeExpr); }
+    | expr MULT expr      { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "*", $3 as ExpressionNodeExpr); }
+    | expr DIV expr       { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "/", $3 as ExpressionNodeExpr); }
 
-    | expr GE expr        { $$ = new ComparisonNode($1 as ExpressionNode, ">=", $3 as ExpressionNode); }    
-    | expr LE expr        { $$ = new ComparisonNode($1 as ExpressionNode, "<=", $3 as ExpressionNode); }
-    | expr EQ expr        { $$ = new ComparisonNode($1 as ExpressionNode, "==", $3 as ExpressionNode); }    
-    | expr NE expr        { $$ = new ComparisonNode($1 as ExpressionNode, "!=", $3 as ExpressionNode); }
-    | expr GT expr        { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
-    | expr LT expr        { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
+    | expr GE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, ">=", $3 as ExpressionNodeExpr); }    
+    | expr LE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<=", $3 as ExpressionNodeExpr); }
+    | expr EQ expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "==", $3 as ExpressionNodeExpr); }    
+    | expr NE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "!=", $3 as ExpressionNodeExpr); }
+    | expr GT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, ">", $3 as ExpressionNodeExpr); }    
+    | expr LT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<", $3 as ExpressionNodeExpr); }
 
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
