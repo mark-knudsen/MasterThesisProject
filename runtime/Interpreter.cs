@@ -191,6 +191,20 @@ namespace MyCompiler
             return "Invalid decrement operation!";
         }
 
+        private object eval_print_expr(PrintNode pn)
+        {
+
+            var resultOfPrint = Evaluate(pn.Expression);
+            if (resultOfPrint is int) resultOfPrint = resultOfPrint.ToString();
+            if (resultOfPrint is string)
+            {
+                Console.WriteLine(resultOfPrint);
+                return resultOfPrint;                
+            }
+
+            return "Invalid print call!";
+        }
+
         public object Evaluate(Node node)
         {
 
@@ -235,6 +249,9 @@ namespace MyCompiler
 
                 case RandomNode randomNode:
                     return eval_random_expr(randomNode);
+
+                case PrintNode pn:
+                    return eval_print_expr(pn);
 
                 default:
                     return "Invalid node!";

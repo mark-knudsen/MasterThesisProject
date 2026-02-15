@@ -10,7 +10,7 @@
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE RANDOM FOR INC DECR
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE PRINT RANDOM FOR INC DECR
 %token GE LE EQ NE GT LT 
 
 %nonassoc IF
@@ -60,6 +60,8 @@ expr
     | NUMBER              { $$ = new NumberNode((int)$1); }
     | STRING              { $$ = new StringNode((string)$1); }
     | ID                  { $$ = new IdNode((string)$1); }
+    | PRINT LPAREN expr RPAREN 
+                          { $$ = new PrintNode($3 as ExpressionNode); }
     | RANDOM LPAREN expr COMMA expr RPAREN    
                           { $$ = new RandomNode($3 as ExpressionNode, $5 as ExpressionNode); }
     | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
@@ -67,12 +69,12 @@ expr
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
     | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
 
-    | expr GE expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">=", $3 as ExpressionNode); }    
-    | expr LE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<=", $3 as ExpressionNode); }
-    | expr EQ expr       { $$ = new ComparisonNode($1 as ExpressionNode, "==", $3 as ExpressionNode); }    
-    | expr NE expr       { $$ = new ComparisonNode($1 as ExpressionNode, "!=", $3 as ExpressionNode); }
-    | expr GT expr       { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
-    | expr LT expr       { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
+    | expr GE expr        { $$ = new ComparisonNode($1 as ExpressionNode, ">=", $3 as ExpressionNode); }    
+    | expr LE expr        { $$ = new ComparisonNode($1 as ExpressionNode, "<=", $3 as ExpressionNode); }
+    | expr EQ expr        { $$ = new ComparisonNode($1 as ExpressionNode, "==", $3 as ExpressionNode); }    
+    | expr NE expr        { $$ = new ComparisonNode($1 as ExpressionNode, "!=", $3 as ExpressionNode); }
+    | expr GT expr        { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
+    | expr LT expr        { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
 
     | LPAREN expr RPAREN  { $$ = $2; }
     ;

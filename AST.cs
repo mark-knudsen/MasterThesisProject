@@ -11,6 +11,15 @@ namespace MyCompiler
     public abstract class StatementNode : Node { }
     public abstract class FunctionNode : Node { }
 
+    
+    public class PrintNode : ExpressionNode {
+        public ExpressionNode Expression { get; set; }
+        public PrintNode(ExpressionNode expr)
+        {
+            Expression = expr;
+        } 
+    }
+
     // Represents Random function
     public class RandomNode : FunctionNode {
         public ExpressionNode MinValue { get; set; }

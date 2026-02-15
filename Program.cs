@@ -89,6 +89,10 @@ namespace MyCompiler {
                 Console.WriteLine($"{space}  Body:");
                 PrintNode(forNode.Body, indent + 2);
             }
+            else if (node is PrintNode pn) {
+                Console.WriteLine($"{space}PRINT Statement:");
+                PrintNode(pn.Expression, indent + 1);
+            }
         }
     }
 }
