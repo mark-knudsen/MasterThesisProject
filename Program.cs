@@ -1,67 +1,11 @@
 ﻿using System;
 using System.IO;
 using System.Text;
-
-using LLVMSharp.Interop;
 using LLVMSharp;
+using LLVMSharp.Interop;
 
 namespace MyCompiler 
 {
-    // public class Program
-    // {
-    //     private static readonly Compiler compiler = new Compiler();
-    //     private static readonly Parser Parser = new Parser();
-
-    //     static void Main(string[] args)
-    //     {
-    //         if (args.Length == 1)
-    //         {
-    //             RunFile(args[0]);
-    //         }
-    //         else
-    //         {
-    //             RunRepl();
-    //         }
-
-    //     }
-
-    //     static void RunFile(string path)
-    //     {
-    //         var source = File.ReadAllText(path);
-    //         Run(source);
-    //     }
-
-    //     static void RunRepl()
-    //     {
-    //         while (true)
-    //         {
-    //             Console.Write("> ");
-    //             var source = Console.ReadLine();
-    //             if (source is null)
-    //             {
-    //                 Console.WriteLine("See you soon!");
-    //                 return;
-    //             }
-    //             Run(source);
-    //         }
-    //     }
-
-    //     static void Run(string source)
-    //     {
-    //         var scanner = new Scanner(source);
-    //         var tokens = scanner.ScanTokens();
-    //         var ast = Parser.Parse(tokens);
-
-    //         if (ast is not null)
-    //         {
-    //             compiler.Run(ast);
-    //         }
-    //     }
-
-    // }
-
-
-
     class Program {
         static void Main(string[] args) {
             Console.WriteLine("--- AST Compiler Shell ---");

@@ -22,8 +22,6 @@ namespace MyCompiler
         {
             Expression = expr;
         } 
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
@@ -58,8 +56,6 @@ namespace MyCompiler
     public class StringNodeExpr : ExpressionNodeExpr {
         public string Value { get; set; }
         public StringNodeExpr(string value) => Value = value;
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
@@ -67,9 +63,7 @@ namespace MyCompiler
     public class IdNodeExpr : ExpressionNodeExpr {
         public string Name { get; set; }
         public IdNodeExpr(string name) => Name = name;
-
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIdExpr(this);
     }
 
     // Represents a math operation (e.g., 10 + 20)
@@ -81,7 +75,6 @@ namespace MyCompiler
             Left = left; Operator = op; Right = right;
         }
 
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBinaryExpr(this);
     }
 
@@ -92,9 +85,7 @@ namespace MyCompiler
         public AssignNodeExpr(string id, ExpressionNodeExpr expr) {
             Id = id; Expression = expr;
         }
-
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAssignExpr(this);
     }
 
     public class IncrementNodeExpr : StatementNodeExpr
@@ -104,9 +95,7 @@ namespace MyCompiler
         {
             Id = id;
         }
-
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIncrementExpr(this);
     }
     public class DecrementNodeExpr : StatementNodeExpr
     {
@@ -115,9 +104,7 @@ namespace MyCompiler
         {
             Id = id;
         }
-
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDecrementExpr(this);
     }
 
     // A list of statements (the whole program)
@@ -159,8 +146,6 @@ namespace MyCompiler
             Step = step;    
             Body = body;
         }
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
@@ -173,8 +158,6 @@ namespace MyCompiler
         {
             Value = value;
         }
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
     public class ComparisonNodeExpr: ExpressionNodeExpr
@@ -188,7 +171,6 @@ namespace MyCompiler
         {
             Left = left; Operator = op; Right = right;
         }
-
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }

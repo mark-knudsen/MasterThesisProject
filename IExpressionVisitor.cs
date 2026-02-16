@@ -12,9 +12,12 @@ namespace MyCompiler
         // LLVMValueRef VisitFunction(FunctionExpression expr);
         // LLVMValueRef VisitIf(IfExpression expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
+        LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
+        LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
         LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);
         // LLVMValueRef VisitPrototype(PrototypeExpression expr);
-        // LLVMValueRef VisitVariable(VariableExpression expr);
+        LLVMValueRef VisitIdExpr(IdNodeExpr expr);
+        LLVMValueRef VisitAssignExpr(AssignNodeExpr expr);
         // LLVMValueRef VisitExtern(ExternExpression expr);
         // LLVMValueRef VisitUnary(UnaryExpression expr);
         // LLVMValueRef VisitVarInExpression(VarInExpression expr);
