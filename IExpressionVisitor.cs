@@ -12,6 +12,7 @@ namespace MyCompiler
         // LLVMValueRef VisitFunction(FunctionExpression expr);
         // LLVMValueRef VisitIf(IfExpression expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
+        LLVMValueRef VisitStringExpr(StringNodeExpr expr);
         LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
         LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
         LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);

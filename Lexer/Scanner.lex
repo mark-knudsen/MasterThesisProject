@@ -5,6 +5,8 @@
 
 %%
 
+"#".*          { /* skip comment */ }
+
 "if"            { return (int)Tokens.IF; }
 "else"          { return (int)Tokens.ELSE; }
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }

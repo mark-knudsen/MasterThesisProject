@@ -5,6 +5,12 @@ using LLVMSharp;
 
 namespace MyCompiler
 {
+    public enum MyType
+    {
+        Int,
+        String,
+        None
+    }
     // The base class for all NodeExprs in your tree
     public abstract class NodeExpr
     {
@@ -12,7 +18,11 @@ namespace MyCompiler
     }
 
     // Intermediate category
-    public abstract class ExpressionNodeExpr : NodeExpr { }
+    public abstract class ExpressionNodeExpr : NodeExpr
+    {
+        public MyType Type { get; protected set; }
+    }
+
     public abstract class StatementNodeExpr : NodeExpr { }
     public abstract class FunctionNodeExpr : NodeExpr { }
     
@@ -35,8 +45,6 @@ namespace MyCompiler
             MinValue = minValue;
             MaxValue = maxValue;
         } 
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
@@ -48,6 +56,7 @@ namespace MyCompiler
         public NumberNodeExpr(int value)
         {
             Value = value;
+            Type = MyType.Int;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNumberExpr(this);
     }
@@ -55,8 +64,13 @@ namespace MyCompiler
     // Represents a string (e.g., "Hello")
     public class StringNodeExpr : ExpressionNodeExpr {
         public string Value { get; set; }
-        public StringNodeExpr(string value) => Value = value;
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public StringNodeExpr(string value)
+        {
+            Value = value;
+            Type = MyType.String;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
     }
 
     // Represents a variable name (e.g., x)
@@ -74,7 +88,6 @@ namespace MyCompiler
         public BinaryOpNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right) {
             Left = left; Operator = op; Right = right;
         }
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBinaryExpr(this);
     }
 
@@ -108,9 +121,9 @@ namespace MyCompiler
     }
 
     // A list of statements (the whole program)
-    public class SequenceNodeExpr : NodeExpr {
+    public class SequenceNodeExpr : NodeExpr
+    {
         public List<NodeExpr> Statements { get; } = new List<NodeExpr>();
-
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSequenceExpr(this);
     }
@@ -126,8 +139,6 @@ namespace MyCompiler
             ThenPart = thenP;
             ElsePart = elseP;
         }
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 

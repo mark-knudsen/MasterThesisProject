@@ -43,7 +43,7 @@ namespace MyCompiler
         public string Value { get; set; }
         public StringNode(string value) => Value = value;
     }
-
+    
     // Represents a variable name (e.g., x)
     public class IdNode : ExpressionNode {
         public string Name { get; set; }

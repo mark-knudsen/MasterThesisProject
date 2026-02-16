@@ -11,6 +11,7 @@ namespace MyCompiler
             Console.WriteLine("--- AST Compiler Shell ---");
             Interpreter interpreter = new Interpreter();
             Compiler compiler = new Compiler();
+            object result = null;
 
             while (true) {
                 Console.Write("\n> ");
@@ -30,7 +31,7 @@ namespace MyCompiler
                     //object result = interpreter.Evaluate(parser.RootNode);
 
                     System.Console.WriteLine(parser.RootNode);
-                    object result = compiler.Run(parser.RootNode);
+                    result = compiler.Run(parser.RootNode);
 
                     Console.WriteLine("Result: " + result);
                 }
