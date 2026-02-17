@@ -33,7 +33,17 @@ namespace MyCompiler
                     System.Console.WriteLine(parser.RootNode);
                     result = compiler.Run(parser.RootNode);
 
-                    Console.WriteLine("Result: " + result);
+                    if (result == null)
+                    {
+                        Console.WriteLine("Result: null");
+                    }
+                    else
+                    {
+                        Console.WriteLine("Result: " + result);
+                        if (result is string s)
+                            Console.WriteLine($"(String length: {s.Length})");
+                    }
+
                 }
             }
         }

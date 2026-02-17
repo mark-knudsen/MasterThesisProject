@@ -9,6 +9,7 @@ namespace MyCompiler
     {
         Int,
         String,
+        Bool,
         None
     }
     // The base class for all NodeExprs in your tree
@@ -21,22 +22,27 @@ namespace MyCompiler
     public abstract class ExpressionNodeExpr : NodeExpr
     {
         public MyType Type { get; protected set; }
+        // Add this setter helper
+        public void SetType(MyType type) => Type = type;
+
     }
 
     public abstract class StatementNodeExpr : NodeExpr { }
     public abstract class FunctionNodeExpr : NodeExpr { }
-    
-    public class PrintNodeExpr : ExpressionNodeExpr {
+
+    public class PrintNodeExpr : ExpressionNodeExpr
+    {
         public ExpressionNodeExpr Expression { get; set; }
         public PrintNodeExpr(ExpressionNodeExpr expr)
         {
             Expression = expr;
-        } 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPrintExpr(this);
     }
 
     // Represents Random function
-    public class RandomNodeExpr : FunctionNodeExpr {
+    public class RandomNodeExpr : FunctionNodeExpr
+    {
         public ExpressionNodeExpr MinValue { get; set; }
         public ExpressionNodeExpr MaxValue { get; set; }
 
@@ -44,7 +50,7 @@ namespace MyCompiler
         {
             MinValue = minValue;
             MaxValue = maxValue;
-        } 
+        }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
@@ -62,7 +68,8 @@ namespace MyCompiler
     }
 
     // Represents a string (e.g., "Hello")
-    public class StringNodeExpr : ExpressionNodeExpr {
+    public class StringNodeExpr : ExpressionNodeExpr
+    {
         public string Value { get; set; }
         public StringNodeExpr(string value)
         {
@@ -74,28 +81,33 @@ namespace MyCompiler
     }
 
     // Represents a variable name (e.g., x)
-    public class IdNodeExpr : ExpressionNodeExpr {
+    public class IdNodeExpr : ExpressionNodeExpr
+    {
         public string Name { get; set; }
         public IdNodeExpr(string name) => Name = name;
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIdExpr(this);
     }
 
     // Represents a math operation (e.g., 10 + 20)
-    public class BinaryOpNodeExpr : ExpressionNodeExpr {
+    public class BinaryOpNodeExpr : ExpressionNodeExpr
+    {
         public ExpressionNodeExpr Left { get; set; }
         public string Operator { get; set; }
         public ExpressionNodeExpr Right { get; set; }
-        public BinaryOpNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right) {
+        public BinaryOpNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right)
+        {
             Left = left; Operator = op; Right = right;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBinaryExpr(this);
     }
 
     // Represents an assignment (e.g., x = 10)
-    public class AssignNodeExpr : StatementNodeExpr {
+    public class AssignNodeExpr : StatementNodeExpr
+    {
         public string Id { get; set; }  // ID = expr  -->   x = 10 
         public ExpressionNodeExpr Expression { get; set; }
-        public AssignNodeExpr(string id, ExpressionNodeExpr expr) {
+        public AssignNodeExpr(string id, ExpressionNodeExpr expr)
+        {
             Id = id; Expression = expr;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAssignExpr(this);
@@ -129,17 +141,19 @@ namespace MyCompiler
     }
 
     // IF statement
-    public class IfNodeExpr : StatementNodeExpr {
+    public class IfNodeExpr : StatementNodeExpr
+    {
         public ExpressionNodeExpr Condition;
         public NodeExpr ThenPart;
         public NodeExpr ElsePart; // Can be null
-        
-        public IfNodeExpr(ExpressionNodeExpr cond, NodeExpr thenP, NodeExpr elseP = null) {
+
+        public IfNodeExpr(ExpressionNodeExpr cond, NodeExpr thenP, NodeExpr elseP = null)
+        {
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
     }
 
     public class ForLoopNodeExpr : StatementNodeExpr
@@ -154,10 +168,10 @@ namespace MyCompiler
         {
             Initialization = init;
             Condition = cond;
-            Step = step;    
+            Step = step;
             Body = body;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForLoopExpr(this);
     }
 
     // Boolean
@@ -168,10 +182,11 @@ namespace MyCompiler
         public BooleanNodeExpr(bool value)
         {
             Value = value;
+            Type = MyType.Bool;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
     }
-    public class ComparisonNodeExpr: ExpressionNodeExpr
+    public class ComparisonNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr Left;
         public string Operator { get; set; }
@@ -183,7 +198,7 @@ namespace MyCompiler
             Left = left; Operator = op; Right = right;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
     }
 
 }

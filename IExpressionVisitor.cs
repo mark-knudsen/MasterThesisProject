@@ -5,12 +5,16 @@ namespace MyCompiler
 {
     public interface IExpressionVisitor
     {
-        
+
         LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
+        
+        LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
         // LLVMValueRef VisitCall(CallExpression expr);
-        // LLVMValueRef VisitFor(ForExpression expr);
+        LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
         // LLVMValueRef VisitFunction(FunctionExpression expr);
-        // LLVMValueRef VisitIf(IfExpression expr);
+        LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
+        LLVMValueRef VisitIfExpr(IfNodeExpr expr);
+        LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
         LLVMValueRef VisitStringExpr(StringNodeExpr expr);
         LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
@@ -23,5 +27,5 @@ namespace MyCompiler
         // LLVMValueRef VisitUnary(UnaryExpression expr);
         // LLVMValueRef VisitVarInExpression(VarInExpression expr);
     }
-    
+
 }
