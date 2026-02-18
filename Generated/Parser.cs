@@ -53,11 +53,13 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 15/02/2026 13:42:40
+
+  // Verbatim content from Parser/Parser.y - 18-02-2026 11:46:33
 #line 27 "Parser/Parser.y"
     public MyCompiler.NodeExpr RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 15/02/2026 13:42:40
+  // End verbatim content from Parser/Parser.y - 18-02-2026 11:46:33
+
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
