@@ -21,6 +21,8 @@ namespace MyCompiler
 
         // Local variables (only exists while compiling a specific function)
         private Dictionary<string, LLVMValueRef> _localScope = null;
+        // Maps function name to its Signature (LLVMTypeRef)
+        private Dictionary<string, LLVMTypeRef> _functionPrototypes = new Dictionary<string, LLVMTypeRef>();
 
         public Compiler()
         {
@@ -31,6 +33,13 @@ namespace MyCompiler
             _module = LLVMModuleRef.CreateWithName("base");
             _builder = _module.Context.CreateBuilder();
             _context = Context.Empty; // stores variables/functions
+
+
+            // Register built-ins so VisitFunctionCall can find them
+            _functionPrototypes["print"] = LLVMTypeRef.CreateFunction(LLVMTypeRef.Int32, new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0) }, true);
+
+            var doubleType = LLVMTypeRef.Double;
+            _functionPrototypes["round"] = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
         }
 
         private void InitializeModule()
@@ -45,14 +54,13 @@ namespace MyCompiler
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
 
-            // 1. Predict the type
+            // 1. Predict
             var lastNode = GetLastExpression(expr);
             MyType prediction = MyType.None;
             if (lastNode is ExpressionNodeExpr exp) prediction = exp.Type;
 
             // 2. UNIVERSAL WRAPPER SIGNATURE
-            // We use Double for floats, and Int64 for EVERYTHING ELSE (Int, Bool, String)
-            // This ensures 64-bit pointers are never truncated.
+            // Set the signature once and STICK TO IT.
             LLVMTypeRef llvmRetType = (prediction == MyType.Float) ? LLVMTypeRef.Double : LLVMTypeRef.Int64;
             if (prediction == MyType.None) llvmRetType = LLVMTypeRef.Void;
 
@@ -67,7 +75,6 @@ namespace MyCompiler
             if (llvmRetType == LLVMTypeRef.Void)
             {
                 _builder.BuildRetVoid();
-                // If it's a loop, we need to run it before returning "Loop Executed"
                 if (lastNode is ForLoopNodeExpr || lastNode is FunctionDefNode)
                 {
                     using var loopEngine = _module.CreateMCJITCompiler();
@@ -79,27 +86,34 @@ namespace MyCompiler
             {
                 LLVMValueRef finalRet = resultValue;
 
-                // If the actual result is a pointer but we expected an Int64 wrapper
+                // CRITICAL: If the Visit returned a pointer (like hello()), we update prediction
+                // so ExtractResult knows to treat the number as a String address.
                 if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
                 {
                     prediction = MyType.String;
+                    // Cast the pointer to i64 to match our Int64 wrapper
                     finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int64, "ptr_to_i64");
                 }
-                // If it's an i32, promote it to i64 for the wrapper
-                else if (resultValue.TypeOf == LLVMTypeRef.Int32)
+
+                // LAST LINE OF DEFENSE: Ensure the value matches the llvmRetType (signature)
+                if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
                 {
-                    finalRet = _builder.BuildZExt(resultValue, LLVMTypeRef.Int64, "i32_to_i64");
+                    // If we predicted double but got an int/ptr, we must cast to bit-compatible double
+                    // (Or for a REPL, bitcast so the bits survive)
+                    finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "force_bits");
                 }
-                // If it's a double, it matches llvmRetType already
+                else if (llvmRetType == LLVMTypeRef.Int64 && finalRet.TypeOf == LLVMTypeRef.Int32)
+                {
+                    finalRet = _builder.BuildZExt(finalRet, LLVMTypeRef.Int64, "zext64");
+                }
 
                 _builder.BuildRet(finalRet);
             }
 
-            // 5. DEBUG: View the generated IR
+            // 5. DEBUG & EXECUTE
             Console.WriteLine("--- GENERATED IR ---");
             Console.WriteLine(_module.PrintToString());
 
-            // 6. EXECUTE
             using var engine = _module.CreateMCJITCompiler();
             var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
 
@@ -129,20 +143,33 @@ namespace MyCompiler
         private object ExtractResult(LLVMGenericValueRef res, MyType type)
         {
             if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 1);
-            if (type == MyType.Float) return LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
             if (type == MyType.Bool) return LLVM.GenericValueToInt(res, 0) != 0;
+
+            // If the type is Float, we read it as a Double
+            if (type == MyType.Float) return LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
 
             if (type == MyType.String)
             {
-                // Get the full 64-bit integer from the result
-                ulong addr = LLVM.GenericValueToInt(res, 0);
+                ulong addr;
 
-                if (addr == 0) return null;
+                // --- THE FIX ---
+                // If our IR shows we bitcast to double, we must read from the Float register
+                // then bit-convert that double back to a 64-bit integer address.
+                try
+                {
+                    double rawDouble = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                    addr = (ulong)BitConverter.DoubleToInt64Bits(rawDouble);
+                }
+                catch
+                {
+                    // Fallback to integer register if the bitcast didn't happen
+                    addr = LLVM.GenericValueToInt(res, 0);
+                }
+                // ----------------
 
-                // Convert to IntPtr. On 64-bit systems, this is a 64-bit copy.
-                IntPtr ptr = (IntPtr)addr;
+                if (addr == 0) return "(null)";
 
-                // Safety check: Is the address ridiculously small or large?
+                IntPtr ptr = new IntPtr((long)addr);
                 return Marshal.PtrToStringAnsi(ptr);
             }
             return null;
@@ -549,44 +576,65 @@ namespace MyCompiler
         }
 
 
-
-
         public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
         {
-            // 1. Define the function signature (all doubles for simplicity)
-            var doubleType = LLVMTypeRef.Double;
-            var argTypes = Enumerable.Repeat(doubleType, node.Parameters.Count).ToArray();
-            var funcType = LLVMTypeRef.CreateFunction(doubleType, argTypes);
+            // 1. Determine Return Type by peeking at the body's type
+            MyType returnType = MyType.None;
+            if (node.Body is ExpressionNodeExpr exp)
+            {
+                returnType = exp.Type;
+            }
 
-            // 2. Add function to module
+            // 2. Map to LLVM Type (handles i32, double, and ptr)
+            LLVMTypeRef llvmRetType = GetLLVMType(returnType);
+
+            // 3. Define Parameters (Assuming Double for math functions, or adjust as needed)
+            var argTypes = Enumerable.Repeat(LLVMTypeRef.Double, node.Parameters.Count).ToArray();
+            var funcType = LLVMTypeRef.CreateFunction(llvmRetType, argTypes);
+
+            // --- STORE THE TYPE HERE ---
+            _functionPrototypes[node.Name] = funcType;
+            // ---------------------------
+
+            // 4. Register the function in the module
             var func = _module.AddFunction(node.Name, funcType);
 
-            // 3. Save the current builder position (the REPL entry)
+            // Save current builder position (the REPL wrapper) to jump back later
             var previousBlock = _builder.InsertBlock;
 
-            // 4. Start building the function body
+            // 5. Create the Function Body
             var entry = func.AppendBasicBlock("entry");
             _builder.PositionAtEnd(entry);
 
-            // 5. Create a NEW local scope for this function
+            // 6. Local Scope: Map parameter names to LLVM parameter values
+            // Ensure you have a 'private Dictionary<string, LLVMValueRef> _localScope' in your class
             _localScope = new Dictionary<string, LLVMValueRef>();
             for (int i = 0; i < node.Parameters.Count; i++)
             {
-                var paramName = node.Parameters[i];
-                var paramValue = func.GetParam((uint)i);
-                _localScope[paramName] = paramValue;
+                _localScope[node.Parameters[i]] = func.GetParam((uint)i);
             }
 
-            // 6. Compile the body and return the result
+            // 7. Visit the Body
             var bodyResult = Visit(node.Body);
-            // Ensure the result is a Double to match the signature
-            var finalResult = EnsureFloat(bodyResult, MyType.Float);
-            _builder.BuildRet(finalResult);
 
-            // 7. CLEAN UP: Remove local scope and go back to where we were
+            // 8. Generate the Return Instruction
+            if (llvmRetType == LLVMTypeRef.Void)
+            {
+                _builder.BuildRetVoid();
+            }
+            else
+            {
+                // Use MatchType to handle casts (like returning an Int when the func is Double)
+                var finalValue = MatchType(bodyResult, llvmRetType);
+                _builder.BuildRet(finalValue);
+            }
+
+            // 9. Cleanup
             _localScope = null;
             if (previousBlock.Handle != IntPtr.Zero)
+            {
                 _builder.PositionAtEnd(previousBlock);
+            }
 
             return func;
         }
@@ -595,37 +643,43 @@ namespace MyCompiler
         {
             var func = _module.GetNamedFunction(node.Name);
             if (func.Handle == IntPtr.Zero)
-                throw new Exception($"Function {node.Name} not found");
+                throw new Exception($"Function {node.Name} not found.");
 
-            // 1. Visit all arguments
+            // 1. Visit arguments
             var args = new LLVMValueRef[node.Arguments.Count];
             for (int i = 0; i < node.Arguments.Count; i++)
             {
-                var argVal = Visit(node.Arguments[i]);
-                args[i] = EnsureFloat(argVal, node.Arguments[i].Type);
+                args[i] = Visit(node.Arguments[i]);
             }
 
-            // 2. REPLACEMENT FOR GlobalValueType:
-            // In LLVM, a function value is actually a pointer to a function. 
-            // We need the "FunctionType" itself for BuildCall2.
-            LLVMTypeRef funcType = func.TypeOf.ElementType;
-
-            // 3. Robustness Check: If funcType is somehow null (opaque pointers), 
-            // we can reconstruct it since we know our functions use Double.
-            if (funcType.Handle == IntPtr.Zero)
+            // 2. RETRIEVE TYPE FROM OUR REGISTRY
+            if (!_functionPrototypes.TryGetValue(node.Name, out var funcType))
             {
-                var doubleType = LLVMTypeRef.Double;
-                var argTypes = Enumerable.Repeat(doubleType, node.Arguments.Count).ToArray();
-                funcType = LLVMTypeRef.CreateFunction(doubleType, argTypes);
+                // Fallback: If it's a built-in like 'print' or 'round', we handle it here
+                // For now, let's assume it's in the registry
+                throw new Exception($"Type signature for {node.Name} not found in registry.");
             }
 
-            // 4. Build the call
+            // 3. Build the call safely
             return _builder.BuildCall2(funcType, func, args, "calltmp");
         }
 
-
         //------Helper-functions------//
 
+        private LLVMValueRef MatchType(LLVMValueRef value, LLVMTypeRef targetType)
+        {
+            if (value.TypeOf == targetType) return value;
+
+            // If target is Float (Double) but value is Int
+            if (targetType == LLVMTypeRef.Double && value.TypeOf == LLVMTypeRef.Int32)
+                return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_to_float");
+
+            // If target is Int but value is Float
+            if (targetType == LLVMTypeRef.Int32 && value.TypeOf == LLVMTypeRef.Double)
+                return _builder.BuildFPToSI(value, LLVMTypeRef.Int32, "cast_to_int");
+
+            return value;
+        }
         private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
         {
             if (value.TypeOf == LLVMTypeRef.Double) return value;
