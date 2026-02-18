@@ -51,7 +51,7 @@ namespace MyCompiler
             MinValue = minValue;
             MaxValue = maxValue;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
     }
 
     // Represents a single number (e.g., 10)
