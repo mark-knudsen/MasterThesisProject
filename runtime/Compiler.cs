@@ -42,61 +42,67 @@ namespace MyCompiler
 
         public object Run(NodeExpr expr)
         {
-            // 1. Setup
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
-            LLVMExecutionEngineRef _engine = _module.CreateMCJITCompiler();
 
-            // 2. PREDICT the type (The "Peek")
-            // 2. PREDICT the type (The "Peek")
+            // 1. Predict the type
             var lastNode = GetLastExpression(expr);
-
-            // Default to None (Void) if the node is null or not a value-returning expression
             MyType prediction = MyType.None;
+            if (lastNode is ExpressionNodeExpr exp) prediction = exp.Type;
 
-            if (lastNode is ExpressionNodeExpr exp)
-            {
-                prediction = exp.Type;
+            // 2. UNIVERSAL WRAPPER SIGNATURE
+            // We use Double for floats, and Int64 for EVERYTHING ELSE (Int, Bool, String)
+            // This ensures 64-bit pointers are never truncated.
+            LLVMTypeRef llvmRetType = (prediction == MyType.Float) ? LLVMTypeRef.Double : LLVMTypeRef.Int64;
+            if (prediction == MyType.None) llvmRetType = LLVMTypeRef.Void;
 
-                // Check for float promotion
-                if (exp is BinaryOpNodeExpr bin && (bin.Left.Type == MyType.Float || bin.Right.Type == MyType.Float))
-                {
-                    prediction = MyType.Float;
-                }
-            }
-
-            LLVMTypeRef llvmRetType = GetLLVMType(prediction);
-
-            // 3. Create Function Signature
             var funcType = LLVMTypeRef.CreateFunction(llvmRetType, Array.Empty<LLVMTypeRef>());
             var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
             _builder.PositionAtEnd(func.AppendBasicBlock("entry"));
 
-            // 4. GENERATE CODE (The only Visit call)
+            // 3. GENERATE CODE
             var resultValue = Visit(expr);
-            if (prediction == MyType.None) return "Function Defined";
 
-
-            // 5. Finalize the Return
-            // If our prediction was Int but Visit actually produced a Float (or vice versa),
-            // we must make sure the 'ret' instruction matches the 'define' signature.
-            if (llvmRetType != LLVMTypeRef.Void)
+            // 4. FINALIZE RETURN
+            if (llvmRetType == LLVMTypeRef.Void)
             {
-                // If the function signature says double, make sure we return a double
-                if (llvmRetType == LLVMTypeRef.Double && resultValue.TypeOf != LLVMTypeRef.Double)
+                _builder.BuildRetVoid();
+                // If it's a loop, we need to run it before returning "Loop Executed"
+                if (lastNode is ForLoopNodeExpr || lastNode is FunctionDefNode)
                 {
-                    resultValue = _builder.BuildSIToFP(resultValue, LLVMTypeRef.Double, "ret_conv");
+                    using var loopEngine = _module.CreateMCJITCompiler();
+                    loopEngine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+                    return lastNode is ForLoopNodeExpr ? "Loop Executed" : "Function Defined";
                 }
-                _builder.BuildRet(resultValue);
             }
             else
             {
-                _builder.BuildRetVoid();
+                LLVMValueRef finalRet = resultValue;
+
+                // If the actual result is a pointer but we expected an Int64 wrapper
+                if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                {
+                    prediction = MyType.String;
+                    finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int64, "ptr_to_i64");
+                }
+                // If it's an i32, promote it to i64 for the wrapper
+                else if (resultValue.TypeOf == LLVMTypeRef.Int32)
+                {
+                    finalRet = _builder.BuildZExt(resultValue, LLVMTypeRef.Int64, "i32_to_i64");
+                }
+                // If it's a double, it matches llvmRetType already
+
+                _builder.BuildRet(finalRet);
             }
+
+            // 5. DEBUG: View the generated IR
+            Console.WriteLine("--- GENERATED IR ---");
             Console.WriteLine(_module.PrintToString());
 
-            // 6. Execute
-            var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+            // 6. EXECUTE
+            using var engine = _module.CreateMCJITCompiler();
+            var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+
             return ExtractResult(res, prediction);
         }
 
@@ -122,23 +128,25 @@ namespace MyCompiler
 
         private object ExtractResult(LLVMGenericValueRef res, MyType type)
         {
-            if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 0);
-            if (type == MyType.Float)
-                return LLVM.GenericValueToFloat(_module.Context.DoubleType, res);
+            if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 1);
+            if (type == MyType.Float) return LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+            if (type == MyType.Bool) return LLVM.GenericValueToInt(res, 0) != 0;
+
             if (type == MyType.String)
             {
-                nint ptr = (nint)LLVM.GenericValueToPointer(res);
-                return ptr == 0 ? null : Marshal.PtrToStringAnsi((IntPtr)ptr);
-            }
-            if (type == MyType.Bool)
-            {
-                // Check if the 1-bit value is 1
-                System.Console.WriteLine("res: " + LLVM.GenericValueToInt(res, 0));
-                return LLVM.GenericValueToInt(res, 0) == 1;
+                // Get the full 64-bit integer from the result
+                ulong addr = LLVM.GenericValueToInt(res, 0);
+
+                if (addr == 0) return null;
+
+                // Convert to IntPtr. On 64-bit systems, this is a 64-bit copy.
+                IntPtr ptr = (IntPtr)addr;
+
+                // Safety check: Is the address ridiculously small or large?
+                return Marshal.PtrToStringAnsi(ptr);
             }
             return null;
         }
-
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
             return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)expr.Value, false);
@@ -270,7 +278,7 @@ namespace MyCompiler
             if (entry is null) throw new Exception($"Variable {expr.Name} not defined");
 
             // Pull the type from the symbol table
-            var actualType = entry.Value.Type;
+            var actualType = entry.Value.Type; // Is this MyType.String?
             expr.SetType(actualType);
 
             // Variables are pointers in memory, so we MUST use BuildLoad2
@@ -496,48 +504,48 @@ namespace MyCompiler
             var func = _builder.InsertBlock.Parent;
             var llvmCtx = _module.Context;
 
-            // 1. Initialization: Run the starting statement (e.g., i = 0)
+            // 1. Initialization
             if (expr.Initialization != null) Visit(expr.Initialization);
 
-
             // 2. Define the Basic Blocks
-            // We need these labels to handle the "jump" logic
             var condBlock = func.AppendBasicBlock("for.cond");
             var bodyBlock = func.AppendBasicBlock("for.body");
             var stepBlock = func.AppendBasicBlock("for.step");
             var endBlock = func.AppendBasicBlock("for.end");
 
-            // Start by jumping into the condition check
+            // Entry jump
             _builder.BuildBr(condBlock);
 
-            // 3. Condition Block: Check if we should run the loop
+            // 3. Condition Block
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-            // Safety check: Ensure the condition is actually a boolean (i1)
-            // If your condition returns i32, you might need an ICmp here.
+            // Ensure condition is i1 (Boolean)
+            // If your comparison returns Double, you'd need a BuildFCmp here.
+            // If it returns i32, use BuildICmp.
+            if (condition.TypeOf != LLVMTypeRef.Int1)
+            {
+                // Example: convert i32 to i1 by checking if != 0
+                condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
+                    condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest");
+            }
+
             _builder.BuildCondBr(condition, bodyBlock, endBlock);
 
-            // 4. Body Block: Run the single expression/statement
+            // 4. Body Block
             _builder.PositionAtEnd(bodyBlock);
             Visit(expr.Body);
+            _builder.BuildBr(stepBlock); // Jump to step, not back to cond!
 
-            // After the body finishes, jump to the 'step'
-            _builder.BuildBr(stepBlock);
-
-            // 5. Step Block: Run the increment (e.g., i++)
+            // 5. Step Block (Increment)
             _builder.PositionAtEnd(stepBlock);
             if (expr.Step != null) Visit(expr.Step);
-            _builder.BuildBr(condBlock);
+            _builder.BuildBr(condBlock); // Jump back to condition
 
-            // Jump back to the condition to see if we go again
-            _builder.BuildBr(condBlock);
-
-            // 6. End Block: Move the builder here so subsequent code compiles AFTER the loop
+            // 6. End Block
             _builder.PositionAtEnd(endBlock);
 
-            // Return a dummy value (Loops are statements and don't usually return data)
-            return LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 0);
+            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0);
         }
 
 
