@@ -357,7 +357,7 @@ namespace MyCompiler
                 randFunc = _module.AddFunction("rand", randType);
             }
 
-            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()), 
+            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()),
             randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
             if (expr.MinValue != null && expr.MaxValue != null)
@@ -367,9 +367,9 @@ namespace MyCompiler
 
                 var diff = _builder.BuildSub(maxValue, minValue, "diff");
 
-                if(_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
+                if (_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
                 {
-                    diff = _builder.BuildSub(minValue, maxValue, "diff"); 
+                    diff = _builder.BuildSub(minValue, maxValue, "diff");
                     minValue = maxValue;
                 }
 
@@ -390,18 +390,19 @@ namespace MyCompiler
             var llvmCtx = _module.Context;
 
             LLVMValueRef formatStr;
+
             // Detect if the value is actually a pointer (string) or an i32
             // valueToPrint.Type for a concatenated string will be a Pointer
             bool isPointer = valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
 
-            // Determine format string based on type
-            if (expr.Expression.Type == MyType.Int)
-                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
-            else if (expr.Expression.Type == MyType.String)
+            if (isPointer || expr.Expression.Type == MyType.String)
+            {
                 formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
+            }
             else
-                throw new Exception("Cannot print this type");
-
+            {
+                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
+            }
             return _builder.BuildCall2(
                 LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true),
                 printf,
@@ -466,6 +467,15 @@ namespace MyCompiler
             return _module.AddFunction("malloc", LLVMTypeRef.CreateFunction(
                 LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
                 new[] { _module.Context.Int64Type }, false));
+        }
+        private LLVMValueRef GetSprintf()
+        {
+            var fn = _module.GetNamedFunction("sprintf");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("sprintf", LLVMTypeRef.CreateFunction(
+                _module.Context.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0) },
+                true));
         }
 
         private LLVMTypeRef GetLLVMType(MyType type)
