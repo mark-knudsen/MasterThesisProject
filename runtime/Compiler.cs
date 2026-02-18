@@ -43,13 +43,21 @@ namespace MyCompiler
             _engine = _module.CreateMCJITCompiler();
 
             // 2. PREDICT the type (The "Peek")
-            var lastExpr = GetLastExpression(expr);
+            // 2. PREDICT the type (The "Peek")
+            var lastNode = GetLastExpression(expr);
 
-            // We check if it's a float or if it's an operation that results in a float
-            MyType prediction = lastExpr.Type;
-            if (lastExpr is BinaryOpNodeExpr bin && (bin.Left.Type == MyType.Float || bin.Right.Type == MyType.Float))
+            // Default to None (Void) if the node is null or not a value-returning expression
+            MyType prediction = MyType.None;
+
+            if (lastNode is ExpressionNodeExpr exp)
             {
-                prediction = MyType.Float;
+                prediction = exp.Type;
+
+                // Check for float promotion
+                if (exp is BinaryOpNodeExpr bin && (bin.Left.Type == MyType.Float || bin.Right.Type == MyType.Float))
+                {
+                    prediction = MyType.Float;
+                }
             }
 
             LLVMTypeRef llvmRetType = GetLLVMType(prediction);
@@ -87,11 +95,11 @@ namespace MyCompiler
 
         // --- Helpers to keep Run() clean ---
 
-        private ExpressionNodeExpr GetLastExpression(NodeExpr expr)
+        private NodeExpr GetLastExpression(NodeExpr expr) // Return NodeExpr, not ExpressionNodeExpr
         {
             if (expr is SequenceNodeExpr seq)
-                return seq.Statements.LastOrDefault() as ExpressionNodeExpr;
-            return expr as ExpressionNodeExpr;
+                return seq.Statements.LastOrDefault();
+            return expr;
         }
 
         private MyType PeekTypeInCurrentSequence(NodeExpr root, string varName)
@@ -292,63 +300,72 @@ namespace MyCompiler
         // Update your IExpressionVisitor interface to include this
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
         {
-            // Fix: Pass the nodes from the expression into the Visit method
-            var leftVal = Visit(expr.Left);
-            var rightVal = Visit(expr.Right);
+            var lhs = Visit(expr.Left);
+            var rhs = Visit(expr.Right);
 
+            // Check if we are comparing floats
+            bool isFloat = (expr.Left.Type == MyType.Float || expr.Right.Type == MyType.Float);
+
+            if (isFloat)
+            {
+                lhs = EnsureFloat(lhs, expr.Left.Type);
+                rhs = EnsureFloat(rhs, expr.Right.Type);
+
+                return expr.Operator switch
+                {
+                    "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, lhs, rhs, "fcmptmp"),
+                    "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, lhs, rhs, "fcmptmp"),
+                    "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, lhs, rhs, "fcmptmp"),
+                    ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, lhs, rhs, "fcmptmp"),
+                    "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, lhs, rhs, "fcmptmp"),
+                    ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, lhs, rhs, "fcmptmp"),
+                    _ => throw new Exception($"Unknown float operator: {expr.Operator}")
+                };
+            }
+
+            // Integer Comparison
             return expr.Operator switch
             {
-                "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, leftVal, rightVal, "cmptmp"),
-                ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, leftVal, rightVal, "cmptmp"),
-                "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, leftVal, rightVal, "cmptmp"),
-                "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, leftVal, rightVal, "cmptmp"),
-                _ => throw new Exception("Unknown comparison operator")
+                "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, lhs, rhs, "cmptmp"),
+                "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, lhs, rhs, "cmptmp"),
+                "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, lhs, rhs, "cmptmp"),
+                ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, lhs, rhs, "cmptmp"),
+                "<=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, lhs, rhs, "cmptmp"),
+                ">=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, lhs, rhs, "cmptmp"),
+                _ => throw new Exception($"Unknown integer operator: {expr.Operator}")
             };
         }
 
         public LLVMValueRef VisitIfExpr(IfNodeExpr expr)
         {
-            // 1. Compile the condition
-            var condValue = Visit(expr.Condition);
+            if (expr.Condition == null) throw new Exception("IF condition is null");
 
-            // 2. Get the current function to attach blocks to
+            var cond = Visit(expr.Condition);
+
+            // Safety: LLVM CondBr requires an i1. If your condition is i32, convert it.
+            if (cond.TypeOf == LLVMTypeRef.Int32)
+                cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, cond, LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0), "ifcond");
+
             var func = _builder.InsertBlock.Parent;
+            var thenBB = func.AppendBasicBlock("then");
+            var elseBB = func.AppendBasicBlock("else");
+            var mergeBB = func.AppendBasicBlock("ifcont");
 
-            // 3. Create the blocks
-            var thenBlock = func.AppendBasicBlock("then");
-            var elseBlock = func.AppendBasicBlock("else");
-            var mergeBlock = func.AppendBasicBlock("ifcont");
+            _builder.BuildCondBr(cond, thenBB, elseBB);
 
-            // 4. Create the branch logic
-            _builder.BuildCondBr(condValue, thenBlock, elseBlock);
+            // Then
+            _builder.PositionAtEnd(thenBB);
+            Visit(expr.ThenPart); // Ensure ThenPart is not null
+            _builder.BuildBr(mergeBB);
 
-            // --- Build THEN part ---
-            _builder.PositionAtEnd(thenBlock);
-            var thenVal = Visit(expr.ThenPart);
-            _builder.BuildBr(mergeBlock); // Jump to end
-                                          // Re-get thenBlock in case Visit modified it (for nested ifs)
-            thenBlock = _builder.InsertBlock;
-
-            // --- Build ELSE part ---
-            _builder.PositionAtEnd(elseBlock);
-            LLVMValueRef elseVal;
+            // Else
+            _builder.PositionAtEnd(elseBB);
             if (expr.ElsePart != null)
-            {
-                elseVal = Visit(expr.ElsePart);
-            }
-            else
-            {
-                // If no else, just use a dummy value or null
-                elseVal = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0);
-            }
-            _builder.BuildBr(mergeBlock);
-            elseBlock = _builder.InsertBlock;
+                Visit(expr.ElsePart);
+            _builder.BuildBr(mergeBB);
 
-            // --- Build MERGE part ---
-            _builder.PositionAtEnd(mergeBlock);
-
-
-            return null;
+            _builder.PositionAtEnd(mergeBB);
+            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0); // Return dummy 0 for void-like if
         }
         public LLVMValueRef VisitRoundExpr(RoundNodeExpr expr)
         {

@@ -27,7 +27,12 @@ namespace MyCompiler
         public void SetType(MyType type) => Type = type;
     }
 
-    public abstract class StatementNodeExpr : NodeExpr { }
+    public abstract class StatementNodeExpr : NodeExpr
+    {
+        public MyType Type { get; protected set; }
+        // Add this setter helper
+        public void SetType(MyType type) => Type = type;
+    }
 
     public class PrintNodeExpr : ExpressionNodeExpr
     {
@@ -120,7 +125,9 @@ namespace MyCompiler
         public ExpressionNodeExpr Right { get; set; }
         public BinaryOpNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right)
         {
-            Left = left; Operator = op; Right = right;
+            Left = left;
+            Operator = op;
+            Right = right;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBinaryExpr(this);
     }
@@ -176,6 +183,7 @@ namespace MyCompiler
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
+            this.Type = MyType.None;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
     }
@@ -219,7 +227,10 @@ namespace MyCompiler
 
         public ComparisonNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right)
         {
-            Left = left; Operator = op; Right = right;
+            Left = left;
+            Operator = op;
+            Right = right;
+            Type = MyType.Bool;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
