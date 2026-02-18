@@ -9,7 +9,8 @@ namespace MyCompiler
     {
         Dictionary<string, object> variables = new Dictionary<string, object>();
 
-        private object eval_numaric_binary_expr(int left, int right, string _operator){
+        private object eval_numaric_binary_expr(int left, int right, string _operator)
+        {
             switch (_operator)
             {
                 case "+":
@@ -25,13 +26,14 @@ namespace MyCompiler
             }
         }
 
-          private string eval_string_binary_expr(string left, string right, string _operator){
+        private string eval_string_binary_expr(string left, string right, string _operator)
+        {
             switch (_operator)
             {
-                case "+": 
+                case "+":
                     return left + right;
-                    default:
-                        return "Invalid operator!";
+                default:
+                    return "Invalid operator!";
             }
         }
 
@@ -39,7 +41,7 @@ namespace MyCompiler
         {
             var left = Evaluate(binaryOpNode.Left);
             var right = Evaluate(binaryOpNode.Right);
-            
+
             if (left is int && right is int)
                 return eval_numaric_binary_expr((int)left, (int)right, binaryOpNode.Operator);
             else if (left is string && right is string)
@@ -48,12 +50,12 @@ namespace MyCompiler
                 return eval_string_binary_expr(left.ToString(), (string)right, binaryOpNode.Operator);
             else if (left is string && right is int)
                 return eval_string_binary_expr((string)left, right.ToString(), binaryOpNode.Operator);
-  
+
             return "Invalid binary expression!";
         }
 
         private object eval_sequence_expr(SequenceNode sequenceNode)
-        {          
+        {
             var result = (object)null;
             foreach (var stmt in sequenceNode.Statements)
             {
@@ -68,22 +70,22 @@ namespace MyCompiler
             {
                 case "==":
                     if (left == right) return true;
-                        else return false;
+                    else return false;
                 case "!=":
                     if (left != right) return true;
-                        else return false;
+                    else return false;
                 case "<=":
-                     if (left <= right) return true;
-                        else return false;
-                case ">=": 
+                    if (left <= right) return true;
+                    else return false;
+                case ">=":
                     if (left >= right) return true;
-                        else return false;
+                    else return false;
                 case "<":
-                     if (left < right) return true;
-                        else return false;
-                case ">": 
+                    if (left < right) return true;
+                    else return false;
+                case ">":
                     if (left > right) return true;
-                        else return false;
+                    else return false;
                 default:
                     return "Invalid numeric operator!";
             }
@@ -95,27 +97,27 @@ namespace MyCompiler
             {
                 case "==":
                     if (left == right) return true;
-                        else return false;
+                    else return false;
                 case "!=":
                     if (left != right) return true;
-                        else return false;
- 
+                    else return false;
+
                 default:
                     return "Invalid string operator!";
             }
         }
         private object eval_comparison_expr(ComparisonNode comparisonNode)
-        {   
+        {
             var left = Evaluate(comparisonNode.Left);
-            var right = Evaluate(comparisonNode.Right);   
+            var right = Evaluate(comparisonNode.Right);
 
 
-            if (left is int && right is int)                
+            if (left is int && right is int)
                 return eval_numeric_comparison_expr((int)left, (int)right, comparisonNode.Operator);
 
             else if (left is string && right is string)
                 return eval_string_comparison_expr((string)left, (string)right, comparisonNode.Operator);
-            
+
             else if (left is bool && right is bool)
                 return eval_string_comparison_expr(left.ToString(), right.ToString(), comparisonNode.Operator);
 
@@ -136,15 +138,15 @@ namespace MyCompiler
             catch (System.Exception e)
             {
                 return e;
-            } 
+            }
         }
 
         private object eval_assign_expr(AssignNode assignNode)
         {
-            var expr  = Evaluate(assignNode.Expression);
+            var expr = Evaluate(assignNode.Expression);
             variables[assignNode.Id] = expr;
-            
-            return expr;
+
+            return null;
         }
 
         private object eval_if_expr(IfNode ifNode)
@@ -152,8 +154,16 @@ namespace MyCompiler
             var condition = Evaluate(ifNode.Condition);
             if (condition is bool)
             {
-                if ((bool)condition) return Evaluate(ifNode.ThenPart);
-                else if (ifNode.ElsePart != null) return Evaluate(ifNode.ElsePart);
+                if ((bool)condition)
+                {
+                    Evaluate(ifNode.ThenPart);
+                    return null;
+                }
+                else if (ifNode.ElsePart != null)
+                {
+                    Evaluate(ifNode.ElsePart);
+                    return null;
+                }
                 else return null;
             }
             return "Invalid condition!";
@@ -161,13 +171,13 @@ namespace MyCompiler
 
         private object eval_for_loop_expr(ForLoopNode forLoopNode)
         {
-            object result = null;   
-  
-            for (Evaluate(forLoopNode.Initialization); (bool)Evaluate(forLoopNode.Condition); Evaluate(forLoopNode.Step)) 
+            object result = null;
+
+            for (Evaluate(forLoopNode.Initialization); (bool)Evaluate(forLoopNode.Condition); Evaluate(forLoopNode.Step))
             {
                 result = Evaluate(forLoopNode.Body);
             }
-    
+
             return result;
         }
 
@@ -198,8 +208,8 @@ namespace MyCompiler
             if (resultOfPrint is int) resultOfPrint = resultOfPrint.ToString();
             if (resultOfPrint is string)
             {
-                Console.WriteLine(resultOfPrint);
-                return resultOfPrint;                
+                //Console.WriteLine(resultOfPrint);
+                return resultOfPrint;
             }
 
             return "Invalid print call!";
