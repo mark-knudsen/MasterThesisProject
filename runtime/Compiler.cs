@@ -138,6 +138,27 @@ namespace MyCompiler
             return _builder.BuildGlobalStringPtr(expr.Value, "str");
         }
 
+
+        // OLD VisitBinaryExpr - NO CONNCAT!
+        // public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
+        // {
+        //     var lhs = Visit(expr.Left);
+        //     var rhs = Visit(expr.Right);
+
+        //     switch (expr.Operator)
+        //     {
+        //         case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
+        //         case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
+        //         case "*": return _builder.BuildMul(lhs, rhs, "multmp");
+        //         case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
+        //         default: throw new InvalidOperationException("Unknown operator");
+        //     }
+        // }
+        public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
+        {
+            return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
+        }
+
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
             var lhs = Visit(expr.Left);

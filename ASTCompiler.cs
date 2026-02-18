@@ -9,6 +9,7 @@ namespace MyCompiler
     {
         Int,
         String,
+        Float,
         Bool,
         None
     }
@@ -67,6 +68,18 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNumberExpr(this);
     }
 
+    // Represents a float number (e.g., 10.0)
+    public class FloatNodeExpr : ExpressionNodeExpr
+    {
+        public double Value { get; }
+        public FloatNodeExpr(double value)
+        {
+            Value = value;
+            Type = MyType.Float; 
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
+    }
     // Represents a string (e.g., "Hello")
     public class StringNodeExpr : ExpressionNodeExpr
     {
