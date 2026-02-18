@@ -206,21 +206,75 @@ namespace MyCompiler
             return _builder.BuildGlobalStringPtr(expr.Value, "str");
         }
 
+        // OLD VisitBinaryExpr - NO CONNCAT!
+        // public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
+        // {
+        //     var lhs = Visit(expr.Left);
+        //     var rhs = Visit(expr.Right);
+
+        //     switch (expr.Operator)
+        //     {
+        //         case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
+        //         case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
+        //         case "*": return _builder.BuildMul(lhs, rhs, "multmp");
+        //         case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
+        //         default: throw new InvalidOperationException("Unknown operator");
+        //     }
+        // }
+
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
             var lhs = Visit(expr.Left);
             var rhs = Visit(expr.Right);
 
-            switch (expr.Operator)
+            // Check if we are doing string concatenation
+            if (expr.Operator == "+" && (expr.Left.Type == MyType.String || expr.Right.Type == MyType.String))
             {
-                case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
-                case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
-                case "*": return _builder.BuildMul(lhs, rhs, "multmp");
-                case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
-                default: throw new InvalidOperationException("Unknown operator");
+                return BuildStringConcat(lhs, expr.Left.Type, rhs, expr.Right.Type);
             }
-        }
 
+            // Standard Integer Math
+            return expr.Operator switch
+            {
+                "+" => _builder.BuildAdd(lhs, rhs, "addtmp"),
+                "-" => _builder.BuildSub(lhs, rhs, "subtmp"),
+                "*" => _builder.BuildMul(lhs, rhs, "multmp"),
+                "/" => _builder.BuildSDiv(lhs, rhs, "divtmp"),
+                _ => throw new InvalidOperationException("Unknown operator")
+            };
+        }
+        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
+        {
+            var llvmCtx = _module.Context;
+            var malloc = GetMalloc();
+            var sprintf = GetSprintf();
+
+            // 1. Allocate 256 bytes for the new string
+            var buffer = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), new[] { llvmCtx.Int64Type }),
+                malloc,
+                new[] { LLVMValueRef.CreateConstInt(llvmCtx.Int64Type, 256) },
+                "concat_buf"
+            );
+
+            // 2. Determine the format string (e.g., "%s%s", "%s%d", or "%d%s")
+            string fmtStr = "";
+            fmtStr += (lhsType == MyType.String) ? "%s" : "%d";
+            fmtStr += (rhsType == MyType.String) ? "%s" : "%d";
+
+            var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "concat_fmt");
+
+            // 3. Call sprintf(buffer, fmt, lhs, rhs)
+            var sprintfType = LLVMTypeRef.CreateFunction(
+                llvmCtx.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) },
+                true
+            );
+
+            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtPtr, lhs, rhs }, "sprintf_call");
+
+            return buffer;
+        }
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
@@ -368,25 +422,21 @@ namespace MyCompiler
         {
             var valueToPrint = Visit(expr.Expression);
             var printf = GetPrintf();
+            var llvmCtx = _module.Context;
 
             LLVMValueRef formatStr;
+            // Detect if the value is actually a pointer (string) or an i32
+            // valueToPrint.Type for a concatenated string will be a Pointer
+            bool isPointer = valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
 
-            // Determine format string based on type
-            if (expr.Expression.Type == MyType.Int)
-            {
-                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
-            }
-            else if (expr.Expression.Type == MyType.String)
+            if (isPointer || expr.Expression.Type == MyType.String)
             {
                 formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
             }
             else
             {
-                throw new Exception("Cannot print this type");
+                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
             }
-
-            // Call printf(formatStr, valueToPrint)
-            var llvmCtx = _module.Context;
 
             return _builder.BuildCall2(
                 LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true),
@@ -445,8 +495,24 @@ namespace MyCompiler
             // Return a dummy value (Loops are statements and don't usually return data)
             return LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 0);
         }
+        private LLVMValueRef GetMalloc()
+        {
+            var fn = _module.GetNamedFunction("malloc");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("malloc", LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
+                new[] { _module.Context.Int64Type }, false));
+        }
 
-
+        private LLVMValueRef GetSprintf()
+        {
+            var fn = _module.GetNamedFunction("sprintf");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("sprintf", LLVMTypeRef.CreateFunction(
+                _module.Context.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0) },
+                true));
+        }
         private LLVMTypeRef GetLLVMType(MyType type)
         {
             return type switch
