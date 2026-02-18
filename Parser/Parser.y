@@ -5,11 +5,13 @@
 %union { 
     public object obj; 
     public bool boolVal;
+    public double fval;
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
 }
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
+%token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE PRINT RANDOM FOR INC DECR
 %token GE LE EQ NE GT LT 
 
@@ -58,6 +60,7 @@ Assignment
 expr
     : BOOL_LITERAL        { $$ = new BooleanNodeExpr((bool)$1); }
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
+    | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
     | ID                  { $$ = new IdNodeExpr((string)$1); }
     | PRINT LPAREN expr RPAREN 

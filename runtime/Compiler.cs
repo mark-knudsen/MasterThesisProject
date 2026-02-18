@@ -37,41 +37,52 @@ namespace MyCompiler
 
         public object Run(NodeExpr expr)
         {
-            // 1. Initialize Module & Engine
+            // 1. Setup
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
             _engine = _module.CreateMCJITCompiler();
 
-            // 2. Resolve the last expression and its type (The Peeker)
-            ExpressionNodeExpr lastExpr = GetLastExpression(expr);
+            // 2. PREDICT the type (The "Peek")
+            var lastExpr = GetLastExpression(expr);
 
-            // Check if the last expression is a variable we already know about, 
-            // OR if it's being assigned right now in this sequence.
-            if (lastExpr is IdNodeExpr id)
+            // We check if it's a float or if it's an operation that results in a float
+            MyType prediction = lastExpr.Type;
+            if (lastExpr is BinaryOpNodeExpr bin && (bin.Left.Type == MyType.Float || bin.Right.Type == MyType.Float))
             {
-                // Look in existing context OR peek at the assignment in the current block
-                var type = _context.Get(id.Name)?.Type ?? PeekTypeInCurrentSequence(expr, id.Name);
-                id.SetType(type);
+                prediction = MyType.Float;
             }
 
-            // 3. Build the LLVM Function
-            LLVMTypeRef retType = lastExpr != null ? GetLLVMType(lastExpr.Type) : LLVMTypeRef.Void;
+            LLVMTypeRef llvmRetType = GetLLVMType(prediction);
 
-            var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", LLVMTypeRef.CreateFunction(retType, Array.Empty<LLVMTypeRef>()));
+            // 3. Create Function Signature
+            var funcType = LLVMTypeRef.CreateFunction(llvmRetType, Array.Empty<LLVMTypeRef>());
+            var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
             _builder.PositionAtEnd(func.AppendBasicBlock("entry"));
 
-            // 4. Compile body and Return
+            // 4. GENERATE CODE (The only Visit call)
             var resultValue = Visit(expr);
-            if (retType.Handle != LLVMTypeRef.Void.Handle)
+
+            // 5. Finalize the Return
+            // If our prediction was Int but Visit actually produced a Float (or vice versa),
+            // we must make sure the 'ret' instruction matches the 'define' signature.
+            if (llvmRetType != LLVMTypeRef.Void)
+            {
+                // If the function signature says double, make sure we return a double
+                if (llvmRetType == LLVMTypeRef.Double && resultValue.TypeOf != LLVMTypeRef.Double)
+                {
+                    resultValue = _builder.BuildSIToFP(resultValue, LLVMTypeRef.Double, "ret_conv");
+                }
                 _builder.BuildRet(resultValue);
+            }
             else
+            {
                 _builder.BuildRetVoid();
-
+            }
             Console.WriteLine(_module.PrintToString());
-
-            // 5. Execute and Extract
+            
+            // 6. Execute
             var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
-            return ExtractResult(res, lastExpr?.Type ?? MyType.None);
+            return ExtractResult(res, prediction);
         }
 
         // --- Helpers to keep Run() clean ---
@@ -97,6 +108,8 @@ namespace MyCompiler
         private object ExtractResult(LLVMGenericValueRef res, MyType type)
         {
             if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 0);
+            if (type == MyType.Float)
+                return LLVM.GenericValueToFloat(_module.Context.DoubleType, res);
             if (type == MyType.String)
             {
                 nint ptr = (nint)LLVM.GenericValueToPointer(res);
@@ -137,6 +150,10 @@ namespace MyCompiler
         {
             return _builder.BuildGlobalStringPtr(expr.Value, "str");
         }
+        public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
+        {
+            return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
+        }
 
         // OLD VisitBinaryExpr - NO CONNCAT!
         // public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
@@ -159,6 +176,26 @@ namespace MyCompiler
             var lhs = Visit(expr.Left);
             var rhs = Visit(expr.Right);
 
+
+            // If either side is a Float, we do floating point math
+            bool isFloat = (expr.Left.Type == MyType.Float || expr.Right.Type == MyType.Float);
+
+            if (isFloat)
+            {
+
+                // For simplicity, you might need to "Promote" an Int to a Float here
+                lhs = EnsureFloat(lhs, expr.Left.Type);
+                rhs = EnsureFloat(rhs, expr.Right.Type);
+
+                return expr.Operator switch
+                {
+                    "+" => _builder.BuildFAdd(lhs, rhs, "faddtmp"),
+                    "-" => _builder.BuildFSub(lhs, rhs, "fsubtmp"),
+                    "*" => _builder.BuildFMul(lhs, rhs, "fmultmp"),
+                    "/" => _builder.BuildFDiv(lhs, rhs, "fdivtmp"),
+                    _ => throw new InvalidOperationException()
+                };
+            }
             // Check if we are doing string concatenation
             if (expr.Operator == "+" && (expr.Left.Type == MyType.String || expr.Right.Type == MyType.String))
             {
@@ -175,38 +212,7 @@ namespace MyCompiler
                 _ => throw new InvalidOperationException("Unknown operator")
             };
         }
-        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
-        {
-            var llvmCtx = _module.Context;
-            var malloc = GetMalloc();
-            var sprintf = GetSprintf();
 
-            // 1. Allocate 256 bytes for the new string
-            var buffer = _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), new[] { llvmCtx.Int64Type }),
-                malloc,
-                new[] { LLVMValueRef.CreateConstInt(llvmCtx.Int64Type, 256) },
-                "concat_buf"
-            );
-
-            // 2. Determine the format string (e.g., "%s%s", "%s%d", or "%d%s")
-            string fmtStr = "";
-            fmtStr += (lhsType == MyType.String) ? "%s" : "%d";
-            fmtStr += (rhsType == MyType.String) ? "%s" : "%d";
-
-            var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "concat_fmt");
-
-            // 3. Call sprintf(buffer, fmt, lhs, rhs)
-            var sprintfType = LLVMTypeRef.CreateFunction(
-                llvmCtx.Int32Type,
-                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) },
-                true
-            );
-
-            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtPtr, lhs, rhs }, "sprintf_call");
-
-            return buffer;
-        }
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
@@ -391,24 +397,29 @@ namespace MyCompiler
 
             LLVMValueRef formatStr;
 
-            // Detect if the value is actually a pointer (string) or an i32
-            // valueToPrint.Type for a concatenated string will be a Pointer
-            bool isPointer = valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
+            // 1. Get the actual LLVM Kind
+            var typeKind = valueToPrint.TypeOf.Kind;
 
-            if (isPointer || expr.Expression.Type == MyType.String)
+            // 2. Select format string based on the REAL IR type
+            if (typeKind == LLVMTypeKind.LLVMDoubleTypeKind)
+            {
+                formatStr = _builder.BuildGlobalStringPtr("%f\n", "print_float_fmt");
+            }
+            else if (typeKind == LLVMTypeKind.LLVMPointerTypeKind)
             {
                 formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
             }
-            else
+            else // Assume i32/i1
             {
                 formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
             }
-            return _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true),
-                printf,
-                new[] { formatStr, valueToPrint },
-                "printcall"
-            );
+
+            // 3. Call printf
+            var printfType = LLVMTypeRef.CreateFunction(llvmCtx.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true);
+
+            return _builder.BuildCall2(printfType, printf,
+                new[] { formatStr, valueToPrint }, "printcall");
         }
 
         // For loop implementation to LLVM, more advanced
@@ -460,6 +471,48 @@ namespace MyCompiler
             // Return a dummy value (Loops are statements and don't usually return data)
             return LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 0);
         }
+
+
+        //------Helper-functions------//
+
+        private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType type)
+        {
+            if (type == MyType.Int)
+                return _builder.BuildSIToFP(value, _module.Context.DoubleType, "floatconv");
+            return value;
+        }
+        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
+        {
+            var llvmCtx = _module.Context;
+            var malloc = GetMalloc();
+            var sprintf = GetSprintf();
+
+            // 1. Allocate 256 bytes for the new string
+            var buffer = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), new[] { llvmCtx.Int64Type }),
+                malloc,
+                new[] { LLVMValueRef.CreateConstInt(llvmCtx.Int64Type, 256) },
+                "concat_buf"
+            );
+
+            // 2. Determine the format string (e.g., "%s%s", "%s%d", or "%d%s")
+            string fmtStr = "";
+            fmtStr += (lhsType == MyType.String) ? "%s" : "%d";
+            fmtStr += (rhsType == MyType.String) ? "%s" : "%d";
+
+            var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "concat_fmt");
+
+            // 3. Call sprintf(buffer, fmt, lhs, rhs)
+            var sprintfType = LLVMTypeRef.CreateFunction(
+                llvmCtx.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) },
+                true
+            );
+
+            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtPtr, lhs, rhs }, "sprintf_call");
+
+            return buffer;
+        }
         private LLVMValueRef GetMalloc()
         {
             var fn = _module.GetNamedFunction("malloc");
@@ -483,7 +536,7 @@ namespace MyCompiler
             return type switch
             {
                 MyType.Int => LLVMTypeRef.Int32,
-                // Ensure this matches the pointer type in your IR
+                MyType.Float => LLVMTypeRef.Double, // I try this!
                 MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
                 MyType.Bool => LLVMTypeRef.Int1,
                 _ => LLVMTypeRef.Void

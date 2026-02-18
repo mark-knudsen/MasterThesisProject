@@ -7,7 +7,7 @@ namespace MyCompiler
     {
 
         LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
-        
+        LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
         LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
         // LLVMValueRef VisitCall(CallExpression expr);
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);

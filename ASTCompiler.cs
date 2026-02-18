@@ -10,6 +10,7 @@ namespace MyCompiler
         Int,
         String,
         Bool,
+        Float,
         None
     }
     // The base class for all NodeExprs in your tree
@@ -52,6 +53,17 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
     }
 
+    public class FloatNodeExpr : ExpressionNodeExpr
+    {
+        public double Value { get; }
+        public FloatNodeExpr(double value)
+        {
+            Value = value;
+            Type = MyType.Float;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
+    }
     // Represents a single number (e.g., 10)
     public class NumberNodeExpr : ExpressionNodeExpr
     {
