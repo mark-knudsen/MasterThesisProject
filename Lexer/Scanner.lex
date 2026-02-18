@@ -35,6 +35,8 @@
 "="             { return (int)Tokens.ASSIGN; }
 "("             { return (int)Tokens.LPAREN; }
 ")"             { return (int)Tokens.RPAREN; }
+"["             { return (int)Tokens.LBRACKET; }
+"]"             { return (int)Tokens.RBRACKET; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
 
