@@ -294,36 +294,36 @@ namespace MyCompiler
         {
             var llvmCtx = _module.Context;
 
-            // Get the rand function (or declare it if it doesn't exist)
+            // Get or declare rand()
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
-                var randType = LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>());
+                var randType = LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>(), false);
                 randFunc = _module.AddFunction("rand", randType);
             }
 
-            // Call rand() to get a random integer
-            var randValue = _builder.BuildCall(randFunc, Array.Empty<LLVMValueRef>(), "randcall");
+            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()), 
+            randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
-            // If min and max are specified, we need to do: (rand() % (max - min + 1)) + min
             if (expr.MinValue != null && expr.MaxValue != null)
             {
-                // Generate LLVM IR for min and max expressions
                 var minValue = Visit(expr.MinValue);
                 var maxValue = Visit(expr.MaxValue);
 
-                // rangeSize = (max - min + 1)
                 var diff = _builder.BuildSub(maxValue, minValue, "diff");
+
+                if(_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
+                {
+                    diff = _builder.BuildSub(minValue, maxValue, "diff"); 
+                    minValue = maxValue;
+                }
+
                 var one = LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 1, false);
                 var rangeSize = _builder.BuildAdd(diff, one, "rangesize");
 
-                // rand() % rangeSize
                 var modResult = _builder.BuildSRem(randValue, rangeSize, "modtmp");
-
-                // + min
                 return _builder.BuildAdd(modResult, minValue, "randomInRange");
             }
-
 
             return randValue;
         }
