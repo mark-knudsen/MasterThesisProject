@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 18/02/2026 10:21:34
-//  GPLEX input file <Lexer/Scanner.lex - 16/02/2026 17:20:04>
+//  DateTime: 18-02-2026 13:15:49
+//  GPLEX input file <Lexer/Scanner.lex - 18-02-2026 13:13:21>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -121,8 +121,8 @@ namespace MyCompiler
         
         enum Result {accept, noMatch, contextFound};
 
-        const int maxAccept = 53;
-        const int initial = 54;
+        const int maxAccept = 54;
+        const int initial = 55;
         const int eofNum = 0;
         const int goStart = -1;
         const int INITIAL = 0;
@@ -159,24 +159,24 @@ namespace MyCompiler
         }
     };
 
-    static int[] startState = new int[] {54, 0};
+    static int[] startState = new int[] {55, 0};
 
-    static Table[] NxS = new Table[56] {
+    static Table[] NxS = new Table[58] {
 /* NxS[   0] */ new Table(0, 0, 0, null),
 /* NxS[   1] */ new Table(0, 0, -1, null),
 /* NxS[   2] */ new Table(0, 0, -1, null),
-/* NxS[   3] */ new Table(61, 1, -1, new sbyte[] {53}),
-/* NxS[   4] */ new Table(34, 1, 55, new sbyte[] {52}),
+/* NxS[   3] */ new Table(61, 1, -1, new sbyte[] {54}),
+/* NxS[   4] */ new Table(34, 1, 57, new sbyte[] {53}),
 /* NxS[   5] */ new Table(10, 1, 5, new sbyte[] {-1}),
 /* NxS[   6] */ new Table(0, 0, -1, null),
 /* NxS[   7] */ new Table(0, 0, -1, null),
 /* NxS[   8] */ new Table(0, 0, -1, null),
-/* NxS[   9] */ new Table(43, 1, -1, new sbyte[] {51}),
+/* NxS[   9] */ new Table(43, 1, -1, new sbyte[] {52}),
 /* NxS[  10] */ new Table(0, 0, -1, null),
-/* NxS[  11] */ new Table(45, 1, -1, new sbyte[] {50}),
+/* NxS[  11] */ new Table(45, 1, -1, new sbyte[] {51}),
 /* NxS[  12] */ new Table(0, 0, -1, null),
-/* NxS[  13] */ new Table(48, 10, -1, new sbyte[] {13, 13, 13, 13, 13, 13, 
-          13, 13, 13, 13}),
+/* NxS[  13] */ new Table(46, 12, -1, new sbyte[] {56, -1, 13, 13, 13, 13, 
+          13, 13, 13, 13, 13, 13}),
 /* NxS[  14] */ new Table(0, 0, -1, null),
 /* NxS[  15] */ new Table(61, 1, -1, new sbyte[] {49}),
 /* NxS[  16] */ new Table(61, 1, -1, new sbyte[] {48}),
@@ -358,11 +358,13 @@ namespace MyCompiler
 /* NxS[  47] */ new Table(0, 0, -1, null),
 /* NxS[  48] */ new Table(0, 0, -1, null),
 /* NxS[  49] */ new Table(0, 0, -1, null),
-/* NxS[  50] */ new Table(0, 0, -1, null),
+/* NxS[  50] */ new Table(48, 10, -1, new sbyte[] {50, 50, 50, 50, 50, 50, 
+          50, 50, 50, 50}),
 /* NxS[  51] */ new Table(0, 0, -1, null),
 /* NxS[  52] */ new Table(0, 0, -1, null),
 /* NxS[  53] */ new Table(0, 0, -1, null),
-/* NxS[  54] */ new Table(9, 114, 1, new sbyte[] {2, 2, 1, 1, 2, 1, 
+/* NxS[  54] */ new Table(0, 0, -1, null),
+/* NxS[  55] */ new Table(9, 114, 1, new sbyte[] {2, 2, 1, 1, 2, 1, 
           1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
           1, 2, 3, 4, 5, 1, 1, 1, 1, 6, 7, 8, 9, 10, 11, 1, 
           12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 1, 14, 15, 16, 17, 
@@ -370,7 +372,9 @@ namespace MyCompiler
           18, 18, 18, 19, 18, 18, 18, 18, 18, 18, 18, 18, 1, 1, 1, 1, 
           18, 1, 18, 18, 18, 18, 20, 21, 18, 18, 22, 18, 18, 18, 18, 18, 
           18, 23, 18, 18, 18, 24, 18, 18, 18, 18, 18, 18}),
-/* NxS[  55] */ new Table(34, 1, 55, new sbyte[] {52}),
+/* NxS[  56] */ new Table(48, 10, -1, new sbyte[] {50, 50, 50, 50, 50, 50, 
+          50, 50, 50, 50}),
+/* NxS[  57] */ new Table(34, 1, 57, new sbyte[] {53}),
     };
 
 int NextState() {
@@ -892,15 +896,18 @@ return (int)Tokens.EQ;
 return (int)Tokens.LE;
             break;
         case 50:
-return (int)Tokens.DECR;
+yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return FLOAT_LITERAL;
             break;
         case 51:
-return (int)Tokens.INC;
+return (int)Tokens.DECR;
             break;
         case 52:
-yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+return (int)Tokens.INC;
             break;
         case 53:
+yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+            break;
+        case 54:
 return (int)Tokens.NE;
             break;
         default:
