@@ -79,7 +79,7 @@ namespace MyCompiler
                 _builder.BuildRetVoid();
             }
             Console.WriteLine(_module.PrintToString());
-            
+
             // 6. Execute
             var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
             return ExtractResult(res, prediction);
@@ -350,6 +350,38 @@ namespace MyCompiler
 
             return null;
         }
+        public LLVMValueRef VisitRoundExpr(RoundNodeExpr expr)
+        {
+            var val = EnsureFloat(Visit(expr.Value), expr.Value.Type);
+            var decimals = EnsureFloat(Visit(expr.Decimals), expr.Decimals.Type);
+
+            var doubleType = LLVMTypeRef.Double;
+            var powType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
+            var roundType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
+
+            // FIX: Change GetFunction to GetNamedFunction
+            var powFunc = _module.GetNamedFunction("pow");
+            if (powFunc.Handle == IntPtr.Zero) // Check if it exists
+                powFunc = _module.AddFunction("pow", powType);
+
+            var roundFunc = _module.GetNamedFunction("round");
+            if (roundFunc.Handle == IntPtr.Zero)
+                roundFunc = _module.AddFunction("round", roundType);
+
+            // multiplier = pow(10.0, decimals)
+            var ten = LLVMValueRef.CreateConstReal(doubleType, 10.0);
+            var multiplier = _builder.BuildCall2(powType, powFunc, new[] { ten, decimals }, "multiplier");
+
+            // temp = val * multiplier
+            var temp = _builder.BuildFMul(val, multiplier, "temp");
+
+            // roundedTemp = round(temp)
+            var roundedTemp = _builder.BuildCall2(roundType, roundFunc, new[] { temp }, "roundedTemp");
+
+            // result = roundedTemp / multiplier
+            return _builder.BuildFDiv(roundedTemp, multiplier, "rounded_final");
+        }
+
 
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {

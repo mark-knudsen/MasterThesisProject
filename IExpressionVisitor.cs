@@ -14,6 +14,7 @@ namespace MyCompiler
         // LLVMValueRef VisitFunction(FunctionExpression expr);
         LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
         LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
+        LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
         LLVMValueRef VisitIfExpr(IfNodeExpr expr);
         LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);

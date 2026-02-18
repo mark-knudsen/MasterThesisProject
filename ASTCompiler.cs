@@ -53,6 +53,20 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
     }
 
+    public class RoundNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Value { get; }
+        public ExpressionNodeExpr Decimals { get; }
+
+        public RoundNodeExpr(ExpressionNodeExpr value, ExpressionNodeExpr decimals)
+        {
+            Value = value;
+            Decimals = decimals;
+            Type = MyType.Float;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
+    }
     public class FloatNodeExpr : ExpressionNodeExpr
     {
         public double Value { get; }
