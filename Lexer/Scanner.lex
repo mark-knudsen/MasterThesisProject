@@ -12,7 +12,7 @@
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }
 "false"         { yylval.boolVal = false; return (int)Tokens.BOOL_LITERAL; }
 "print"         { return (int)Tokens.PRINT; }
-"Random"        { return (int)Tokens.RANDOM; }
+"random"        { return (int)Tokens.RANDOM; }
 "for"           { return (int)Tokens.FOR; }
 
 ">="            { return (int)Tokens.GE; }

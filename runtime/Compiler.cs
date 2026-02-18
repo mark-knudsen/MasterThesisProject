@@ -35,74 +35,6 @@ namespace MyCompiler
             _passBuilderOptions = LLVM.CreatePassBuilderOptions();
         }
 
-
-        // public object Run(NodeExpr expr) // everything works but just not with strings
-        // {
-        //     // Create a fresh module
-        //     _module = LLVMModuleRef.CreateWithName("repl_module");
-        //     _builder = _module.Context.CreateBuilder();
-
-        //     // Create a new JIT engine for this module
-        //     _engine = _module.CreateMCJITCompiler();
-
-        //     // Create a single anonymous function for this input
-        //     LLVMTypeRef returnType;
-        //     MyType exprType = MyType.None;
-
-        //     if (expr is ExpressionNodeExpr eExpr)
-        //     {
-        //         returnType = GetLLVMType(eExpr.Type);
-        //         exprType = eExpr.Type;
-        //     }
-        //     else
-        //     {
-        //         returnType = LLVMTypeRef.Void; // statements / functions return void
-        //     }
-
-        //     //var returnType = GetLLVMType(expr.Type);
-
-        //     System.Console.WriteLine($"Compiling expression of type {exprType} to LLVM IR...");
-        //     System.Console.WriteLine($"Return type{returnType} to LLVM IR...");
-
-        //     var funcType = LLVMTypeRef.CreateFunction(
-        //         returnType,
-        //         Array.Empty<LLVMTypeRef>()
-        //     );
-
-        //     var functionName = $"anon_expr_{Guid.NewGuid():N}";
-        //     var function = _module.AddFunction(functionName, funcType);
-
-        //     var entry = function.AppendBasicBlock("entry");
-        //     _builder.PositionAtEnd(entry);
-
-        //     // Generate instructions for the AST
-        //     var resultValue = Visit(expr);
-
-        //     _builder.BuildRet(resultValue);
-
-        //     // Print the IR for debugging
-        //     Console.WriteLine(_module.PrintToString());
-
-        //     // Execute the function
-        //     var res = _engine.RunFunction(function, Array.Empty<LLVMGenericValueRef>());
-        //     int finalResult = (int)LLVM.GenericValueToInt(res, 0);
-
-        //     if (exprType == MyType.Int)
-        //     {
-        //         return (int)LLVM.GenericValueToInt(res, 0); // 0 = unsigned
-        //     }
-        //     else if (exprType == MyType.String)
-        //     {
-        //         var ptr = LLVM.GenericValueToPointer(res);
-        //         return Marshal.PtrToStringAnsi((nint)ptr);
-        //     }
-
-        //     System.Console.WriteLine(" we using fallback for unknown type, returning int result as string");
-
-        //     return finalResult; // fall back
-        // }
-
-
         public object Run(NodeExpr expr)
         {
             // 1. Initialize Module & Engine
@@ -135,7 +67,7 @@ namespace MyCompiler
             else
                 _builder.BuildRetVoid();
 
-            System.Console.WriteLine(_module.PrintToString());
+            Console.WriteLine(_module.PrintToString());
 
             // 5. Execute and Extract
             var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
@@ -300,7 +232,6 @@ namespace MyCompiler
             return value;
         }
 
-
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
@@ -313,9 +244,6 @@ namespace MyCompiler
             LLVMTypeRef llvmType = GetLLVMType(actualType);
             return _builder.BuildLoad2(llvmType, entry.Value.Value, expr.Name);
         }
-
-
-
 
         public LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr)
         {
@@ -335,7 +263,6 @@ namespace MyCompiler
 
             return decremented;
         }
-
 
         public LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr)
         {
@@ -418,6 +345,44 @@ namespace MyCompiler
             return null;
         }
 
+        public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
+        {
+            var llvmCtx = _module.Context;
+
+            // Get or declare rand()
+            var randFunc = _module.GetNamedFunction("rand");
+            if (randFunc.Handle == IntPtr.Zero)
+            {
+                var randType = LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>(), false);
+                randFunc = _module.AddFunction("rand", randType);
+            }
+
+            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()), 
+            randFunc, Array.Empty<LLVMValueRef>(), "randcall");
+
+            if (expr.MinValue != null && expr.MaxValue != null)
+            {
+                var minValue = Visit(expr.MinValue);
+                var maxValue = Visit(expr.MaxValue);
+
+                var diff = _builder.BuildSub(maxValue, minValue, "diff");
+
+                if(_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
+                {
+                    diff = _builder.BuildSub(minValue, maxValue, "diff"); 
+                    minValue = maxValue;
+                }
+
+                var one = LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 1, false);
+                var rangeSize = _builder.BuildAdd(diff, one, "rangesize");
+
+                var modResult = _builder.BuildSRem(randValue, rangeSize, "modtmp");
+                return _builder.BuildAdd(modResult, minValue, "randomInRange");
+            }
+
+            return randValue;
+        }
+
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
@@ -429,14 +394,13 @@ namespace MyCompiler
             // valueToPrint.Type for a concatenated string will be a Pointer
             bool isPointer = valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
 
-            if (isPointer || expr.Expression.Type == MyType.String)
-            {
-                formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
-            }
-            else
-            {
+            // Determine format string based on type
+            if (expr.Expression.Type == MyType.Int)
                 formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
-            }
+            else if (expr.Expression.Type == MyType.String)
+                formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
+            else
+                throw new Exception("Cannot print this type");
 
             return _builder.BuildCall2(
                 LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true),
@@ -504,15 +468,6 @@ namespace MyCompiler
                 new[] { _module.Context.Int64Type }, false));
         }
 
-        private LLVMValueRef GetSprintf()
-        {
-            var fn = _module.GetNamedFunction("sprintf");
-            if (fn.Handle != IntPtr.Zero) return fn;
-            return _module.AddFunction("sprintf", LLVMTypeRef.CreateFunction(
-                _module.Context.Int32Type,
-                new[] { LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0) },
-                true));
-        }
         private LLVMTypeRef GetLLVMType(MyType type)
         {
             return type switch

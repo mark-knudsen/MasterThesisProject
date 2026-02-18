@@ -24,11 +24,9 @@ namespace MyCompiler
         public MyType Type { get; protected set; }
         // Add this setter helper
         public void SetType(MyType type) => Type = type;
-
     }
 
     public abstract class StatementNodeExpr : NodeExpr { }
-    public abstract class FunctionNodeExpr : NodeExpr { }
 
     public class PrintNodeExpr : ExpressionNodeExpr
     {
@@ -41,7 +39,7 @@ namespace MyCompiler
     }
 
     // Represents Random function
-    public class RandomNodeExpr : FunctionNodeExpr
+    public class RandomNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr MinValue { get; set; }
         public ExpressionNodeExpr MaxValue { get; set; }
@@ -51,7 +49,7 @@ namespace MyCompiler
             MinValue = minValue;
             MaxValue = maxValue;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
     }
 
     // Represents a single number (e.g., 10)
