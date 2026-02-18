@@ -28,6 +28,11 @@ namespace MyCompiler
         // LLVMValueRef VisitExtern(ExternExpression expr);
         // LLVMValueRef VisitUnary(UnaryExpression expr);
         // LLVMValueRef VisitVarInExpression(VarInExpression expr);
+
+
+        // Visit for define and usage of created functions
+        LLVMValueRef VisitFunctionDef(FunctionDefNode node);
+        LLVMValueRef VisitFunctionCall(FunctionCallNode node);
     }
 
 }

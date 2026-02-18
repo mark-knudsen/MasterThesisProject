@@ -14,6 +14,7 @@
 "print"         { return (int)Tokens.PRINT; }
 "random"        { return (int)Tokens.RANDOM; }
 "round"         { return (int)Tokens.ROUND; }
+"func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
 
 ">="            { return (int)Tokens.GE; }
@@ -37,6 +38,8 @@
 "="             { return (int)Tokens.ASSIGN; }
 "("             { return (int)Tokens.LPAREN; }
 ")"             { return (int)Tokens.RPAREN; }
+"{"             { return (int)Tokens.LBRACE; }
+"}"             { return (int)Tokens.RBRACE; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
 

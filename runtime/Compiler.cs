@@ -12,9 +12,15 @@ namespace MyCompiler
     {
         private LLVMModuleRef _module;
         private LLVMBuilderRef _builder;
-        private LLVMExecutionEngineRef _engine;
+
         private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
+
+        // Global variables (persists across REPL lines)
+        private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
+
+        // Local variables (only exists while compiling a specific function)
+        private Dictionary<string, LLVMValueRef> _localScope = null;
 
         public Compiler()
         {
@@ -24,7 +30,6 @@ namespace MyCompiler
 
             _module = LLVMModuleRef.CreateWithName("base");
             _builder = _module.Context.CreateBuilder();
-            _engine = _module.CreateMCJITCompiler();
             _context = Context.Empty; // stores variables/functions
         }
 
@@ -40,7 +45,7 @@ namespace MyCompiler
             // 1. Setup
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
-            _engine = _module.CreateMCJITCompiler();
+            LLVMExecutionEngineRef _engine = _module.CreateMCJITCompiler();
 
             // 2. PREDICT the type (The "Peek")
             // 2. PREDICT the type (The "Peek")
@@ -69,6 +74,8 @@ namespace MyCompiler
 
             // 4. GENERATE CODE (The only Visit call)
             var resultValue = Visit(expr);
+            if (prediction == MyType.None) return "Function Defined";
+
 
             // 5. Finalize the Return
             // If our prediction was Int but Visit actually produced a Float (or vice versa),
@@ -248,13 +255,25 @@ namespace MyCompiler
 
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
+            // 1. Check Local Function Parameters FIRST
+            // These are direct values, so we return them immediately (no Load needed)
+            if (_localScope != null && _localScope.TryGetValue(expr.Name, out var paramValue))
+            {
+                // For your thesis: Parameters in this setup are treated as Floats 
+                // because our FunctionDef defines them as doubles.
+                expr.SetType(MyType.Float);
+                return paramValue;
+            }
+
+            // 2. Check the Symbol Table (Global Variables)
             var entry = _context.Get(expr.Name);
             if (entry is null) throw new Exception($"Variable {expr.Name} not defined");
 
-            // CRITICAL: Pull the type from the symbol table and put it on the node
+            // Pull the type from the symbol table
             var actualType = entry.Value.Type;
             expr.SetType(actualType);
 
+            // Variables are pointers in memory, so we MUST use BuildLoad2
             LLVMTypeRef llvmType = GetLLVMType(actualType);
             return _builder.BuildLoad2(llvmType, entry.Value.Value, expr.Name);
         }
@@ -522,13 +541,90 @@ namespace MyCompiler
         }
 
 
+
+
+        public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
+        {
+            // 1. Define the function signature (all doubles for simplicity)
+            var doubleType = LLVMTypeRef.Double;
+            var argTypes = Enumerable.Repeat(doubleType, node.Parameters.Count).ToArray();
+            var funcType = LLVMTypeRef.CreateFunction(doubleType, argTypes);
+
+            // 2. Add function to module
+            var func = _module.AddFunction(node.Name, funcType);
+
+            // 3. Save the current builder position (the REPL entry)
+            var previousBlock = _builder.InsertBlock;
+
+            // 4. Start building the function body
+            var entry = func.AppendBasicBlock("entry");
+            _builder.PositionAtEnd(entry);
+
+            // 5. Create a NEW local scope for this function
+            _localScope = new Dictionary<string, LLVMValueRef>();
+            for (int i = 0; i < node.Parameters.Count; i++)
+            {
+                var paramName = node.Parameters[i];
+                var paramValue = func.GetParam((uint)i);
+                _localScope[paramName] = paramValue;
+            }
+
+            // 6. Compile the body and return the result
+            var bodyResult = Visit(node.Body);
+            // Ensure the result is a Double to match the signature
+            var finalResult = EnsureFloat(bodyResult, MyType.Float);
+            _builder.BuildRet(finalResult);
+
+            // 7. CLEAN UP: Remove local scope and go back to where we were
+            _localScope = null;
+            if (previousBlock.Handle != IntPtr.Zero)
+                _builder.PositionAtEnd(previousBlock);
+
+            return func;
+        }
+
+        public LLVMValueRef VisitFunctionCall(FunctionCallNode node)
+        {
+            var func = _module.GetNamedFunction(node.Name);
+            if (func.Handle == IntPtr.Zero)
+                throw new Exception($"Function {node.Name} not found");
+
+            // 1. Visit all arguments
+            var args = new LLVMValueRef[node.Arguments.Count];
+            for (int i = 0; i < node.Arguments.Count; i++)
+            {
+                var argVal = Visit(node.Arguments[i]);
+                args[i] = EnsureFloat(argVal, node.Arguments[i].Type);
+            }
+
+            // 2. REPLACEMENT FOR GlobalValueType:
+            // In LLVM, a function value is actually a pointer to a function. 
+            // We need the "FunctionType" itself for BuildCall2.
+            LLVMTypeRef funcType = func.TypeOf.ElementType;
+
+            // 3. Robustness Check: If funcType is somehow null (opaque pointers), 
+            // we can reconstruct it since we know our functions use Double.
+            if (funcType.Handle == IntPtr.Zero)
+            {
+                var doubleType = LLVMTypeRef.Double;
+                var argTypes = Enumerable.Repeat(doubleType, node.Arguments.Count).ToArray();
+                funcType = LLVMTypeRef.CreateFunction(doubleType, argTypes);
+            }
+
+            // 4. Build the call
+            return _builder.BuildCall2(funcType, func, args, "calltmp");
+        }
+
+
         //------Helper-functions------//
 
-        private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType type)
+        private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
         {
-            if (type == MyType.Int)
-                return _builder.BuildSIToFP(value, _module.Context.DoubleType, "floatconv");
-            return value;
+            if (value.TypeOf == LLVMTypeRef.Double) return value;
+            if (value.TypeOf == LLVMTypeRef.Int32)
+                return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_tmp");
+
+            return value; // Hope for the best, or throw an error
         }
         private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
         {

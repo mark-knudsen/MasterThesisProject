@@ -12,7 +12,9 @@
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN IF ELSE PRINT RANDOM ROUND FOR INC DECR
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA 
+%token LPAREN RPAREN LBRACE RBRACE IF ELSE FOR INC DECR
+%token PRINT RANDOM ROUND FUNC
 %token GE LE EQ NE GT LT 
 
 %nonassoc IF
@@ -22,7 +24,8 @@
 %left MULT DIV
 %left GE LE EQ NE GT LT
 
-%type <node> expr Statement StatementList Prog Assignment
+%type <node> Prog Statement StatementList Assignment expr
+%type <obj> params args  /* Use <obj> for lists */
 
 /* This tells the parser which C# variable stores the final tree */
 %{
@@ -37,6 +40,7 @@ Prog
 
 StatementList
     : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
+    | StatementList Statement { ((SequenceNodeExpr)$1).Statements.Add($2); $$ = $1; }
     | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
     | StatementList SEMICOLON { $$ = $1; }
     ;
@@ -62,6 +66,10 @@ expr
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
+    | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
+                          { $$ = new FunctionDefNode((string)$2, (List<string>)$4, $7 as NodeExpr); }
+    | ID LPAREN args RPAREN 
+                          { $$ = new FunctionCallNode((string)$1, (List<ExpressionNodeExpr>)$3); }
     | ID                  { $$ = new IdNodeExpr((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNodeExpr($3 as ExpressionNodeExpr); }
@@ -84,6 +92,17 @@ expr
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
 
+params
+    : /* empty */ { $$ = new List<string>(); }
+    | ID { var list = new List<string>(); list.Add((string)$1); $$ = list; }
+    | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
+    ;
+
+args
+    : /* empty */ { $$ = new List<ExpressionNodeExpr>(); }
+    | expr { var list = new List<ExpressionNodeExpr>(); list.Add($1 as ExpressionNodeExpr); $$ = list; }
+    | args COMMA expr { var list = (List<ExpressionNodeExpr>)$1; list.Add($3 as ExpressionNodeExpr); $$ = list; }
+    ;
 %%
 
 internal Parser(Scanner s) : base(s) { }

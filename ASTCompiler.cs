@@ -34,6 +34,10 @@ namespace MyCompiler
         public void SetType(MyType type) => Type = type;
     }
 
+
+    //-----Built-in-function-nodes-----//
+
+    // Represents print function
     public class PrintNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr Expression { get; set; }
@@ -72,6 +76,40 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
     }
+
+    //------Function-nodes------//
+    public class FunctionDefNode : NodeExpr
+    {
+        public string Name { get; }
+        public List<string> Parameters { get; }
+        public NodeExpr Body { get; }
+
+        public FunctionDefNode(string name, List<string> parameters, NodeExpr body)
+        {
+            Name = name;
+            Parameters = parameters;
+            Body = body;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionDef(this);
+    }
+
+    public class FunctionCallNode : ExpressionNodeExpr
+    {
+        public string Name { get; }
+        public List<ExpressionNodeExpr> Arguments { get; }
+
+        public FunctionCallNode(string name, List<ExpressionNodeExpr> arguments)
+        {
+            Name = name;
+            Arguments = arguments;
+            // For now, we assume functions return Float to be safe with math
+            Type = MyType.Float;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
+    }
+
     public class FloatNodeExpr : ExpressionNodeExpr
     {
         public double Value { get; }
