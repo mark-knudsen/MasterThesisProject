@@ -10,6 +10,7 @@ namespace MyCompiler
         Int,
         String,
         Bool,
+        Array,
         None
     }
     // The base class for all NodeExprs in your tree
@@ -100,7 +101,7 @@ namespace MyCompiler
     }
 
     // Represents an assignment (e.g., x = 10)
-    public class AssignNodeExpr : StatementNodeExpr
+    public class AssignNodeExpr : ExpressionNodeExpr // should this be StatementNodeExpr or ExpressionNodeExpr?
     {
         public string Id { get; set; }  // ID = expr  -->   x = 10 
         public ExpressionNodeExpr Expression { get; set; }
@@ -199,4 +200,16 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
     }
 
+    public class ArrayNodeExpr : ExpressionNodeExpr
+    {
+        public List<ExpressionNodeExpr> Elements { get; } = new List<ExpressionNodeExpr>();
+        public int Length => Elements.Count;
+
+        public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
+        {
+            Elements = elements;
+            Type = MyType.Array;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
+    }
 }

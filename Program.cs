@@ -41,7 +41,16 @@ namespace MyCompiler
                             try
                             {
                                 result = compiler.Run(parser.RootNode);
+                                Console.WriteLine("we got result back");
 
+                                if (result is int[])
+                                {
+                                    foreach (var item in result as int[])
+                                    {            
+                                        Console.WriteLine(item);
+                                    }
+                                }
+                               
                                 if (result == null)
                                     Console.WriteLine("Result: null");
                                 else
