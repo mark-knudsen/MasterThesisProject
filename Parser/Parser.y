@@ -12,7 +12,7 @@
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA 
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA COLON
 %token LPAREN RPAREN LBRACE RBRACE IF ELSE FOR INC DECR
 %token PRINT RANDOM ROUND FUNC
 %token GE LE EQ NE GT LT 
@@ -66,8 +66,15 @@ expr
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
+    
+    /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
-                          { $$ = new FunctionDefNode((string)$2, (List<string>)$4, $7 as NodeExpr); }
+                          { $$ = new FunctionDefNode((string)$2, "Float", (List<string>)$4, $7 as NodeExpr); }
+
+    /* 2. Typed function: Uses the ID after the colon as the type */
+    | FUNC COLON ID ID LPAREN params RPAREN LBRACE expr RBRACE 
+                          { $$ = new FunctionDefNode((string)$4, (string)$3, (List<string>)$6, $9 as NodeExpr); }
+
     | ID LPAREN args RPAREN 
                           { $$ = new FunctionCallNode((string)$1, (List<ExpressionNodeExpr>)$3); }
     | ID                  { $$ = new IdNodeExpr((string)$1); }

@@ -81,12 +81,14 @@ namespace MyCompiler
     public class FunctionDefNode : NodeExpr
     {
         public string Name { get; }
-        public List<string> Parameters { get; }
-        public NodeExpr Body { get; }
+        public string ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
+        public List<string> Parameters { get; set; }
+        public NodeExpr Body { get; set; }
 
-        public FunctionDefNode(string name, List<string> parameters, NodeExpr body)
+        public FunctionDefNode(string name, string returnType, List<string> parameters, NodeExpr body)
         {
             Name = name;
+            ReturnTypeName = returnType;
             Parameters = parameters;
             Body = body;
         }
@@ -215,7 +217,7 @@ namespace MyCompiler
     {
         public ExpressionNodeExpr Condition;
         public NodeExpr ThenPart;
-        public NodeExpr ElsePart; // Can be null
+        public NodeExpr ElsePart;
 
         public IfNodeExpr(ExpressionNodeExpr cond, NodeExpr thenP, NodeExpr elseP = null)
         {

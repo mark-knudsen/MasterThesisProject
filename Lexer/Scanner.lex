@@ -40,6 +40,7 @@
 ")"             { return (int)Tokens.RPAREN; }
 "{"             { return (int)Tokens.LBRACE; }
 "}"             { return (int)Tokens.RBRACE; }
+":"             { return (int)Tokens.COLON; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
 
