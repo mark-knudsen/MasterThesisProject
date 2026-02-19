@@ -215,79 +215,74 @@ public object Run(NodeExpr expr)
             return _builder.BuildGlobalStringPtr(expr.Value, "str");
         }
 
+        // OLD VisitBinaryExpr - NO CONNCAT!
+        // public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
+        // {
+        //     var lhs = Visit(expr.Left);
+        //     var rhs = Visit(expr.Right);
+
+        //     switch (expr.Operator)
+        //     {
+        //         case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
+        //         case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
+        //         case "*": return _builder.BuildMul(lhs, rhs, "multmp");
+        //         case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
+        //         default: throw new InvalidOperationException("Unknown operator");
+        //     }
+        // }
+
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
             var lhs = Visit(expr.Left);
             var rhs = Visit(expr.Right);
 
-            switch (expr.Operator)
+            // Check if we are doing string concatenation
+            if (expr.Operator == "+" && (expr.Left.Type == MyType.String || expr.Right.Type == MyType.String))
             {
-                case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
-                case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
-                case "*": return _builder.BuildMul(lhs, rhs, "multmp");
-                case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
-                default: throw new InvalidOperationException("Unknown operator");
+                return BuildStringConcat(lhs, expr.Left.Type, rhs, expr.Right.Type);
             }
-            // ehm, it goes to the default case? or no, bro it must do the default case, the rest of them would return
-        }
 
-        public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
+            // Standard Integer Math
+            return expr.Operator switch
+            {
+                "+" => _builder.BuildAdd(lhs, rhs, "addtmp"),
+                "-" => _builder.BuildSub(lhs, rhs, "subtmp"),
+                "*" => _builder.BuildMul(lhs, rhs, "multmp"),
+                "/" => _builder.BuildSDiv(lhs, rhs, "divtmp"),
+                _ => throw new InvalidOperationException("Unknown operator")
+            };
+        }
+        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
         {
             var llvmCtx = _module.Context;
-            int length = expr.Elements.Count;
-
-            var elementType = llvmCtx.Int32Type;
-
-            // --- calculate total size in bytes ---
-            ulong elementSize = 4; // i32 = 4 bytes
-            ulong totalSize = (ulong)length * elementSize;
-
-            var sizeValue = LLVMValueRef.CreateConstInt(
-                llvmCtx.Int64Type,
-                totalSize,
-                false
-            );
-
-            // --- call malloc ---
             var malloc = GetMalloc();
+            var sprintf = GetSprintf();
 
-            var rawPtr = _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(
-                    LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0),
-                    new[] { llvmCtx.Int64Type },
-                    false
-                ),
+            // 1. Allocate 256 bytes for the new string
+            var buffer = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), new[] { llvmCtx.Int64Type }),
                 malloc,
-                new[] { sizeValue },
-                "malloccall"
+                new[] { LLVMValueRef.CreateConstInt(llvmCtx.Int64Type, 256) },
+                "concat_buf"
             );
 
-            // --- cast i8* → i32* ---
-            var arrayPtr = _builder.BuildBitCast(
-                rawPtr,
-                LLVMTypeRef.CreatePointer(elementType, 0),
-                "arrayptr"
+            // 2. Determine the format string (e.g., "%s%s", "%s%d", or "%d%s")
+            string fmtStr = "";
+            fmtStr += (lhsType == MyType.String) ? "%s" : "%d";
+            fmtStr += (rhsType == MyType.String) ? "%s" : "%d";
+
+            var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "concat_fmt");
+
+            // 3. Call sprintf(buffer, fmt, lhs, rhs)
+            var sprintfType = LLVMTypeRef.CreateFunction(
+                llvmCtx.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) },
+                true
             );
 
-            // --- store elements ---
-            for (int i = 0; i < length; i++)
-            {
-                var elemValue = Visit(expr.Elements[i]);
+            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtPtr, lhs, rhs }, "sprintf_call");
 
-                var elemPtr = _builder.BuildGEP2(
-                    elementType,
-                    arrayPtr,
-                    new LLVMValueRef[]
-                    {
-                        LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, (ulong)i, false)
-                    },
-                    "elemptr"
-                );
-
-                _builder.BuildStore(elemValue, elemPtr);
-            }
-
-            return arrayPtr; // SAFE to return (heap memory)
+            return buffer;
         }
 
 
@@ -496,7 +491,7 @@ public object Run(NodeExpr expr)
                 randFunc = _module.AddFunction("rand", randType);
             }
 
-            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()), 
+            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()),
             randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
             if (expr.MinValue != null && expr.MaxValue != null)
@@ -506,9 +501,9 @@ public object Run(NodeExpr expr)
 
                 var diff = _builder.BuildSub(maxValue, minValue, "diff");
 
-                if(_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
+                if (_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
                 {
-                    diff = _builder.BuildSub(minValue, maxValue, "diff"); 
+                    diff = _builder.BuildSub(minValue, maxValue, "diff");
                     minValue = maxValue;
                 }
 
@@ -526,20 +521,22 @@ public object Run(NodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
             var printf = GetPrintf();
+            var llvmCtx = _module.Context;
 
             LLVMValueRef formatStr;
 
-            // Determine format string based on type
-            if (expr.Expression.Type == MyType.Int)
-                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
-            else if (expr.Expression.Type == MyType.String)
+            // Detect if the value is actually a pointer (string) or an i32
+            // valueToPrint.Type for a concatenated string will be a Pointer
+            bool isPointer = valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
+
+            if (isPointer || expr.Expression.Type == MyType.String)
+            {
                 formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
+            }
             else
-                throw new Exception("Cannot print this type");
-
-            // Call printf(formatStr, valueToPrint)
-            var llvmCtx = _module.Context;
-
+            {
+                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
+            }
             return _builder.BuildCall2(
                 LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true),
                 printf,
@@ -597,6 +594,23 @@ public object Run(NodeExpr expr)
 
             // Return a dummy value (Loops are statements and don't usually return data)
             return LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 0);
+        }
+        private LLVMValueRef GetMalloc()
+        {
+            var fn = _module.GetNamedFunction("malloc");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("malloc", LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
+                new[] { _module.Context.Int64Type }, false));
+        }
+        private LLVMValueRef GetSprintf()
+        {
+            var fn = _module.GetNamedFunction("sprintf");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("sprintf", LLVMTypeRef.CreateFunction(
+                _module.Context.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0) },
+                true));
         }
 
         private LLVMTypeRef GetLLVMType(MyType type)
