@@ -25,6 +25,7 @@ namespace MyCompiler
         // LLVMValueRef VisitPrototype(PrototypeExpression expr);
         LLVMValueRef VisitIdExpr(IdNodeExpr expr);
         LLVMValueRef VisitAssignExpr(AssignNodeExpr expr);
+        LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
         // LLVMValueRef VisitExtern(ExternExpression expr);
         // LLVMValueRef VisitUnary(UnaryExpression expr);
         // LLVMValueRef VisitVarInExpression(VarInExpression expr);

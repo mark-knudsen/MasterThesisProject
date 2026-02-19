@@ -69,15 +69,7 @@ namespace MyCompiler
             }
 
             // 2. UNIVERSAL WRAPPER SIGNATURE
-            LLVMTypeRef llvmRetType = prediction switch
-            {
-                MyType.Float => LLVMTypeRef.Double,
-                MyType.Int => LLVMTypeRef.Int64,  // Use i64 for the REPL wrapper for safety
-                MyType.Bool => LLVMTypeRef.Int1,
-                MyType.String => LLVMTypeRef.Int64,  // Pointers are 64-bit
-                MyType.None => LLVMTypeRef.Void,
-                _ => LLVMTypeRef.Int64   // Absolute fallback
-            };
+            LLVMTypeRef llvmRetType = GetLLVMType(lastNode.Type);
 
             var funcType = LLVMTypeRef.CreateFunction(llvmRetType, Array.Empty<LLVMTypeRef>());
             var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
@@ -156,17 +148,21 @@ namespace MyCompiler
             using var engine = _module.CreateMCJITCompiler();
             var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
 
-            Console.WriteLine($"Final Prediction: {prediction}"); // Debug line
-            return ExtractResult(res, prediction);
+            
+            // Use the type stored in the AST node!
+            var actualType = lastNode.Type;
+            Console.WriteLine($"Final Prediction: {actualType}"); // Debug line
+            
+            return ExtractResult(res, actualType, lastNode);
         }
 
         // --- Helpers to keep Run() clean ---
 
-        private NodeExpr GetLastExpression(NodeExpr expr) // Return NodeExpr, not ExpressionNodeExpr
+        private ExpressionNodeExpr GetLastExpression(NodeExpr expr) // Return NodeExpr, not ExpressionNodeExpr
         {
             if (expr is SequenceNodeExpr seq)
-                return seq.Statements.LastOrDefault();
-            return expr;
+                return seq.Statements.LastOrDefault() as ExpressionNodeExpr;
+            return expr as ExpressionNodeExpr;
         }
 
         private MyType PeekTypeInCurrentSequence(NodeExpr root, string varName)
@@ -181,7 +177,7 @@ namespace MyCompiler
         }
 
 
-        private object ExtractResult(LLVMGenericValueRef res, MyType type)
+        private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr node)
         {
             if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 1);
             if (type == MyType.Bool) return LLVM.GenericValueToInt(res, 0) != 0;
@@ -205,6 +201,34 @@ namespace MyCompiler
                 // 3. Convert the address to a C# string
                 IntPtr ptr = new IntPtr((long)addr);
                 return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(ptr);
+            }
+            if (type == MyType.Array)
+            {
+                // 1. Get the raw memory address
+                ulong addr = LLVM.GenericValueToInt(res, 0);
+                if (addr == 0)
+                {
+                    // Fallback for bitcasted results
+                    double rawDouble = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                    addr = (ulong)BitConverter.DoubleToInt64Bits(rawDouble);
+                }
+
+                if (addr == 0) return "[]";
+
+                // 2. Get the length from the node
+                var arrayNode = node as ArrayNodeExpr;
+                int length = arrayNode?.Elements.Count ?? 0;
+
+                // 3. Read the memory
+                int[] result = new int[length];
+                for (int i = 0; i < length; i++)
+                {
+                    // Calculate offset: address + (index * 4 bytes per Int32)
+                    IntPtr elementAddr = new IntPtr((long)(addr + (ulong)(i * 4)));
+                    result[i] = Marshal.ReadInt32(elementAddr);
+                }
+
+                return "[" + string.Join(", ", result) + "]";
             }
             return null;
         }
@@ -240,21 +264,7 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
 
-        // OLD VisitBinaryExpr - NO CONNCAT!
-        // public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
-        // {
-        //     var lhs = Visit(expr.Left);
-        //     var rhs = Visit(expr.Right);
 
-        //     switch (expr.Operator)
-        //     {
-        //         case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
-        //         case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
-        //         case "*": return _builder.BuildMul(lhs, rhs, "multmp");
-        //         case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
-        //         default: throw new InvalidOperationException("Unknown operator");
-        //     }
-        // }
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
@@ -304,6 +314,7 @@ namespace MyCompiler
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             var value = Visit(expr.Expression);
+            expr.SetType(expr.Expression.Type);
 
             // FIX: Ensure numbers are always stored as Doubles
             if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
@@ -319,8 +330,26 @@ namespace MyCompiler
             var varPtr = _module.GetNamedGlobal(expr.Id);
             if (varPtr.Handle == IntPtr.Zero)
             {
-                varPtr = _module.AddGlobal(storageType, expr.Id);
-                varPtr.Initializer = LLVMValueRef.CreateConstNull(storageType);
+                //varPtr = _module.AddGlobal(storageType, expr.Id);
+                //varPtr.Initializer = LLVMValueRef.CreateConstNull(storageType);
+
+
+                LLVMTypeRef llvmType = GetLLVMType(expr.Expression.Type);
+                varPtr = _module.AddGlobal(llvmType, expr.Id);
+
+                // Initialize
+                if (expr.Expression.Type == MyType.Int)
+                    varPtr.Initializer = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+                else if (expr.Expression.Type == MyType.Array)
+                {
+                    // i didn't see it run the first line here or this ones if comparison
+                    var ptrType = LLVMTypeRef.CreatePointer(_module.Context.Int32Type, 0);
+                    varPtr.Initializer = LLVMValueRef.CreateConstPointerNull(ptrType);
+                }
+                else
+                    // bro it calls this else as well, it makes no sense
+                    varPtr.Initializer = LLVMValueRef.CreateConstNull(llvmType);
+
             }
 
             // Update context so the Symbol Table knows the latest Type/Reference
@@ -619,6 +648,65 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0);
         }
 
+        public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
+        {
+            var llvmCtx = _module.Context;
+            int length = expr.Elements.Count;
+
+            var elementType = llvmCtx.Int32Type;
+
+            // --- calculate total size in bytes ---
+            ulong elementSize = 4; // i32 = 4 bytes
+            ulong totalSize = (ulong)length * elementSize;
+
+            var sizeValue = LLVMValueRef.CreateConstInt(
+                llvmCtx.Int64Type,
+                totalSize,
+                false
+            );
+
+            // --- call malloc ---
+            var malloc = GetMalloc();
+
+            var rawPtr = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(
+                    LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0),
+                    new[] { llvmCtx.Int64Type },
+                    false
+                ),
+                malloc,
+                new[] { sizeValue },
+                "malloccall"
+            );
+
+            // --- cast i8* → i32* ---
+            var arrayPtr = _builder.BuildBitCast(
+                rawPtr,
+                LLVMTypeRef.CreatePointer(elementType, 0),
+                "arrayptr"
+            );
+
+            // --- store elements ---
+            for (int i = 0; i < length; i++)
+            {
+                var elemValue = Visit(expr.Elements[i]);
+
+                var elemPtr = _builder.BuildGEP2(
+                    elementType,
+                    arrayPtr,
+                    new LLVMValueRef[]
+                    {
+                        LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, (ulong)i, false)
+                    },
+                    "elemptr"
+                );
+
+                _builder.BuildStore(elemValue, elemPtr);
+            }
+
+            expr.SetType(MyType.Array);
+            return arrayPtr; // SAFE to return (heap memory)
+        }
 
         public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
         {
@@ -825,6 +913,7 @@ namespace MyCompiler
                 MyType.Float => LLVMTypeRef.Double,
                 MyType.Bool => LLVMTypeRef.Int1,
                 MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), // Must be a pointer!
+                MyType.Array => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int32, 0),
                 MyType.None => LLVMTypeRef.Void,
                 _ => LLVMTypeRef.Double
             };

@@ -10,6 +10,7 @@ namespace MyCompiler
         Int,
         String,
         Bool,
+        Array,
         Float,
         None
     }
@@ -277,4 +278,16 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
     }
 
+    public class ArrayNodeExpr : ExpressionNodeExpr
+    {
+        public List<ExpressionNodeExpr> Elements { get; } = new List<ExpressionNodeExpr>();
+        public int Length => Elements.Count;
+
+        public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
+        {
+            Elements = elements;
+            Type = MyType.Array;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
+    }
 }

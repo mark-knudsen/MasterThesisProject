@@ -7,14 +7,16 @@
     public bool boolVal;
     public double fval;
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
+    public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
 }
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA COLON
-%token LPAREN RPAREN LBRACE RBRACE IF ELSE FOR INC DECR
+%token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR
 %token PRINT RANDOM ROUND FUNC
+
 %token GE LE EQ NE GT LT 
 
 %nonassoc IF
@@ -26,6 +28,9 @@
 
 %type <node> Prog Statement StatementList Assignment expr
 %type <obj> params args  /* Use <obj> for lists */
+
+%type <exprList> expr_list
+
 
 /* This tells the parser which C# variable stores the final tree */
 %{
@@ -59,6 +64,11 @@ Assignment
     : ID ASSIGN expr      { $$ = new AssignNodeExpr((string)$1, $3 as ExpressionNodeExpr); } 
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
+    ;
+
+expr_list
+    : expr                     { $$ = new List<ExpressionNodeExpr> { $1 as ExpressionNodeExpr }; }
+    | expr_list COMMA expr     { $1.Add($3 as ExpressionNodeExpr); $$ = $1; }
     ;
 
 expr
@@ -95,6 +105,8 @@ expr
     | expr NE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "!=", $3 as ExpressionNodeExpr); }
     | expr GT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, ">", $3 as ExpressionNodeExpr); }    
     | expr LT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<", $3 as ExpressionNodeExpr); }
+
+    | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); }
 
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
