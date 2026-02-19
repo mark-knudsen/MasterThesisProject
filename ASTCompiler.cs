@@ -10,6 +10,7 @@ namespace MyCompiler
         Int,
         String,
         Bool,
+        Array,
         Float,
         Array,
         None
