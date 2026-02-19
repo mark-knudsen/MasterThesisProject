@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
+using System.ComponentModel;
 
 namespace MyCompiler
 {
@@ -157,7 +158,7 @@ namespace MyCompiler
             var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
 
             Console.WriteLine($"Final Prediction: {prediction}"); // Debug line
-            return ExtractResult(res, prediction);
+            return ExtractResult(res, prediction, lastExpr);
         }
 
         // --- Helpers to keep Run() clean ---
@@ -175,13 +176,16 @@ namespace MyCompiler
             {
                 // Look for the last assignment to this variable name in the current block
                 var lastAssign = seq.Statements.OfType<AssignNodeExpr>().LastOrDefault(a => a.Id == varName);
+                // the line below sees that the lastassign.expression.type is int, which is wrong
+                // wait the lastAssign is not null so why does it not return here
                 if (lastAssign != null) return lastAssign.Expression.Type;
             }
+            // it goes down to here and returns
             return MyType.None;
         }
 
 
-        private object ExtractResult(LLVMGenericValueRef res, MyType type)
+        private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr lastExpr = null)
         {
             if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 1);
             if (type == MyType.Bool) return LLVM.GenericValueToInt(res, 0) != 0;
@@ -205,9 +209,25 @@ namespace MyCompiler
                 // 3. Convert the address to a C# string
                 IntPtr ptr = new IntPtr((long)addr);
                 return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(ptr);
+
             }
+            if (type == MyType.Array)
+            {
+                nint ptr = (nint)LLVM.GenericValueToPointer(res);
+                var arrayNode = lastExpr as ArrayNodeExpr;
+                int length = arrayNode.Length;
+                Console.WriteLine("lenght: " + length);
+                // You need the length; if your ArrayNodeExpr has a length field, use that
+                //int length = res; // temporary, or store in ArrayNodeExpr
+                int[] result = new int[length];
+                for (int i = 0; i < length; i++)
+                    result[i] = Marshal.ReadInt32((IntPtr)(ptr + i * 4)); // assume 4-byte ints
+                return result;
+            }
+
             return null;
         }
+
 
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
@@ -240,21 +260,6 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
 
-        // OLD VisitBinaryExpr - NO CONNCAT!
-        // public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
-        // {
-        //     var lhs = Visit(expr.Left);
-        //     var rhs = Visit(expr.Right);
-
-        //     switch (expr.Operator)
-        //     {
-        //         case "+": return _builder.BuildAdd(lhs, rhs, "addtmp");
-        //         case "-": return _builder.BuildSub(lhs, rhs, "subtmp");
-        //         case "*": return _builder.BuildMul(lhs, rhs, "multmp");
-        //         case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
-        //         default: throw new InvalidOperationException("Unknown operator");
-        //     }
-        // }
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
@@ -301,33 +306,92 @@ namespace MyCompiler
         }
 
 
-        public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
+
+
+    // public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
+    // {
+    //     int length = expr.Elements.Count;
+    //     var elementType = LLVMTypeRef.Int32; // this should be dynamic based on the type of elements in the array, but we'll assume int for simplicity
+
+    //     // Allocate array on the stack (int example)
+    //     var arrayAlloc = _builder.BuildArrayAlloca(
+    //         elementType,
+    //         LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)length, false), 
+    //         "arrayalloc"
+    //     );
+
+    //     Console.WriteLine("ARRAY1");
+    //     for (int i = 0; i < length; i++)
+    //     {
+    //         var elemValue = Visit(expr.Elements[i]);
+
+    //         // High-level wrapper: just use array of indices
+    //         var elemPtr = _builder.BuildGEP2(
+    //             elementType,
+    //             arrayAlloc,
+    //             new LLVMValueRef[] {
+    //                 LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false),
+    //                 LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)i, false)
+    //             },
+    //             "elemptr"
+    //         );
+
+    //         _builder.BuildStore(elemValue, elemPtr);
+    //     }
+    //     Console.WriteLine("ARRAY2" + arrayAlloc.ToString());
+    //     return arrayAlloc;
+    // }
+
+    // use these functions for help
+    // public readonly LLVMValueRef BuildGEP2(LLVMTypeRef Ty, LLVMValueRef Pointer, LLVMValueRef[] Indices, string Name = "") => BuildGEP2(Ty, Pointer, Indices.AsSpan(), Name.AsSpan());
+
+    // public readonly LLVMValueRef BuildGEP2(LLVMTypeRef Ty, LLVMValueRef Pointer, ReadOnlySpan<LLVMValueRef> Indices, ReadOnlySpan<char> Name)
+    // {
+    //     fixed (LLVMValueRef* pIndices = Indices)
+    //     {
+    //         using var marshaledName = new MarshaledString(Name);
+    //         return LLVM.BuildGEP2(this, Ty, Pointer, (LLVMOpaqueValue**)pIndices, (uint)Indices.Length, marshaledName);
+    //     }
+    // }
+
+       public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             var value = Visit(expr.Expression);
+            expr.SetType(expr.Expression.Type);
+            var global = _module.GetNamedGlobal(expr.Id);
 
             // FIX: Ensure numbers are always stored as Doubles
             if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
             {
                 value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
             }
-            // Always create/get the global in the CURRENT module
-            LLVMTypeRef storageType = (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0)
-                : LLVMTypeRef.Double;
 
             // This finds the variable if it exists in the CURRENT module, or creates it if not.
             var varPtr = _module.GetNamedGlobal(expr.Id);
             if (varPtr.Handle == IntPtr.Zero)
             {
-                varPtr = _module.AddGlobal(storageType, expr.Id);
-                varPtr.Initializer = LLVMValueRef.CreateConstNull(storageType);
+                LLVMTypeRef llvmType = GetLLVMType(expr.Expression.Type);
+                global = _module.AddGlobal(llvmType, expr.Id);
+
+                // Initialize
+                if (expr.Expression.Type == MyType.Int)
+                    global.Initializer = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
+                else if (expr.Expression.Type == MyType.Array)
+                {
+                    // i didn't see it run the first line here or this ones if comparison
+                    var ptrType = LLVMTypeRef.CreatePointer(_module.Context.Int32Type, 0);
+                    global.Initializer = LLVMValueRef.CreateConstPointerNull(ptrType);
+                }
+                else
+                    // bro it calls this else as well, it makes no sense
+                    global.Initializer = LLVMValueRef.CreateConstNull(llvmType);
             }
 
             // Update context so the Symbol Table knows the latest Type/Reference
             MyType myType = (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind) ? MyType.String : MyType.Float;
-            _context = _context.Add(expr.Id, varPtr, myType);
+            _context = _context.Add(expr.Id, global, expr.Expression.ype);
 
-            _builder.BuildStore(value, varPtr);
+            _builder.BuildStore(value, global);
             return value;
         }
 
@@ -345,6 +409,7 @@ namespace MyCompiler
             }
 
             // 2. Check the Symbol Table (Global Variables)
+            System.Console.WriteLine("VISITING ID EXPR: " + expr.Name);
             var entry = _context.Get(expr.Name);
             if (entry is null) throw new Exception($"Variable {expr.Name} not defined");
 
@@ -354,6 +419,7 @@ namespace MyCompiler
 
             // Variables are pointers in memory, so we MUST use BuildLoad2
             LLVMTypeRef llvmType = GetLLVMType(actualType);
+            // I think it fails here
             return _builder.BuildLoad2(llvmType, entry.Value.Value, expr.Name);
         }
 
@@ -822,14 +888,33 @@ namespace MyCompiler
             return type switch
             {
                 MyType.Int => LLVMTypeRef.Int32,
-                MyType.Float => LLVMTypeRef.Double,
+                MyType.Float => LLVMTypeRef.Double,                
+                MyType.Array => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int32, 0),
                 MyType.Bool => LLVMTypeRef.Int1,
                 MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), // Must be a pointer!
                 MyType.None => LLVMTypeRef.Void,
                 _ => LLVMTypeRef.Double
             };
         }
-        private LLVMValueRef GetPrintf()
+
+        private LLVMValueRef GetMalloc()
+        {
+            var malloc = _module.GetNamedFunction("malloc");
+            if (malloc.Handle != IntPtr.Zero)
+                return malloc;
+
+            var llvmCtx = _module.Context;
+
+            var mallocType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), // returns i8*
+                new[] { llvmCtx.Int64Type },                    // takes size (i64)
+                false
+            );
+
+            return _module.AddFunction("malloc", mallocType);
+        }
+
+        private LLVMValueRef GetPrintf() // why are we even calling this when Im never calling the print func?
         {
             var printf = _module.GetNamedFunction("printf");
             if (printf.Handle != IntPtr.Zero) return printf;
@@ -843,6 +928,10 @@ namespace MyCompiler
                 true
             );
             return _module.AddFunction("printf", printfType);
+
+            // here is says the arrayNodeExpr has id=x and type=int / should the array node have the type array?
+            // and it says that the idNodeExpr has name=x and type=array
+            // also why does arrayNodeExpr have an id value? ah it is because it is assignodes expression
         }
 
         private LLVMValueRef Visit(NodeExpr expr)
