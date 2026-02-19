@@ -36,48 +36,102 @@ namespace MyCompiler
             _passBuilderOptions = LLVM.CreatePassBuilderOptions();
         }
 
-        public object Run(NodeExpr expr)
-        {
-            // 1. Initialize Module & Engine
-            // _module = LLVMModuleRef.CreateWithName("repl_module"); // do we need this? we call it elsewhere
-            // _builder = _module.Context.CreateBuilder();
-            // _engine = _module.CreateMCJITCompiler();
+public object Run(NodeExpr expr)
+{
+    // 1. Determine last expression
+    ExpressionNodeExpr lastExpr = GetLastExpression(expr);
 
-            // 2. Resolve the last expression and its type (The Peeker)
-            ExpressionNodeExpr lastExpr = GetLastExpression(expr);
+    // SAFETY CHECK
+    if (lastExpr == null)
+        throw new Exception("No expression to execute.");
 
-            // Check if the last expression is a variable we already know about, 
-            // OR if it's being assigned right now in this sequence.
-            if (lastExpr is IdNodeExpr id)
-            {
-                // Look in existing context OR peek at the assignment in the current block
-                var type = _context.Get(id.Name)?.Type ?? PeekTypeInCurrentSequence(expr, id.Name);
-                id.SetType(type);
-            }
+    // DEBUG
+    Console.WriteLine("LastExpr.Type BEFORE codegen = " + lastExpr.Type);
 
-            // 3. Build the LLVM Function
-            LLVMTypeRef retType = lastExpr != null ? lastExpr.Type == MyType.Array ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int32, 0) 
-            : GetLLVMType(lastExpr.Type) : LLVMTypeRef.Void;
+    // 2. Determine correct LLVM return type FROM AST
+    LLVMTypeRef retType = GetLLVMType(lastExpr.Type);
 
-            var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", LLVMTypeRef.CreateFunction(retType, Array.Empty<LLVMTypeRef>()));
-            _builder.PositionAtEnd(func.AppendBasicBlock("entry"));
+    // 3. Create function with correct return type
+    var funcType = LLVMTypeRef.CreateFunction(
+        retType,
+        Array.Empty<LLVMTypeRef>(),
+        false
+    );
 
-            // 4. Compile body and Return
-            var resultValue = Visit(expr);
-            if (retType.Handle != LLVMTypeRef.Void.Handle)
-                _builder.BuildRet(resultValue);
-            else
-                _builder.BuildRetVoid();
+    var func = _module.AddFunction(
+        $"exec_{Guid.NewGuid():N}",
+        funcType
+    );
 
-            Console.WriteLine(_module.PrintToString());
+    var entry = func.AppendBasicBlock("entry");
+    _builder.PositionAtEnd(entry);
 
-            // 5. Execute and Extract
+    // 4. Generate IR
+    var resultValue = Visit(expr);
 
-            Console.WriteLine("ABOUT TO RUN THE PROGRAM");
-            var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
-            Console.WriteLine("WE RAN THE PROGRAM");
-            return ExtractResult(res, lastExpr?.Type ?? MyType.None, lastExpr);
-        }
+    // 5. Return correctly
+    if (lastExpr.Type == MyType.None)
+        _builder.BuildRetVoid();
+    else
+        _builder.BuildRet(resultValue);
+
+    Console.WriteLine(_module.PrintToString());
+
+    // 6. Execute
+    Console.WriteLine("ABOUT TO RUN THE PROGRAM");
+    var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+    Console.WriteLine("WE RAN THE PROGRAM");
+
+    return ExtractResult(res, lastExpr.Type, lastExpr);
+}
+
+        // public object Run(NodeExpr expr)
+        // {
+        //     // 1. Initialize Module & Engine
+        //     // _module = LLVMModuleRef.CreateWithName("repl_module"); // do we need this? we call it elsewhere
+        //     // _builder = _module.Context.CreateBuilder();
+        //     // _engine = _module.CreateMCJITCompiler();
+
+        //     // 2. Resolve the last expression and its type (The Peeker)
+        //     ExpressionNodeExpr lastExpr = GetLastExpression(expr);
+
+        //     // Check if the last expression is a variable we already know about, 
+        //     // OR if it's being assigned right now in this sequence.
+        //     if (lastExpr is IdNodeExpr id)
+        //     {
+        //         // Look in existing context OR peek at the assignment in the current block
+        //         var type = _context.Get(id.Name)?.Type ?? PeekTypeInCurrentSequence(expr, id.Name);
+        //         // yet here is says the type var is indeed Array
+        //         id.SetType(type);
+        //     }
+        //     // it does say that the lastExprs type is array
+
+        //     // 3. Build the LLVM Function
+        //     LLVMTypeRef retType = lastExpr != null ? lastExpr.Type == MyType.Array ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int32, 0) 
+        //     : GetLLVMType(lastExpr.Type) : LLVMTypeRef.Void;
+
+        //     Console.WriteLine("LastExpr.Type = " + lastExpr.Type);
+
+
+        //     var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", LLVMTypeRef.CreateFunction(retType, Array.Empty<LLVMTypeRef>()));
+        //     _builder.PositionAtEnd(func.AppendBasicBlock("entry"));
+
+        //     // 4. Compile body and Return
+        //     var resultValue = Visit(expr);
+        //     if (retType.Handle != LLVMTypeRef.Void.Handle)
+        //         _builder.BuildRet(resultValue);
+        //     else
+        //         _builder.BuildRetVoid();
+
+        //     Console.WriteLine(_module.PrintToString());
+
+        //     // 5. Execute and Extract
+
+        //     Console.WriteLine("ABOUT TO RUN THE PROGRAM");
+        //     var res = _engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+        //     Console.WriteLine("WE RAN THE PROGRAM");
+        //     return ExtractResult(res, lastExpr?.Type ?? MyType.None, lastExpr);
+        // }
 
         // --- Helpers to keep Run() clean ---
 
@@ -94,8 +148,11 @@ namespace MyCompiler
             {
                 // Look for the last assignment to this variable name in the current block
                 var lastAssign = seq.Statements.OfType<AssignNodeExpr>().LastOrDefault(a => a.Id == varName);
+                // the line below sees that the lastassign.expression.type is int, which is wrong
+                // wait the lastAssign is not null so why does it not return here
                 if (lastAssign != null) return lastAssign.Expression.Type;
             }
+            // it goes down to here and returns
             return MyType.None;
         }
 
@@ -171,7 +228,8 @@ namespace MyCompiler
                 case "/": return _builder.BuildSDiv(lhs, rhs, "divtmp");
                 default: throw new InvalidOperationException("Unknown operator");
             }
-    }
+            // ehm, it goes to the default case? or no, bro it must do the default case, the rest of them would return
+        }
 
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
         {
@@ -296,10 +354,12 @@ namespace MyCompiler
                     global.Initializer = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0, false);
                 else if (expr.Expression.Type == MyType.Array)
                 {
+                    // i didn't see it run the first line here or this ones if comparison
                     var ptrType = LLVMTypeRef.CreatePointer(_module.Context.Int32Type, 0);
                     global.Initializer = LLVMValueRef.CreateConstPointerNull(ptrType);
                 }
                 else
+                // bro it calls this else as well, it makes no sense
                     global.Initializer = LLVMValueRef.CreateConstNull(llvmType);
 
                 // Update context with the real Global Value
@@ -312,6 +372,7 @@ namespace MyCompiler
 
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
+            System.Console.WriteLine("VISITING ID EXPR: " + expr.Name);
             var entry = _context.Get(expr.Name);
             if (entry is null) throw new Exception($"Variable {expr.Name} not defined");
 
@@ -320,6 +381,7 @@ namespace MyCompiler
             expr.SetType(actualType);
 
             LLVMTypeRef llvmType = GetLLVMType(actualType);
+            // I think it fails here
             return _builder.BuildLoad2(llvmType, entry.Value.Value, expr.Name);
         }
 
@@ -529,6 +591,7 @@ namespace MyCompiler
             // Jump back to the condition to see if we go again
             _builder.BuildBr(condBlock);
 
+            // bro are you out of your mind, why the hell are you in the forloop?
             // 6. End Block: Move the builder here so subsequent code compiles AFTER the loop
             _builder.PositionAtEnd(endBlock);
 
@@ -542,35 +605,11 @@ namespace MyCompiler
             {
                 MyType.Int => LLVMTypeRef.Int32,
                 MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
+                MyType.Array => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int32, 0),
                 MyType.Bool => LLVMTypeRef.Int1,
                 _ => LLVMTypeRef.Void
             };
         }
-
-//         private LLVMTypeRef GetLLVMType(MyType type)
-// {
-//     var ctx = _module.Context;
-
-//     return type switch
-//     {
-//         MyType.Int =>
-//             ctx.Int32Type,
-
-//         MyType.String =>
-//             LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-
-//         MyType.Bool =>
-//             ctx.Int1Type,
-
-//         MyType.Array =>
-//             LLVMTypeRef.CreatePointer(ctx.Int32Type, 0), // <-- CRITICAL
-
-//         _ =>
-//             ctx.VoidType
-//     };
-// }
-
-
 
         private LLVMValueRef GetMalloc()
         {
@@ -589,7 +628,7 @@ namespace MyCompiler
             return _module.AddFunction("malloc", mallocType);
         }
 
-        private LLVMValueRef GetPrintf()
+        private LLVMValueRef GetPrintf() // why are we even calling this when Im never calling the print func?
         {
             var printf = _module.GetNamedFunction("printf");
             if (printf.Handle != IntPtr.Zero) return printf;
@@ -603,6 +642,10 @@ namespace MyCompiler
                 true
             );
             return _module.AddFunction("printf", printfType);
+
+            // here is says the arrayNodeExpr has id=x and type=int / should the array node have the type array?
+            // and it says that the idNodeExpr has name=x and type=array
+            // also why does arrayNodeExpr have an id value? ah it is because it is assignodes expression
         }
 
         private LLVMValueRef Visit(NodeExpr expr)
