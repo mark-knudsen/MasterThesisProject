@@ -10,6 +10,7 @@ namespace MyCompiler
         Int,
         String,
         Bool,
+        Float,
         Array,
         None
     }
@@ -27,8 +28,17 @@ namespace MyCompiler
         public void SetType(MyType type) => Type = type;
     }
 
-    public abstract class StatementNodeExpr : NodeExpr { }
+    public abstract class StatementNodeExpr : NodeExpr
+    {
+        public MyType Type { get; protected set; }
+        // Add this setter helper
+        public void SetType(MyType type) => Type = type;
+    }
 
+
+    //-----Built-in-function-nodes-----//
+
+    // Represents print function
     public class PrintNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr Expression { get; set; }
@@ -53,6 +63,68 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
     }
 
+    public class RoundNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Value { get; }
+        public ExpressionNodeExpr Decimals { get; }
+
+        public RoundNodeExpr(ExpressionNodeExpr value, ExpressionNodeExpr decimals)
+        {
+            Value = value;
+            Decimals = decimals;
+            Type = MyType.Float;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
+    }
+
+    //------Function-nodes------//
+    public class FunctionDefNode : NodeExpr
+    {
+        public string Name { get; }
+        public string ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
+        public List<string> Parameters { get; set; }
+        public NodeExpr Body { get; set; }
+
+        public FunctionDefNode(string name, string returnType, List<string> parameters, NodeExpr body)
+        {
+            Name = name;
+            ReturnTypeName = returnType;
+            Parameters = parameters;
+            Body = body;
+        }
+
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionDef(this);
+    }
+
+    public class FunctionCallNode : ExpressionNodeExpr
+    {
+        public string Name { get; }
+        public List<ExpressionNodeExpr> Arguments { get; }
+
+        public FunctionCallNode(string name, List<ExpressionNodeExpr> arguments)
+        {
+            Name = name;
+            Arguments = arguments;
+            // For now, we assume functions return Float to be safe with math
+            Type = MyType.Float;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
+    }
+
+    public class FloatNodeExpr : ExpressionNodeExpr
+    {
+        public double Value { get; }
+        public FloatNodeExpr(double value)
+        {
+            Value = value;
+            Type = MyType.Float;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
+    }
     // Represents a single number (e.g., 10)
     public class NumberNodeExpr : ExpressionNodeExpr
     {
@@ -95,7 +167,9 @@ namespace MyCompiler
         public ExpressionNodeExpr Right { get; set; }
         public BinaryOpNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right)
         {
-            Left = left; Operator = op; Right = right;
+            Left = left;
+            Operator = op;
+            Right = right;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBinaryExpr(this);
     }
@@ -144,13 +218,14 @@ namespace MyCompiler
     {
         public ExpressionNodeExpr Condition;
         public NodeExpr ThenPart;
-        public NodeExpr ElsePart; // Can be null
+        public NodeExpr ElsePart;
 
         public IfNodeExpr(ExpressionNodeExpr cond, NodeExpr thenP, NodeExpr elseP = null)
         {
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
+            this.Type = MyType.None;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
     }
@@ -194,7 +269,10 @@ namespace MyCompiler
 
         public ComparisonNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right)
         {
-            Left = left; Operator = op; Right = right;
+            Left = left;
+            Operator = op;
+            Right = right;
+            Type = MyType.Bool;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);

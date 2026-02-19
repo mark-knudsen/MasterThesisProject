@@ -7,13 +7,14 @@ namespace MyCompiler
     {
 
         LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
-        
+        LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
         LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
         // LLVMValueRef VisitCall(CallExpression expr);
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
         // LLVMValueRef VisitFunction(FunctionExpression expr);
         LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
         LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
+        LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
         LLVMValueRef VisitIfExpr(IfNodeExpr expr);
         LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
@@ -28,6 +29,11 @@ namespace MyCompiler
         // LLVMValueRef VisitExtern(ExternExpression expr);
         // LLVMValueRef VisitUnary(UnaryExpression expr);
         // LLVMValueRef VisitVarInExpression(VarInExpression expr);
+
+
+        // Visit for define and usage of created functions
+        LLVMValueRef VisitFunctionDef(FunctionDefNode node);
+        LLVMValueRef VisitFunctionCall(FunctionCallNode node);
     }
 
 }

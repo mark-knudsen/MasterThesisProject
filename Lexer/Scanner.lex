@@ -13,6 +13,8 @@
 "false"         { yylval.boolVal = false; return (int)Tokens.BOOL_LITERAL; }
 "print"         { return (int)Tokens.PRINT; }
 "random"        { return (int)Tokens.RANDOM; }
+"round"         { return (int)Tokens.ROUND; }
+"func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
 
 ">="            { return (int)Tokens.GE; }
@@ -25,6 +27,7 @@
 "--"            { return (int)Tokens.DECR; }
 
 [0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
+[0-9]+\.[0-9]+  { yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL; }
 \"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING; }
 [a-zA-Z_][a-zA-Z0-9_]* { yylval.obj = yytext; return (int)Tokens.ID; }    
 
@@ -35,6 +38,9 @@
 "="             { return (int)Tokens.ASSIGN; }
 "("             { return (int)Tokens.LPAREN; }
 ")"             { return (int)Tokens.RPAREN; }
+"{"             { return (int)Tokens.LBRACE; }
+"}"             { return (int)Tokens.RBRACE; }
+":"             { return (int)Tokens.COLON; }
 "["             { return (int)Tokens.LBRACKET; }
 "]"             { return (int)Tokens.RBRACKET; }
 ";"             { return (int)Tokens.SEMICOLON; }

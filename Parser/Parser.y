@@ -5,13 +5,18 @@
 %union { 
     public object obj; 
     public bool boolVal;
+    public double fval;
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
 }
 
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA LPAREN RPAREN LBRACKET RBRACKET IF ELSE PRINT RANDOM FOR INC DECR
+%token <fval> FLOAT_LITERAL
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA COLON
+%token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR
+%token PRINT RANDOM ROUND FUNC
+
 %token GE LE EQ NE GT LT 
 
 %nonassoc IF
@@ -21,7 +26,8 @@
 %left MULT DIV
 %left GE LE EQ NE GT LT
 
-%type <node> expr Statement StatementList Prog Assignment
+%type <node> Prog Statement StatementList Assignment expr
+%type <obj> params args  /* Use <obj> for lists */
 
 %type <exprList> expr_list
 
@@ -39,6 +45,7 @@ Prog
 
 StatementList
     : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
+    | StatementList Statement { ((SequenceNodeExpr)$1).Statements.Add($2); $$ = $1; }
     | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
     | StatementList SEMICOLON { $$ = $1; }
     ;
@@ -67,12 +74,26 @@ expr_list
 expr
     : BOOL_LITERAL        { $$ = new BooleanNodeExpr((bool)$1); }
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
+    | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
+    
+    /* 1. Standard function: Defaults to "Float" */
+    | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
+                          { $$ = new FunctionDefNode((string)$2, "Float", (List<string>)$4, $7 as NodeExpr); }
+
+    /* 2. Typed function: Uses the ID after the colon as the type */
+    | FUNC COLON ID ID LPAREN params RPAREN LBRACE expr RBRACE 
+                          { $$ = new FunctionDefNode((string)$4, (string)$3, (List<string>)$6, $9 as NodeExpr); }
+
+    | ID LPAREN args RPAREN 
+                          { $$ = new FunctionCallNode((string)$1, (List<ExpressionNodeExpr>)$3); }
     | ID                  { $$ = new IdNodeExpr((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNodeExpr($3 as ExpressionNodeExpr); }
     | RANDOM LPAREN expr COMMA expr RPAREN    
                           { $$ = new RandomNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | ROUND LPAREN expr COMMA expr RPAREN 
+                          { $$ = new RoundNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr PLUS expr      { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "+", $3 as ExpressionNodeExpr); }
     | expr MINUS expr     { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "-", $3 as ExpressionNodeExpr); }
     | expr MULT expr      { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "*", $3 as ExpressionNodeExpr); }
@@ -90,6 +111,17 @@ expr
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
 
+params
+    : /* empty */ { $$ = new List<string>(); }
+    | ID { var list = new List<string>(); list.Add((string)$1); $$ = list; }
+    | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
+    ;
+
+args
+    : /* empty */ { $$ = new List<ExpressionNodeExpr>(); }
+    | expr { var list = new List<ExpressionNodeExpr>(); list.Add($1 as ExpressionNodeExpr); $$ = list; }
+    | args COMMA expr { var list = (List<ExpressionNodeExpr>)$1; list.Add($3 as ExpressionNodeExpr); $$ = list; }
+    ;
 %%
 
 internal Parser(Scanner s) : base(s) { }

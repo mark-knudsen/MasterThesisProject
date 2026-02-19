@@ -175,8 +175,8 @@ namespace MyCompiler
 /* NxS[  10] */ new Table(0, 0, -1, null),
 /* NxS[  11] */ new Table(45, 1, -1, new sbyte[] {52}),
 /* NxS[  12] */ new Table(0, 0, -1, null),
-/* NxS[  13] */ new Table(48, 10, -1, new sbyte[] {13, 13, 13, 13, 13, 13, 
-          13, 13, 13, 13}),
+/* NxS[  13] */ new Table(46, 12, -1, new sbyte[] {66, -1, 13, 13, 13, 13, 
+          13, 13, 13, 13, 13, 13}),
 /* NxS[  14] */ new Table(0, 0, -1, null),
 /* NxS[  15] */ new Table(61, 1, -1, new sbyte[] {51}),
 /* NxS[  16] */ new Table(61, 1, -1, new sbyte[] {50}),
@@ -828,16 +828,16 @@ return (int)Tokens.DIV;
 yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER;
             break;
         case 14:
-return (int)Tokens.SEMICOLON;
+return (int)Tokens.COLON;
             break;
         case 15:
-return (int)Tokens.LT;
+return (int)Tokens.SEMICOLON;
             break;
         case 16:
-return (int)Tokens.ASSIGN;
+return (int)Tokens.LT;
             break;
         case 17:
-return (int)Tokens.GT;
+return (int)Tokens.ASSIGN;
             break;
         case 18:
         case 21:

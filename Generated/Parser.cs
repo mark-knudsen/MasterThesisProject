@@ -29,6 +29,7 @@ internal struct ValueType
        { 
     public object obj; 
     public bool boolVal;
+    public double fval;
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
 }
@@ -235,7 +236,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
       { CurrentSemanticValue.node = new IfNodeExpr(ValueStack[ValueStack.Depth-5].node as ExpressionNodeExpr, ValueStack[ValueStack.Depth-3].node, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
-      case 10: // Statement -> FOR, LPAREN, Assignment, SEMICOLON, expr, SEMICOLON, Assignment, 
+      case 11: // Statement -> FOR, LPAREN, Assignment, SEMICOLON, expr, SEMICOLON, Assignment, 
                //              RPAREN, Statement
 #line 53 "Parser/Parser.y"
                                                                                  { CurrentSemanticValue.node = new ForLoopNodeExpr(ValueStack[ValueStack.Depth-7].node as StatementNodeExpr, ValueStack[ValueStack.Depth-5].node as ExpressionNodeExpr, ValueStack[ValueStack.Depth-3].node as StatementNodeExpr, ValueStack[ValueStack.Depth-1].node as ExpressionNodeExpr); }
@@ -354,6 +355,36 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
       case 33: // expr -> LPAREN, expr, RPAREN
 #line 90 "Parser/Parser.y"
                           { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-2].node; }
+#line default
+        break;
+      case 37: // params -> /* empty */
+#line 103 "Parser/Parser.y"
+                  { CurrentSemanticValue.obj = new List<string>(); }
+#line default
+        break;
+      case 38: // params -> ID
+#line 104 "Parser/Parser.y"
+         { var list = new List<string>(); list.Add((string)ValueStack[ValueStack.Depth-1].obj); CurrentSemanticValue.obj = list; }
+#line default
+        break;
+      case 39: // params -> params, COMMA, ID
+#line 105 "Parser/Parser.y"
+                      { var list = (List<string>)ValueStack[ValueStack.Depth-3].obj; list.Add((string)ValueStack[ValueStack.Depth-1].obj); CurrentSemanticValue.obj = list; }
+#line default
+        break;
+      case 40: // args -> /* empty */
+#line 109 "Parser/Parser.y"
+                  { CurrentSemanticValue.obj = new List<ExpressionNodeExpr>(); }
+#line default
+        break;
+      case 41: // args -> expr
+#line 110 "Parser/Parser.y"
+           { var list = new List<ExpressionNodeExpr>(); list.Add(ValueStack[ValueStack.Depth-1].node as ExpressionNodeExpr); CurrentSemanticValue.obj = list; }
+#line default
+        break;
+      case 42: // args -> args, COMMA, expr
+#line 111 "Parser/Parser.y"
+                      { var list = (List<ExpressionNodeExpr>)ValueStack[ValueStack.Depth-3].obj; list.Add(ValueStack[ValueStack.Depth-1].node as ExpressionNodeExpr); CurrentSemanticValue.obj = list; }
 #line default
         break;
     }
