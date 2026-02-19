@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 19/02/2026 11:54:13
-//  GPLEX input file <Lexer/Scanner.lex - 19/02/2026 10:34:31>
+//  DateTime: 19/02/2026 16:51:44
+//  GPLEX input file <Lexer/Scanner.lex - 19/02/2026 15:49:02>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -121,8 +121,8 @@ namespace MyCompiler
         
         enum Result {accept, noMatch, contextFound};
 
-        const int maxAccept = 55;
-        const int initial = 56;
+        const int maxAccept = 56;
+        const int initial = 57;
         const int eofNum = 0;
         const int goStart = -1;
         const int INITIAL = 0;
@@ -159,15 +159,15 @@ namespace MyCompiler
         }
     };
 
-    static int[] startState = new int[] {56, 0};
+    static int[] startState = new int[] {57, 0};
 
-    static Table[] NxS = new Table[58] {
+    static Table[] NxS = new Table[59] {
 /* NxS[   0] */ new Table(0, 0, 0, null),
 /* NxS[   1] */ new Table(0, 0, -1, null),
 /* NxS[   2] */ new Table(0, 0, -1, null),
-/* NxS[   3] */ new Table(61, 1, -1, new sbyte[] {55}),
-/* NxS[   4] */ new Table(34, 1, 57, new sbyte[] {54}),
-/* NxS[   5] */ new Table(10, 1, 5, new sbyte[] {-1}),
+/* NxS[   3] */ new Table(61, 1, -1, new sbyte[] {56}),
+/* NxS[   4] */ new Table(34, 1, 58, new sbyte[] {55}),
+/* NxS[   5] */ new Table(49, 1, -1, new sbyte[] {54}),
 /* NxS[   6] */ new Table(0, 0, -1, null),
 /* NxS[   7] */ new Table(0, 0, -1, null),
 /* NxS[   8] */ new Table(0, 0, -1, null),
@@ -362,9 +362,10 @@ namespace MyCompiler
 /* NxS[  51] */ new Table(0, 0, -1, null),
 /* NxS[  52] */ new Table(0, 0, -1, null),
 /* NxS[  53] */ new Table(0, 0, -1, null),
-/* NxS[  54] */ new Table(0, 0, -1, null),
+/* NxS[  54] */ new Table(10, 1, 54, new sbyte[] {-1}),
 /* NxS[  55] */ new Table(0, 0, -1, null),
-/* NxS[  56] */ new Table(9, 114, 1, new sbyte[] {2, 2, 1, 1, 2, 1, 
+/* NxS[  56] */ new Table(0, 0, -1, null),
+/* NxS[  57] */ new Table(9, 114, 1, new sbyte[] {2, 2, 1, 1, 2, 1, 
           1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
           1, 2, 3, 4, 5, 1, 1, 1, 1, 6, 7, 8, 9, 10, 11, 1, 
           12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 1, 14, 15, 16, 17, 
@@ -372,7 +373,7 @@ namespace MyCompiler
           18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 18, 19, 1, 20, 1, 
           18, 1, 18, 18, 18, 18, 21, 22, 18, 18, 23, 18, 18, 18, 18, 18, 
           18, 24, 18, 25, 18, 26, 18, 18, 18, 18, 18, 18}),
-/* NxS[  57] */ new Table(34, 1, 57, new sbyte[] {54}),
+/* NxS[  58] */ new Table(34, 1, 58, new sbyte[] {55}),
     };
 
 int NextState() {
@@ -795,13 +796,11 @@ int NextState() {
         case 1:
         case 3:
         case 4:
+        case 5:
 return (int)Tokens.error;
             break;
         case 2:
 /* skip */
-            break;
-        case 5:
-/* skip comment */
             break;
         case 6:
 return (int)Tokens.LPAREN;
@@ -906,9 +905,12 @@ return (int)Tokens.DECR;
 return (int)Tokens.INC;
             break;
         case 54:
-yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+/* skip comment */
             break;
         case 55:
+yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+            break;
+        case 56:
 return (int)Tokens.NE;
             break;
         default:

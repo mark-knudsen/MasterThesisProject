@@ -107,7 +107,9 @@ namespace MyCompiler
         public ExpressionNodeExpr Expression { get; set; }
         public AssignNodeExpr(string id, ExpressionNodeExpr expr)
         {
-            Id = id; Expression = expr;
+            Id = id;
+            Expression = expr;
+            SetType(Expression.Type); // Set the type of the assignment to the type of the expression
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAssignExpr(this);
     }

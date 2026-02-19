@@ -4,8 +4,6 @@ using LLVMSharp.Interop;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.ComponentModel.DataAnnotations;
-using System.ComponentModel;
 
 namespace MyCompiler
 {
@@ -34,12 +32,15 @@ namespace MyCompiler
             _module = LLVMModuleRef.CreateWithName("KaleidoscopeModule");
             _builder = _module.Context.CreateBuilder();
             _passBuilderOptions = LLVM.CreatePassBuilderOptions();
+            _engine = _module.CreateMCJITCompiler();
         }
 
 public object Run(NodeExpr expr)
 {
     // 1. Determine last expression
     ExpressionNodeExpr lastExpr = GetLastExpression(expr);
+
+    InitializeModule();
 
     // SAFETY CHECK
     if (lastExpr == null)
@@ -158,6 +159,7 @@ public object Run(NodeExpr expr)
 
         private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr lastExpr = null)
         {
+            System.Console.WriteLine("extract reults");
             if (type == MyType.Int) 
                 return (int)LLVM.GenericValueToInt(res, 0);
             
@@ -170,12 +172,42 @@ public object Run(NodeExpr expr)
             if (type == MyType.Bool)
                 return LLVM.GenericValueToInt(res, 0) == 1;
 
-            if (type == MyType.Array)
+            if (type == MyType.Array) // alright it knows that type is array
             {
+            System.Console.WriteLine("extract reults of array");
                 nint ptr = (nint)LLVM.GenericValueToPointer(res);
-                var arrayNode = lastExpr as ArrayNodeExpr;
-                int length = arrayNode.Length;
-                Console.WriteLine("lenght: " + length);
+
+                // var arrayNode = lastExpr as ArrayNodeExpr;
+                int length = 0;
+                // Console.WriteLine("lenght: " + length);
+
+                if (lastExpr is ArrayNodeExpr arr)
+                {
+                    length = arr.Elements.Count;
+                    System.Console.WriteLine("we have array node");
+                }
+                else if (lastExpr is AssignNodeExpr assign && assign.Expression is ArrayNodeExpr arr2)
+                {
+                    length = arr2.Elements.Count;
+                    System.Console.WriteLine("we have assign node");
+                }
+                // FIX: when assigning array, it absolutely should return array as the last node/type
+                // NOT this
+                // LastExpr.Type BEFORE codegen = Int
+
+                // This
+                // LastExpr.Type BEFORE codegen = Array
+
+                // else if (lastExpr is IdNodeExpr id) // we need to check the length somehow, it could be recommended to save the length at index 0
+                // {
+                //     var entry = _context.Get(expr.Name);
+                //     length = entry.
+                // }
+
+                // else
+                //     throw new Exception("Cannot determine array length."); // we get down to here
+
+
                 // You need the length; if your ArrayNodeExpr has a length field, use that
                 //int length = res; // temporary, or store in ArrayNodeExpr
                 int[] result = new int[length];
@@ -341,7 +373,7 @@ public object Run(NodeExpr expr)
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             var value = Visit(expr.Expression);
-            expr.SetType(expr.Expression.Type); 
+            //expr.SetType(expr.Expression.Type); 
             var global = _module.GetNamedGlobal(expr.Id);
 
             if (global.Handle == IntPtr.Zero)

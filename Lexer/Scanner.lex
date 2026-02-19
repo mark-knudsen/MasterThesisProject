@@ -5,7 +5,7 @@
 
 %%
 
-"#".*          { /* skip comment */ }
+"#1".*          { /* skip comment */ }
 
 "if"            { return (int)Tokens.IF; }
 "else"          { return (int)Tokens.ELSE; }
