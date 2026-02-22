@@ -12,7 +12,6 @@ namespace MyCompiler
         Bool,
         Array,
         Float,
-        Array,
         None
     }
     // The base class for all NodeExprs in your tree
