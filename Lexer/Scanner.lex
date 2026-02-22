@@ -43,6 +43,8 @@
 "["             { return (int)Tokens.LBRACKET; }
 "]"             { return (int)Tokens.RBRACKET; }
 ":"             { return (int)Tokens.COLON; }
+"["             { return (int)Tokens.LBRACKET; }
+"]"             { return (int)Tokens.RBRACKET; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
 

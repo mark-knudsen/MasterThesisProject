@@ -10,6 +10,7 @@ namespace MyCompiler
         Int,
         String,
         Bool,
+        Array,
         Float,
         Array,
         None
@@ -175,7 +176,7 @@ namespace MyCompiler
     }
 
     // Represents an assignment (e.g., x = 10)
-    public class AssignNodeExpr : StatementNodeExpr
+    public class AssignNodeExpr : ExpressionNodeExpr // should this be StatementNodeExpr or ExpressionNodeExpr?
     {
         public string Id { get; set; }  // ID = expr  -->   x = 10 
         public ExpressionNodeExpr Expression { get; set; }
@@ -289,23 +290,5 @@ namespace MyCompiler
             Type = MyType.Array;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
-    }
-    public class IndexNodeExpr : ExpressionNodeExpr
-    {
-        public ExpressionNodeExpr ArrayExpression { get; }
-        public ExpressionNodeExpr IndexExpression { get; }
-
-        public IndexNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr indexExpr)
-        {
-            ArrayExpression = arrayExpr;
-            IndexExpression = indexExpr;
-
-            // Defaulting to Float/Int for now. 
-            // In a more complex compiler, you'd look up the array's subtype.
-            Type = MyType.Float;
-        }
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-            => visitor.VisitIndexExpr(this);
     }
 }
