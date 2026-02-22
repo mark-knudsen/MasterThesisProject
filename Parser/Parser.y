@@ -16,7 +16,6 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA COLON
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR
 %token PRINT RANDOM ROUND FUNC
-
 %token GE LE EQ NE GT LT 
 
 %nonassoc IF
@@ -30,9 +29,6 @@
 %type <node> Prog Statement StatementList Assignment expr
 %type <obj> params args  /* Use <obj> for lists */
 %type <exprList> expr_list
-
-%type <exprList> expr_list
-
 
 /* This tells the parser which C# variable stores the final tree */
 %{
@@ -72,7 +68,7 @@ expr_list
     : expr                     { $$ = new List<ExpressionNodeExpr> { $1 as ExpressionNodeExpr }; }
     | expr_list COMMA expr     { $1.Add($3 as ExpressionNodeExpr); $$ = $1; }
     ;
-
+    
 expr
     : BOOL_LITERAL        { $$ = new BooleanNodeExpr((bool)$1); }
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
@@ -110,6 +106,8 @@ expr
 
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); }
 
+    | expr LBRACKET expr RBRACKET 
+        { $$ = new IndexNodeExpr($1 as ExpressionNodeExpr, $3 as ExpressionNodeExpr); }
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
 
