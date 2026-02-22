@@ -24,6 +24,9 @@ namespace MyCompiler
         // Maps function name to its Signature (LLVMTypeRef)
         private Dictionary<string, LLVMTypeRef> _functionPrototypes = new Dictionary<string, LLVMTypeRef>();
 
+        // 1. Store the type globally so it never gets garbage collected or lost
+        private LLVMTypeRef _mallocType;
+
         public Compiler()
         {
             LLVM.InitializeNativeTarget();
@@ -51,121 +54,94 @@ namespace MyCompiler
 
         public object Run(NodeExpr expr)
         {
+            // 1. SEMANTIC ANALYSIS (Type Checking)
+            // We pass the current _context so the checker knows about existing variables.
+            var checker = new TypeChecker(_context);
+            checker.Check(expr);
+
+            // Update the compiler's context with any new variables found during type checking
+            _context = checker.UpdatedContext;
+
+            // 2. INITIALIZE LLVM
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
 
-            // 1. Predict
+            // 3. PREDICT WRAPPER RETURN TYPE
+            // Now that the TypeChecker has run, expr.Type is GUARANTEED to be populated.
             var lastNode = GetLastExpression(expr);
             MyType prediction = MyType.None;
-            if (lastNode is ExpressionNodeExpr exp) prediction = exp.Type;
 
-            // --- FIX: CHECK FUNCTION SIGNATURE BEFORE DEFINING WRAPPER ---
-            if (lastNode is FunctionCallNode call)
+            if (lastNode is ExpressionNodeExpr exp)
             {
-                if (_functionPrototypes.TryGetValue(call.Name, out var signature))
-                {
-                    prediction = MapLLVMTypeToMyType(signature.ReturnType);
-                }
+                prediction = exp.Type;
             }
 
-            // 2. UNIVERSAL WRAPPER SIGNATURE
+            // 4. UNIVERSAL WRAPPER SIGNATURE
             LLVMTypeRef llvmRetType = prediction switch
             {
                 MyType.Float => LLVMTypeRef.Double,
-                MyType.Int => LLVMTypeRef.Int64,  // Use i64 for the REPL wrapper for safety
-                MyType.Bool => LLVMTypeRef.Int1,
-                MyType.String => LLVMTypeRef.Int64,  // Pointers are 64-bit
+                MyType.Int => LLVMTypeRef.Double, // Consistency: Numbers are doubles
+                MyType.Bool => LLVMTypeRef.Double,
+                MyType.String => LLVMTypeRef.Int64,  // Pointers as i64 bits
+                MyType.Array => LLVMTypeRef.Int64,  // Pointers as i64 bits
                 MyType.None => LLVMTypeRef.Void,
-                _ => LLVMTypeRef.Int64   // Absolute fallback
+                _ => LLVMTypeRef.Int64
             };
 
             var funcType = LLVMTypeRef.CreateFunction(llvmRetType, Array.Empty<LLVMTypeRef>());
             var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
             _builder.PositionAtEnd(func.AppendBasicBlock("entry"));
 
-            // 3. GENERATE CODE
+            // 5. GENERATE CODE
             var resultValue = Visit(expr);
 
-            // 4. FINALIZE RETURN
+            // 6. FINALIZE RETURN (The "Boxing" Logic)
             if (llvmRetType == LLVMTypeRef.Void)
             {
                 _builder.BuildRetVoid();
-
-                // Debug & Execute for Void
-                Console.WriteLine("--- GENERATED IR ---");
-                Console.WriteLine(_module.PrintToString());
-
-                using var engineVoid = _module.CreateMCJITCompiler();
-                engineVoid.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
-
-                if (lastNode is ForLoopNodeExpr) return "Loop Executed";
-                if (lastNode is FunctionDefNode) return "Function Defined";
-                return null;
             }
             else
             {
                 LLVMValueRef finalRet = resultValue;
 
-                // A. Safety Check: If Visit returned Void but wrapper expects a result
-                if (resultValue.TypeOf == LLVMTypeRef.Void)
+                // Pointer Handling (Strings/Arrays)
+                if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
                 {
-                    // Use a dummy zero to prevent the cast crash
-                    finalRet = (llvmRetType == LLVMTypeRef.Double)
-                        ? LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0)
-                        : LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0);
-                }
-                // B. Handle Pointers
-                else if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                {
-                    prediction = MyType.String;
                     finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int64, "ptr_to_i64");
-
-                    // CRITICAL: If our wrapper is Double, we MUST use BitCast for pointers.
-                    // SIToFP will destroy the memory address bits.
                     if (llvmRetType == LLVMTypeRef.Double)
-                    {
                         finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "ptr_bits_to_double");
-                    }
                 }
-
-                // C. Match result to the wrapper's return signature (Double or Int64)
-                if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
+                // Number Handling
+                else if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
                 {
-                    // Use SIToFP for integers so the value (e.g. 42) is preserved as 42.0
-                    if (finalRet.TypeOf == LLVMTypeRef.Int32 || finalRet.TypeOf == LLVMTypeRef.Int64)
-                        finalRet = _builder.BuildSIToFP(finalRet, LLVMTypeRef.Double, "i_to_double");
-                    else
-                        finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "force_bits");
-                }
-                else if (llvmRetType == LLVMTypeRef.Int64 && finalRet.TypeOf != LLVMTypeRef.Int64)
-                {
-                    // If we have a double but need i64 (for a string pointer), bitcast
-                    if (finalRet.TypeOf == LLVMTypeRef.Double)
-                        finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Int64, "double_to_i64");
-                    else
-                        finalRet = _builder.BuildZExt(finalRet, LLVMTypeRef.Int64, "zext64");
+                    finalRet = _builder.BuildSIToFP(finalRet, LLVMTypeRef.Double, "i_to_double");
                 }
 
                 _builder.BuildRet(finalRet);
             }
 
-            // 5. DEBUG & EXECUTE
+            // 7. EXECUTE
             Console.WriteLine("--- GENERATED IR ---");
             Console.WriteLine(_module.PrintToString());
 
             using var engine = _module.CreateMCJITCompiler();
             var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
 
-            Console.WriteLine($"Final Prediction: {prediction}"); // Debug line
-            return ExtractResult(res, prediction);
+            // 8. EXTRACT
+            return ExtractResult(res, prediction, expr);
         }
 
         // --- Helpers to keep Run() clean ---
 
-        private NodeExpr GetLastExpression(NodeExpr expr) // Return NodeExpr, not ExpressionNodeExpr
+        private NodeExpr GetLastExpression(NodeExpr expr)
         {
             if (expr is SequenceNodeExpr seq)
-                return seq.Statements.LastOrDefault();
+            {
+                var last = seq.Statements.LastOrDefault();
+                // If the sequence is empty, return the sequence itself; 
+                // otherwise, recurse into the last statement.
+                return last != null ? GetLastExpression(last) : expr;
+            }
             return expr;
         }
 
@@ -180,38 +156,95 @@ namespace MyCompiler
             return MyType.None;
         }
 
-
-        private object ExtractResult(LLVMGenericValueRef res, MyType type)
+        private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
         {
-            if (type == MyType.Int) return (int)LLVM.GenericValueToInt(res, 1);
-            if (type == MyType.Bool) return LLVM.GenericValueToInt(res, 0) != 0;
-            if (type == MyType.Float) return LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-
-            if (type == MyType.String)
+            // 0. SILENCE CHECK: Don't show results for assignments, prints, or loops
+            var lastNode = GetLastExpression(originalExpr);
+            if (lastNode is AssignNodeExpr ||
+                lastNode is PrintNodeExpr ||
+                lastNode is IfNodeExpr ||
+                lastNode is ForLoopNodeExpr ||
+                lastNode is IncrementNodeExpr ||
+                lastNode is DecrementNodeExpr)
             {
-                // 1. Try to get the address as a raw 64-bit integer
-                ulong addr = LLVM.GenericValueToInt(res, 0);
-
-                // 2. If that looks like 0, try the floating-point bitcast fallback 
-                // (Just in case the exec wrapper used bitcast instead of ptrtoint)
-                if (addr == 0)
-                {
-                    double rawDouble = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                    addr = (ulong)BitConverter.DoubleToInt64Bits(rawDouble);
-                }
-
-                if (addr == 0) return "(null)";
-
-                // 3. Convert the address to a C# string
-                IntPtr ptr = new IntPtr((long)addr);
-                return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(ptr);
+                return null;
             }
-            return null;
+
+            ulong rawBits;
+
+            // 1. EXTRACTION: Pull bits based on physical return type
+            if (type == MyType.Float || type == MyType.Int)
+            {
+                // Numbers are returned as doubles
+                double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
+            }
+            else if (type == MyType.String || type == MyType.Array)
+            {
+                // Try as integer first (standard i64 address)
+                rawBits = LLVM.GenericValueToInt(res, 0);
+
+                // Fallback: If it was bitcasted to double for return
+                if (rawBits == 0)
+                {
+                    double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                    rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
+                }
+            }
+            else if (type == MyType.Bool)
+            {
+                // Booleans in your IR are returning as i1 (1-bit integer)
+                rawBits = LLVM.GenericValueToInt(res, 0);
+            }
+            else
+            {
+                rawBits = LLVM.GenericValueToInt(res, 0);
+            }
+
+            // 2. INTERPRETATION: Convert bits to C# object
+            // FIX: Added '&& type != MyType.Bool' so that false (0) doesn't return "null"
+            if (rawBits == 0 && type != MyType.Float && type != MyType.Bool)
+            {
+                return "null";
+            }
+
+            switch (type)
+            {
+                case MyType.Float:
+                case MyType.Int:
+                    return BitConverter.UInt64BitsToDouble(rawBits);
+
+                case MyType.String:
+                    try
+                    {
+                        return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
+                    }
+                    catch
+                    {
+                        return $"[Pointer @ 0x{rawBits:X}]";
+                    }
+
+                case MyType.Array:
+                    return $"[Array Address: 0x{rawBits:X}]";
+
+                case MyType.Bool:
+                    // Pull the value as a double
+                    double bVal = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+
+                    // 0.0 is False, literally anything else (1.0, -1.0, 0.5) is True
+                    if (bVal == 0.0) return false;
+                    return true;
+
+                // (You can keep the i1 rawBits check below this if you still have i1 returns)
+
+                default:
+                    return rawBits;
+            }
         }
 
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
-            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)expr.Value, false);
+            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
         }
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
@@ -228,9 +261,10 @@ namespace MyCompiler
 
         public LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr)
         {
-            ulong val = expr.Value ? 1UL : 0UL;
-            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int1, val, false);
+            // Use 1.0 for True to match your Int-to-Bool promotion
+            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value ? 1.0 : 0.0);
         }
+
         public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
         {
             return _builder.BuildGlobalStringPtr(expr.Value, "str");
@@ -243,179 +277,283 @@ namespace MyCompiler
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
-            var lhs = Visit(expr.Left);
-            var rhs = Visit(expr.Right);
-            // 1. THE ULTIMATE GUARD: If either side is an LLVM Pointer, we MUST use String Concat
-            // This ignores whatever 'MyType' says and looks at the actual generated LLVM IR type
-            bool lhsIsPtr = lhs.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
-            bool rhsIsPtr = rhs.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
+            // 1. Get the types assigned by the TypeChecker
+            var leftType = expr.Left.Type;
+            var rightType = expr.Right.Type;
 
-            if (expr.Operator == "+" && (lhsIsPtr || rhsIsPtr))
+            // 2. PRIORITY: Numeric Math
+            // If both sides are numeric (Int/Float), use standard LLVM math instructions.
+            bool isNumeric = (leftType == MyType.Int || leftType == MyType.Float) &&
+                             (rightType == MyType.Int || rightType == MyType.Float);
+
+            if (isNumeric)
             {
-                // Use your BuildStringConcat helper
-                // We pass the types so the helper knows whether to use %s or %d
-                return BuildStringConcat(lhs, lhsIsPtr ? MyType.String : MyType.Float,
-                                         rhs, rhsIsPtr ? MyType.String : MyType.Float);
-            }
+                var lhs = EnsureFloat(Visit(expr.Left), leftType);
+                var rhs = EnsureFloat(Visit(expr.Right), rightType);
 
-            // 2. Math logic (only if neither is a pointer)
-            bool isFloat = (expr.Left.Type == MyType.Float || expr.Right.Type == MyType.Float ||
-                            expr.Left.Type == MyType.Int || expr.Right.Type == MyType.Int);
-
-            if (isFloat)
-            {
-                lhs = EnsureFloat(lhs, expr.Left.Type);
-                rhs = EnsureFloat(rhs, expr.Right.Type);
                 return expr.Operator switch
                 {
                     "+" => _builder.BuildFAdd(lhs, rhs, "faddtmp"),
                     "-" => _builder.BuildFSub(lhs, rhs, "fsubtmp"),
-                    _ => throw new InvalidOperationException()
+                    "*" => _builder.BuildFMul(lhs, rhs, "fmultmp"),
+                    "/" => _builder.BuildFDiv(lhs, rhs, "fdivtmp"),
+                    _ => throw new InvalidOperationException($"Math operator {expr.Operator} not supported for numeric types")
                 };
             }
 
-            // Standard Integer Math
+            // 3. SECONDARY: String Concatenation
+            // Only if it's a '+' and at least one side is a String (or a pointer address)
+            var lhsVal = Visit(expr.Left);
+            var rhsVal = Visit(expr.Right);
+
+            bool lhsIsPtr = lhsVal.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
+            bool rhsIsPtr = rhsVal.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
+
+            if (expr.Operator == "+" && (leftType == MyType.String || rightType == MyType.String || lhsIsPtr || rhsIsPtr))
+            {
+                // Use the metadata types to guide BuildStringConcat
+                return BuildStringConcat(lhsVal, leftType, rhsVal, rightType);
+            }
+
+            // 4. FALLBACK: Integer/Other Math
             return expr.Operator switch
             {
-                "+" => _builder.BuildAdd(lhs, rhs, "addtmp"),
-                "-" => _builder.BuildSub(lhs, rhs, "subtmp"),
-                "*" => _builder.BuildMul(lhs, rhs, "multmp"),
-                "/" => _builder.BuildSDiv(lhs, rhs, "divtmp"),
-                _ => throw new InvalidOperationException("Unknown operator")
+                "+" => _builder.BuildAdd(lhsVal, rhsVal, "addtmp"),
+                "-" => _builder.BuildSub(lhsVal, rhsVal, "subtmp"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, lhsVal, rhsVal, "cmptmp"),
+                _ => throw new InvalidOperationException($"Unknown operator {expr.Operator} for types {leftType} and {rightType}")
             };
         }
 
+
+
+        public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
+        {
+            uint count = (uint)expr.Elements.Count;
+            var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, count * 8);
+
+            var mallocFunc = GetOrDeclareMalloc();
+
+            // CRITICAL FIX: Pass _mallocType directly, NOT mallocFunc.TypeOf
+            var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { size }, "arr_ptr");
+
+            for (int i = 0; i < expr.Elements.Count; i++)
+            {
+                var val = Visit(expr.Elements[i]);
+                var boxed = BoxToI64(val);
+
+                var idx = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)i);
+                // Ensure we index into an i64 array
+                var elementPtr = _builder.BuildGEP2(LLVMTypeRef.Int64, arrayPtr, new[] { idx }, $"idx_{i}");
+                _builder.BuildStore(boxed, elementPtr);
+            }
+            return arrayPtr;
+        }
+        public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
+        {
+            var arrayPtr = Visit(expr.ArrayExpression);
+            var index = Visit(expr.IndexExpression);
+
+            // 1. Index must be i32 for GEP
+            if (index.TypeOf == LLVMTypeRef.Double)
+                index = _builder.BuildFPToSI(index, LLVMTypeRef.Int32, "idx_int");
+
+            // 2. Load the value from the i64 array
+            var elementPtr = _builder.BuildGEP2(LLVMTypeRef.Int64, arrayPtr, new[] { index }, "ptr");
+            var boxed = _builder.BuildLoad2(LLVMTypeRef.Int64, elementPtr, "val");
+
+            // 3. THE FIX: Bitcast for Numbers, IntToPtr for Strings
+            if (expr.Type == MyType.Float || expr.Type == MyType.Int)
+            {
+                // "Treat these 64 bits as a Double"
+                return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
+            }
+
+            if (expr.Type == MyType.String)
+            {
+                // "Treat these 64 bits as a memory address"
+                var opaquePtr = LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0);
+                return _builder.BuildIntToPtr(boxed, opaquePtr, "i2ptr");
+            }
+
+            return boxed;
+        }
+
+
+        private LLVMValueRef BoxToI64(LLVMValueRef value)
+        {
+            if (value.TypeOf == LLVMTypeRef.Int64) return value;
+
+            if (value.TypeOf == LLVMTypeRef.Double)
+                return _builder.BuildBitCast(value, LLVMTypeRef.Int64, "num_to_i64");
+
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                return _builder.BuildPtrToInt(value, LLVMTypeRef.Int64, "ptr_to_i64");
+
+            return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
+        }
+
+        private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
+        {
+            if (target == MyType.Float || target == MyType.Int)
+                return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
+
+            if (target == MyType.String || target == MyType.Array)
+                return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
+
+            return boxed;
+        }
+        private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
+        {
+            // If we want a number, and it's already a double, just return it!
+            if (target == MyType.Float || target == MyType.Int)
+            {
+                return val;
+            }
+
+            // If we want a string/pointer, we must go: Double bits -> Int64 -> Pointer
+            if (target == MyType.String || target == MyType.Array)
+            {
+                var asInt64 = _builder.BuildBitCast(val, LLVMTypeRef.Int64, "smuggled_to_i64");
+                return _builder.BuildIntToPtr(asInt64, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i64_to_ptr");
+            }
+
+            return val;
+        }
+        private LLVMValueRef GetOrDeclareMalloc()
+        {
+            var mallocFunc = _module.GetNamedFunction("malloc");
+            if (mallocFunc.Handle != IntPtr.Zero) return mallocFunc;
+
+            // Define: ptr malloc(i64)
+            _mallocType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
+                new[] { LLVMTypeRef.Int64 }
+            );
+
+            return _module.AddFunction("malloc", _mallocType);
+        }
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             var value = Visit(expr.Expression);
 
-            // FIX: Ensure numbers are always stored as Doubles
-            if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+            // 1. Unified Storage Type logic
+            // We treat Strings and Arrays as pointers (ptr), and numbers as Double.
+            LLVMTypeRef storageType;
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
             {
-                value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
+                storageType = LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0); // Opaque ptr
             }
-            // Always create/get the global in the CURRENT module
-            LLVMTypeRef storageType = (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0)
-                : LLVMTypeRef.Double;
+            else if (value.TypeOf == LLVMTypeRef.Double || value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+            {
+                // Ensure all numbers are stored as Doubles for consistency
+                if (value.TypeOf != LLVMTypeRef.Double)
+                {
+                    value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
+                }
+                storageType = LLVMTypeRef.Double;
+            }
+            else
+            {
+                storageType = value.TypeOf;
+            }
 
-            // This finds the variable if it exists in the CURRENT module, or creates it if not.
+            // 2. Persistent Global Management
             var varPtr = _module.GetNamedGlobal(expr.Id);
             if (varPtr.Handle == IntPtr.Zero)
             {
                 varPtr = _module.AddGlobal(storageType, expr.Id);
                 varPtr.Initializer = LLVMValueRef.CreateConstNull(storageType);
+                varPtr.Alignment = 8; // Best practice for 64-bit values
             }
 
-            // Update context so the Symbol Table knows the latest Type/Reference
-            MyType myType = (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind) ? MyType.String : MyType.Float;
-            _context = _context.Add(expr.Id, varPtr, myType);
+            // 3. Update Context using AST Type
+            // Instead of guessing if it's a string, we trust the Parser/AST's prediction
+            _context = _context.Add(expr.Id, varPtr, expr.Expression.Type);
 
+            // 4. Perform the Store
             _builder.BuildStore(value, varPtr);
-            return value;
+
+            return default;
         }
 
 
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             // 1. Check Local Function Parameters FIRST
-            // These are direct values, so we return them immediately (no Load needed)
             if (_localScope != null && _localScope.TryGetValue(expr.Name, out var paramValue))
             {
-                // For your thesis: Parameters in this setup are treated as Floats 
-                // because our FunctionDef defines them as doubles.
-                expr.SetType(MyType.Float);
-                return paramValue;
+                // Get the type the TypeChecker assigned (Critical for add vs helloname)
+                var entryType = _context.Get(expr.Name)?.Type ?? MyType.Float;
+                expr.SetType(entryType);
+
+                // Since your VisitFunctionDef defines parameters as LLVM Double, 
+                // we "Unbox" them based on what they actually represent.
+                return UnboxFromDouble(paramValue, entryType);
             }
 
             // 2. Check the Symbol Table (Global Variables)
             var entry = _context.Get(expr.Name);
             if (entry is null) throw new Exception($"Variable {expr.Name} not defined");
 
-            // Pull the type from the symbol table
-            var actualType = entry.Value.Type; // Is this MyType.String?
+            var actualType = entry.Type;
             expr.SetType(actualType);
 
-            // Variables are pointers in memory, so we MUST use BuildLoad2
-            LLVMTypeRef llvmType = GetLLVMType(actualType);
-            return _builder.BuildLoad2(llvmType, entry.Value.Value, expr.Name);
-        }
+            // 3. Load from memory
+            LLVMTypeRef llvmType = (actualType == MyType.String || actualType == MyType.Array)
+                ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0)
+                : LLVMTypeRef.Double;
 
-        public LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr)
-        {
-            var entry = _context.Get(expr.Id)
-                ?? throw new InvalidOperationException($"Variable {expr.Id} not defined");
-
-            var valueRef = entry.Value;
-
-            var current = _builder.BuildLoad2(LLVMTypeRef.Int32, valueRef, expr.Id);
-
-            var decremented = _builder.BuildSub(
-                current,
-                LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 1, false),
-                "dec");
-
-            _builder.BuildStore(decremented, valueRef);
-
-            return decremented;
+            return _builder.BuildLoad2(llvmType, entry.Value, expr.Name);
         }
 
         public LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr)
         {
             var entry = _context.Get(expr.Id)
-                ?? throw new InvalidOperationException($"Variable {expr.Id} not defined");
+                ?? throw new Exception($"Variable {expr.Id} not defined");
 
-            var valueRef = entry.Value;
+            var varPtr = entry.Value;
+            var value = _builder.BuildLoad2(LLVMTypeRef.Double, varPtr, "inc_load");
+            var newValue = _builder.BuildFAdd(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "inc_add");
 
-            var current = _builder.BuildLoad2(LLVMTypeRef.Int32, valueRef, expr.Id);
-
-            var incremented = _builder.BuildAdd(
-                current,
-                LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 1, false),
-                "inc");
-
-            _builder.BuildStore(incremented, valueRef);
-
-            return incremented;
+            _builder.BuildStore(newValue, varPtr);
+            return newValue;
         }
+
+        public LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr)
+        {
+            var entry = _context.Get(expr.Id)
+                ?? throw new Exception($"Variable {expr.Id} not defined");
+
+            var varPtr = entry.Value;
+            var value = _builder.BuildLoad2(LLVMTypeRef.Double, varPtr, "dec_load");
+            var newValue = _builder.BuildFSub(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "dec_sub");
+
+            _builder.BuildStore(newValue, varPtr);
+            return newValue;
+        }
+
 
         // Update your IExpressionVisitor interface to include this
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
         {
-            var lhs = Visit(expr.Left);
-            var rhs = Visit(expr.Right);
+            var left = Visit(expr.Left);
+            var right = Visit(expr.Right);
 
-            // Check if we are comparing floats
-            bool isFloat = (expr.Left.Type == MyType.Float || expr.Right.Type == MyType.Float);
+            // Ensure both are doubles for comparison
+            if (left.TypeOf != LLVMTypeRef.Double) left = _builder.BuildSIToFP(left, LLVMTypeRef.Double, "l_to_d");
+            if (right.TypeOf != LLVMTypeRef.Double) right = _builder.BuildSIToFP(right, LLVMTypeRef.Double, "r_to_d");
 
-            if (isFloat)
-            {
-                lhs = EnsureFloat(lhs, expr.Left.Type);
-                rhs = EnsureFloat(rhs, expr.Right.Type);
-
-                return expr.Operator switch
-                {
-                    "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, lhs, rhs, "fcmptmp"),
-                    "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, lhs, rhs, "fcmptmp"),
-                    "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, lhs, rhs, "fcmptmp"),
-                    ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, lhs, rhs, "fcmptmp"),
-                    "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, lhs, rhs, "fcmptmp"),
-                    ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, lhs, rhs, "fcmptmp"),
-                    _ => throw new Exception($"Unknown float operator: {expr.Operator}")
-                };
-            }
-
-            // Integer Comparison
             return expr.Operator switch
             {
-                "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, lhs, rhs, "cmptmp"),
-                "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, lhs, rhs, "cmptmp"),
-                "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, lhs, rhs, "cmptmp"),
-                ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, lhs, rhs, "cmptmp"),
-                "<=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, lhs, rhs, "cmptmp"),
-                ">=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, lhs, rhs, "cmptmp"),
-                _ => throw new Exception($"Unknown integer operator: {expr.Operator}")
+                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "cmptmp"),
+                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "cmptmp"),
+                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "cmptmp"),
+                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "cmptmp"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "cmptmp"),
+                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "cmptmp"),
+                _ => throw new Exception("Unknown operator")
             };
         }
 
@@ -448,7 +586,7 @@ namespace MyCompiler
             _builder.BuildBr(mergeBB);
 
             _builder.PositionAtEnd(mergeBB);
-            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0); // Return dummy 0 for void-like if
+            return default;
         }
         public LLVMValueRef VisitRoundExpr(RoundNodeExpr expr)
         {
@@ -529,30 +667,46 @@ namespace MyCompiler
 
             LLVMValueRef formatStr;
 
-            // 1. Get the actual LLVM Kind
-            var typeKind = valueToPrint.TypeOf.Kind;
+            // 1. STRINGS
+            if (expr.Expression.Type == MyType.String)
+            {
+                if (valueToPrint.TypeOf.Kind != LLVMTypeKind.LLVMPointerTypeKind)
+                {
+                    // If it's bits in a double, bitcast to i64 first
+                    if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+                        valueToPrint = _builder.BuildBitCast(valueToPrint, LLVMTypeRef.Int64, "bits");
 
-            // 2. Select format string based on the REAL IR type
-            if (typeKind == LLVMTypeKind.LLVMDoubleTypeKind)
-            {
-                formatStr = _builder.BuildGlobalStringPtr("%f\n", "print_float_fmt");
-            }
-            else if (typeKind == LLVMTypeKind.LLVMPointerTypeKind)
-            {
+                    // Convert i64 address to actual Pointer
+                    valueToPrint = _builder.BuildIntToPtr(valueToPrint, LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), "ptr");
+                }
                 formatStr = _builder.BuildGlobalStringPtr("%s\n", "print_str_fmt");
             }
-            else // Assume i32/i1
+            // 2. NUMBERS (Including those loaded from Arrays)
+            else
             {
-                formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
+                // If the value is an i64 (which happens when loading from our generic i64 array slots),
+                // we MUST bitcast it back to Double so printf %f can read it correctly.
+                if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && valueToPrint.TypeOf.IntWidth == 64)
+                {
+                    valueToPrint = _builder.BuildBitCast(valueToPrint, LLVMTypeRef.Double, "array_val_to_dbl");
+                    formatStr = _builder.BuildGlobalStringPtr("%f\n", "print_float_fmt");
+                }
+                else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+                {
+                    formatStr = _builder.BuildGlobalStringPtr("%f\n", "print_float_fmt");
+                }
+                else
+                {
+                    formatStr = _builder.BuildGlobalStringPtr("%d\n", "print_int_fmt");
+                }
             }
 
-            // 3. Call printf
             var printfType = LLVMTypeRef.CreateFunction(llvmCtx.Int32Type,
                 new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) }, true);
 
-            return _builder.BuildCall2(printfType, printf,
-                new[] { formatStr, valueToPrint }, "printcall");
+            return _builder.BuildCall2(printfType, printf, new[] { formatStr, valueToPrint }, "printcall");
         }
+
 
         // For loop implementation to LLVM, more advanced
         public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
@@ -576,14 +730,18 @@ namespace MyCompiler
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-            // Ensure condition is i1 (Boolean)
-            // If your comparison returns Double, you'd need a BuildFCmp here.
-            // If it returns i32, use BuildICmp.
-            if (condition.TypeOf != LLVMTypeRef.Int1)
+            // If the condition is a Double (typical for your comparison results), 
+            // we need to compare it against 0.0 using FCmp
+            if (condition.TypeOf == LLVMTypeRef.Double)
             {
-                // Example: convert i32 to i1 by checking if != 0
+                condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
+                    condition, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0.0), "fortest_dbl");
+            }
+            // If it's an i64 or i32, use ICmp
+            else if (condition.TypeOf != LLVMTypeRef.Int1)
+            {
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
-                    condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest");
+                    condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
             }
 
             _builder.BuildCondBr(condition, bodyBlock, endBlock);
@@ -601,7 +759,7 @@ namespace MyCompiler
             // 6. End Block
             _builder.PositionAtEnd(endBlock);
 
-            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0);
+            return default;
         }
 
 
@@ -675,6 +833,7 @@ namespace MyCompiler
                 "double" => MyType.Float,
                 "bool" => MyType.Bool,
                 "void" => MyType.None,
+                "array" => MyType.Array,
                 _ => MyType.Float  // Default for your thesis language
             };
         }
@@ -700,16 +859,19 @@ namespace MyCompiler
             {
                 var val = Visit(node.Arguments[i]);
 
-                // --- THE FIX ---
-                // Since our functions use 'double' for all parameters, 
-                // we must cast every argument to double before calling.
-                if (val.TypeOf != LLVMTypeRef.Double)
+                // If it's a string pointer, bitcast it to a double
+                if (node.Arguments[i].Type == MyType.String)
+                {
+                    // Pointer -> i64 -> double
+                    var asInt = _builder.BuildPtrToInt(val, LLVMTypeRef.Int64, "ptr_to_i64");
+                    val = _builder.BuildBitCast(asInt, LLVMTypeRef.Double, "ptr_as_double");
+                }
+                else if (val.TypeOf != LLVMTypeRef.Double)
                 {
                     val = _builder.BuildSIToFP(val, LLVMTypeRef.Double, "arg_to_double");
                 }
                 args.Add(val);
             }
-
             return _builder.BuildCall2(signature, _module.GetNamedFunction(node.Name), args.ToArray(), "calltmp");
         }
 
@@ -750,40 +912,63 @@ namespace MyCompiler
             var llvmCtx = _module.Context;
             var malloc = GetMalloc();
             var sprintf = GetSprintf();
+            var ptrType = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
 
+            // --- INTERNAL HELPER: Prepare individual arguments for sprintf ---
+            LLVMValueRef PrepareArg(LLVMValueRef val, MyType type)
+            {
+                if (type == MyType.String)
+                {
+                    // Case A: It's already an LLVM Pointer (e.g., a global constant "Hello ")
+                    if (val.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                    {
+                        return val;
+                    }
 
-            // Inside BuildStringConcat
-            if (lhsType != MyType.String)
-                lhs = _builder.BuildFPToSI(lhs, LLVMTypeRef.Int32, "tmp_int");
-            if (rhsType != MyType.String)
-                rhs = _builder.BuildFPToSI(rhs, LLVMTypeRef.Int32, "tmp_int");
+                    // Case B: It's a "Smuggled String" inside a Double (e.g., parameter 'x')
+                    // We BitCast bits to i64, then turn that i64 into a Pointer
+                    var asInt64 = _builder.BuildBitCast(val, llvmCtx.Int64Type, "smuggled_to_i64");
+                    return _builder.BuildIntToPtr(asInt64, ptrType, "i64_to_ptr");
+                }
 
-            // 1. Allocate 256 bytes for the new string
+                // Case C: It's a legitimate number (Int/Float/Bool)
+                // Convert to i32 so sprintf can use %d
+                return _builder.BuildFPToSI(val, llvmCtx.Int32Type, "num_to_i32");
+            }
+
+            // Prepare both sides
+            var lhsFinal = PrepareArg(lhs, lhsType);
+            var rhsFinal = PrepareArg(rhs, rhsType);
+
+            // 1. Allocate 256 bytes for the result string
             var buffer = _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), new[] { llvmCtx.Int64Type }),
+                LLVMTypeRef.CreateFunction(ptrType, new[] { llvmCtx.Int64Type }),
                 malloc,
                 new[] { LLVMValueRef.CreateConstInt(llvmCtx.Int64Type, 256) },
                 "concat_buf"
             );
 
-            // 2. Determine the format string (e.g., "%s%s", "%s%d", or "%d%s")
-            string fmtStr = "";
-            fmtStr += (lhsType == MyType.String) ? "%s" : "%d";
-            fmtStr += (rhsType == MyType.String) ? "%s" : "%d";
+            // 2. Generate the dynamic format string based on the types
+            // This ensures we get "%s%s" for two strings
+            string fmtStr = (lhsType == MyType.String ? "%s" : "%d") +
+                            (rhsType == MyType.String ? "%s" : "%d");
 
             var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "concat_fmt");
 
             // 3. Call sprintf(buffer, fmt, lhs, rhs)
+            // We use a variadic function type: (ptr, ptr, ...) -> i32
             var sprintfType = LLVMTypeRef.CreateFunction(
                 llvmCtx.Int32Type,
-                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0), LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) },
-                true
+                new[] { ptrType, ptrType },
+                true // IsVariadic
             );
 
-            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtPtr, lhs, rhs }, "sprintf_call");
+            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtPtr, lhsFinal, rhsFinal }, "sprintf_call");
 
             return buffer;
         }
+
+
         private LLVMValueRef GetMalloc()
         {
             var fn = _module.GetNamedFunction("malloc");
@@ -806,11 +991,12 @@ namespace MyCompiler
         {
             return type switch
             {
-                MyType.Int => LLVMTypeRef.Int32,
+                MyType.Int => LLVMTypeRef.Double,
                 MyType.Float => LLVMTypeRef.Double,
                 MyType.Bool => LLVMTypeRef.Int1,
                 MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), // Must be a pointer!
                 MyType.None => LLVMTypeRef.Void,
+                MyType.Array => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
                 _ => LLVMTypeRef.Double
             };
         }

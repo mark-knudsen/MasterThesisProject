@@ -1,28 +1,32 @@
+#nullable enable
 using System.Collections.Immutable;
 using LLVMSharp.Interop;
 
-namespace MyCompiler;
-
-public sealed class Context
+namespace MyCompiler
 {
-    private readonly ImmutableDictionary<string, (LLVMValueRef Value, MyType Type)> _source;
+    public record ContextEntry(LLVMValueRef Value, MyType Type, MyType? ElementType = null);
 
-    public static Context Empty => new Context();
-
-    private Context()
-        => _source = ImmutableDictionary<string, (LLVMValueRef, MyType)>.Empty;
-
-    private Context(ImmutableDictionary<string, (LLVMValueRef, MyType)> source)
-        => _source = source;
-
-    public Context Add(string key, LLVMValueRef value, MyType type)
-        => new Context(_source.SetItem(key, (value, type)));
-
-    public (LLVMValueRef Value, MyType Type)? Get(string key)
+    public sealed class Context
     {
-        if (_source.TryGetValue(key, out var value))
-            return value;
+        private readonly ImmutableDictionary<string, ContextEntry> _source;
 
-        return null;
+        public static Context Empty => new Context();
+
+        private Context()
+            => _source = ImmutableDictionary<string, ContextEntry>.Empty;
+
+        private Context(ImmutableDictionary<string, ContextEntry> source)
+            => _source = source;
+
+        public Context Add(string name, LLVMValueRef value, MyType type, MyType? elementType = null)
+        {
+            var newEntry = new ContextEntry(value, type, elementType);
+            return new Context(_source.SetItem(name, newEntry));
+        }
+
+        public ContextEntry? Get(string key)
+        {
+            return _source.TryGetValue(key, out var entry) ? entry : null;
+        }
     }
 }
