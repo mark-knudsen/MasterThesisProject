@@ -3,7 +3,7 @@
 %visibility internal
 
 %union { 
-    public object obj; 
+   public object obj; 
     public bool boolVal;
     public double fval;
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
@@ -25,9 +25,11 @@
 %left GE LE EQ NE GT LT
 %left PLUS MINUS
 %left MULT DIV
+%left LBRACKET /* Add this to give indexing high priority */
 
 %type <node> Prog Statement StatementList Assignment expr
 %type <obj> params args  /* Use <obj> for lists */
+%type <exprList> expr_list
 
 %type <exprList> expr_list
 
@@ -110,6 +112,7 @@ expr
 
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
+
 
 params
     : /* empty */ { $$ = new List<string>(); }
