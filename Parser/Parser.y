@@ -20,9 +20,9 @@
 %nonassoc IF
 %nonassoc ELSE
 
+%left GE LE EQ NE GT LT
 %left PLUS MINUS
 %left MULT DIV
-%left GE LE EQ NE GT LT
 
 %type <node> Prog Statement StatementList Assignment expr
 %type <obj> params args  /* Use <obj> for lists */
