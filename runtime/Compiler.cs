@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
+using System.Globalization;
 
 namespace MyCompiler
 {
@@ -158,33 +159,28 @@ namespace MyCompiler
 
         private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
         {
-            // 0. SILENCE CHECK: Don't show results for assignments, prints, or loops
+            // 0. SILENCE CHECK
             var lastNode = GetLastExpression(originalExpr);
-            if (lastNode is AssignNodeExpr ||
-                lastNode is PrintNodeExpr ||
-                lastNode is IfNodeExpr ||
-                lastNode is ForLoopNodeExpr ||
-                lastNode is IncrementNodeExpr ||
-                lastNode is DecrementNodeExpr)
+            if (lastNode is AssignNodeExpr || lastNode is PrintNodeExpr || lastNode is IfNodeExpr ||
+                lastNode is ForLoopNodeExpr || lastNode is IncrementNodeExpr || lastNode is DecrementNodeExpr)
             {
                 return null;
             }
 
-            ulong rawBits;
+            ulong rawBits = 0;
 
-            // 1. EXTRACTION: Pull bits based on physical return type
+            // 1. EXTRACTION logic
             if (type == MyType.Float || type == MyType.Int)
             {
-                // Numbers are returned as doubles
                 double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
                 rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
             }
             else if (type == MyType.String || type == MyType.Array)
             {
-                // Try as integer first (standard i64 address)
+                // Fix: Use the static LLVM helper instead of .ToInt()
                 rawBits = LLVM.GenericValueToInt(res, 0);
 
-                // Fallback: If it was bitcasted to double for return
+                // Fallback: If your Run() method bitcasted the pointer to a double for the wrapper
                 if (rawBits == 0)
                 {
                     double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
@@ -193,20 +189,12 @@ namespace MyCompiler
             }
             else if (type == MyType.Bool)
             {
-                // Booleans in your IR are returning as i1 (1-bit integer)
-                rawBits = LLVM.GenericValueToInt(res, 0);
-            }
-            else
-            {
+                // Fix: Use the static LLVM helper
                 rawBits = LLVM.GenericValueToInt(res, 0);
             }
 
-            // 2. INTERPRETATION: Convert bits to C# object
-            // FIX: Added '&& type != MyType.Bool' so that false (0) doesn't return "null"
-            if (rawBits == 0 && type != MyType.Float && type != MyType.Bool)
-            {
-                return "null";
-            }
+            // 2. INTERPRETATION
+            if (rawBits == 0 && type != MyType.Float && type != MyType.Bool) return "null";
 
             switch (type)
             {
@@ -217,25 +205,34 @@ namespace MyCompiler
                 case MyType.String:
                     try
                     {
-                        return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
+                        return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
                     }
-                    catch
-                    {
-                        return $"[Pointer @ 0x{rawBits:X}]";
-                    }
+                    catch { return "null"; }
 
                 case MyType.Array:
-                    return $"[Array Address: 0x{rawBits:X}]";
+                    try
+                    {
+                        IntPtr address = new IntPtr((long)rawBits);
+                        int count = 0;
+                        if (lastNode is ArrayNodeExpr arr) count = arr.Elements.Count;
+                        else count = 0; // Default or lookup logic
+
+                        List<string> elements = new List<string>();
+                        for (int i = 0; i < count; i++)
+                        {
+                            long boxedVal = System.Runtime.InteropServices.Marshal.ReadInt64(address, i * 8);
+                            double dblVal = BitConverter.Int64BitsToDouble(boxedVal);
+                            // CultureInfo.InvariantCulture ensures dots for decimals
+                            elements.Add(dblVal.ToString(CultureInfo.InvariantCulture));
+                        }
+                        return "[" + string.Join(", ", elements) + "]";
+                    }
+                    catch { return $"[Array @ 0x{rawBits:X}]"; }
 
                 case MyType.Bool:
-                    // Pull the value as a double
+                    // Assuming bools come back as bits inside a double from your wrapper
                     double bVal = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-
-                    // 0.0 is False, literally anything else (1.0, -1.0, 0.5) is True
-                    if (bVal == 0.0) return false;
-                    return true;
-
-                // (You can keep the i1 rawBits check below this if you still have i1 returns)
+                    return bVal != 0.0;
 
                 default:
                     return rawBits;
