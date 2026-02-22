@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using System.Text;
 
 namespace MyCompiler
 {
@@ -52,6 +53,59 @@ namespace MyCompiler
             _builder = _module.Context.CreateBuilder();
             _passBuilderOptions = LLVM.CreatePassBuilderOptions();
         }
+        public CompilationResult RunTest(string input)
+        {
+            var result = new CompilationResult();
+            var outputCollector = new StringWriter();
+            var originalOut = Console.Out;
+            Console.SetOut(outputCollector);
+
+            try
+            {
+                using (var stream = new MemoryStream(Encoding.UTF8.GetBytes(input)))
+                {
+                    var scanner = new Scanner(stream);
+                    var parser = new Parser(scanner);
+
+                    if (!parser.Parse())
+                        throw new Exception("Test Parser failed to generate AST.");
+
+                    if (parser.RootNode == null)
+                        throw new Exception("Parser returned null RootNode.");
+
+                    result.AST = parser.RootNode;
+
+                    // This triggers TypeChecking and IR Generation
+                    result.ExecutionResult = this.Run(parser.RootNode);
+
+                    // IMPORTANT: Capture IR from the module that was JUST populated
+                    if (_module != null)
+                    {
+                        result.IR = _module.PrintToString();
+                    }
+
+                    // Capture Console output
+                    var output = outputCollector.ToString().Trim();
+                    if (!string.IsNullOrEmpty(output))
+                    {
+                        // Split by any newline format (Windows or Unix)
+                        result.ConsoleOutput.AddRange(output.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.RemoveEmptyEntries));
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                // If it fails, put the error in the IR field so we can see why in the test failure
+                result.IR = "COMPILER ERROR: " + ex.Message;
+            }
+            finally
+            {
+                Console.SetOut(originalOut);
+            }
+
+            return result;
+        }
+
 
         public object Run(NodeExpr expr)
         {
