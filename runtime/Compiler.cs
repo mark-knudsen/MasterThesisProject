@@ -120,8 +120,11 @@ namespace MyCompiler
             Console.WriteLine("--- GENERATED IR ---");
             // Console.WriteLine(_module.PrintToString()); // Optional: Comment out for massive loops to save console lag
 
+            // OLD and simple way to create MCJITCompiler
+            // using var engine = _module.CreateMCJITCompiler(); // To use the old way again outcomment this line and comment out or remove lines 126-134
 
-        // Define the options for the JIT engine
+            // NEW way to have options for when creaeting MCJITCompiler
+            // Define the options for the JIT engine
             var options = new LLVMMCJITCompilerOptions { OptLevel = 3 }; // OptLevel 3 is equivalent to -O3
 
             // Initialize the engine with these options
@@ -163,16 +166,6 @@ namespace MyCompiler
             return expr;
         }
 
-        private MyType PeekTypeInCurrentSequence(NodeExpr root, string varName)
-        {
-            if (root is SequenceNodeExpr seq)
-            {
-                // Look for the last assignment to this variable name in the current block
-                var lastAssign = seq.Statements.OfType<AssignNodeExpr>().LastOrDefault(a => a.Id == varName);
-                if (lastAssign != null) return lastAssign.Expression.Type;
-            }
-            return MyType.None;
-        }
 
         private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
         {
@@ -256,6 +249,9 @@ namespace MyCompiler
             }
         }
 
+
+        //------Visit-functions-------//
+
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
             return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
@@ -287,7 +283,6 @@ namespace MyCompiler
         {
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
-
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
@@ -340,7 +335,6 @@ namespace MyCompiler
         }
 
 
-
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
         {
             uint count = (uint)expr.Elements.Count;
@@ -391,61 +385,6 @@ namespace MyCompiler
             }
 
             return boxed;
-        }
-
-
-        private LLVMValueRef BoxToI64(LLVMValueRef value)
-        {
-            if (value.TypeOf == LLVMTypeRef.Int64) return value;
-
-            if (value.TypeOf == LLVMTypeRef.Double)
-                return _builder.BuildBitCast(value, LLVMTypeRef.Int64, "num_to_i64");
-
-            if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                return _builder.BuildPtrToInt(value, LLVMTypeRef.Int64, "ptr_to_i64");
-
-            return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
-        }
-
-        private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
-        {
-            if (target == MyType.Float || target == MyType.Int)
-                return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
-
-            if (target == MyType.String || target == MyType.Array)
-                return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
-
-            return boxed;
-        }
-        private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
-        {
-            // If we want a number, and it's already a double, just return it!
-            if (target == MyType.Float || target == MyType.Int)
-            {
-                return val;
-            }
-
-            // If we want a string/pointer, we must go: Double bits -> Int64 -> Pointer
-            if (target == MyType.String || target == MyType.Array)
-            {
-                var asInt64 = _builder.BuildBitCast(val, LLVMTypeRef.Int64, "smuggled_to_i64");
-                return _builder.BuildIntToPtr(asInt64, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i64_to_ptr");
-            }
-
-            return val;
-        }
-        private LLVMValueRef GetOrDeclareMalloc()
-        {
-            var mallocFunc = _module.GetNamedFunction("malloc");
-            if (mallocFunc.Handle != IntPtr.Zero) return mallocFunc;
-
-            // Define: ptr malloc(i64)
-            _mallocType = LLVMTypeRef.CreateFunction(
-                LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
-                new[] { LLVMTypeRef.Int64 }
-            );
-
-            return _module.AddFunction("malloc", _mallocType);
         }
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
@@ -638,39 +577,64 @@ namespace MyCompiler
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
             var llvmCtx = _module.Context;
+            var i32 = llvmCtx.Int32Type;
 
-            // Get or declare rand()
+            // 1. Get or declare rand()
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
-                var randType = LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>(), false);
+                var randType = LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>(), false);
                 randFunc = _module.AddFunction("rand", randType);
             }
 
-            var randValue = _builder.BuildCall2(LLVMTypeRef.CreateFunction(llvmCtx.Int32Type, Array.Empty<LLVMTypeRef>()),
-            randFunc, Array.Empty<LLVMValueRef>(), "randcall");
+            var randValue = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>()),
+                randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
             if (expr.MinValue != null && expr.MaxValue != null)
             {
-                var minValue = Visit(expr.MinValue);
-                var maxValue = Visit(expr.MaxValue);
+                var minVal = Visit(expr.MinValue);
+                var maxVal = Visit(expr.MaxValue);
 
-                var diff = _builder.BuildSub(maxValue, minValue, "diff");
+                // Ensure we are working with Integers for rand math
+                if (minVal.TypeOf == LLVMTypeRef.Double) minVal = _builder.BuildFPToSI(minVal, i32, "min_i");
+                if (maxVal.TypeOf == LLVMTypeRef.Double) maxVal = _builder.BuildFPToSI(maxVal, i32, "max_i");
 
-                if (_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, maxValue, minValue, "checkMax").ToString().Contains("false"))
-                {
-                    diff = _builder.BuildSub(minValue, maxValue, "diff");
-                    minValue = maxValue;
-                }
+                // --- THE "VISIT IF" STYLE ---
+                var func = _builder.InsertBlock.Parent;
+                var thenBB = func.AppendBasicBlock("rand.correct"); // min <= max
+                var elseBB = func.AppendBasicBlock("rand.swap");    // min > max
+                var mergeBB = func.AppendBasicBlock("rand.cont");
 
-                var one = LLVMValueRef.CreateConstInt(llvmCtx.Int32Type, 1, false);
-                var rangeSize = _builder.BuildAdd(diff, one, "rangesize");
+                // Create a local variable to store the result (since blocks can't "return")
+                var resultPtr = _builder.BuildAlloca(i32, "rand_result_ptr");
 
-                var modResult = _builder.BuildSRem(randValue, rangeSize, "modtmp");
-                return _builder.BuildAdd(modResult, minValue, "randomInRange");
+                var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, minVal, maxVal, "order_check");
+                _builder.BuildCondBr(cond, thenBB, elseBB);
+
+                // "Then" Part (Correct Order)
+                _builder.PositionAtEnd(thenBB);
+                var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
+                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i32, 1), "range1");
+                var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
+                _builder.BuildStore(res1, resultPtr); // Save result
+                _builder.BuildBr(mergeBB);
+
+                // "Else" Part (Wrong Order - Swap logic)
+                _builder.PositionAtEnd(elseBB);
+                var diff2 = _builder.BuildSub(minVal, maxVal, "diff2");
+                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i32, 1), "range2");
+                var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
+                _builder.BuildStore(res2, resultPtr); // Save result
+                _builder.BuildBr(mergeBB);
+
+                // Merge
+                _builder.PositionAtEnd(mergeBB);
+                var finalInt = _builder.BuildLoad2(i32, resultPtr, "final_rand_int");
+                return _builder.BuildSIToFP(finalInt, LLVMTypeRef.Double, "final_rand_dbl");
             }
 
-            return randValue;
+            return _builder.BuildSIToFP(randValue, LLVMTypeRef.Double, "rand_simple");
         }
 
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
@@ -835,23 +799,6 @@ namespace MyCompiler
         }
 
 
-        private MyType MapStringToMyType(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return MyType.Float; // Default fallback
-
-            return name.ToLower() switch
-            {
-                "int" => MyType.Int,
-                "string" => MyType.String,
-                "float" => MyType.Float,
-                "double" => MyType.Float,
-                "bool" => MyType.Bool,
-                "void" => MyType.None,
-                "array" => MyType.Array,
-                _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
-            };
-        }
-
         public LLVMValueRef VisitFunctionCall(FunctionCallNode node)
         {
             if (!_functionPrototypes.TryGetValue(node.Name, out var signature))
@@ -886,8 +833,79 @@ namespace MyCompiler
             return result;
         }
 
-        //------Helper-functions------//
+        //------Helper-functions------//    
 
+        private LLVMValueRef BoxToI64(LLVMValueRef value)
+        {
+            if (value.TypeOf == LLVMTypeRef.Int64) return value;
+
+            if (value.TypeOf == LLVMTypeRef.Double)
+                return _builder.BuildBitCast(value, LLVMTypeRef.Int64, "num_to_i64");
+
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                return _builder.BuildPtrToInt(value, LLVMTypeRef.Int64, "ptr_to_i64");
+
+            return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
+        }
+
+        // Function below is not used at the moment!
+        private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
+        {
+            if (target == MyType.Float || target == MyType.Int)
+                return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
+
+            if (target == MyType.String || target == MyType.Array)
+                return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
+
+            return boxed;
+        }
+        private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
+        {
+            // If we want a number, and it's already a double, just return it!
+            if (target == MyType.Float || target == MyType.Int)
+            {
+                return val;
+            }
+
+            // If we want a string/pointer, we must go: Double bits -> Int64 -> Pointer
+            if (target == MyType.String || target == MyType.Array)
+            {
+                var asInt64 = _builder.BuildBitCast(val, LLVMTypeRef.Int64, "smuggled_to_i64");
+                return _builder.BuildIntToPtr(asInt64, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i64_to_ptr");
+            }
+
+            return val;
+        }
+        private LLVMValueRef GetOrDeclareMalloc()
+        {
+            var mallocFunc = _module.GetNamedFunction("malloc");
+            if (mallocFunc.Handle != IntPtr.Zero) return mallocFunc;
+
+            // Define: ptr malloc(i64)
+            _mallocType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
+                new[] { LLVMTypeRef.Int64 }
+            );
+
+            return _module.AddFunction("malloc", _mallocType);
+        }
+
+        private MyType MapStringToMyType(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return MyType.Float; // Default fallback
+
+            return name.ToLower() switch
+            {
+                "int" => MyType.Int,
+                "string" => MyType.String,
+                "float" => MyType.Float,
+                "double" => MyType.Float,
+                "bool" => MyType.Bool,
+                "void" => MyType.None,
+                "array" => MyType.Array,
+                _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
+            };
+        }
         private LLVMValueRef MatchType(LLVMValueRef value, LLVMTypeRef targetType)
         {
             if (value.TypeOf == targetType) return value;
