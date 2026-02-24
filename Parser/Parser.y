@@ -14,6 +14,7 @@
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA COLON
+%token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR
 %token PRINT RANDOM ROUND FUNC
 
@@ -59,11 +60,26 @@ Statement
       { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5); }
     | IF LPAREN expr RPAREN Statement ELSE Statement
       { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5, $7); }
-    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $9 as ExpressionNodeExpr); }
+    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement 
+      { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $9); }
+    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN LBRACE StatementList RBRACE
+      { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $10); }
     ;
 
 Assignment 
     : ID ASSIGN expr      { $$ = new AssignNodeExpr((string)$1, $3 as ExpressionNodeExpr); } 
+    | ID PLUS_ASSIGN expr { 
+        // Sugar: x += 1  becomes  x = x + 1
+        var id = new IdNodeExpr((string)$1);
+        var add = new BinaryOpNodeExpr(id, "+", $3 as ExpressionNodeExpr);
+        $$ = new AssignNodeExpr((string)$1, add); 
+    }
+    | ID MINUS_ASSIGN expr { 
+        // Sugar: x -= 1  becomes  x = x - 1
+        var id = new IdNodeExpr((string)$1);
+        var sub = new BinaryOpNodeExpr(id, "-", $3 as ExpressionNodeExpr);
+        $$ = new AssignNodeExpr((string)$1, sub); 
+    }
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
     ;

@@ -25,6 +25,8 @@
 "<"             { return (int)Tokens.LT; }
 "++"            { return (int)Tokens.INC; }
 "--"            { return (int)Tokens.DECR; }
+"+="            { return (int)Tokens.PLUS_ASSIGN; }
+"-="            { return (int)Tokens.MINUS_ASSIGN; }
 
 [0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
 [0-9]+\.[0-9]+  { yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL; }

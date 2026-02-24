@@ -6,6 +6,7 @@ using System.Linq;
 using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
 using System.Globalization;
+using System.Diagnostics; // for using the stopwatch!
 
 namespace MyCompiler
 {
@@ -14,11 +15,11 @@ namespace MyCompiler
         private LLVMModuleRef _module;
         private LLVMBuilderRef _builder;
 
-        private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
+        //private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
 
         // Global variables (persists across REPL lines)
-        private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
+        //private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
 
         // Local variables (only exists while compiling a specific function)
         private Dictionary<string, LLVMValueRef> _localScope = null;
@@ -46,12 +47,6 @@ namespace MyCompiler
             _functionPrototypes["round"] = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
         }
 
-        private void InitializeModule()
-        {
-            _module = LLVMModuleRef.CreateWithName("KaleidoscopeModule");
-            _builder = _module.Context.CreateBuilder();
-            _passBuilderOptions = LLVM.CreatePassBuilderOptions();
-        }
 
         public object Run(NodeExpr expr)
         {
@@ -121,12 +116,34 @@ namespace MyCompiler
                 _builder.BuildRet(finalRet);
             }
 
-            // 7. EXECUTE
+            // 7. EXECUTE (With Benchmarking)
             Console.WriteLine("--- GENERATED IR ---");
-            Console.WriteLine(_module.PrintToString());
+            // Console.WriteLine(_module.PrintToString()); // Optional: Comment out for massive loops to save console lag
 
-            using var engine = _module.CreateMCJITCompiler();
+
+        // Define the options for the JIT engine
+            var options = new LLVMMCJITCompilerOptions { OptLevel = 3 }; // OptLevel 3 is equivalent to -O3
+
+            // Initialize the engine with these options
+            if (!_module.TryCreateMCJITCompiler(out var engine, ref options, out var error))
+            {
+                throw new Exception($"Failed to create MCJIT: {error}");
+            }
+
+
+
+            // --- START BENCHMARK ---
+            Stopwatch sw = Stopwatch.StartNew();
+
             var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+
+            sw.Stop();
+            // --- END BENCHMARK ---
+
+            Console.WriteLine("\n--- Execution Stats ---");
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
 
             // 8. EXTRACT
             return ExtractResult(res, prediction, expr);
@@ -831,19 +848,8 @@ namespace MyCompiler
                 "bool" => MyType.Bool,
                 "void" => MyType.None,
                 "array" => MyType.Array,
-                _ => MyType.Float  // Default for your thesis language
+                _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
             };
-        }
-        // Helper to bridge your Parser and Compiler
-        private MyType MapLLVMTypeToMyType(LLVMTypeRef type)
-        {
-            if (type == LLVMTypeRef.Double) return MyType.Float;
-            if (type == LLVMTypeRef.Int32) return MyType.Int;
-            if (type == LLVMTypeRef.Int1) return MyType.Bool;
-            if (type.Kind == LLVMTypeKind.LLVMPointerTypeKind) return MyType.String;
-            if (type == LLVMTypeRef.Int64) return MyType.Int; // Or String, depending on your cast logic
-
-            return MyType.None;
         }
 
         public LLVMValueRef VisitFunctionCall(FunctionCallNode node)
@@ -869,7 +875,15 @@ namespace MyCompiler
                 }
                 args.Add(val);
             }
-            return _builder.BuildCall2(signature, _module.GetNamedFunction(node.Name), args.ToArray(), "calltmp");
+            var result = _builder.BuildCall2(signature, _module.GetNamedFunction(node.Name), args.ToArray(), "calltmp");
+
+            // If the function we just called returns a String or Array (i64)
+            // convert it back to a Pointer immediately so the rest of the compiler can use it.
+            if (result.TypeOf == LLVMTypeRef.Int64)
+            {
+                return _builder.BuildIntToPtr(result, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "res_as_ptr");
+            }
+            return result;
         }
 
         //------Helper-functions------//
@@ -885,10 +899,14 @@ namespace MyCompiler
             if (targetType == LLVMTypeRef.Int32 && value.TypeOf == LLVMTypeRef.Double)
                 return _builder.BuildFPToSI(value, LLVMTypeRef.Int32, "cast_to_int");
 
-            // 2. Handle Pointers (For String functions)
-            // If the body returned a pointer but the function expects i64
+            // 2. Handle Pointers (The Smuggler Fix)
+            // If we have a pointer but the function expects an i64 return
             if (targetType == LLVMTypeRef.Int64 && value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                return _builder.BuildPtrToInt(value, LLVMTypeRef.Int64, "ptr_to_int");
+                return _builder.BuildPtrToInt(value, LLVMTypeRef.Int64, "ptr_to_i64");
+
+            // NEW: If we have an i64 (pointer address) but the REPL wrapper expects a Double
+            if (targetType == LLVMTypeRef.Double && value.TypeOf == LLVMTypeRef.Int64)
+                return _builder.BuildBitCast(value, LLVMTypeRef.Double, "i64_as_double");
 
             // 3. Handle Boolean (i1)
             if (targetType == LLVMTypeRef.Int1 && value.TypeOf != LLVMTypeRef.Int1)
@@ -896,6 +914,7 @@ namespace MyCompiler
 
             return value;
         }
+
         private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
         {
             if (value.TypeOf == LLVMTypeRef.Double) return value;
@@ -990,13 +1009,19 @@ namespace MyCompiler
             {
                 MyType.Int => LLVMTypeRef.Double,
                 MyType.Float => LLVMTypeRef.Double,
-                MyType.Bool => LLVMTypeRef.Int1,
-                MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), // Must be a pointer!
+                // For Booleans: Use Double if you want to keep them in the 64-bit flow, 
+                // or i1 if you want strict IR (but then you must zext/bitcast before returning).
+                MyType.Bool => LLVMTypeRef.Double,
+
+                // IMPORTANT: For REPL stability, pointers are best returned as i64 (Int64)
+                MyType.String => LLVMTypeRef.Int64,
+                MyType.Array => LLVMTypeRef.Int64,
+
                 MyType.None => LLVMTypeRef.Void,
-                MyType.Array => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
                 _ => LLVMTypeRef.Double
             };
         }
+
         private LLVMValueRef GetPrintf()
         {
             var printf = _module.GetNamedFunction("printf");

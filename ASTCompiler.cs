@@ -236,9 +236,9 @@ namespace MyCompiler
 
         public ExpressionNodeExpr Condition;
         public StatementNodeExpr Step;
-        public ExpressionNodeExpr Body;
+        public NodeExpr Body; // Changed from ExpressionNodeExpr
 
-        public ForLoopNodeExpr(StatementNodeExpr init, ExpressionNodeExpr cond, StatementNodeExpr step, ExpressionNodeExpr body)
+        public ForLoopNodeExpr(StatementNodeExpr init, ExpressionNodeExpr cond, StatementNodeExpr step, NodeExpr body)
         {
             Initialization = init;
             Condition = cond;

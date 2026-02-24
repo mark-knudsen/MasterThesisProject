@@ -39,8 +39,8 @@ namespace MyCompiler
                                 object result = compiler.Run(parser.RootNode);
 
                                 // --- Consolidated Result Printing ---
-                                result = compiler.Run(parser.RootNode);
-                                Console.WriteLine("we got result back");
+                                //result = compiler.Run(parser.RootNode);
+                                //Console.WriteLine("we got result back");
 
                                 if (result is int[])
                                 {

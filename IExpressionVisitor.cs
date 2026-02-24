@@ -343,24 +343,16 @@ namespace MyCompiler
 
         public MyType VisitForLoop(ForLoopNodeExpr expr)
         {
-            // 1. Initialization
-            if (expr.Initialization != null)
-                Visit(expr.Initialization);
+            if (expr.Initialization != null) Visit(expr.Initialization);
 
-            // 2. Condition must be Bool
             var condType = Visit(expr.Condition);
+            // Optimization: Allow Float as condition (0.0 is false)
+            if (condType != MyType.Bool && condType != MyType.Float)
+                throw new Exception("For loop condition must be Bool or Number");
 
-            if (condType != MyType.Bool)
-                throw new Exception("For loop condition must be Bool");
+            if (expr.Step != null) Visit(expr.Step);
 
-            // 3. Step
-            if (expr.Step != null)
-                Visit(expr.Step);
-
-            // 4. Body
-            Visit(expr.Body);
-
-            // 5. For loops are statements
+            Visit(expr.Body); // Now visits the sequence/block
             return MyType.None;
         }
 
@@ -411,8 +403,10 @@ namespace MyCompiler
             {
                 "int" => MyType.Int,
                 "float" => MyType.Float,
+                "double" => MyType.Float,  // Add this!
                 "bool" => MyType.Bool,
                 "string" => MyType.String,
+                "array" => MyType.Array,   // Add this too for later!
                 _ => MyType.None
             };
 

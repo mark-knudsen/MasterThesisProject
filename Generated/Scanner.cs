@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 22-02-2026 15:50:50
-//  GPLEX input file <Lexer/Scanner.lex - 22-02-2026 15:50:40>
+//  DateTime: 24-02-2026 12:54:17
+//  GPLEX input file <Lexer/Scanner.lex - 24-02-2026 12:30:01>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -121,8 +121,8 @@ namespace MyCompiler
         
         enum Result {accept, noMatch, contextFound};
 
-        const int maxAccept = 66;
-        const int initial = 67;
+        const int maxAccept = 68;
+        const int initial = 69;
         const int eofNum = 0;
         const int goStart = -1;
         const int INITIAL = 0;
@@ -159,23 +159,25 @@ namespace MyCompiler
         }
     };
 
-    static int[] startState = new int[] {67, 0};
+    static int[] startState = new int[] {69, 0};
 
-    static Table[] NxS = new Table[70] {
+    static Table[] NxS = new Table[72] {
 /* NxS[   0] */ new Table(0, 0, 0, null),
 /* NxS[   1] */ new Table(0, 0, -1, null),
 /* NxS[   2] */ new Table(0, 0, -1, null),
-/* NxS[   3] */ new Table(61, 1, -1, new sbyte[] {66}),
-/* NxS[   4] */ new Table(34, 1, 69, new sbyte[] {65}),
+/* NxS[   3] */ new Table(61, 1, -1, new sbyte[] {68}),
+/* NxS[   4] */ new Table(34, 1, 71, new sbyte[] {67}),
 /* NxS[   5] */ new Table(10, 1, 5, new sbyte[] {-1}),
 /* NxS[   6] */ new Table(0, 0, -1, null),
 /* NxS[   7] */ new Table(0, 0, -1, null),
 /* NxS[   8] */ new Table(0, 0, -1, null),
-/* NxS[   9] */ new Table(43, 1, -1, new sbyte[] {64}),
+/* NxS[   9] */ new Table(43, 19, -1, new sbyte[] {65, -1, -1, -1, -1, -1, 
+          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 66}),
 /* NxS[  10] */ new Table(0, 0, -1, null),
-/* NxS[  11] */ new Table(45, 1, -1, new sbyte[] {63}),
+/* NxS[  11] */ new Table(45, 17, -1, new sbyte[] {63, -1, -1, -1, -1, -1, 
+          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 64}),
 /* NxS[  12] */ new Table(0, 0, -1, null),
-/* NxS[  13] */ new Table(46, 12, -1, new sbyte[] {68, -1, 13, 13, 13, 13, 
+/* NxS[  13] */ new Table(46, 12, -1, new sbyte[] {70, -1, 13, 13, 13, 13, 
           13, 13, 13, 13, 13, 13}),
 /* NxS[  14] */ new Table(0, 0, -1, null),
 /* NxS[  15] */ new Table(0, 0, -1, null),
@@ -411,7 +413,9 @@ namespace MyCompiler
 /* NxS[  64] */ new Table(0, 0, -1, null),
 /* NxS[  65] */ new Table(0, 0, -1, null),
 /* NxS[  66] */ new Table(0, 0, -1, null),
-/* NxS[  67] */ new Table(9, 117, 1, new sbyte[] {2, 2, 1, 1, 2, 1, 
+/* NxS[  67] */ new Table(0, 0, -1, null),
+/* NxS[  68] */ new Table(0, 0, -1, null),
+/* NxS[  69] */ new Table(9, 117, 1, new sbyte[] {2, 2, 1, 1, 2, 1, 
           1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
           1, 2, 3, 4, 5, 1, 1, 1, 1, 6, 7, 8, 9, 10, 11, 1, 
           12, 13, 13, 13, 13, 13, 13, 13, 13, 13, 13, 14, 15, 16, 17, 18, 
@@ -419,9 +423,9 @@ namespace MyCompiler
           19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 19, 20, 1, 21, 1, 
           19, 1, 19, 19, 19, 19, 22, 23, 19, 19, 24, 19, 19, 19, 19, 19, 
           19, 25, 19, 26, 19, 27, 19, 19, 19, 19, 19, 19, 28, 1, 29}),
-/* NxS[  68] */ new Table(48, 10, -1, new sbyte[] {62, 62, 62, 62, 62, 62, 
+/* NxS[  70] */ new Table(48, 10, -1, new sbyte[] {62, 62, 62, 62, 62, 62, 
           62, 62, 62, 62}),
-/* NxS[  69] */ new Table(34, 1, 69, new sbyte[] {65}),
+/* NxS[  71] */ new Table(34, 1, 71, new sbyte[] {67}),
     };
 
 int NextState() {
@@ -975,12 +979,18 @@ yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)To
 return (int)Tokens.DECR;
             break;
         case 64:
-return (int)Tokens.INC;
+return (int)Tokens.MINUS_ASSIGN;
             break;
         case 65:
-yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+return (int)Tokens.INC;
             break;
         case 66:
+return (int)Tokens.PLUS_ASSIGN;
+            break;
+        case 67:
+yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+            break;
+        case 68:
 return (int)Tokens.NE;
             break;
         default:
