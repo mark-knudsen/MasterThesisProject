@@ -7,20 +7,26 @@ using System.Globalization;
 
 namespace MyCompiler
 {
-    class Program
+    public class Program
     {
-        static void Main(string[] args)
+        public static int ManagedPrint(int value)
+        {
+            OutputBuffer.AppendLine(value.ToString());
+            return value;
+        }
+        public static StringBuilder OutputBuffer = new();
+        public static void Main(string[] args)
         {
             Console.WriteLine("--- AST Compiler Shell ---");
             Compiler compiler = new Compiler();
 
-            while (true)
-            {
+             //while (true)
+             //{
                 Console.Write("\n> ");
                 string input = Console.ReadLine();
 
-                if (string.IsNullOrWhiteSpace(input)) continue;
-                if (input == "exit") break;
+                // if (string.IsNullOrWhiteSpace(input)) continue;
+                // if (input == "exit") break;
 
                 try
                 {
@@ -36,7 +42,12 @@ namespace MyCompiler
 
                             try
                             {
-                                object result = compiler.Run(parser.RootNode);
+                                //PrintNode(parser.RootNode, 0);
+                                bool Debug = false;
+                                if (args.Length > 0)
+                                    if (args[0] == "True")
+                                        Debug = true;
+                                object result = compiler.Run(parser.RootNode, Debug);
 
                                 // --- Consolidated Result Printing ---
                                 //result = compiler.Run(parser.RootNode);
@@ -45,11 +56,11 @@ namespace MyCompiler
                                 if (result is int[])
                                 {
                                     foreach (var item in result as int[])
-                                    {            
+                                    {
                                         Console.WriteLine(item);
                                     }
                                 }
-                               
+
                                 if (result == null)
                                 {
                                     Console.WriteLine("Result: null");
@@ -80,7 +91,7 @@ namespace MyCompiler
                 {
                     Console.WriteLine($"Critical Error: {ex.Message}");
                 }
-            }
+           // }
         }
 
         static void PrintNode(NodeExpr node, int indent)
