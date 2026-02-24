@@ -1,0 +1,187 @@
+﻿using System;
+using System.IO;
+using System.Text;
+using LLVMSharp;
+using LLVMSharp.Interop;
+
+namespace MyCompiler
+{
+    public class Program
+    {
+        public static StringBuilder OutputBuffer = new();
+
+        public static int ManagedPrint(int value)
+        {
+            OutputBuffer.AppendLine(value.ToString());
+            return value;
+        }
+        public static void Main(string[] args)
+        {
+            //Console.WriteLine("--- AST Compiler Shell ---");
+            Interpreter interpreter = new Interpreter();
+            Compiler compiler = new Compiler();
+
+            //object result = null;
+            //Console.Write("\n> ");
+            string input = Console.ReadLine();
+
+            // if (string.IsNullOrWhiteSpace(input)) continue;
+            // if (input == "exit") break;
+
+            try
+            {
+                using var stream = new MemoryStream(Encoding.UTF8.GetBytes(input));
+
+                var scanner = new Scanner(stream);
+                var parser = new Parser(scanner);
+
+                if (!parser.Parse() || parser.RootNode == null)
+                {
+                    Console.WriteLine("Syntax Error: The input could not be parsed into an AST.");
+                    return;
+                }
+
+                PrintNode(parser.RootNode, 0);
+                bool Debug = false;
+                if (args.Length > 0)
+                    if (args[0] == "True")
+                        Debug = true;
+
+                System.Console.WriteLine("Debug or not: " + Debug);
+
+                RunCompiler(parser.RootNode, compiler, Debug);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Critical Error: {ex.Message}");
+            }
+
+        }
+
+        private static void RunCompiler(NodeExpr rootNode, Compiler compiler, bool generateIR = false)
+        {
+            try
+            {
+                var result = compiler.Run(rootNode, generateIR);
+
+                Console.WriteLine("We got result back");
+                PrintResult(result);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Compiler Error: {ex.Message}");
+            }
+        }
+
+        private static void PrintResult(object result)
+        {
+            if (result == null)
+            {
+                Console.WriteLine("Result: null");
+                return;
+            }
+
+            System.Console.WriteLine("result type: " + result.GetType());
+
+            switch (result)
+            {
+                case int[] array:
+                    Console.WriteLine($"ResultAR: {result}");
+                    System.Console.Write("[");
+                    foreach (var item in array)
+                        Console.Write(item + ",");
+                    Console.Write("]");
+                    Console.WriteLine("");
+                    break;
+
+                case string s:
+                    Console.WriteLine($"Result: {s} (Length: {s.Length})");
+                    break;
+
+                default:
+                    Console.WriteLine($"Result: {result}");
+                    break;
+            }
+        }
+
+
+        // Simple recursive function to visualize the tree
+        static void PrintNode(NodeExpr node, int indent)
+        {
+            if (node == null) return;
+
+            string space = new string(' ', indent * 2);
+
+            if (node is SequenceNodeExpr seq)
+            {
+                // We don't increment indent here usually, as it's just a container
+                foreach (var stmt in seq.Statements) PrintNode(stmt, indent);
+            }
+            else if (node is IfNodeExpr ifNode)
+            {
+                Console.WriteLine($"{space} IF Statement:");
+                Console.WriteLine($"{space} Condition:");
+                PrintNode(ifNode.Condition, indent + 2);
+
+                Console.WriteLine($"{space} Then:");
+                PrintNode(ifNode.ThenPart, indent + 2);
+
+                if (ifNode.ElsePart != null)
+                {
+                    Console.WriteLine($"{space} Else:");
+                    PrintNode(ifNode.ElsePart, indent + 2);
+                }
+            }
+            else if (node is AssignNodeExpr assign)
+            {
+                Console.WriteLine($"{space} Assignment: {assign.Id} =");
+                PrintNode(assign.Expression, indent + 1);
+            }
+            else if (node is BinaryOpNodeExpr bin)
+            {
+                Console.WriteLine($"{space} Op: {bin.Operator}");
+                PrintNode(bin.Left, indent + 1);
+                PrintNode(bin.Right, indent + 1);
+            }
+            else if (node is ComparisonNodeExpr comp)
+            {
+                Console.WriteLine($"{space} Comparison: {comp.Operator}");
+                PrintNode(comp.Left, indent + 1);
+                PrintNode(comp.Right, indent + 1);
+            }
+            else if (node is BooleanNodeExpr b)
+            {
+                Console.WriteLine($"{space}Boolean: {b.Value}");
+            }
+            else if (node is NumberNodeExpr num)
+            {
+                Console.WriteLine($"{space}Literal: {num.Value}");
+            }
+            else if (node is IdNodeExpr id)
+            {
+                Console.WriteLine($"{space}Variable: {id.Name}");
+            }
+            else if (node is StringNodeExpr str)
+            {
+                Console.WriteLine($"{space}String: \"{str.Value}\"");
+            }
+            else if (node is ForLoopNodeExpr forNode)
+            {
+                Console.WriteLine($"{space}FOR Loop:");
+                Console.WriteLine($"{space}  Init:");
+                PrintNode(forNode.Initialization, indent + 2);
+                Console.WriteLine($"{space}  Condition:");
+                PrintNode(forNode.Condition, indent + 2);
+                Console.WriteLine($"{space}  Step:");
+                PrintNode(forNode.Step, indent + 2);
+                Console.WriteLine($"{space}  Body:");
+                PrintNode(forNode.Body, indent + 2);
+            }
+            else if (node is PrintNodeExpr pn)
+            {
+                Console.WriteLine($"{space}PRINT Statement:");
+                PrintNode(pn.Expression, indent + 1);
+            }
+        }
+    }
+}
