@@ -15,7 +15,8 @@ namespace MyCompiler
     {
         private LLVMValueRef _printf;
         private LLVMTypeRef _printfType;
-
+        private LLVMValueRef _trueStr;
+        private LLVMValueRef _falseStr;
         private LLVMModuleRef _module;
         private LLVMBuilderRef _builder;
 
@@ -39,10 +40,9 @@ namespace MyCompiler
             LLVM.InitializeNativeAsmPrinter();
             LLVM.InitializeNativeAsmParser();
 
-            _module = LLVMModuleRef.CreateWithName("base");
+            _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
             _context = Context.Empty; // stores variables/functions
-
 
             // Register built-ins so VisitFunctionCall can find them
             _functionPrototypes["print"] = LLVMTypeRef.CreateFunction(LLVMTypeRef.Int32, new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0) }, true);
@@ -50,7 +50,6 @@ namespace MyCompiler
             var doubleType = LLVMTypeRef.Double;
             _functionPrototypes["round"] = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
         }
-
 
         private void DeclarePrintf()
         {
@@ -70,9 +69,6 @@ namespace MyCompiler
             var str = _builder.BuildGlobalStringPtr(format, "fmt");
             return str;
         }
-
-        private LLVMValueRef _trueStr;
-        private LLVMValueRef _falseStr;
 
         private void DeclareBoolStrings()
         {
@@ -142,88 +138,86 @@ namespace MyCompiler
             );
         }
 
-
-        public object Run(NodeExpr expr, bool generateIR = false)
+        private MyType PerformSemanticAnalysis(NodeExpr expr)
         {
-            // 1. SEMANTIC ANALYSIS (Type Checking)
-            // We pass the current _context so the checker knows about existing variables.
             var checker = new TypeChecker(_context);
-            checker.Check(expr);
-
-            // Update the compiler's context with any new variables found during type checking
+            var lastType = checker.Check(expr);
             _context = checker.UpdatedContext;
 
-            // 2. INITIALIZE LLVM
+            var lastNode = GetLastExpression(expr);
+            return lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
+        }
+
+        private void InitializeModule()
+        {
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
-
-            // 3. PREDICT WRAPPER RETURN TYPE
-            // Now that the TypeChecker has run, expr.Type is GUARANTEED to be populated.
-            var lastNode = GetLastExpression(expr);
-            MyType prediction = MyType.None;
-
-            if (lastNode is ExpressionNodeExpr exp)
-            {
-                prediction = exp.Type;
-            }
-
-            // 4. UNIVERSAL WRAPPER SIGNATURE
-            LLVMTypeRef llvmRetType = prediction switch
-            {
-                MyType.Float => LLVMTypeRef.Double,
-                MyType.Int => LLVMTypeRef.Double, // Consistency: Numbers are doubles
-                MyType.Bool => LLVMTypeRef.Double,
-                MyType.String => LLVMTypeRef.Int64,  // Pointers as i64 bits
-                MyType.Array => LLVMTypeRef.Int64,  // Pointers as i64 bits
-                MyType.None => LLVMTypeRef.Void,
-                _ => LLVMTypeRef.Int64
-            };
-
-
-            // var funcType = LLVMTypeRef.CreateFunction(llvmRetType, Array.Empty<LLVMTypeRef>());
-            // var func = _module.AddFunction("main", funcType);
-            // _builder.PositionAtEnd(func.AppendBasicBlock("entry"));
-
-            LLVMTypeRef llvmReturnType = LLVMTypeRef.Int32;
+        }
+        private LLVMValueRef CreateMainFunction()
+        {
             var funcType = LLVMTypeRef.CreateFunction(
-                llvmReturnType,
+                LLVMTypeRef.Int32,
                 Array.Empty<LLVMTypeRef>(),
                 false);
+
             var func = _module.AddFunction("main", funcType);
-            //var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
             var entry = func.AppendBasicBlock("entry");
             _builder.PositionAtEnd(entry);
 
-            // 5. GENERATE CODE
+            return func;
+        }
+
+        private void DumpIR()
+        {
+            string llvmIR = _module.PrintToString();
+            Console.WriteLine("Generated LLVM IR:\n");
+            Console.WriteLine(llvmIR);
+            File.WriteAllText("output_actual.ll", llvmIR);
+        }
+
+        private LLVMGenericValueRef Execute(LLVMValueRef func)
+        {
+            Console.WriteLine("");
+            var options = new LLVMMCJITCompilerOptions { OptLevel = 3 };
+
+            if (!_module.TryCreateMCJITCompiler(out var engine, ref options, out var error))
+            {
+                throw new Exception($"Failed to create MCJIT: {error}");
+            }
+
+            Stopwatch sw = Stopwatch.StartNew();
+
+            var result = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+
+            sw.Stop();
+
+            Console.WriteLine("\n--- Execution Stats ---");
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
+
+            return result;
+        }
+
+        public object Run(NodeExpr expr, bool generateIR = false)
+        {
+            // 1. Semantic analysis
+            var prediction = PerformSemanticAnalysis(expr);
+
+            // 2. Initialize LLVM
+            InitializeModule();
+
+            // 3. Create wrapper
+            var func = CreateMainFunction();
+
+            // 4. Generate code
             DeclareBoolStrings();
-            var resultValue = Visit(expr);
             DeclarePrintf();
 
-            // 6. FINALIZE RETURN (The "Boxing" Logic) // CRASH, this code makes it crash
-            // if (llvmRetType == LLVMTypeRef.Void)
-            // {
-            //     _builder.BuildRetVoid();
-            // }
-            // else
-            // {
-            //     LLVMValueRef finalRet = resultValue;
+            var resultValue = Visit(expr);
 
-            //     // Pointer Handling (Strings/Arrays)
-            //     if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-            //     {
-            //         finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int64, "ptr_to_i64");
-            //         if (llvmRetType == LLVMTypeRef.Double)
-            //             finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "ptr_bits_to_double");
-            //     }
-            //     // Number Handling
-            //     else if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
-            //     {
-            //         finalRet = _builder.BuildSIToFP(finalRet, LLVMTypeRef.Double, "i_to_double");
-            //     }
-
-            //     _builder.BuildRet(finalRet);
-            // }
-
+            // 5. Auto-print logic
+            var lastNode = GetLastExpression(expr);
             if (prediction != MyType.None && !(lastNode is PrintNodeExpr))
             {
                 BuildAutoPrint(resultValue, prediction);
@@ -231,50 +225,18 @@ namespace MyCompiler
 
             _builder.BuildRet(LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0));
 
+            // 6. Optional IR dump
             // if (generateIR)
-            // {
-            // Generate LLVM IR and write to a file
-            string llvmIR = _module.PrintToString();
-            Console.WriteLine("The LLVM IR: " + llvmIR);
-            File.WriteAllText("output_actual.ll", llvmIR); // save to file for further compilation
-            //}
+                DumpIR();
 
-            // 7. EXECUTE (With Benchmarking)
-            Console.WriteLine("--- GENERATED IR ---");
-            // Console.WriteLine(_module.PrintToString()); // Optional: Comment out for massive loops to save console lag
+            // 7. Execute
+            var execResult = Execute(func);
 
-            // OLD and simple way to create MCJITCompiler
-            // using var engine = _module.CreateMCJITCompiler(); // To use the old way again outcomment this line and comment out or remove lines 126-134
-
-            // NEW way to have options for when creaeting MCJITCompiler
-            // Define the options for the JIT engine
-            var options = new LLVMMCJITCompilerOptions { OptLevel = 3 }; // OptLevel 3 is equivalent to -O3
-
-            // Initialize the engine with these options
-            if (!_module.TryCreateMCJITCompiler(out var engine, ref options, out var error))
-            {
-                throw new Exception($"Failed to create MCJIT: {error}");
-            }
-
-
-            // --- START BENCHMARK ---
-            Stopwatch sw = Stopwatch.StartNew();
-
-            var res = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
-
-            sw.Stop();
-            // --- END BENCHMARK ---
-
-            Console.WriteLine("\n--- Execution Stats ---");
-            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
-            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
-            Console.WriteLine("------------------------\n");
-
-            // 8. EXTRACT
-            return ExtractResult(res, prediction, expr);
+            // 8. Extract result
+            return ExtractResult(execResult, prediction, expr);
         }
 
-        // --- Helpers to keep Run() clean ---
+        // // --- Helpers to keep Run() clean ---
 
         private NodeExpr GetLastExpression(NodeExpr expr)
         {
@@ -287,7 +249,6 @@ namespace MyCompiler
             }
             return expr;
         }
-
 
         private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
         {
@@ -371,13 +332,7 @@ namespace MyCompiler
             }
         }
 
-
         //------Visit-functions-------//
-
-        public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
-        {
-            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
-        }
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
         {
@@ -390,13 +345,15 @@ namespace MyCompiler
 
             return last;
         }
-
+        public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
+        {
+            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
+        }
         public LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr)
         {
             // Use 1.0 for True to match your Int-to-Bool promotion
             return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value ? 1.0 : 0.0);
         }
-
         public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
         {
             return _builder.BuildGlobalStringPtr(expr.Value, "str");
@@ -553,7 +510,6 @@ namespace MyCompiler
             return default;
         }
 
-
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             // 1. Check Local Function Parameters FIRST
@@ -608,7 +564,6 @@ namespace MyCompiler
             _builder.BuildStore(newValue, varPtr);
             return newValue;
         }
-
 
         // Update your IExpressionVisitor interface to include this
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
@@ -695,7 +650,6 @@ namespace MyCompiler
             return _builder.BuildFDiv(roundedTemp, multiplier, "rounded_final");
         }
 
-
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
             var llvmCtx = _module.Context;
@@ -762,7 +716,7 @@ namespace MyCompiler
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
-            var printf = GetPrintf(); // Use your helper
+            var printf = GetPrintf(); // Use your helper // declare i32 thing
             var llvmCtx = _module.Context;
             var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
 
@@ -823,11 +777,11 @@ namespace MyCompiler
                     _falseStr,
                     "boolstr");
 
-                         // Use the exact signature of printf: (ptr, ...) -> i32
-            var printfType2 = LLVMTypeRef.CreateFunction(
-                llvmCtx.Int32Type,
-                new[] { i8Ptr },
-                true);
+                // Use the exact signature of printf: (ptr, ...) -> i32
+                var printfType2 = LLVMTypeRef.CreateFunction(
+                    llvmCtx.Int32Type,
+                    new[] { i8Ptr },
+                    true);
 
                 return _builder.BuildCall2(
                     printfType2,
@@ -854,7 +808,6 @@ namespace MyCompiler
 
             return _builder.BuildCall2(printfType, printf, new[] { formatStr, finalArg }, "printcall");
         }
-
 
         // For loop implementation to LLVM, more advanced
         public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
@@ -909,7 +862,6 @@ namespace MyCompiler
 
             return default;
         }
-
 
         public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
         {
@@ -968,7 +920,6 @@ namespace MyCompiler
             return func;
         }
 
-
         public LLVMValueRef VisitFunctionCall(FunctionCallNode node)
         {
             if (!_functionPrototypes.TryGetValue(node.Name, out var signature))
@@ -1019,16 +970,16 @@ namespace MyCompiler
         }
 
         // Function below is not used at the moment!
-        private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
-        {
-            if (target == MyType.Float || target == MyType.Int)
-                return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
+        // private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
+        // {
+        //     if (target == MyType.Float || target == MyType.Int)
+        //         return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
 
-            if (target == MyType.String || target == MyType.Array)
-                return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
+        //     if (target == MyType.String || target == MyType.Array)
+        //         return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
 
-            return boxed;
-        }
+        //     return boxed;
+        // }
         private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
         {
             // If we want a number, and it's already a double, just return it!
@@ -1076,6 +1027,7 @@ namespace MyCompiler
                 _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
             };
         }
+
         private LLVMValueRef MatchType(LLVMValueRef value, LLVMTypeRef targetType)
         {
             if (value.TypeOf == targetType) return value;
@@ -1171,7 +1123,6 @@ namespace MyCompiler
 
             return buffer;
         }
-
 
         private LLVMValueRef GetMalloc()
         {

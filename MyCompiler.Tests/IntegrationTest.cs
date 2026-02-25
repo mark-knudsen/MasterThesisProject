@@ -15,11 +15,11 @@ public class CompilerIntegrationTest
     // bash: ./output_executable
 
     [Theory]
-    [InlineData("2+2", "4.000000", 0)] 
-    [InlineData("2+3", "5.000000", 0)]  
-    [InlineData("true", "true", 0)]  
-    [InlineData("false", "false", 0)]  
-    [InlineData("\"harry\"", "harry", 0)]  
+    [InlineData("2+2", "4.000000", 0)]
+    [InlineData("2+3", "5.000000", 0)]
+    [InlineData("true", "true", 0)]
+    [InlineData("false", "false", 0)]
+    [InlineData("\"harry\"", "harry", 0)]
     [InlineData("print(505)", "505.000000", 0)]
     [InlineData("print(214535)", "214535.000000", 0)]
     [InlineData("print(\"Harry\")", "Harry", 0)]
@@ -39,6 +39,7 @@ public class CompilerIntegrationTest
         CompileLLVMIRToBinary();
         if (!File.Exists(_binaryPath))
         {
+                    Console.SetIn(new StringReader("exit"));
             throw new FileNotFoundException("Compiled binary not found.");
         }
 
@@ -50,6 +51,7 @@ public class CompilerIntegrationTest
 
         if (result.Length < 2)
         {
+                    Console.SetIn(new StringReader("exit"));
             throw new Exception("Unexpected output format: could not find exit code.");
         }
 
@@ -57,6 +59,7 @@ public class CompilerIntegrationTest
         int exitCode;
         if (!int.TryParse(result[1], out exitCode))
         {
+                    Console.SetIn(new StringReader("exit"));
             throw new Exception($"Failed to parse exit code: {result[1]}");
         }
 

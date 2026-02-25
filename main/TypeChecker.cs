@@ -1,63 +1,5 @@
-using LLVMSharp.Interop;
-using LLVMSharp;
-
 namespace MyCompiler
 {
-    public interface IExpressionVisitor
-    {
-
-        LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
-        LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
-        LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
-        LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
-        LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
-        LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
-        LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
-        LLVMValueRef VisitIfExpr(IfNodeExpr expr);
-        LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
-        LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
-        LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
-        LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
-        LLVMValueRef VisitStringExpr(StringNodeExpr expr);
-        LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
-        LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
-        LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);
-        LLVMValueRef VisitIdExpr(IdNodeExpr expr);
-        LLVMValueRef VisitAssignExpr(AssignNodeExpr expr);
-
-
-        // Visit for define and usage of created functions
-        LLVMValueRef VisitFunctionDef(FunctionDefNode node);
-        LLVMValueRef VisitFunctionCall(FunctionCallNode node);
-    }
-
-
-    public interface ITypeVisitor
-    {
-        MyType VisitNumber(NumberNodeExpr expr);
-        MyType VisitString(StringNodeExpr expr);
-        MyType VisitBoolean(BooleanNodeExpr expr);
-        MyType VisitComparison(ComparisonNodeExpr expr);
-        MyType VisitIncrement(IncrementNodeExpr expr);
-        MyType VisitDecrement(DecrementNodeExpr expr);
-        MyType VisitId(IdNodeExpr expr);
-        MyType VisitBinary(BinaryOpNodeExpr expr);
-        MyType VisitAssign(AssignNodeExpr expr);
-        MyType VisitSequence(SequenceNodeExpr expr);
-        MyType VisitRandom(RandomNodeExpr expr);
-        MyType VisitIf(IfNodeExpr expr);
-        MyType VisitPrint(PrintNodeExpr expr);
-        MyType VisitForLoop(ForLoopNodeExpr expr);
-
-        // --- ADD THESE ---
-        MyType VisitArray(ArrayNodeExpr expr);
-        MyType VisitIndex(IndexNodeExpr expr);
-        MyType VisitFunctionDef(FunctionDefNode expr);
-        MyType VisitFunctionCall(FunctionCallNode expr);
-        MyType VisitRound(RoundNodeExpr expr);
-        MyType VisitFloat(FloatNodeExpr expr);
-    }
-
     public class TypeChecker : ITypeVisitor
     {
         private Context _context;
@@ -367,7 +309,6 @@ namespace MyCompiler
         }
 
         // Inside public class TypeChecker : ITypeVisitor
-
         // Handle [1, 2, 3]
         public MyType VisitArray(ArrayNodeExpr expr)
         {
@@ -466,7 +407,5 @@ namespace MyCompiler
             expr.SetType(MyType.Float);
             return MyType.Float;
         }
-
     }
-
 }

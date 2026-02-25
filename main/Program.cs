@@ -19,14 +19,23 @@ namespace MyCompiler
         {
             Console.WriteLine("--- AST Compiler Shell ---");
             Compiler compiler = new Compiler();
+            bool KeepRunning = true;
 
-             //while (true)
-             //{
+            do
+            {
+                bool Debug = false;
+                if (args.Length > 0)
+                    if (args[0] == "True")
+                    {
+                        KeepRunning = false;
+                        Debug = true;
+                    }
+
                 Console.Write("\n> ");
                 string input = Console.ReadLine();
 
-                // if (string.IsNullOrWhiteSpace(input)) continue;
-                // if (input == "exit") break;
+                if (string.IsNullOrWhiteSpace(input)) continue;
+                if (input == "exit") break;
 
                 try
                 {
@@ -42,16 +51,7 @@ namespace MyCompiler
 
                             try
                             {
-                                //PrintNode(parser.RootNode, 0);
-                                bool Debug = false;
-                                if (args.Length > 0)
-                                    if (args[0] == "True")
-                                        Debug = true;
                                 object result = compiler.Run(parser.RootNode, Debug);
-
-                                // --- Consolidated Result Printing ---
-                                //result = compiler.Run(parser.RootNode);
-                                //Console.WriteLine("we got result back");
 
                                 if (result is int[])
                                 {
@@ -91,7 +91,7 @@ namespace MyCompiler
                 {
                     Console.WriteLine($"Critical Error: {ex.Message}");
                 }
-           // }
+            } while (KeepRunning);
         }
 
         static void PrintNode(NodeExpr node, int indent)
