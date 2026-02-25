@@ -7,11 +7,11 @@ namespace MyCompiler;
 
 public class CompilerIntegrationTest
 {
-    private readonly string _irFilePath = "output_actual.ll";  // LLVM IR file
+    private readonly string _irFilePath = "output_actual2.ll";  // LLVM IR file
     private readonly string _binaryPath = "output_executable"; // Compiled binary file
 
     // to generate the actual executable
-    // bash: clang -target x86_64-linux-gnu -o output_executable output_actual.ll
+    // bash: clang -target x86_64-linux-gnu -o output_executable output_actual_orc.ll
     // bash: ./output_executable
 
     [Theory]
@@ -39,7 +39,6 @@ public class CompilerIntegrationTest
         CompileLLVMIRToBinary();
         if (!File.Exists(_binaryPath))
         {
-                    Console.SetIn(new StringReader("exit"));
             throw new FileNotFoundException("Compiled binary not found.");
         }
 
@@ -51,7 +50,6 @@ public class CompilerIntegrationTest
 
         if (result.Length < 2)
         {
-                    Console.SetIn(new StringReader("exit"));
             throw new Exception("Unexpected output format: could not find exit code.");
         }
 
@@ -59,7 +57,6 @@ public class CompilerIntegrationTest
         int exitCode;
         if (!int.TryParse(result[1], out exitCode))
         {
-                    Console.SetIn(new StringReader("exit"));
             throw new Exception($"Failed to parse exit code: {result[1]}");
         }
 

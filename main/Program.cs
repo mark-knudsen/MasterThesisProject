@@ -18,7 +18,7 @@ namespace MyCompiler
         public static void Main(string[] args)
         {
             Console.WriteLine("--- AST Compiler Shell ---");
-            Compiler compiler = new Compiler();
+            ICompiler compiler = new CompilerOrc();
             bool KeepRunning = true;
 
             do

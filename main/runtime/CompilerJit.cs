@@ -11,7 +11,7 @@ using System.Reflection; // for using the stopwatch!
 
 namespace MyCompiler
 {
-    public unsafe class Compiler : IExpressionVisitor
+    public unsafe class CompilerJit : IExpressionVisitor, ICompiler
     {
         private LLVMValueRef _printf;
         private LLVMTypeRef _printfType;
@@ -34,7 +34,7 @@ namespace MyCompiler
         // 1. Store the type globally so it never gets garbage collected or lost
         private LLVMTypeRef _mallocType;
 
-        public Compiler()
+        public CompilerJit()
         {
             LLVM.InitializeNativeTarget();
             LLVM.InitializeNativeAsmPrinter();
@@ -227,7 +227,7 @@ namespace MyCompiler
 
             // 6. Optional IR dump
             // if (generateIR)
-                DumpIR();
+            DumpIR();
 
             // 7. Execute
             var execResult = Execute(func);
