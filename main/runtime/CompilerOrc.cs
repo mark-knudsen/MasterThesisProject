@@ -40,18 +40,40 @@ internal static class OrcBindings
     [DllImport(LibLLVM)]
     public static extern IntPtr LLVMOrcCreateNewThreadSafeModule(IntPtr Module, IntPtr Context);
 
+    [DllImport(LibLLVM)]
+    public static extern IntPtr LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess(
+    out IntPtr Result,
+    IntPtr GlobalPrefix);
+
+    [DllImport(LibLLVM)]
+    public static extern IntPtr LLVMOrcJITDylibAddGenerator(
+        IntPtr JD,
+        IntPtr Generator);
+
+    [DllImport(LibLLVM)]
+    public static extern IntPtr LLVMGetErrorMessage(IntPtr Err);
+
+    [DllImport(LibLLVM)]
+    public static extern void LLVMDisposeErrorMessage(IntPtr ErrMsg);
+
+    [DllImport(LibLLVM)]
+    public static extern void LLVMConsumeError(IntPtr Err);
 }
 
 namespace MyCompiler
 {
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
+        int _replCounter;
         private LLVMValueRef _printf;
         private LLVMTypeRef _printfType;
         private LLVMValueRef _trueStr;
         private LLVMValueRef _falseStr;
         private LLVMModuleRef _module;
         private LLVMBuilderRef _builder;
+
+        private IntPtr _jit;
+        private bool _jitInitialized = false;
 
         //private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
@@ -76,6 +98,7 @@ namespace MyCompiler
             LLVM.InitializeNativeAsmPrinter();
             LLVM.InitializeNativeAsmParser();
 
+            _replCounter = 0;
             // var targetTriple = LLVM.GetDefaultTargetTriple();
             // var targetMachine = LLVMTargetMachineRef.Create(targetTriple, "x86_64", "", 0, 0); // the create func doesn't exist. 
             // var targetDataLayout = targetMachine.DataLayout;
@@ -91,6 +114,36 @@ namespace MyCompiler
 
             var doubleType = LLVMTypeRef.Double;
             _functionPrototypes["round"] = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
+        }
+
+        private void InitializeModule()
+        {
+            _module = LLVMModuleRef.CreateWithName("repl_module");
+            _builder = _module.Context.CreateBuilder();
+        }
+
+        private void EnsureJit()
+        {
+            if (_jitInitialized)
+                return;
+
+            ThrowIfError(OrcBindings.LLVMOrcCreateLLJIT(out _jit, IntPtr.Zero));
+
+            _jitInitialized = true;
+        }
+
+        private void ThrowIfError(IntPtr err)
+        {
+            if (err == IntPtr.Zero)
+                return;
+
+            var msgPtr = OrcBindings.LLVMGetErrorMessage(err);
+            var message = Marshal.PtrToStringAnsi(msgPtr);
+
+            OrcBindings.LLVMDisposeErrorMessage(msgPtr);
+            OrcBindings.LLVMConsumeError(err);
+
+            throw new Exception(message);
         }
 
         private void DeclarePrintf()
@@ -189,19 +242,14 @@ namespace MyCompiler
             return lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
         }
 
-        private void InitializeModule()
-        {
-            _module = LLVMModuleRef.CreateWithName("repl_module");
-            _builder = _module.Context.CreateBuilder();
-        }
-        private LLVMValueRef CreateMainFunction()
+        private LLVMValueRef CreateMainFunction(string funcName)
         {
             var funcType = LLVMTypeRef.CreateFunction(
                 LLVMTypeRef.Int32,
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
-            var func = _module.AddFunction("main", funcType);
+            var func = _module.AddFunction(funcName, funcType);
             var entry = func.AppendBasicBlock("entry");
             _builder.PositionAtEnd(entry);
 
@@ -239,18 +287,16 @@ namespace MyCompiler
 
             return result;
         }
+
         public object Run(NodeExpr expr, bool generateIR = false)
         {
             // 1. SEMANTIC ANALYSIS (Type Checking)
             var checker = new TypeChecker(_context);
             var lastType = checker.Check(expr); // This returns a value but we don't use it
+            InitializeModule();
 
             // Update the compiler's context with any new variables found during type checking
             _context = checker.UpdatedContext;
-
-            // 2. INITIALIZE LLVM
-            _module = LLVMModuleRef.CreateWithName("repl_module");
-            _builder = _module.Context.CreateBuilder();
 
             // 3. PREDICT WRAPPER RETURN TYPE
             var lastNode = GetLastExpression(expr);
@@ -262,7 +308,8 @@ namespace MyCompiler
             }
 
             // 4. UNIVERSAL WRAPPER SIGNATURE (for LLJIT)
-            CreateMainFunction();
+            string funcName = $"main_{_replCounter++}";
+            CreateMainFunction(funcName);
 
             // 5. GENERATE CODE
             DeclareBoolStrings();
@@ -289,30 +336,24 @@ namespace MyCompiler
             // 7. EXECUTE with LLJIT (ORC)
             Stopwatch sw = Stopwatch.StartNew();
 
-            IntPtr jit;
-            var err = OrcBindings.LLVMOrcCreateLLJIT(out jit, IntPtr.Zero);
-            if (err != IntPtr.Zero)
-                throw new Exception("Failed to create LLJIT");
+            EnsureJit();
 
             // 8. Wrap the module in a thread-safe context and module
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
 
+            DumpIR();
             // 9. Add the module to LLJIT
             OrcBindings.LLVMOrcLLJITAddLLVMIRModule(
-                jit,
-                OrcBindings.LLVMOrcLLJITGetMainJITDylib(jit),
+                _jit,
+                OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit),
                 tsm);
 
             // 10. LOOKUP "main" function
             ulong addr;
-            DumpIR();
-            Console.WriteLine("good looking IR"); // the IR
-            err = OrcBindings.LLVMOrcLLJITLookup(jit, out addr, "main"); // the IR looks bad after running this and then when doing integration test it can't run it
-            Console.WriteLine("NOT good looking IR");
-            DumpIR();
+            OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName);
 
-            if (err != IntPtr.Zero) throw new Exception("Function 'main' not found in the JIT module");
+            ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName));
 
             Console.WriteLine("Yo we running ORC");
 

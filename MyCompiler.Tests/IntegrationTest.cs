@@ -7,7 +7,7 @@ namespace MyCompiler;
 
 public class CompilerIntegrationTest
 {
-    private readonly string _irFilePath = "output_actual2.ll";  // LLVM IR file
+    private readonly string _irFilePath = "output_actual_orc.ll";  // LLVM IR file
     private readonly string _binaryPath = "output_executable"; // Compiled binary file
 
     // to generate the actual executable
