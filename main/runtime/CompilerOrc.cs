@@ -78,8 +78,8 @@ namespace MyCompiler
         //private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
         // Define the delegate for 'main' function
-        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate int MainDelegate();
+        // [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        // private delegate int MainDelegate();
 
         // Global variables (persists across REPL lines)
         //private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
@@ -92,6 +92,32 @@ namespace MyCompiler
         // 1. Store the type globally so it never gets garbage collected or lost
         private LLVMTypeRef _mallocType;
 
+        // public CompilerOrc()
+        // {
+        //     LLVM.InitializeNativeTarget();
+        //     LLVM.InitializeNativeAsmPrinter();
+        //     LLVM.InitializeNativeAsmParser();
+
+        //     _replCounter = 0;
+
+        //     _module = LLVMModuleRef.CreateWithName("repl_module");
+        //     _builder = _module.Context.CreateBuilder();
+        //     _context = Context.Empty; // stores variables/functions
+
+        //     _globalsModule = LLVMModuleRef.CreateWithName("globals");
+        //     var globalsCtx = _globalsModule.Context;
+        //     _globalsTSM = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_globalsModule.Handle, OrcBindings.LLVMOrcCreateNewThreadSafeContext());
+
+        //     EnsureJit();
+        //     // Add globals module once
+        //     OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit), _globalsTSM);
+
+        //     // Register built-ins so VisitFunctionCall can find them
+        //     _functionPrototypes["print"] = LLVMTypeRef.CreateFunction(LLVMTypeRef.Int32, new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0) }, true);
+
+        //     var doubleType = LLVMTypeRef.Double;
+        //     _functionPrototypes["round"] = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
+        // }
         public CompilerOrc()
         {
             LLVM.InitializeNativeTarget();
@@ -99,28 +125,32 @@ namespace MyCompiler
             LLVM.InitializeNativeAsmParser();
 
             _replCounter = 0;
-            // var targetTriple = LLVM.GetDefaultTargetTriple();
-            // var targetMachine = LLVMTargetMachineRef.Create(targetTriple, "x86_64", "", 0, 0); // the create func doesn't exist. 
-            // var targetDataLayout = targetMachine.DataLayout;
-            // _module.DataLayout = targetDataLayout;
-            // _module.Target = Marshal.PtrToStringAnsi((nint)targetTriple);
 
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
             _context = Context.Empty; // stores variables/functions
 
-            // Register built-ins so VisitFunctionCall can find them
-            _functionPrototypes["print"] = LLVMTypeRef.CreateFunction(LLVMTypeRef.Int32, new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0) }, true);
+            // Globals module (for printf, malloc, etc)
+            _globalsModule = LLVMModuleRef.CreateWithName("globals");
+            var globalsCtx = _globalsModule.Context;
+            _globalsTSM = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_globalsModule.Handle,
+                OrcBindings.LLVMOrcCreateNewThreadSafeContext());
+
+            EnsureJit();
+
+            // Register built-ins (printf will be declared **after** JIT is ready)
+            _functionPrototypes["print"] = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.Int32,
+                new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0) },
+                true
+            );
 
             var doubleType = LLVMTypeRef.Double;
             _functionPrototypes["round"] = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
+
+            // DO NOT declare printf here!
         }
 
-        private void InitializeModule()
-        {
-            _module = LLVMModuleRef.CreateWithName("repl_module");
-            _builder = _module.Context.CreateBuilder();
-        }
 
         private void EnsureJit()
         {
@@ -129,33 +159,49 @@ namespace MyCompiler
 
             ThrowIfError(OrcBindings.LLVMOrcCreateLLJIT(out _jit, IntPtr.Zero));
 
+            // Add symbols from the current process (like printf, malloc)
+            IntPtr gen;
+            ThrowIfError(OrcBindings.LLVMOrcCreateDynamicLibrarySearchGeneratorForProcess(out gen, IntPtr.Zero));
+            OrcBindings.LLVMOrcJITDylibAddGenerator(OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit), gen);
+
             _jitInitialized = true;
+
         }
 
         private void ThrowIfError(IntPtr err)
         {
+            System.Console.WriteLine("oh no error0");
             if (err == IntPtr.Zero)
                 return;
 
             var msgPtr = OrcBindings.LLVMGetErrorMessage(err);
             var message = Marshal.PtrToStringAnsi(msgPtr);
+            System.Console.WriteLine("oh no error1");
 
             OrcBindings.LLVMDisposeErrorMessage(msgPtr);
             OrcBindings.LLVMConsumeError(err);
-
+            System.Console.WriteLine("oh no error2");
             throw new Exception(message);
         }
 
-        private void DeclarePrintf()
-        {
-            // Fix: Use _module.Context to get the LLVM types
-            var llvmCtx = _module.Context;
-            _printfType = LLVMTypeRef.CreateFunction(
-                  llvmCtx.Int32Type,
-                new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Double, 0) },
-                true); // varargs
+        bool prinitialized;
 
-            _printf = _module.AddFunction("printf", _printfType);
+        private void DeclarePrintfGlobal()
+        {
+            if (prinitialized)
+                return;
+
+            var llvmCtx = _globalsModule.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
+
+            _printfType = LLVMTypeRef.CreateFunction(
+                llvmCtx.Int32Type,
+                new[] { i8Ptr },
+                true // varargs
+            );
+
+            _printf = _globalsModule.AddFunction("printf", _printfType);
+            prinitialized = true;
         }
 
         private LLVMValueRef CreateFormatString(string format)
@@ -232,30 +278,6 @@ namespace MyCompiler
             );
         }
 
-        private MyType PerformSemanticAnalysis(NodeExpr expr)
-        {
-            var checker = new TypeChecker(_context);
-            var lastType = checker.Check(expr);
-            _context = checker.UpdatedContext;
-
-            var lastNode = GetLastExpression(expr);
-            return lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
-        }
-
-        private LLVMValueRef CreateMainFunction(string funcName)
-        {
-            var funcType = LLVMTypeRef.CreateFunction(
-                LLVMTypeRef.Int32,
-                Array.Empty<LLVMTypeRef>(),
-                false);
-
-            var func = _module.AddFunction(funcName, funcType);
-            var entry = func.AppendBasicBlock("entry");
-            _builder.PositionAtEnd(entry);
-
-            return func;
-        }
-
         private void DumpIR()
         {
             string llvmIR = _module.PrintToString();
@@ -264,115 +286,302 @@ namespace MyCompiler
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
 
-        private LLVMGenericValueRef Execute(LLVMValueRef func)
-        {
-            Console.WriteLine("");
-            var options = new LLVMMCJITCompilerOptions { OptLevel = 3 };
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate double MainDelegate();
 
-            if (!_module.TryCreateMCJITCompiler(out var engine, ref options, out var error))
-            {
-                throw new Exception($"Failed to create MCJIT: {error}");
-            }
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        private delegate IntPtr MainPointerDelegate();
 
-            Stopwatch sw = Stopwatch.StartNew();
-
-            var result = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
-
-            sw.Stop();
-
-            Console.WriteLine("\n--- Execution Stats ---");
-            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
-            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
-            Console.WriteLine("------------------------\n");
-
-            return result;
-        }
-
+        private LLVMModuleRef _globalsModule;
+        private IntPtr _globalsTSM;
         public object Run(NodeExpr expr, bool generateIR = false)
         {
-            // 1. SEMANTIC ANALYSIS (Type Checking)
+            // 1. SEMANTIC ANALYSIS
             var checker = new TypeChecker(_context);
-            var lastType = checker.Check(expr); // This returns a value but we don't use it
-            InitializeModule();
-
-            // Update the compiler's context with any new variables found during type checking
+            checker.Check(expr);
             _context = checker.UpdatedContext;
 
-            // 3. PREDICT WRAPPER RETURN TYPE
             var lastNode = GetLastExpression(expr);
             MyType prediction = MyType.None;
-
             if (lastNode is ExpressionNodeExpr exp)
-            {
                 prediction = exp.Type;
-            }
 
-            // 4. UNIVERSAL WRAPPER SIGNATURE (for LLJIT)
+            // 2. CREATE FRESH MODULE & FUNCTION
             string funcName = $"main_{_replCounter++}";
-            CreateMainFunction(funcName);
+            var replModule = LLVMModuleRef.CreateWithName($"repl_{_replCounter}");
+            var replBuilder = replModule.Context.CreateBuilder();
 
-            // 5. GENERATE CODE
-            DeclareBoolStrings();
-            var resultValue = Visit(expr);
-            DeclarePrintf();
+            var funcType = (prediction == MyType.Float || prediction == MyType.Int || prediction == MyType.Bool)
+                ? LLVMTypeRef.Double
+                : LLVMTypeRef.Int32;
 
-            // 6. FINALIZE RETURN (The "Boxing" Logic) // CRASH, this code makes it crash
-            if (prediction != MyType.None && !(lastNode is PrintNodeExpr))
-            {
-                BuildAutoPrint(resultValue, prediction);
-            }
+            var func = replModule.AddFunction(funcName, LLVMTypeRef.CreateFunction(funcType, Array.Empty<LLVMTypeRef>(), false));
+            var entry = func.AppendBasicBlock("entry");
+            replBuilder.PositionAtEnd(entry);
 
-            // Build the return statement for the function
-            _builder.BuildRet(LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0));
+            var oldBuilder = _builder;
+            _builder = replBuilder;
 
-            if (generateIR)
-            {
-                // Generate LLVM IR and write to a file
-                string llvmIR = _module.PrintToString();
-                Console.WriteLine("The LLVM IR: " + llvmIR);
-                File.WriteAllText("output_actual.ll", llvmIR); // save to file for further compilation
-            }
-
-            // 7. EXECUTE with LLJIT (ORC)
-            Stopwatch sw = Stopwatch.StartNew();
-
-            EnsureJit();
-
-            // 8. Wrap the module in a thread-safe context and module
-            var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
-            var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
+            // ✅ Declare strings in this module
+            _trueStr = _builder.BuildGlobalStringPtr("true\n", "true_str");
+            _falseStr = _builder.BuildGlobalStringPtr("false\n", "false_str");
 
             DumpIR();
-            // 9. Add the module to LLJIT
-            OrcBindings.LLVMOrcLLJITAddLLVMIRModule(
-                _jit,
+            System.Console.WriteLine("hi");
+
+            // ✅ Declare printf globally if not yet done
+            if (!prinitialized)
+            {
+                DeclarePrintfGlobal();  // uses _globalsModule
+                OrcBindings.LLVMOrcLLJITAddLLVMIRModule(
+                    _jit,
+                    OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit),
+                    _globalsTSM
+                );
+            }
+            System.Console.WriteLine("hi2");
+
+            // 3. Generate code
+            var resultValue = Visit(expr);
+
+            if (prediction != MyType.None && !(lastNode is PrintNodeExpr))
+                BuildAutoPrint(resultValue, prediction);
+            System.Console.WriteLine("hi3");
+
+            // Build return
+            LLVMValueRef finalReturn = prediction switch
+            {
+                MyType.Int or MyType.Float or MyType.Bool => resultValue,
+                MyType.String or MyType.Array => _builder.BuildBitCast(resultValue, LLVMTypeRef.Double, "ptr_to_double"),
+                _ => LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0)
+            };
+
+            _builder.BuildRet(finalReturn);
+            _builder = oldBuilder;
+
+            // 4. Execute
+            EnsureJit();
+            var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
+            var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(replModule.Handle, tsc);
+
+            OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit,
                 OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit),
                 tsm);
 
-            // 10. LOOKUP "main" function
             ulong addr;
-            OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName);
-
             ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName));
 
-            Console.WriteLine("Yo we running ORC");
+            // 5. Call
+            if (prediction == MyType.Float || prediction == MyType.Int || prediction == MyType.Bool)
+            {
+                var main = Marshal.GetDelegateForFunctionPointer<MainDelegate>((IntPtr)addr);
+                double result = main();
+                return ExtractResult(result, prediction, expr);
+            }
+            else if (prediction == MyType.String || prediction == MyType.Array)
+            {
+                var mainPtr = Marshal.GetDelegateForFunctionPointer<MainPointerDelegate>((IntPtr)addr);
+                IntPtr ptrResult = mainPtr();
+                return ExtractResult(ptrResult, prediction, expr);
+            }
 
-            // 11. Convert function pointer to delegate
-            var main = Marshal.GetDelegateForFunctionPointer<MainDelegate>((IntPtr)addr);
-
-            // 12. Execute the function
-            var result = main();
-
-            sw.Stop();
-            Console.WriteLine("\n--- Execution Stats ---");
-            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
-            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
-            Console.WriteLine("------------------------\n");
-
-            // 13. EXTRACT
-            return result;
-            //return ExtractResult(result, prediction, expr);
+            return null;
         }
+
+        // [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        // private delegate double MainDelegate();
+
+        // [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        // private delegate IntPtr MainPointerDelegate();
+
+
+        // public object Run(NodeExpr expr, bool generateIR = false)
+        // {
+        //     // 1. SEMANTIC ANALYSIS (Type Checking)
+        //     var checker = new TypeChecker(_context);
+        //     var lastType = checker.Check(expr); // This returns a value but we don't use it
+        //     _context = checker.UpdatedContext;
+
+        //     InitializeModule();
+
+        //     // 3. PREDICT WRAPPER RETURN TYPE
+        //     var lastNode = GetLastExpression(expr);
+        //     MyType prediction = MyType.None;
+
+        //     if (lastNode is ExpressionNodeExpr exp)
+        //     {
+        //         prediction = exp.Type;
+        //     }
+
+        //     // 4. UNIVERSAL WRAPPER SIGNATURE (for LLJIT)
+        //     string funcName = $"main_{_replCounter++}";
+        //     CreateMainFunction(funcName);
+
+        //     // 5. GENERATE CODE
+        //     DeclareBoolStrings();
+        //     var resultValue = Visit(expr);
+        //     DeclarePrintf();
+
+        //     // 6. FINALIZE RETURN (The "Boxing" Logic) // CRASH, this code makes it crash
+        //     if (prediction != MyType.None && !(lastNode is PrintNodeExpr))
+        //     {
+        //         BuildAutoPrint(resultValue, prediction);
+        //     }
+
+        //     // Build the return statement for the function
+        //     _builder.BuildRet(LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0));
+
+        //     if (generateIR)
+        //     {
+        //         // Generate LLVM IR and write to a file
+        //         string llvmIR = _module.PrintToString();
+        //         Console.WriteLine("The LLVM IR: " + llvmIR);
+        //         File.WriteAllText("output_actual.ll", llvmIR); // save to file for further compilation
+        //     }
+
+        //     // 7. EXECUTE with LLJIT (ORC)
+        //     Stopwatch sw = Stopwatch.StartNew();
+
+        //     EnsureJit();
+
+        //     // 8. Wrap the module in a thread-safe context and module
+        //     var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
+        //     var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
+
+        //     DumpIR();
+        //     // 9. Add the module to LLJIT
+        //     OrcBindings.LLVMOrcLLJITAddLLVMIRModule(
+        //         _jit,
+        //         OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit),
+        //         tsm);
+
+        //     // 10. LOOKUP "main" function
+        //     ulong addr;
+        //     ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName));
+
+        //     Console.WriteLine("Yo we running ORC");
+
+        //     // 11. Convert function pointer to delegate
+        //     // var main = Marshal.GetDelegateForFunctionPointer<MainDelegate>((IntPtr)addr);
+
+        //     // // 12. Execute the function
+        //     // var result = main();
+
+        //     ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName));
+        //     //var main = Marshal.GetDelegateForFunctionPointer<MainDelegate>((IntPtr)addr);
+        //     //double result = main();
+
+        //     sw.Stop();
+        //     Console.WriteLine("\n--- Execution Stats ---");
+        //     Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+        //     Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+        //     Console.WriteLine("------------------------\n");
+
+        //     // 13. EXTRACT
+        //     //return result;
+
+        //     LLVMValueRef returnValue;
+
+        //     // If there’s a real expression to return
+        //     if (prediction != MyType.None && !(lastNode is PrintNodeExpr))
+        //     {
+        //         returnValue = resultValue;
+        //     }
+        //     else
+        //     {
+        //         // fallback: return 0 for void-like statements
+        //         returnValue = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0);
+        //     }
+
+        //     // Make sure the function’s LLVM type matches what you return
+        //     if (prediction == MyType.Float || prediction == MyType.Int)
+        //     {
+        //         _builder.BuildRet(returnValue); // return double
+        //     }
+        //     else if (prediction == MyType.Bool)
+        //     {
+        //         // booleans are doubles in your wrapper
+        //         _builder.BuildRet(returnValue);
+        //     }
+        //     else if (prediction == MyType.String || prediction == MyType.Array)
+        //     {
+        //         // opaque pointer casted to double
+        //         _builder.BuildRet(returnValue);
+        //     }
+        //     else
+        //     {
+        //         _builder.BuildRet(LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0));
+        //     }
+
+
+
+        //     // Decide the delegate type based on your AST prediction
+        //     if (prediction == MyType.Float || prediction == MyType.Int || prediction == MyType.Bool)
+        //     {
+        //         var main = Marshal.GetDelegateForFunctionPointer<MainDelegate>((IntPtr)addr);
+        //         double result = main();
+        //         return ExtractResult(result, prediction, expr); // now ExtractResult takes raw double
+        //     }
+        //     else if (prediction == MyType.String || prediction == MyType.Array)
+        //     {
+        //         var mainPtr = Marshal.GetDelegateForFunctionPointer<MainPointerDelegate>((IntPtr)addr);
+        //         IntPtr ptrResult = mainPtr();
+        //         return ExtractResult(ptrResult, prediction, expr); // ExtractResult takes IntPtr
+        //     }
+
+
+        //     return 0;
+        //     //return ExtractResult(returnValue, prediction, expr);
+        // }
+
+
+        // private LLVMGenericValueRef Execute(LLVMValueRef func)
+        // {
+        //     Console.WriteLine("");
+        //     var options = new LLVMMCJITCompilerOptions { OptLevel = 3 };
+
+        //     if (!_module.TryCreateMCJITCompiler(out var engine, ref options, out var error))
+        //     {
+        //         throw new Exception($"Failed to create MCJIT: {error}");
+        //     }
+
+        //     Stopwatch sw = Stopwatch.StartNew();
+
+        //     var result = engine.RunFunction(func, Array.Empty<LLVMGenericValueRef>());
+
+        //     sw.Stop();
+
+        //     Console.WriteLine("\n--- Execution Stats ---");
+        //     Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+        //     Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+        //     Console.WriteLine("------------------------\n");
+
+        //     return result;
+        // }
+
+        // private MyType PerformSemanticAnalysis(NodeExpr expr)
+        // {
+        //     var checker = new TypeChecker(_context);
+        //     var lastType = checker.Check(expr);
+        //     _context = checker.UpdatedContext;
+
+        //     var lastNode = GetLastExpression(expr);
+        //     return lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
+        // }
+
+        // private LLVMValueRef CreateMainFunction(string funcName)
+        // {
+        //     var funcType = LLVMTypeRef.CreateFunction(
+        //         LLVMTypeRef.Int32,
+        //         Array.Empty<LLVMTypeRef>(),
+        //         false);
+
+        //     var func = _module.AddFunction(funcName, funcType);
+        //     var entry = func.AppendBasicBlock("entry");
+        //     _builder.PositionAtEnd(entry);
+
+        //     return func;
+        // }
 
         // // --- Helpers to keep Run() clean ---
 
@@ -388,87 +597,126 @@ namespace MyCompiler
             return expr;
         }
 
-        private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
+        private object ExtractResult(double result, MyType type, NodeExpr originalExpr)
         {
-            // 0. SILENCE CHECK
-            var lastNode = GetLastExpression(originalExpr);
-            if (lastNode is AssignNodeExpr || lastNode is PrintNodeExpr || lastNode is IfNodeExpr ||
-                lastNode is ForLoopNodeExpr || lastNode is IncrementNodeExpr || lastNode is DecrementNodeExpr)
-            {
-                return null;
-            }
-
-            ulong rawBits = 0;
-
-            // 1. EXTRACTION logic
             if (type == MyType.Float || type == MyType.Int)
-            {
-                double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
-            }
-            else if (type == MyType.String || type == MyType.Array)
-            {
-                // Fix: Use the static LLVM helper instead of .ToInt()
-                rawBits = LLVM.GenericValueToInt(res, 0);
+                return result;
 
-                // Fallback: If your Run() method bitcasted the pointer to a double for the wrapper
-                if (rawBits == 0)
-                {
-                    double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                    rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
-                }
-            }
-            else if (type == MyType.Bool)
-            {
-                // Fix: Use the static LLVM helper
-                rawBits = LLVM.GenericValueToInt(res, 0);
-            }
+            if (type == MyType.Bool)
+                return result != 0.0;
 
-            // 2. INTERPRETATION
-            if (rawBits == 0 && type != MyType.Float && type != MyType.Bool) return "null";
+            throw new Exception("Use IntPtr version for String/Array types");
+        }
+
+        private object ExtractResult(IntPtr ptr, MyType type, NodeExpr originalExpr)
+        {
+            if (ptr == IntPtr.Zero)
+                return "null";
 
             switch (type)
             {
-                case MyType.Float:
-                case MyType.Int:
-                    return BitConverter.UInt64BitsToDouble(rawBits);
-
                 case MyType.String:
-                    try
-                    {
-                        return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
-                    }
-                    catch { return "null"; }
+                    return Marshal.PtrToStringAnsi(ptr) ?? "null";
 
                 case MyType.Array:
-                    try
+                    // Example for array of doubles
+                    int count = 0;
+                    if (originalExpr is ArrayNodeExpr arr) count = arr.Elements.Count;
+
+                    List<double> elements = new List<double>();
+                    for (int i = 0; i < count; i++)
                     {
-                        IntPtr address = new IntPtr((long)rawBits);
-                        int count = 0;
-                        if (lastNode is ArrayNodeExpr arr) count = arr.Elements.Count;
-                        else count = 0; // Default or lookup logic
-
-                        List<string> elements = new List<string>();
-                        for (int i = 0; i < count; i++)
-                        {
-                            long boxedVal = Marshal.ReadInt64(address, i * 8);
-                            double dblVal = BitConverter.Int64BitsToDouble(boxedVal);
-                            // CultureInfo.InvariantCulture ensures dots for decimals
-                            elements.Add(dblVal.ToString(CultureInfo.InvariantCulture));
-                        }
-                        return "[" + string.Join(", ", elements) + "]";
+                        long val = Marshal.ReadInt64(ptr, i * 8);
+                        elements.Add(BitConverter.Int64BitsToDouble(val));
                     }
-                    catch { return $"[Array @ 0x{rawBits:X}]"; }
-
-                case MyType.Bool:
-                    // Assuming bools come back as bits inside a double from your wrapper
-                    double bVal = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                    return bVal != 0.0;
+                    return "[" + string.Join(", ", elements) + "]";
 
                 default:
-                    return rawBits;
+                    return ptr.ToString("X");
             }
         }
+
+        //         private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr) // old and working but not with orc RPL
+        //         {
+        //             // 0. SILENCE CHECK
+        //             var lastNode = GetLastExpression(originalExpr);
+        //             if (lastNode is AssignNodeExpr || lastNode is PrintNodeExpr || lastNode is IfNodeExpr ||
+        //                 lastNode is ForLoopNodeExpr || lastNode is IncrementNodeExpr || lastNode is DecrementNodeExpr)
+        //             {
+        //                 return null;
+        //             }
+
+        //             ulong rawBits = 0;
+
+        //             // 1. EXTRACTION logic
+        //             if (type == MyType.Float || type == MyType.Int)
+        //             {
+        //                 double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+        //                 rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
+        //             }
+        //             else if (type == MyType.String || type == MyType.Array)
+        //             {
+        //                 // Fix: Use the static LLVM helper instead of .ToInt()
+        //                 rawBits = LLVM.GenericValueToInt(res, 0);
+
+        //                 // Fallback: If your Run() method bitcasted the pointer to a double for the wrapper
+        //                 if (rawBits == 0)
+        //                 {
+        //                     double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+        //                     rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
+        //                 }
+        //             }
+        //             else if (type == MyType.Bool)
+        //             {
+        //                 // Fix: Use the static LLVM helper
+        //                 rawBits = LLVM.GenericValueToInt(res, 0);
+        //             }
+
+        //             // 2. INTERPRETATION
+        //             if (rawBits == 0 && type != MyType.Float && type != MyType.Bool) return "null";
+
+        //             switch (type)
+        //             {
+        //                 case MyType.Float:
+        //                 case MyType.Int:
+        //                     return BitConverter.UInt64BitsToDouble(rawBits);
+
+        //                 case MyType.String:
+        //                     try
+        //                     {
+        //                         return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
+        //                     }
+        //                     catch { return "null"; }
+
+        //                 case MyType.Array:
+        //                     try
+        //                     {
+        //                         IntPtr address = new IntPtr((long)rawBits);
+        //                         int count = 0;
+        //                         if (lastNode is ArrayNodeExpr arr) count = arr.Elements.Count;
+        //                         else count = 0; // Default or lookup logic
+
+        //                         List<string> elements = new List<string>();
+        //                         for (int i = 0; i < count; i++)
+        //                         {
+        //                             long boxedVal = Marshal.ReadInt64(address, i * 8);
+        //                             double dblVal = BitConverter.Int64BitsToDouble(boxedVal);
+        //                             // CultureInfo.InvariantCulture ensures dots for decimals
+        //                             elements.Add(dblVal.ToString(CultureInfo.InvariantCulture));
+        //                         }
+        //                         return "[" + string.Join(", ", elements) + "]";
+        //                     }
+        //                     catch { return $"[Array @ 0x{rawBits:X}]"; }
+
+        //                 case MyType.Bool:
+        //                     // Assuming bools come back as bits inside a double from your wrapper
+        //                     double bVal = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+        //                     return bVal != 0.0;
+
+        //                 default:
+        //                     return rawBits;
+        //             }
+        //         }
 
         //------Visit-functions-------//
 

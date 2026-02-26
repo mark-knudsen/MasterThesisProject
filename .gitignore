@@ -27,7 +27,6 @@ bld/
 project.lock.json
 project.fragment.lock.json
 artifacts/
-MyCompiler.csproj
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
