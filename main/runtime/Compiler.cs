@@ -53,7 +53,6 @@ namespace MyCompiler
 
         private void DeclarePrintf()
         {
-            // Fix: Use _module.Context to get the LLVM types
             var llvmCtx = _module.Context;
             _printfType = LLVMTypeRef.CreateFunction(
                   llvmCtx.Int32Type,
@@ -253,7 +252,7 @@ namespace MyCompiler
         private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
         {
             // 0. SILENCE CHECK
-            var lastNode = GetLastExpression(originalExpr);
+            var lastNode = GetLastExpression(originalExpr); // don't we run this in main already? seems obsolete to call it again
             if (lastNode is AssignNodeExpr || lastNode is PrintNodeExpr || lastNode is IfNodeExpr ||
                 lastNode is ForLoopNodeExpr || lastNode is IncrementNodeExpr || lastNode is DecrementNodeExpr)
             {
@@ -413,7 +412,6 @@ namespace MyCompiler
             };
         }
 
-
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
         {
             uint count = (uint)expr.Elements.Count;
@@ -450,7 +448,7 @@ namespace MyCompiler
             var boxed = _builder.BuildLoad2(LLVMTypeRef.Int64, elementPtr, "val");
 
             // 3. THE FIX: Bitcast for Numbers, IntToPtr for Strings
-            if (expr.Type == MyType.Float || expr.Type == MyType.Int)
+            if (expr.Type == MyType.Float || expr.Type == MyType.Int) // don't think we need to box simple number values
             {
                 // "Treat these 64 bits as a Double"
                 return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
@@ -565,7 +563,6 @@ namespace MyCompiler
             return newValue;
         }
 
-        // Update your IExpressionVisitor interface to include this
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
         {
             var left = Visit(expr.Left);
@@ -865,9 +862,9 @@ namespace MyCompiler
 
         public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
         {
-            // 1. Map the Return Type (Fixes error CS0103 for llvmRetType)
-            MyType retType = MapStringToMyType(node.ReturnTypeName);
-            LLVMTypeRef llvmRetType = GetLLVMType(retType);
+            // 1. Get the return type
+            MyType returnType = node.ReturnTypeName;
+            LLVMTypeRef llvmRetType = GetLLVMType(returnType);
 
             // 2. Define Parameter Types (Assuming Double for now)
             var argTypes = Enumerable.Repeat(LLVMTypeRef.Double, node.Parameters.Count).ToArray();
@@ -899,7 +896,7 @@ namespace MyCompiler
             var bodyResult = Visit(node.Body);
 
             // 6. Finalize the Function Return
-            if (retType == MyType.None) // This is the "void" case
+            if (returnType == MyType.None) // This is the "void" case
             {
                 _builder.BuildRetVoid();
             }

@@ -82,18 +82,28 @@ namespace MyCompiler
     public class FunctionDefNode : NodeExpr
     {
         public string Name { get; }
-        public string ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
+        public MyType ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
         public List<string> Parameters { get; set; }
         public NodeExpr Body { get; set; }
 
         public FunctionDefNode(string name, string returnType, List<string> parameters, NodeExpr body)
         {
             Name = name;
-            ReturnTypeName = returnType;
+
+            ReturnTypeName = returnType.ToLower() switch
+            {
+                "int" => MyType.Int,
+                "float" => MyType.Float,
+                "double" => MyType.Float,  
+                "bool" => MyType.Bool,
+                "string" => MyType.String,
+                "array" => MyType.Array, 
+                _ => MyType.None
+            };
+
             Parameters = parameters;
             Body = body;
         }
-
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionDef(this);
     }

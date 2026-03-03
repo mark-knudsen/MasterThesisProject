@@ -339,17 +339,8 @@ namespace MyCompiler
 
         public MyType VisitFunctionDef(FunctionDefNode node)
         {
-            // 1. Convert the string return type (e.g., "int") to your MyType enum
-            MyType rType = node.ReturnTypeName.ToLower() switch
-            {
-                "int" => MyType.Int,
-                "float" => MyType.Float,
-                "double" => MyType.Float,  // Add this!
-                "bool" => MyType.Bool,
-                "string" => MyType.String,
-                "array" => MyType.Array,   // Add this too for later!
-                _ => MyType.None
-            };
+            // 1. get return type
+            MyType returnType = node.ReturnTypeName;
 
             // 2. Save the global context
             var globalContext = _context;
@@ -357,12 +348,11 @@ namespace MyCompiler
             // 3. Create Local Scope: Add parameters so the body can see them
             // We assume parameters are Floats/Numbers in your current setup
 
-
             foreach (var paramName in node.Parameters)
             {
                 // If the function returns a string, assume parameters are strings.
                 // Otherwise, assume they are numbers.
-                MyType pType = (rType == MyType.String) ? MyType.String : MyType.Float;
+                MyType pType = (returnType == MyType.String) ? MyType.String : MyType.Float;
 
                 _context = _context.Add(paramName, default!, pType, null);
             }
@@ -375,7 +365,7 @@ namespace MyCompiler
 
             // 6. Register the FUNCTION itself so we can call it
             // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
-            _context = _context.Add(node.Name, default!, rType, null);
+            _context = _context.Add(node.Name, default!, returnType, null);
 
             return MyType.None;
         }
