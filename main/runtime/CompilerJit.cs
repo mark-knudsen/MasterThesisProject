@@ -866,7 +866,7 @@ namespace MyCompiler
         public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
         {
             // 1. Map the Return Type (Fixes error CS0103 for llvmRetType)
-            MyType retType = MapStringToMyType(node.ReturnTypeName);
+            MyType retType = node.ReturnTypeName;
             LLVMTypeRef llvmRetType = GetLLVMType(retType);
 
             // 2. Define Parameter Types (Assuming Double for now)
