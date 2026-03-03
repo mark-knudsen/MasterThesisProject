@@ -8,6 +8,7 @@ using System.Globalization;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
+using Microsoft.VisualBasic;
 
 internal static class OrcBindings
 {
@@ -69,7 +70,10 @@ namespace MyCompiler
         private IntPtr _jit; // JIT execution pointer
         private bool _jitInitialized = false;
         private int _replCounter = 0;
+
+        HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
+
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate double MainDelegate();
 
@@ -87,9 +91,6 @@ namespace MyCompiler
             _builder = _module.Context.CreateBuilder();
 
             _context = Context.Empty; // stores variables/functions
-
-            // _globalsModule = LLVMModuleRef.CreateWithName("globals");
-            // var globalsCtx = _globalsModule.Context;
 
             // Declare malloc and other required functions
             DeclareMalloc();
@@ -136,79 +137,76 @@ namespace MyCompiler
             throw new Exception(message);
         }
 
-        private void DumpIR()
+        private void DumpIR(LLVMModuleRef module)
         {
-            string llvmIR = _module.PrintToString();
+            string llvmIR = module.PrintToString();
             Console.WriteLine("Generated LLVM IR:\n");
             Console.WriteLine(llvmIR);
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
 
-        private Dictionary<string, LLVMValueRef> _globalVars = new Dictionary<string, LLVMValueRef>(); // Track global variables
-        string funcName = "main";
+        LLVMModuleRef _currentModule;
 
         public object Run(NodeExpr expr, bool generateIR = false)
         {
-            // Create the function name and add it to the module
-            //funcName = $"main_{_replCounter++}";
-            CreateMainFunction(funcName);
+            // Unique function name per REPL execution
+            string funcName = $"__anon_expr_{_replCounter++}";
 
-            DumpIR(); // I believe after here the IR is even wrong
-            Console.WriteLine(expr);
+            // 1 Create a fresh context + module for this command
+            var context = LLVMContextRef.Create();
+            _module = context.CreateModuleWithName("repl_module");
 
-            // 1. Generate the IR for the expression
-            System.Console.WriteLine("hi0");
-            var resultValue = Visit(expr);
-            System.Console.WriteLine("hi1");
+            var builder = context.CreateBuilder();
 
-            if (!createdMain)
-            {
-                _builder.BuildRet(resultValue);
-                createdMain = true;
-            }
-            DumpIR();
-            System.Console.WriteLine("hi2");
+            // 2 Create:  define double @__anon_expr_X()
+            var funcType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.Double,
+                Array.Empty<LLVMTypeRef>(),
+                false);
 
-            // 2. Finalize the module and JIT execution
+            var function = _module.AddFunction(funcName, funcType);
+            var entry = function.AppendBasicBlock("entry");
+            builder.PositionAtEnd(entry);
+
+            // 3 Generate IR for the expression
+            // IMPORTANT: Visit must use THIS builder/module
+            _currentModule = _module;
+            _builder = builder;
+
+            LLVMValueRef resultValue = Visit(expr);
+
+            builder.BuildRet(resultValue);
+
+            DumpIR(_module);
+
+            // 4 Verify IR before giving to ORC
+            // if (module.Verify(LLVMVerifierFailureAction.LLVMPrintMessageAction) != 0) // this code doesn't exist
+            //     throw new Exception("Invalid IR generated.");
+
+            // 5 Wrap in ThreadSafeModule
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
-            System.Console.WriteLine("hi3");
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
-            DumpIR();
-            System.Console.WriteLine("hi4");
-            OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit), tsm); // we fail right here, but the IR looks wrong way before
-            System.Console.WriteLine("hi5");
 
-            // 3. Lookup the function to be executed
+            var dylib = OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit);
+
+            ThrowIfError(
+                OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, dylib, tsm)
+            );
+
+            // 6 Lookup function pointer
             ulong addr;
-            System.Console.WriteLine("hi6");
-            DumpIR();
-            ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName));
+            ThrowIfError(
+                OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName)
+            );
+            //DumpIR(module);
 
-            // 4. Convert the addr (ulong) to IntPtr for calling the function
-            IntPtr addrAsIntPtr = (IntPtr)addr;
+            // 7 Call it
+            var fnPtr = (IntPtr)addr;
+            var del = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-            // 5. Calling the function through the delegate
-            var mainFunc = Marshal.GetDelegateForFunctionPointer<MainDelegate>(addrAsIntPtr);
-            var result = mainFunc();
+            double result = del();
+
             return result;
-        }
-
-        bool createdMain;
-
-        private void CreateMainFunction(string funcName)
-        {
-            if (createdMain) return;
-            // Define the function signature
-            var i8Ptr = LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0);
-
-            // Define the function signature
-            var funcType = LLVMTypeRef.CreateFunction(i8Ptr, Array.Empty<LLVMTypeRef>(), false);
-            var mainFunc = _module.AddFunction(funcName, funcType);
-
-            // Create a basic block for the function body
-            var entry = mainFunc.AppendBasicBlock("entry");
-            _builder.PositionAtEnd(entry);
-            //createdMain = true;
         }
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
@@ -236,167 +234,59 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
         }
 
-        public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr) // it does do the assign
+        public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
-            Console.WriteLine($"visiting assignment: {expr.Id} = {expr.Expression}");
-
-            // var value = Visit(expr.Expression); // Visit the right-hand side expression
-
-            // // Store the value in the variables dictionary
-            // //_context.Get[expr.Id] = value;
-
-            // _context.Add(expr.Id, value, expr.Expression.Type);
-
-            // return value;
+            Console.WriteLine($"visiting assignment: {expr.Id}");
 
             var value = Visit(expr.Expression);
 
-            // 1. Unified Storage Type logic
-            // We treat Strings and Arrays as pointers (ptr), and numbers as Double.
-            LLVMTypeRef storageType;
-            if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+            // Ensure numeric values are double
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
+
+            var storageType = value.TypeOf;
+            var module = _currentModule;
+
+            LLVMValueRef global;
+
+            if (!_definedGlobals.Contains(expr.Id))
             {
-                storageType = LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0); // Opaque ptr
-            }
-            else if (value.TypeOf == LLVMTypeRef.Double || value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-            {
-                // Ensure all numbers are stored as Doubles for consistency
-                if (value.TypeOf != LLVMTypeRef.Double)
-                {
-                    value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
-                }
-                storageType = LLVMTypeRef.Double;
+                // First definition: define global in this module
+                global = module.AddGlobal(storageType, expr.Id);
+                global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+
+                _definedGlobals.Add(expr.Id);
             }
             else
             {
-                storageType = value.TypeOf;
+                // Subsequent modules: declare as external
+                global = module.AddGlobal(storageType, expr.Id);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
-            // 2. Persistent Global Management
-            var varPtr = _module.GetNamedGlobal(expr.Id);
-            if (varPtr.Handle == IntPtr.Zero)
-            {
-                varPtr = _module.AddGlobal(storageType, expr.Id);
-                varPtr.Initializer = LLVMValueRef.CreateConstNull(storageType);
-                varPtr.Alignment = 8; // Best practice for 64-bit values
-            }
+            _builder.BuildStore(value, global);
 
-            // 3. Update Context using AST Type
-            // Instead of guessing if it's a string, we trust the Parser/AST's prediction
-            _context = _context.Add(expr.Id, varPtr, expr.Expression.Type);
-
-            // 4. Perform the Store
-            _builder.BuildStore(value, varPtr);
-
-            return default;
+            // Assignment returns value
+            return value;
         }
-
-        // public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr) // also works and uses globalvars, no ide if that makes a difference
-        // {
-        //     Console.WriteLine($"visiting assignment: {expr.Id} = {expr.Expression}");
-
-        //     var value = Visit(expr.Expression);
-
-        //     // Ensure we're using the correct type for global variables
-        //     LLVMTypeRef storageType;
-        //     if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-        //     {
-        //         storageType = LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0); // Opaque ptr
-        //     }
-        //     else if (value.TypeOf == LLVMTypeRef.Double || value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-        //     {
-        //         if (value.TypeOf != LLVMTypeRef.Double)
-        //         {
-        //             value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
-        //         }
-        //         storageType = LLVMTypeRef.Double;
-        //     }
-        //     else
-        //     {
-        //         storageType = value.TypeOf;
-        //     }
-
-        //     // Check if the variable already exists in the global scope
-        //     if (!_globalVars.ContainsKey(expr.Id))
-        //     {
-        //         // If not, create it
-        //         var varPtr = _module.AddGlobal(storageType, expr.Id);
-        //         varPtr.Initializer = LLVMValueRef.CreateConstNull(storageType);
-        //         varPtr.Alignment = 8; // Best practice for 64-bit values
-        //         _globalVars[expr.Id] = varPtr;  // Track the global variable
-        //     }
-
-        //     // Store the updated value in the global variable
-        //     var varRef = _globalVars[expr.Id];
-        //     _builder.BuildStore(value, varRef);
-
-        //     // Update context with the new value for later retrieval
-        //     _context = _context.Add(expr.Id, varRef, expr.Expression.Type);
-
-        //     return default;
-        // }
-
-        private Dictionary<string, LLVMValueRef> _localScope = null;
-
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
-
             Console.WriteLine($"visiting variable: {expr.Name}");
 
-            // Check if the variable exists in the dictionary and return its value
-            // if (_context.Get(expr.Name, out var variableValue))
-            // {
-            //     return variableValue;
-            // }
+            // 1 Lookup symbol by name
+            var module = _currentModule;
+            LLVMValueRef global = module.GetNamedGlobal(expr.Name);
 
-            // var d = _context.Get(expr.Name);
-            // return d.Value;
-
-            // throw new InvalidOperationException($"Variable '{expr.Name}' not found.");
-
-            // 1. Check Local Function Parameters FIRST
-            if (_localScope != null && _localScope.TryGetValue(expr.Name, out var paramValue))
+            if (global.Handle == IntPtr.Zero)
             {
-                // Get the type the TypeChecker assigned (Critical for add vs helloname)
-                var entryType = _context.Get(expr.Name)?.Type ?? MyType.Float;
-                expr.SetType(entryType);
-
-                // Since your VisitFunctionDef defines parameters as LLVM Double, 
-                // we "Unbox" them based on what they actually represent.
-                return UnboxFromDouble(paramValue, entryType);
+                // Not defined in this module → declare external
+                global = module.AddGlobal(LLVMTypeRef.Double, expr.Name);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
-            // 2. Check the Symbol Table (Global Variables)
-            var entry = _context.Get(expr.Name);
-            if (entry is null) throw new Exception($"Variable {expr.Name} not defined");
-
-            var actualType = entry.Type;
-            expr.SetType(actualType);
-
-            // 3. Load from memory
-            LLVMTypeRef llvmType = (actualType == MyType.String || actualType == MyType.Array)
-                ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0)
-                : LLVMTypeRef.Double;
-
-            return _builder.BuildLoad2(llvmType, entry.Value, expr.Name);
-        }
-
-        private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
-        {
-            // If we want a number, and it's already a double, just return it!
-            if (target == MyType.Float || target == MyType.Int)
-            {
-                return val;
-            }
-
-            // If we want a string/pointer, we must go: Double bits -> Int64 -> Pointer
-            if (target == MyType.String || target == MyType.Array)
-            {
-                var asInt64 = _builder.BuildBitCast(val, LLVMTypeRef.Int64, "smuggled_to_i64");
-                return _builder.BuildIntToPtr(asInt64, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i64_to_ptr");
-            }
-
-            return val;
+            // 2 Load value
+            return _builder.BuildLoad2(LLVMTypeRef.Double, global, expr.Name);
         }
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
