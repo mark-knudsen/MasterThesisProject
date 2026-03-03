@@ -46,8 +46,8 @@ namespace MyCompiler
         {
             Expression = expr;
         }
-       // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPrintExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPrintExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     // Represents Random function
@@ -61,8 +61,8 @@ namespace MyCompiler
             MinValue = minValue;
             MaxValue = maxValue;
         }
-      //  public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        //  public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     public class RoundNodeExpr : ExpressionNodeExpr
@@ -78,7 +78,7 @@ namespace MyCompiler
         }
 
         //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     //------Function-nodes------//
@@ -97,10 +97,10 @@ namespace MyCompiler
             {
                 "int" => MyType.Int,
                 "float" => MyType.Float,
-                "double" => MyType.Float,  
+                "double" => MyType.Float,
                 "bool" => MyType.Bool,
                 "string" => MyType.String,
-                "array" => MyType.Array, 
+                "array" => MyType.Array,
                 _ => MyType.None
             };
 
@@ -109,7 +109,7 @@ namespace MyCompiler
         }
 
         //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionDef(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     public class FunctionCallNode : ExpressionNodeExpr
@@ -125,8 +125,8 @@ namespace MyCompiler
             Type = MyType.Float;
         }
 
-       // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     public class FloatNodeExpr : ExpressionNodeExpr
@@ -139,7 +139,7 @@ namespace MyCompiler
         }
 
         //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
     // Represents a single number (e.g., 10)
     public class NumberNodeExpr : ExpressionNodeExpr
@@ -164,7 +164,7 @@ namespace MyCompiler
             Type = MyType.String;
         }
 
-       // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
+        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
@@ -173,7 +173,7 @@ namespace MyCompiler
     {
         public string Name { get; set; }
         public IdNodeExpr(string name) => Name = name;
-       public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIdExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIdExpr(this);
     }
 
     // Represents a math operation (e.g., 10 + 20)
@@ -210,8 +210,7 @@ namespace MyCompiler
         {
             Id = id;
         }
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIncrementExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIncrementExpr(this);
     }
     public class DecrementNodeExpr : StatementNodeExpr
     {
@@ -220,8 +219,7 @@ namespace MyCompiler
         {
             Id = id;
         }
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDecrementExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDecrementExpr(this);
     }
 
     // A list of statements (the whole program)
@@ -247,7 +245,7 @@ namespace MyCompiler
             this.Type = MyType.None;
         }
         //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     public class ForLoopNodeExpr : StatementNodeExpr
@@ -265,8 +263,7 @@ namespace MyCompiler
             Step = step;
             Body = body;
         }
-       // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForLoopExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForLoopExpr(this);
     }
 
     // Boolean
@@ -279,8 +276,7 @@ namespace MyCompiler
             Value = value;
             Type = MyType.Bool;
         }
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
     }
     public class ComparisonNodeExpr : ExpressionNodeExpr
     {
@@ -297,8 +293,7 @@ namespace MyCompiler
             Type = MyType.Bool;
         }
 
-     //   public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
     }
 
     public class ArrayNodeExpr : ExpressionNodeExpr
@@ -311,8 +306,8 @@ namespace MyCompiler
             Elements = elements;
             Type = MyType.Array;
         }
-       //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
     public class IndexNodeExpr : ExpressionNodeExpr
     {
@@ -330,6 +325,6 @@ namespace MyCompiler
         }
 
         //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
-           public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 }

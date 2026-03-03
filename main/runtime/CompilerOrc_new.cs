@@ -68,6 +68,8 @@ namespace MyCompiler
         private LLVMModuleRef _module;
         private LLVMBuilderRef _builder;
         private IntPtr _jit; // JIT execution pointer
+        private LLVMValueRef _trueStr;
+        private LLVMValueRef _falseStr;
         private bool _jitInitialized = false;
         private int _replCounter = 0;
 
@@ -114,6 +116,12 @@ namespace MyCompiler
             // Define the value struct: tag + pointer to the data (value)
             var valueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
         }
+        
+        private void DeclareBoolStrings()
+        {
+            _trueStr = _builder.BuildGlobalStringPtr("true\n", "true_str");
+            _falseStr = _builder.BuildGlobalStringPtr("false\n", "false_str");
+        }
 
         private void EnsureJit()
         {
@@ -145,8 +153,6 @@ namespace MyCompiler
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
 
-        LLVMModuleRef _currentModule;
-
         public object Run(NodeExpr expr, bool generateIR = false)
         {
             // Unique function name per REPL execution
@@ -170,8 +176,9 @@ namespace MyCompiler
 
             // 3 Generate IR for the expression
             // IMPORTANT: Visit must use THIS builder/module
-            _currentModule = _module;
+            //_currentModule = _module;
             _builder = builder;
+            //DeclareBoolStrings();
 
             LLVMValueRef resultValue = Visit(expr);
 
@@ -209,6 +216,118 @@ namespace MyCompiler
             return result;
         }
 
+        public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
+        {
+            System.Console.WriteLine("visiting for loop");
+            var func = _builder.InsertBlock.Parent;
+            //var llvmCtx = _module.Context;
+
+            // 1. Initialization
+            if (expr.Initialization != null) Visit(expr.Initialization);
+
+            // 2. Define the Basic Blocks
+            var condBlock = func.AppendBasicBlock("for.cond");
+            var bodyBlock = func.AppendBasicBlock("for.body");
+            var stepBlock = func.AppendBasicBlock("for.step");
+            var endBlock = func.AppendBasicBlock("for.end");
+
+            // Entry jump
+            _builder.BuildBr(condBlock);
+
+            // 3. Condition Block
+            _builder.PositionAtEnd(condBlock);
+            var condition = Visit(expr.Condition);
+
+            // If the condition is a Double (typical for your comparison results), 
+            // we need to compare it against 0.0 using FCmp
+            if (condition.TypeOf == LLVMTypeRef.Double)
+            {
+                condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
+                    condition, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0.0), "fortest_dbl");
+            }
+            // If it's an i64 or i32, use ICmp
+            else if (condition.TypeOf != LLVMTypeRef.Int1)
+            {
+                condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
+                    condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
+            }
+
+            _builder.BuildCondBr(condition, bodyBlock, endBlock);
+
+            // 4. Body Block
+            _builder.PositionAtEnd(bodyBlock);
+            Visit(expr.Body);
+            _builder.BuildBr(stepBlock); // Jump to step, not back to cond!
+
+            // 5. Step Block (Increment)
+            _builder.PositionAtEnd(stepBlock);
+            if (expr.Step != null) Visit(expr.Step);
+            _builder.BuildBr(condBlock); // Jump back to condition
+
+            // 6. End Block
+            _builder.PositionAtEnd(endBlock);
+
+            return default;
+        }
+
+        public LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr)
+        {
+            var module = _module;
+            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
+
+            if (global.Handle == IntPtr.Zero)
+            {
+                // Not defined in this module → declare external
+                global = module.AddGlobal(LLVMTypeRef.Double, expr.Id);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+            }
+
+            var value = _builder.BuildLoad2(LLVMTypeRef.Double, global, "inc_load");
+            var newValue = _builder.BuildFSub(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "inc_add");
+
+            _builder.BuildStore(newValue, global);
+            return newValue;
+        }
+
+        public LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr)
+        {
+            var module = _module;
+            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
+
+            if (global.Handle == IntPtr.Zero)
+            {
+                // Not defined in this module → declare external
+                global = module.AddGlobal(LLVMTypeRef.Double, expr.Id);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+            }
+
+            var value = _builder.BuildLoad2(LLVMTypeRef.Double, global, "inc_load");
+            var newValue = _builder.BuildFAdd(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "inc_add");
+
+            _builder.BuildStore(newValue, global);
+            return newValue;
+        }
+        public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
+        {
+            var left = Visit(expr.Left);
+            var right = Visit(expr.Right);
+
+            // Ensure both are doubles for comparison
+            if (left.TypeOf != LLVMTypeRef.Double) left = _builder.BuildSIToFP(left, LLVMTypeRef.Double, "l_to_d");
+            if (right.TypeOf != LLVMTypeRef.Double) right = _builder.BuildSIToFP(right, LLVMTypeRef.Double, "r_to_d");
+
+            return expr.Operator switch
+            {
+                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "cmptmp"),
+                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "cmptmp"),
+                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "cmptmp"),
+                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "cmptmp"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "cmptmp"),
+                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "cmptmp"),
+                _ => throw new Exception("Unknown operator")
+            };
+        }
+
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
             Console.WriteLine("visiting binary operation");
@@ -234,6 +353,21 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
         }
 
+        public LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr)
+        {
+            Console.WriteLine("visiting boolean");
+            // Use 1.0 for True to match your Int-to-Bool promotion
+            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value ? 1.0 : 0.0);
+        }
+        // public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
+        // {
+        //     return _builder.BuildGlobalStringPtr(expr.Value, "str");
+        // }
+        // public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
+        // {
+        //     return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
+        // }
+
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             Console.WriteLine($"visiting assignment: {expr.Id}");
@@ -245,37 +379,44 @@ namespace MyCompiler
                 value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
 
             var storageType = value.TypeOf;
-            var module = _currentModule;
+            var module = _module;
 
             LLVMValueRef global;
 
-            if (!_definedGlobals.Contains(expr.Id))
+            if (module.GetNamedGlobal(expr.Id) == null) // local
             {
-                // First definition: define global in this module
-                global = module.AddGlobal(storageType, expr.Id);
-                global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
-                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                if (!_definedGlobals.Contains(expr.Id)) // global
+                {
+                    System.Console.WriteLine("we dont have the id");
+                    // First definition: define global in this module
+                    global = module.AddGlobal(storageType, expr.Id);
+                    global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
+                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
 
-                _definedGlobals.Add(expr.Id);
+                    _definedGlobals.Add(expr.Id);
+                }
+                else
+                {
+                    global = module.AddGlobal(storageType, expr.Id);
+                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                }
             }
             else
             {
-                // Subsequent modules: declare as external
-                global = module.AddGlobal(storageType, expr.Id);
-                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                global = module.GetNamedGlobal(expr.Id);
             }
 
             _builder.BuildStore(value, global);
 
             // Assignment returns value
-            return value;
+            return default;
         }
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             Console.WriteLine($"visiting variable: {expr.Name}");
 
             // 1 Lookup symbol by name
-            var module = _currentModule;
+            var module = _module;
             LLVMValueRef global = module.GetNamedGlobal(expr.Name);
 
             if (global.Handle == IntPtr.Zero)

@@ -18,7 +18,7 @@ namespace MyCompiler
         private Context(ImmutableDictionary<string, ContextEntry> source)
             => _source = source;
 
-        public Context Add(string name, LLVMValueRef value, MyType type, MyType? elementType = null)
+        public Context Add(string name, LLVMValueRef value, MyType type = MyType.Int, MyType? elementType = null)
         {
             var newEntry = new ContextEntry(value, type, elementType);
             return new Context(_source.SetItem(name, newEntry));
