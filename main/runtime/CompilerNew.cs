@@ -22,6 +22,7 @@ namespace MyCompiler
 
         //private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
+    
 
         // Global variables (persists across REPL lines)
         //private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
@@ -287,6 +288,7 @@ namespace MyCompiler
                 // otherwise, recurse into the last statement.
                 return last != null ? GetLastExpression(last) : expr;
             }
+            
             return expr;
         }
 

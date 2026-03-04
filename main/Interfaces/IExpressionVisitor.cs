@@ -13,7 +13,7 @@ namespace MyCompiler
         // LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
         // LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
         // LLVMValueRef VisitIfExpr(IfNodeExpr expr);
-        // LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
+        LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
         // LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);

@@ -1,8 +1,8 @@
 using System;
 using LLVMSharp;
+using LLVMSharp.Interop;
 using System.Linq;
 using System.Reflection; // for using the stopwatch!
-using LLVMSharp.Interop;
 using System.Diagnostics;
 using System.Globalization;
 using System.Collections.Generic;
@@ -64,21 +64,40 @@ internal static class OrcBindings
 
 namespace MyCompiler
 {
-    public class CompilerOrc : IExpressionVisitor, ICompiler
+    public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
         private LLVMModuleRef _module;
         private LLVMBuilderRef _builder;
         private IntPtr _jit; // JIT execution pointer
+        private LLVMValueRef _printf;
+        private LLVMTypeRef _printfType;
         private LLVMValueRef _trueStr;
         private LLVMValueRef _falseStr;
         private bool _jitInitialized = false;
         private int _replCounter = 0;
-
+        private MyType _lastType; // Store the type of the last expression for auto-printing
+        private NodeExpr _lastNode; // Store the last expression for auto-printing
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
-
+        private LLVMTypeRef _mallocType;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate double MainDelegate();
+        private delegate RuntimeValue MainDelegate();
+        private struct RuntimeValue
+        {
+            public int tag;
+            public IntPtr data;
+
+
+        }
+        private enum ValueTag
+        {
+            Int = 1,
+            Float = 2,
+            Bool = 3,
+            String = 4,
+            Array = 5,
+            None = 0
+        }
 
         public CompilerOrc()
         {
@@ -96,17 +115,36 @@ namespace MyCompiler
             _context = Context.Empty; // stores variables/functions
 
             // Declare malloc and other required functions
-            DeclareMalloc();
+
             DeclareValueStruct();
         }
 
-        private void DeclareMalloc()
+
+
+        private LLVMValueRef GetOrDeclareMalloc()
         {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            _module.AddFunction("malloc", mallocType);
+            var mallocFunc = _module.GetNamedFunction("malloc");
+            if (mallocFunc.Handle != IntPtr.Zero) return mallocFunc;
+
+            // Define: ptr malloc(i64)
+            _mallocType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
+                new[] { LLVMTypeRef.Int64 }
+            );
+
+            return _module.AddFunction("malloc", _mallocType);
+        }
+        private LLVMValueRef BoxToI64(LLVMValueRef value)
+        {
+            if (value.TypeOf == LLVMTypeRef.Int64) return value;
+
+            if (value.TypeOf == LLVMTypeRef.Double)
+                return _builder.BuildBitCast(value, LLVMTypeRef.Int64, "num_to_i64");
+
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                return _builder.BuildPtrToInt(value, LLVMTypeRef.Int64, "ptr_to_i64");
+
+            return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
         }
         private void DeclareValueStruct()
         {
@@ -116,6 +154,88 @@ namespace MyCompiler
 
             // Define the value struct: tag + pointer to the data (value)
             var valueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
+        }
+
+        private void BuildAutoPrint(LLVMValueRef value, MyType type)
+        {
+            LLVMValueRef formatStr;
+            Console.WriteLine("building auto print for type: " + type);
+            switch (type)
+            {
+                case MyType.Int:
+                    formatStr = CreateFormatString("%f\n");
+                    break;
+
+                case MyType.String:
+                    formatStr = CreateFormatString("%s\n");
+                    break;
+
+                case MyType.Bool:
+                    {
+                        LLVMValueRef boolCond;
+
+                        if (value.TypeOf == LLVMTypeRef.Double)
+                        {
+                            var zero = LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0.0);
+                            boolCond = _builder.BuildFCmp(
+                                LLVMRealPredicate.LLVMRealONE,
+                                value,
+                                zero,
+                                "boolcond");
+                        }
+                        else if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                        {
+                            var zero = LLVMValueRef.CreateConstInt(value.TypeOf, 0);
+                            boolCond = _builder.BuildICmp(
+                                LLVMIntPredicate.LLVMIntNE,
+                                value,
+                                zero,
+                                "boolcond");
+                        }
+                        else
+                        {
+                            boolCond = value; // already i1
+                        }
+
+                        var selectedStr = _builder.BuildSelect(
+                            boolCond,
+                            _trueStr,
+                            _falseStr,
+                            "boolstr");
+
+                        _builder.BuildCall2(_printfType, _printf, new LLVMValueRef[] { selectedStr, value }, "print_bool");
+
+                        return;
+                    }
+                default:
+                    return; // don't auto print unsupported types
+            }
+
+            _builder.BuildCall2(
+                _printfType,
+                _printf,
+                new LLVMValueRef[] { formatStr, value },
+                ""
+            );
+            System.Console.WriteLine("built auto print");
+        }
+
+        private void DeclarePrintf()
+        {
+            var llvmCtx = _module.Context;
+            _printfType = LLVMTypeRef.CreateFunction(
+                  llvmCtx.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(LLVMTypeRef.Double, 0) },
+                true); // varargs
+
+            _printf = _module.AddFunction("printf", _printfType);
+        }
+
+
+        private LLVMValueRef CreateFormatString(string format)
+        {
+            var str = _builder.BuildGlobalStringPtr(format, "fmt");
+            return str;
         }
 
         private void DeclareBoolStrings()
@@ -153,9 +273,34 @@ namespace MyCompiler
             Console.WriteLine(llvmIR);
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
+        private MyType PerformSemanticAnalysis(NodeExpr expr)
+        {
+            var checker = new TypeChecker(_context);
+            var lastType = checker.Check(expr);
+            _context = checker.UpdatedContext;
+
+            var lastNode = GetLastExpression(expr);
+
+            return lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
+        }
 
         public object Run(NodeExpr expr, bool generateIR = false)
         {
+
+            // 1. Semantic analysis
+            var prediction = PerformSemanticAnalysis(expr);
+
+            LLVMTypeRef llvmRetType = prediction switch
+            {
+                MyType.Int => LLVMTypeRef.Double, // Consistency: Numbers are doubles
+                MyType.Float => LLVMTypeRef.Double,
+                MyType.Bool => LLVMTypeRef.Int1,
+                MyType.String => LLVMTypeRef.Int64,  // Pointers as i32 bits
+                MyType.Array => LLVMTypeRef.Int64,  // Pointers as i32 bits
+                MyType.None => LLVMTypeRef.Void,
+                _ => LLVMTypeRef.Int64
+            };
+
             // Unique function name per REPL execution
             string funcName = $"__anon_expr_{_replCounter++}";
 
@@ -167,7 +312,7 @@ namespace MyCompiler
 
             // 2 Create:  define double @__anon_expr_X()
             var funcType = LLVMTypeRef.CreateFunction(
-                LLVMTypeRef.Double,
+                llvmRetType,
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
@@ -180,10 +325,43 @@ namespace MyCompiler
             //_currentModule = _module;
             _builder = builder;
             //DeclareBoolStrings();
+            DeclarePrintf();
 
             LLVMValueRef resultValue = Visit(expr);
 
-            builder.BuildRet(resultValue);
+
+            if (prediction != MyType.None && !(_lastNode is PrintNodeExpr))
+            {
+                BuildAutoPrint(resultValue, prediction);
+            }
+
+
+            if (llvmRetType == LLVMTypeRef.Void)
+            {
+                _builder.BuildRetVoid();
+            }
+            else
+            {
+                LLVMValueRef finalRet = resultValue;
+
+                // Pointer Handling (Strings/Arrays)
+                if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                {
+                    Console.WriteLine("handling pointer return");
+                    finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int32, "ptr_to_i32");
+                    if (llvmRetType == LLVMTypeRef.Double)
+                        finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "ptr_bits_to_double");
+                }
+                // Number Handling
+                // else if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
+                // {
+                //     finalRet = _builder.BuildSIToFP(finalRet, LLVMTypeRef.Double, "i_to_double");
+                // }
+
+                _builder.BuildRet(finalRet);
+            }
+
+            //builder.BuildRet(resultValue);
 
             DumpIR(_module);
 
@@ -212,10 +390,111 @@ namespace MyCompiler
             var fnPtr = (IntPtr)addr;
             var del = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-            double result = del();
+            var result = del();
+            System.Console.WriteLine("raw result from JIT: " + result);
 
             return result;
         }
+
+        private NodeExpr GetLastExpression(NodeExpr expr)
+        {
+            if (expr is SequenceNodeExpr seq)
+            {
+                var last = seq.Statements.LastOrDefault();
+                // If the sequence is empty, return the sequence itself; 
+                // otherwise, recurse into the last statement.
+                return last != null ? GetLastExpression(last) : expr;
+            }
+
+            return expr;
+        }
+
+        private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
+        {
+            // 0. SILENCE CHECK
+            var lastNode = GetLastExpression(originalExpr); // don't we run this in main already? seems obsolete to call it again
+            if (lastNode is AssignNodeExpr || lastNode is PrintNodeExpr || lastNode is IfNodeExpr ||
+                lastNode is ForLoopNodeExpr || lastNode is IncrementNodeExpr || lastNode is DecrementNodeExpr)
+            {
+                return null;
+            }
+
+            ulong rawBits = 0;
+
+            // 1. EXTRACTION logic
+            if (type == MyType.Float || type == MyType.Int)
+            {
+                double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
+            }
+            else if (type == MyType.String || type == MyType.Array)
+            {
+                // Fix: Use the static LLVM helper instead of .ToInt()
+                rawBits = LLVM.GenericValueToInt(res, 0);
+
+                // Fallback: If your Run() method bitcasted the pointer to a double for the wrapper
+                if (rawBits == 0)
+                {
+                    double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                    rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
+                }
+            }
+            else if (type == MyType.Bool)
+            {
+                // Fix: Use the static LLVM helper
+                rawBits = LLVM.GenericValueToInt(res, 0);
+            }
+
+            // 2. INTERPRETATION
+            if (rawBits == 0 && type != MyType.Float && type != MyType.Bool) return "null";
+
+            switch (type)
+            {
+                case MyType.Float:
+                case MyType.Int:
+                    return BitConverter.UInt64BitsToDouble(rawBits);
+
+                case MyType.String:
+                    try
+                    {
+                        return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
+                    }
+                    catch { return "null"; }
+
+                case MyType.Array:
+                    try
+                    {
+                        IntPtr address = new IntPtr((long)rawBits);
+                        int count = 0;
+                        if (lastNode is ArrayNodeExpr arr) count = arr.Elements.Count;
+                        else count = 0; // Default or lookup logic
+
+                        List<string> elements = new List<string>();
+                        for (int i = 0; i < count; i++)
+                        {
+                            long boxedVal = Marshal.ReadInt64(address, i * 8);
+                            double dblVal = BitConverter.Int64BitsToDouble(boxedVal);
+                            // CultureInfo.InvariantCulture ensures dots for decimals
+                            elements.Add(dblVal.ToString(CultureInfo.InvariantCulture));
+                        }
+                        return "[" + string.Join(", ", elements) + "]";
+                    }
+                    catch { return $"[Array @ 0x{rawBits:X}]"; }
+
+                case MyType.Bool:
+                    // Assuming bools come back as bits inside a double from your wrapper
+                    double bVal = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
+                    return bVal != 0.0;
+
+                default:
+                    return rawBits;
+            }
+        }
+
+
+
+
+
 
         public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
         {
@@ -411,6 +690,30 @@ namespace MyCompiler
 
             // Assignment returns value
             return default;
+        }
+
+
+        public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
+        {
+            uint count = (uint)expr.Elements.Count;
+            var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, count * 8);
+
+            var mallocFunc = GetOrDeclareMalloc();
+
+            // CRITICAL FIX: Pass _mallocType directly, NOT mallocFunc.TypeOf
+            var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { size }, "arr_ptr");
+
+            for (int i = 0; i < expr.Elements.Count; i++)
+            {
+                var val = Visit(expr.Elements[i]);
+                var boxed = BoxToI64(val);
+
+                var idx = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)i);
+                // Ensure we index into an i64 array
+                var elementPtr = _builder.BuildGEP2(LLVMTypeRef.Int64, arrayPtr, new[] { idx }, $"idx_{i}");
+                _builder.BuildStore(boxed, elementPtr);
+            }
+            return arrayPtr;
         }
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {

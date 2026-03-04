@@ -306,8 +306,8 @@ namespace MyCompiler
             Elements = elements;
             Type = MyType.Array;
         }
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
+        
     }
     public class IndexNodeExpr : ExpressionNodeExpr
     {
