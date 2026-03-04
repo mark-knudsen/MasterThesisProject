@@ -1,17 +1,12 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-define i64 @__anon_expr_1() {
+define { i32, ptr } @main_0() {
 entry:
-  %arr_ptr = call ptr @malloc(i64 24)
-  %idx_0 = getelementptr i64, ptr %arr_ptr, i32 0
-  store i64 4607182418800017408, ptr %idx_0, align 4
-  %idx_1 = getelementptr i64, ptr %arr_ptr, i32 1
-  store i64 4611686018427387904, ptr %idx_1, align 4
-  %idx_2 = getelementptr i64, ptr %arr_ptr, i32 2
-  store i64 4613937818241073152, ptr %idx_2, align 4
-  %ptr_to_i32 = ptrtoint ptr %arr_ptr to i32
-  ret i32 %ptr_to_i32
+  %num_mem = call ptr @malloc(i64 8)
+  store double 4.000000e+00, ptr %num_mem, align 8
+  %with_data = insertvalue { i32, ptr } { i32 1, ptr undef }, ptr %num_mem, 1
+  ret { i32, ptr } %with_data
 }
 
 declare i32 @printf(ptr, ...)

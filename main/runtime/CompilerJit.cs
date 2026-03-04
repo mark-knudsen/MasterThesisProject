@@ -63,7 +63,6 @@ namespace MyCompiler
             _printf = _module.AddFunction("printf", _printfType);
         }
 
-
         private LLVMValueRef CreateFormatString(string format)
         {
             var str = _builder.BuildGlobalStringPtr(format, "fmt");
@@ -1011,22 +1010,22 @@ namespace MyCompiler
             return _module.AddFunction("malloc", _mallocType);
         }
 
-        private MyType MapStringToMyType(string name)
-        {
-            if (string.IsNullOrEmpty(name)) return MyType.Float; // Default fallback
+        // private MyType MapStringToMyType(string name)
+        // {
+        //     if (string.IsNullOrEmpty(name)) return MyType.Float; // Default fallback
 
-            return name.ToLower() switch
-            {
-                "int" => MyType.Int,
-                "string" => MyType.String,
-                "float" => MyType.Float,
-                "double" => MyType.Float,
-                "bool" => MyType.Bool,
-                "void" => MyType.None,
-                "array" => MyType.Array,
-                _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
-            };
-        }
+        //     return name.ToLower() switch
+        //     {
+        //         "int" => MyType.Int,
+        //         "string" => MyType.String,
+        //         "float" => MyType.Float,
+        //         "double" => MyType.Float,
+        //         "bool" => MyType.Bool,
+        //         "void" => MyType.None,
+        //         "array" => MyType.Array,
+        //         _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
+        //     };
+        // }
 
         private LLVMValueRef MatchType(LLVMValueRef value, LLVMTypeRef targetType)
         {

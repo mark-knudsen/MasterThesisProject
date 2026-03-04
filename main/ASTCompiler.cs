@@ -35,7 +35,6 @@ namespace MyCompiler
         public void SetType(MyType type) => Type = type;
     }
 
-
     //-----Built-in-function-nodes-----//
 
     // Represents print function
@@ -46,8 +45,7 @@ namespace MyCompiler
         {
             Expression = expr;
         }
-        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPrintExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPrintExpr(this);
     }
 
     // Represents Random function
@@ -164,8 +162,7 @@ namespace MyCompiler
             Type = MyType.String;
         }
 
-        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
     }
 
     // Represents a variable name (e.g., x)
@@ -244,8 +241,7 @@ namespace MyCompiler
             ElsePart = elseP;
             this.Type = MyType.None;
         }
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
     }
 
     public class ForLoopNodeExpr : StatementNodeExpr
@@ -307,7 +303,7 @@ namespace MyCompiler
             Type = MyType.Array;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
-        
+
     }
     public class IndexNodeExpr : ExpressionNodeExpr
     {

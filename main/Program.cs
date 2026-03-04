@@ -47,7 +47,7 @@ namespace MyCompiler
                         if (parser.Parse() && parser.RootNode != null)
                         {
                             Console.WriteLine("AST Structure:");
-                            PrintNode(parser.RootNode, 0);
+                            PrintNode(parser.RootNode, 0); // I don't think this prints anymore
 
                             try
                             {

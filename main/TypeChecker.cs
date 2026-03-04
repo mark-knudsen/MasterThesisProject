@@ -18,7 +18,8 @@ namespace MyCompiler
 
         private MyType Visit(NodeExpr node)
         {
-            Console.WriteLine($"Visiting {node.GetType().Name}");
+            // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+            // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
             return node switch
             {
                 NumberNodeExpr n => VisitNumber(n),
@@ -217,8 +218,8 @@ namespace MyCompiler
 
         public MyType VisitRandom(RandomNodeExpr expr)
         {
-            var valueTypeMin = Visit(expr.MinValue);
-            var valueTypeMax = Visit(expr.MaxValue);
+            // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
+            // var valueTypeMax = Visit(expr.MaxValue);
 
             expr.SetType(MyType.Int);
             return MyType.Int;

@@ -9,15 +9,15 @@ namespace MyCompiler
         // LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
         LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
-        // LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
+        LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
         // LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
         // LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
-        // LLVMValueRef VisitIfExpr(IfNodeExpr expr);
+        LLVMValueRef VisitIfExpr(IfNodeExpr expr);
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
         // LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
-        // LLVMValueRef VisitStringExpr(StringNodeExpr expr);
+        LLVMValueRef VisitStringExpr(StringNodeExpr expr);
         LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
         LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
         LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);

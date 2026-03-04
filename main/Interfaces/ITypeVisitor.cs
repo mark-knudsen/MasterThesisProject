@@ -3,7 +3,7 @@ namespace MyCompiler
     public interface ITypeVisitor
     {
         MyType VisitNumber(NumberNodeExpr expr);
-        // MyType VisitString(StringNodeExpr expr);
+        MyType VisitString(StringNodeExpr expr);
         MyType VisitBoolean(BooleanNodeExpr expr);
         MyType VisitComparison(ComparisonNodeExpr expr);
         MyType VisitIncrement(IncrementNodeExpr expr);
@@ -13,8 +13,8 @@ namespace MyCompiler
         MyType VisitAssign(AssignNodeExpr expr);
         MyType VisitSequence(SequenceNodeExpr expr);
         // MyType VisitRandom(RandomNodeExpr expr);
-        // MyType VisitIf(IfNodeExpr expr);
-        // MyType VisitPrint(PrintNodeExpr expr);
+        MyType VisitIf(IfNodeExpr expr);
+        MyType VisitPrint(PrintNodeExpr expr);
         MyType VisitForLoop(ForLoopNodeExpr expr);
         MyType VisitArray(ArrayNodeExpr expr);
         // MyType VisitIndex(IndexNodeExpr expr);
