@@ -152,16 +152,17 @@ namespace MyCompiler
             _module = LLVMModuleRef.CreateWithName("repl_module");
             _builder = _module.Context.CreateBuilder();
         }
-        private LLVMValueRef CreateMainFunction()
+        private LLVMValueRef CreateMainFunction(LLVMTypeRef returnType)
         {
             var funcType = LLVMTypeRef.CreateFunction(
-                LLVMTypeRef.Int32,
+                returnType,
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
-            var func = _module.AddFunction("main", funcType);
+            var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
             var entry = func.AppendBasicBlock("entry");
             _builder.PositionAtEnd(entry);
+
 
             return func;
         }
@@ -206,12 +207,24 @@ namespace MyCompiler
             // 2. Initialize LLVM
             InitializeModule();
 
+
+            LLVMTypeRef llvmRetType = prediction switch
+            {
+                MyType.Int => LLVMTypeRef.Double, // Consistency: Numbers are doubles
+                MyType.Float => LLVMTypeRef.Double,
+                MyType.Bool => LLVMTypeRef.Int1,
+                MyType.String => LLVMTypeRef.Int64,  // Pointers as i32 bits
+                MyType.Array => LLVMTypeRef.Int64,  // Pointers as i32 bits
+                MyType.None => LLVMTypeRef.Void,
+                _ => LLVMTypeRef.Int64
+            };
+
             // 3. Create wrapper
-            var func = CreateMainFunction();
+            var func = CreateMainFunction(llvmRetType);
 
             // 4. Generate code
             DeclareBoolStrings();
-            DeclarePrintf();
+            DeclarePrintf(); // COULD BE MOVED TO CONSTRUCTOR IF WE WANT TO REUSE THE SAME MODULE ACROSS RUN() CALLS, BUT FOR NOW IT'S FINE HERE
 
             var resultValue = Visit(expr);
 
@@ -222,11 +235,39 @@ namespace MyCompiler
                 BuildAutoPrint(resultValue, prediction);
             }
 
-            _builder.BuildRet(LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0));
+
+
+
+
+            if (llvmRetType == LLVMTypeRef.Void)
+            {
+                _builder.BuildRetVoid();
+            }
+            else
+            {
+                LLVMValueRef finalRet = resultValue;
+
+                // Pointer Handling (Strings/Arrays)
+                if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                {
+                    finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int32, "ptr_to_i32");
+                    if (llvmRetType == LLVMTypeRef.Double)
+                        finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "ptr_bits_to_double");
+                }
+                // Number Handling
+                // else if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
+                // {
+                //     finalRet = _builder.BuildSIToFP(finalRet, LLVMTypeRef.Double, "i_to_double");
+                // }
+
+                _builder.BuildRet(finalRet);
+            }
+
+            //_builder.BuildRet(LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0));
 
             // 6. Optional IR dump
             // if (generateIR)
-                DumpIR();
+            DumpIR();
 
             // 7. Execute
             var execResult = Execute(func);
@@ -797,6 +838,8 @@ namespace MyCompiler
                 formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
             }
 
+
+
             // Use the exact signature of printf: (ptr, ...) -> i32
             var printfType = LLVMTypeRef.CreateFunction(
                 llvmCtx.Int32Type,
@@ -1151,7 +1194,9 @@ namespace MyCompiler
 
                 // IMPORTANT: For REPL stability, pointers are best returned as i64 (Int64)
                 MyType.String => LLVMTypeRef.Int64,
-                MyType.Array => LLVMTypeRef.Int64,
+                // MyType.Array => LLVMTypeRef.Int64,
+                //MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), // Must be a pointer!
+                MyType.Array => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
 
                 MyType.None => LLVMTypeRef.Void,
                 _ => LLVMTypeRef.Double

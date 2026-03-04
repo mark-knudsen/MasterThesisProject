@@ -80,14 +80,17 @@ namespace MyCompiler
             // 4. UNIVERSAL WRAPPER SIGNATURE
             LLVMTypeRef llvmRetType = prediction switch
             {
-                MyType.Float => LLVMTypeRef.Double,
                 MyType.Int => LLVMTypeRef.Double, // Consistency: Numbers are doubles
-                MyType.Bool => LLVMTypeRef.Double,
+                MyType.Float => LLVMTypeRef.Double,
+                MyType.Bool => LLVMTypeRef.Int1,
                 MyType.String => LLVMTypeRef.Int64,  // Pointers as i64 bits
                 MyType.Array => LLVMTypeRef.Int64,  // Pointers as i64 bits
                 MyType.None => LLVMTypeRef.Void,
                 _ => LLVMTypeRef.Int64
             };
+
+
+
 
             var funcType = LLVMTypeRef.CreateFunction(llvmRetType, Array.Empty<LLVMTypeRef>());
             var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
@@ -205,7 +208,7 @@ namespace MyCompiler
                 case MyType.String:
                     try
                     {
-                        return System.Runtime.InteropServices.Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
+                        return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
                     }
                     catch { return "null"; }
 
@@ -220,7 +223,7 @@ namespace MyCompiler
                         List<string> elements = new List<string>();
                         for (int i = 0; i < count; i++)
                         {
-                            long boxedVal = System.Runtime.InteropServices.Marshal.ReadInt64(address, i * 8);
+                            long boxedVal = Marshal.ReadInt64(address, i * 8);
                             double dblVal = BitConverter.Int64BitsToDouble(boxedVal);
                             // CultureInfo.InvariantCulture ensures dots for decimals
                             elements.Add(dblVal.ToString(CultureInfo.InvariantCulture));
@@ -1012,6 +1015,8 @@ namespace MyCompiler
             );
             return _module.AddFunction("printf", printfType);
         }
+
+        
 
         private LLVMValueRef Visit(NodeExpr expr)
         {
