@@ -12,7 +12,8 @@ using Microsoft.VisualBasic;
 
 internal static class OrcBindings
 {
-    private const string LibLLVM = "libLLVM-20.so"; // adjust if needed
+    //private const string LibLLVM = "libLLVM-20.so"; // linux
+    private const string LibLLVM = "libLLVM.dll"; // windows
 
     [DllImport(LibLLVM)]
     public static extern IntPtr LLVMOrcCreateLLJIT(
@@ -116,7 +117,7 @@ namespace MyCompiler
             // Define the value struct: tag + pointer to the data (value)
             var valueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
         }
-        
+
         private void DeclareBoolStrings()
         {
             _trueStr = _builder.BuildGlobalStringPtr("true\n", "true_str");
