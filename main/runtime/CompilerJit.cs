@@ -1057,11 +1057,11 @@ namespace MyCompiler
 
         private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
         {
-            if (value.TypeOf == LLVMTypeRef.Double) return value;
-            if (value.TypeOf == LLVMTypeRef.Int32)
+            if (currentType == MyType.Float) return value;
+            if (currentType == MyType.Int)
                 return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_tmp");
 
-            return value; // Hope for the best, or throw an error
+            return value; 
         }
         private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
         {

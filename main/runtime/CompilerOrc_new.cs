@@ -37,6 +37,7 @@ namespace MyCompiler
         private LLVMValueRef _trueStr;
         private LLVMValueRef _falseStr;
         private bool _jitInitialized = false;
+        private string _funcName;
         private int _replCounter = 0;
         private MyType _lastType; // Store the type of the last expression for auto-printing
         private NodeExpr _lastNode; // Store the last expression for auto-printing
@@ -158,15 +159,25 @@ namespace MyCompiler
             return _lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
         }
 
-        public object Run(NodeExpr expr, bool generateIR = false)
+
+
+        // Problems
+
+        // TODO: fix the problems
+
+        // can't increment              
+        // can't get output from x++               x=2; x++
+        // can't used assigned string              x="harry"; x
+        // can't print booleans                    print(5<4) | print(true)
+        // can't use numbers if assigned as ints   x=5; x+2
+
+
+        // create a orc unit test
+
+
+        void CreateMain()
         {
-            // 1. Semantic analysis
-            var prediction = PerformSemanticAnalysis(expr);
-
-            LLVMTypeRef llvmRetType = _runtimeValueType;
-
-            // Unique function name per REPL execution
-            string funcName = $"main_{_replCounter++}";
+            _funcName = $"main_{_replCounter++}";
 
             // 1 Create a fresh context + module for this command
             var context = LLVMContextRef.Create();
@@ -180,14 +191,22 @@ namespace MyCompiler
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
-            var function = _module.AddFunction(funcName, funcType);
+            var function = _module.AddFunction(_funcName, funcType);
             var entry = function.AppendBasicBlock("entry");
             builder.PositionAtEnd(entry);
 
             // 3 Generate IR for the expression
             // IMPORTANT: Visit must use THIS builder/module
             _builder = builder;
-            //DeclareBoolStrings();
+        }
+
+
+        public object Run(NodeExpr expr, bool generateIR = false)
+        {
+            // 1. Semantic analysis
+            var prediction = PerformSemanticAnalysis(expr);
+
+            CreateMain();
             DeclarePrintf();
 
             LLVMValueRef resultValue = Visit(expr);
@@ -218,7 +237,7 @@ namespace MyCompiler
             // 6 Lookup function pointer
             ulong addr;
             ThrowIfError(
-                OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName)
+                OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, _funcName)
             );
             //DumpIR(module);
 
@@ -230,20 +249,17 @@ namespace MyCompiler
 
             switch ((ValueTag)result.tag)
             {
-                //case ValueTag.Int:
-                //System.Console.WriteLine("we return int");
-                    //return Marshal.ReadInt64(result.data);
-                    
                 case ValueTag.Int:
+                    return Marshal.ReadInt64(result.data);
+
                 case ValueTag.Float:
-                System.Console.WriteLine("we return double");
                     return Marshal.PtrToStructure<double>(result.data);
 
                 case ValueTag.String:
                     return Marshal.PtrToStringAnsi(result.data);
 
                 case ValueTag.Bool:
-                    long b = Marshal.ReadInt64(result.data);
+                    long b = Marshal.ReadByte(result.data);
                     return b != 0;
 
                 case ValueTag.Array:
@@ -253,11 +269,7 @@ namespace MyCompiler
                     return default;
 
             }
-
-            //Console.WriteLine("raw result from JIT: " + result);
-
             return result;
-            //return ExtractResult(result, prediction, expr);
         }
 
         private object HandleArray(IntPtr dataPtr)
@@ -275,6 +287,7 @@ namespace MyCompiler
 
             return elements;
         }
+
         private LLVMValueRef BoxValue(LLVMValueRef value, MyType type)
         {
             int tag = type switch
@@ -322,24 +335,20 @@ namespace MyCompiler
             }
             else if (kind == LLVMTypeKind.LLVMIntegerTypeKind)
             {
-                var extended = _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
-
                 var malloc = GetOrDeclareMalloc();
-
                 var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
-
-                var rawMem = _builder.BuildCall2(
-                    _mallocType,
-                    malloc,
-                    new[] { size },
-                    "int_mem");
-
-                var cast = _builder.BuildBitCast(
-                    rawMem,
-                    LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0),
-                    "int_cast");
-
-                _builder.BuildStore(extended, cast);
+                var rawMem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "int_mem");
+                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0), "int_cast");
+                _builder.BuildStore(value, cast);
+                dataPtr = rawMem;
+            }
+            else if (type == MyType.Bool) // this might have to check with kind, but works 
+            {
+                var malloc = GetOrDeclareMalloc();
+                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 1); // just 1 byte
+                var rawMem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "bool_mem");
+                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int1, 0), "bool_cast");
+                _builder.BuildStore(value, cast);
 
                 dataPtr = rawMem;
             }
@@ -364,6 +373,7 @@ namespace MyCompiler
 
             return boxed;
         }
+
         private NodeExpr GetLastExpression(NodeExpr expr)
         {
             if (expr is SequenceNodeExpr seq)
@@ -435,15 +445,14 @@ namespace MyCompiler
             var module = _module;
             LLVMValueRef global = module.GetNamedGlobal(expr.Id);
 
-            if (global.Handle == IntPtr.Zero)
-            {
-                // Not defined in this module → declare external
-                global = module.AddGlobal(LLVMTypeRef.Double, expr.Id);
-                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-            }
+            var value = _builder.BuildLoad2(global.TypeOf.ElementType, global, "dec_load");
 
-            var value = _builder.BuildLoad2(LLVMTypeRef.Double, global, "dec_load");
-            var newValue = _builder.BuildFSub(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "dec_sub");
+            LLVMValueRef newValue;
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                newValue = _builder.BuildSub(value, LLVMValueRef.CreateConstInt(value.TypeOf, 1), "dec_sub");
+            else
+                newValue = _builder.BuildFSub(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "dec_sub");
+
 
             _builder.BuildStore(newValue, global);
             return newValue;
@@ -453,16 +462,13 @@ namespace MyCompiler
         {
             var module = _module;
             LLVMValueRef global = module.GetNamedGlobal(expr.Id);
+            var value = _builder.BuildLoad2(global.TypeOf.ElementType, global, "inc_load");
 
-            if (global.Handle == IntPtr.Zero)
-            {
-                // Not defined in this module → declare external
-                global = module.AddGlobal(LLVMTypeRef.Double, expr.Id);
-                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-            }
-
-            var value = _builder.BuildLoad2(LLVMTypeRef.Double, global, "inc_load");
-            var newValue = _builder.BuildFAdd(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "inc_add");
+            LLVMValueRef newValue;
+            if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                newValue = _builder.BuildAdd(value, LLVMValueRef.CreateConstInt(value.TypeOf, 1), "inc_add");
+            else
+                newValue = _builder.BuildFAdd(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "inc_add");
 
             _builder.BuildStore(newValue, global);
             return newValue;
@@ -473,21 +479,134 @@ namespace MyCompiler
             var left = Visit(expr.Left);
             var right = Visit(expr.Right);
 
-            // Ensure both are doubles for comparison
-            if (left.TypeOf != LLVMTypeRef.Double) left = _builder.BuildSIToFP(left, LLVMTypeRef.Double, "l_to_d");
-            if (right.TypeOf != LLVMTypeRef.Double) right = _builder.BuildSIToFP(right, LLVMTypeRef.Double, "r_to_d");
+            // Determine numeric integers only (ignore i1)
+            bool lhsIsInt = left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth > 1;
+            bool rhsIsInt = right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth > 1;
 
+            // Case 1: both integers → ICmp
+            if (lhsIsInt && rhsIsInt)
+            {
+                return expr.Operator switch
+                {
+                    "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, left, right, "icmp_tmp"),
+                    ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, left, right, "icmp_tmp"),
+                    "<=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, left, right, "icmp_tmp"),
+                    ">=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, left, right, "icmp_tmp"),
+                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "icmp_tmp"),
+                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "icmp_tmp"),
+                    _ => throw new Exception("Unknown operator")
+                };
+            }
+
+            // Case 2: at least one is float/double → promote integers (not booleans) to double
+            if (lhsIsInt)
+                left = _builder.BuildSIToFP(left, LLVMTypeRef.Double, "int2double");
+            if (rhsIsInt)
+                right = _builder.BuildSIToFP(right, LLVMTypeRef.Double, "int2double");
+
+            // Case 3: boolean comparison? Only allow equality/inequality
+            if (left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth == 1 &&
+                right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth == 1)
+            {
+                return expr.Operator switch
+                {
+                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "bool_eq"),
+                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "bool_ne"),
+                    _ => throw new Exception("Cannot order boolean values with < > <= >=")
+                };
+            }
+
+            // Case 4: both are doubles → FCmp
             return expr.Operator switch
             {
-                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "cmptmp"),
-                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "cmptmp"),
-                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "cmptmp"),
-                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "cmptmp"),
-                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "cmptmp"),
-                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "cmptmp"),
+                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "fcmp_tmp"),
+                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "fcmp_tmp"),
+                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "fcmp_tmp"),
+                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "fcmp_tmp"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "fcmp_tmp"),
+                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "fcmp_tmp"),
                 _ => throw new Exception("Unknown operator")
             };
         }
+
+        public LLVMValueRef VisitComparisonExpr2(ComparisonNodeExpr expr)
+        {
+            var left = Visit(expr.Left);
+            var right = Visit(expr.Right);
+
+            bool lhsIsInt = left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth > 1;
+            bool rhsIsInt = right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth > 1;
+
+            // Case 1: both integers → ICmp
+            if (lhsIsInt && rhsIsInt)
+            {
+                return expr.Operator switch
+                {
+                    "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, left, right, "icmp_tmp"),
+                    ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, left, right, "icmp_tmp"),
+                    "<=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, left, right, "icmp_tmp"),
+                    ">=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, left, right, "icmp_tmp"),
+                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "icmp_tmp"),
+                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "icmp_tmp"),
+                    _ => throw new Exception("Unknown operator")
+                };
+            }
+
+            // Case 2: at least one number is float/double → promote ints only
+            if (lhsIsInt)
+                left = _builder.BuildSIToFP(left, LLVMTypeRef.Double, "int2double");
+            if (rhsIsInt)
+                right = _builder.BuildSIToFP(right, LLVMTypeRef.Double, "int2double");
+
+            // Now both are double → FCmp
+            return expr.Operator switch
+            {
+                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "fcmp_tmp"),
+                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "fcmp_tmp"),
+                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "fcmp_tmp"),
+                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "fcmp_tmp"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "fcmp_tmp"),
+                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "fcmp_tmp"),
+                _ => throw new Exception("Unknown operator")
+            };
+        }
+
+        //         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
+        // {
+        //     var left = Visit(expr.Left);
+        //     var right = Visit(expr.Right);
+
+        //     if (left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind &&
+        //   right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind &&
+        //   left.TypeOf.IntWidth == 1 && right.TypeOf.IntWidth == 1)
+        //     {
+        //         return expr.Operator switch
+        //         {
+        //             "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "cmp"),
+        //             "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "cmp"),
+        //             _ => throw new Exception("Unsupported boolean comparison")
+        //         };
+        //     }
+        //     else
+        //     {
+        //         // Promote ints to double if needed
+        //         // if (left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+        //         //     left = _builder.BuildSIToFP(left, LLVMTypeRef.Double, "l_to_d");
+        //         // if (right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+        //         //     right = _builder.BuildSIToFP(right, LLVMTypeRef.Double, "r_to_d");
+
+        //         return expr.Operator switch
+        //         {
+        //             "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "cmp"),
+        //             ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "cmp"),
+        //             "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "cmp"),
+        //             ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "cmp"),
+        //             "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "cmp"),
+        //             "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "cmp"),
+        //             _ => throw new Exception("Unknown operator")
+        //         };
+        //     }
+        // }
 
         public LLVMValueRef VisitIfExpr(IfNodeExpr node)
         {
@@ -535,8 +654,8 @@ namespace MyCompiler
 
         private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
         {
-            if (value.TypeOf == LLVMTypeRef.Double) return value;
-            if (value.TypeOf == LLVMTypeRef.Int32)
+            if (currentType == MyType.Float) return value;
+            if (currentType == MyType.Int)
                 return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_tmp");
 
             return value; // Hope for the best, or throw an error
@@ -576,19 +695,42 @@ namespace MyCompiler
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
-            var lhs = Visit(expr.Left); // Visit left operand
-            var rhs = Visit(expr.Right); // Visit right operand
+            var lhs = Visit(expr.Left);
+            var rhs = Visit(expr.Right);
 
-            Console.WriteLine($"lhs: {lhs} rhs: {rhs}");
+            bool lhsIsInt = lhs.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind;
+            bool rhsIsInt = rhs.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind;
 
-            return expr.Operator switch
+            if (lhsIsInt && rhsIsInt)
             {
-                "+" => _builder.BuildFAdd(lhs, rhs, "faddtmp"),
-                "-" => _builder.BuildFSub(lhs, rhs, "fsubtmp"),
-                "*" => _builder.BuildFMul(lhs, rhs, "fmultmp"),
-                "/" => _builder.BuildFDiv(lhs, rhs, "fdivtmp"),
-                _ => throw new InvalidOperationException($"Math operator {expr.Operator} not supported for numeric types")
-            };
+                // Both integers → integer arithmetic
+                return expr.Operator switch
+                {
+                    "+" => _builder.BuildAdd(lhs, rhs, "addtmp"),
+                    "-" => _builder.BuildSub(lhs, rhs, "subtmp"),
+                    "*" => _builder.BuildMul(lhs, rhs, "multmp"),
+                    "/" => _builder.BuildSDiv(lhs, rhs, "divtmp"), // signed div
+                    _ => throw new InvalidOperationException($"Unsupported operator {expr.Operator}")
+                };
+            }
+            else
+            {
+                // Promote any int operand to double
+                if (lhsIsInt)
+                    lhs = _builder.BuildSIToFP(lhs, LLVMTypeRef.Double, "int2double");
+                if (rhsIsInt)
+                    rhs = _builder.BuildSIToFP(rhs, LLVMTypeRef.Double, "int2double");
+
+                // Floating point arithmetic
+                return expr.Operator switch
+                {
+                    "+" => _builder.BuildFAdd(lhs, rhs, "faddtmp"),
+                    "-" => _builder.BuildFSub(lhs, rhs, "fsubtmp"),
+                    "*" => _builder.BuildFMul(lhs, rhs, "fmultmp"),
+                    "/" => _builder.BuildFDiv(lhs, rhs, "fdivtmp"),
+                    _ => throw new InvalidOperationException($"Unsupported operator {expr.Operator}")
+                };
+            }
         }
 
         public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
@@ -597,11 +739,11 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
-            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
+            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, (ulong)expr.Value);
         }
         public LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr)
         {
-            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Int1, expr.Value ? 1ul : 0ul);   // Use 1.0 for True to match your Int-to-Bool promotion
+            return LLVMValueRef.CreateConstInt(LLVMTypeRef.Int1, expr.Value ? 1UL : 0UL);
         }
         public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
         {
@@ -614,9 +756,9 @@ namespace MyCompiler
 
             var value = Visit(expr.Expression);
 
-            // Ensure numeric values are double
-            if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
+            // Ensure numeric values are double // why are we doing this?
+            // if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+            //     value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
 
             var storageType = value.TypeOf;
             var module = _module;
@@ -630,7 +772,12 @@ namespace MyCompiler
                     //Console.WriteLine("we dont have the id");
                     // First definition: define global in this module
                     global = module.AddGlobal(storageType, expr.Id);
-                    global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
+                    if (value.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+                        global.Initializer = LLVMValueRef.CreateConstReal(value.TypeOf, 0.0);
+                    else if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                        global.Initializer = LLVMValueRef.CreateConstInt(value.TypeOf, 0);
+                    else
+                        global.Initializer = LLVMValueRef.CreateConstNull(value.TypeOf);
                     global.Linkage = LLVMLinkage.LLVMExternalLinkage;
 
                     _definedGlobals.Add(expr.Id);

@@ -148,20 +148,24 @@ namespace MyCompiler
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
 
-            if (leftType != rightType)
-                throw new Exception($"Type mismatch in comparison: {leftType} {expr.Operator} {rightType}");
-
-            if (expr.Operator is "==" or "!=")
+            // Numeric comparisons
+            if (expr.Operator is ">" or "<" or ">=" or "<=")
             {
+                if (leftType != MyType.Int && leftType != MyType.Float)
+                    throw new Exception("Ordering operators require number");
+
+                if (rightType != MyType.Int && rightType != MyType.Float)
+                    throw new Exception("Ordering operators require number");
+
                 expr.SetType(MyType.Bool);
                 return MyType.Bool;
             }
 
-            // only ints support < > <= >=
-            if (expr.Operator is ">" or "<" or ">=" or "<=")
+            // Equality comparisons
+            if (expr.Operator is "==" or "!=")
             {
-                if (leftType != MyType.Int)
-                    throw new Exception("Ordering operators require Int");
+                if (leftType != rightType)
+                    throw new Exception($"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
 
                 expr.SetType(MyType.Bool);
                 return MyType.Bool;
@@ -264,7 +268,7 @@ namespace MyCompiler
                     throw new Exception($"Type Mismatch: Then branch is {thenType}, Else is {elseType}");
             }
             else
-                finalType = thenType; 
+                finalType = thenType;
 
             // 3. Set the type and return
             expr.SetType(finalType);
