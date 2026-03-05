@@ -101,70 +101,6 @@ namespace MyCompiler
             _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
         }
 
-        // private void BuildAutoPrint(LLVMValueRef value, MyType type)
-        // {
-        //     LLVMValueRef formatStr;
-        //     Console.WriteLine("building auto print for type: " + type);
-        //     switch (type)
-        //     {
-        //         case MyType.Int:
-        //             formatStr = CreateFormatString("%f\n");
-        //             break;
-
-        //         case MyType.String:
-        //             formatStr = CreateFormatString("%s\n");
-        //             break;
-
-        //         case MyType.Bool:
-        //             {
-        //                 LLVMValueRef boolCond;
-
-        //                 if (value.TypeOf == LLVMTypeRef.Double)
-        //                 {
-        //                     var zero = LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0.0);
-        //                     boolCond = _builder.BuildFCmp(
-        //                         LLVMRealPredicate.LLVMRealONE,
-        //                         value,
-        //                         zero,
-        //                         "boolcond");
-        //                 }
-        //                 else if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-        //                 {
-        //                     var zero = LLVMValueRef.CreateConstInt(value.TypeOf, 0);
-        //                     boolCond = _builder.BuildICmp(
-        //                         LLVMIntPredicate.LLVMIntNE,
-        //                         value,
-        //                         zero,
-        //                         "boolcond");
-        //                 }
-        //                 else
-        //                 {
-        //                     boolCond = value; // already i1
-        //                 }
-
-        //                 var selectedStr = _builder.BuildSelect(
-        //                     boolCond,
-        //                     _trueStr,
-        //                     _falseStr,
-        //                     "boolstr");
-
-        //                 _builder.BuildCall2(_printfType, _printf, new LLVMValueRef[] { selectedStr, value }, "print_bool");
-
-        //                 return;
-        //             }
-        //         default:
-        //             return; // don't auto print unsupported types
-        //     }
-
-        //     _builder.BuildCall2(
-        //         _printfType,
-        //         _printf,
-        //         new LLVMValueRef[] { formatStr, value },
-        //         ""
-        //     );
-        //     Console.WriteLine("built auto print");
-        // }
-
         private void DeclarePrintf()
         {
             var llvmCtx = _module.Context;
@@ -227,17 +163,6 @@ namespace MyCompiler
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
-            // LLVMTypeRef llvmRetType = prediction switch
-            // {
-            //     MyType.Int => LLVMTypeRef.Double, // Consistency: Numbers are doubles
-            //     MyType.Float => LLVMTypeRef.Double,
-            //     MyType.Bool => LLVMTypeRef.Int1,
-            //     MyType.String => LLVMTypeRef.Int64,  // Pointers as i32 bits
-            //     MyType.Array => LLVMTypeRef.Int64,  // Pointers as i32 bits
-            //     MyType.None => LLVMTypeRef.Void,
-            //     _ => LLVMTypeRef.Int64
-            // };
-
             LLVMTypeRef llvmRetType = _runtimeValueType;
 
             // Unique function name per REPL execution
@@ -278,39 +203,6 @@ namespace MyCompiler
             else
                 _builder.BuildRet(_runtimeValueType.Undef);
 
-
-            // if (prediction != MyType.None && !(_lastNode is PrintNodeExpr))
-            // {
-            //     BuildAutoPrint(resultValue, prediction);
-            // }
-
-            // if (llvmRetType == LLVMTypeRef.Void)
-            // {
-            //     _builder.BuildRetVoid();
-            // }
-            // else
-            // {
-            //     LLVMValueRef finalRet = resultValue;
-
-            //     // Pointer Handling (Strings/Arrays)
-            //     if (resultValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-            //     {
-            //         Console.WriteLine("handling pointer return");
-            //         finalRet = _builder.BuildPtrToInt(resultValue, LLVMTypeRef.Int32, "ptr_to_i32");
-            //         if (llvmRetType == LLVMTypeRef.Double)
-            //             finalRet = _builder.BuildBitCast(finalRet, LLVMTypeRef.Double, "ptr_bits_to_double");
-            //     }
-            //     // Number Handling
-            //     // else if (llvmRetType == LLVMTypeRef.Double && finalRet.TypeOf != LLVMTypeRef.Double)
-            //     // {
-            //     //     finalRet = _builder.BuildSIToFP(finalRet, LLVMTypeRef.Double, "i_to_double");
-            //     // }
-
-            //     _builder.BuildRet(finalRet);
-            // }
-
-            //builder.BuildRet(resultValue);
-
             DumpIR(_module);
 
             // 5 Wrap in ThreadSafeModule
@@ -338,8 +230,13 @@ namespace MyCompiler
 
             switch ((ValueTag)result.tag)
             {
+                //case ValueTag.Int:
+                //System.Console.WriteLine("we return int");
+                    //return Marshal.ReadInt64(result.data);
+                    
                 case ValueTag.Int:
                 case ValueTag.Float:
+                System.Console.WriteLine("we return double");
                     return Marshal.PtrToStructure<double>(result.data);
 
                 case ValueTag.String:
@@ -478,88 +375,6 @@ namespace MyCompiler
             }
 
             return expr;
-        }
-
-        private object ExtractResult(LLVMGenericValueRef res, MyType type, NodeExpr originalExpr)
-        {
-            // 0. SILENCE CHECK
-            var lastNode = GetLastExpression(originalExpr); // don't we run this in main already? seems obsolete to call it again
-            if (lastNode is AssignNodeExpr || lastNode is PrintNodeExpr || lastNode is IfNodeExpr ||
-                lastNode is ForLoopNodeExpr || lastNode is IncrementNodeExpr || lastNode is DecrementNodeExpr)
-            {
-                return null;
-            }
-
-            ulong rawBits = 0;
-
-            // 1. EXTRACTION logic
-            if (type == MyType.Float || type == MyType.Int)
-            {
-                double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
-            }
-            else if (type == MyType.String || type == MyType.Array)
-            {
-                // Fix: Use the static LLVM helper instead of .ToInt()
-                rawBits = LLVM.GenericValueToInt(res, 0);
-
-                // Fallback: If your Run() method bitcasted the pointer to a double for the wrapper
-                if (rawBits == 0)
-                {
-                    double d = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                    rawBits = (ulong)BitConverter.DoubleToInt64Bits(d);
-                }
-            }
-            else if (type == MyType.Bool)
-            {
-                // Fix: Use the static LLVM helper
-                rawBits = LLVM.GenericValueToInt(res, 0);
-            }
-
-            // 2. INTERPRETATION
-            if (rawBits == 0 && type != MyType.Float && type != MyType.Bool) return "null";
-
-            switch (type)
-            {
-                case MyType.Float:
-                case MyType.Int:
-                    return BitConverter.UInt64BitsToDouble(rawBits);
-
-                case MyType.String:
-                    try
-                    {
-                        return Marshal.PtrToStringAnsi(new IntPtr((long)rawBits)) ?? "null";
-                    }
-                    catch { return "null"; }
-
-                case MyType.Array:
-                    try
-                    {
-                        IntPtr address = new IntPtr((long)rawBits);
-                        int count = 0;
-                        if (lastNode is ArrayNodeExpr arr) count = arr.Elements.Count;
-                        else count = 0; // Default or lookup logic
-
-                        List<string> elements = new List<string>();
-                        for (int i = 0; i < count; i++)
-                        {
-                            long boxedVal = Marshal.ReadInt64(address, i * 8);
-                            double dblVal = BitConverter.Int64BitsToDouble(boxedVal);
-                            // CultureInfo.InvariantCulture ensures dots for decimals
-                            elements.Add(dblVal.ToString(CultureInfo.InvariantCulture));
-                        }
-                        return "[" + string.Join(", ", elements) + "]";
-                    }
-                    catch { return $"[Array @ 0x{rawBits:X}]"; }
-
-                case MyType.Bool:
-                    // Assuming bools come back as bits inside a double from your wrapper
-                    double bVal = LLVM.GenericValueToFloat(LLVMTypeRef.Double, res);
-                    return bVal != 0.0;
-
-                default:
-                    return rawBits;
-            }
         }
 
         public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
@@ -786,9 +601,8 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr)
         {
-            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value ? 1.0 : 0.0);   // Use 1.0 for True to match your Int-to-Bool promotion
+            return LLVMValueRef.CreateConstReal(LLVMTypeRef.Int1, expr.Value ? 1ul : 0ul);   // Use 1.0 for True to match your Int-to-Bool promotion
         }
-
         public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
         {
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
