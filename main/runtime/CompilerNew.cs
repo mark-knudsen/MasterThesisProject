@@ -11,7 +11,7 @@ using System.Reflection; // for using the stopwatch!
 
 namespace MyCompiler
 {
-    public unsafe class Compiler : IExpressionVisitor
+    public unsafe class CompilerNew : IExpressionVisitor
     {
         private LLVMValueRef _printf;
         private LLVMTypeRef _printfType;
@@ -23,7 +23,6 @@ namespace MyCompiler
         //private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
     
-
         // Global variables (persists across REPL lines)
         //private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
 
@@ -35,7 +34,7 @@ namespace MyCompiler
         // 1. Store the type globally so it never gets garbage collected or lost
         private LLVMTypeRef _mallocType;
 
-        public Compiler()
+        public CompilerNew()
         {
             LLVM.InitializeNativeTarget();
             LLVM.InitializeNativeAsmPrinter();
@@ -62,7 +61,6 @@ namespace MyCompiler
 
             _printf = _module.AddFunction("printf", _printfType);
         }
-
 
         private LLVMValueRef CreateFormatString(string format)
         {
@@ -163,7 +161,6 @@ namespace MyCompiler
             var func = _module.AddFunction($"exec_{Guid.NewGuid():N}", funcType);
             var entry = func.AppendBasicBlock("entry");
             _builder.PositionAtEnd(entry);
-
 
             return func;
         }
