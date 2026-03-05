@@ -20,7 +20,7 @@ namespace MyCompiler
         {
             // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
             // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
-            return node switch
+            return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
                 StringNodeExpr str => VisitString(str),

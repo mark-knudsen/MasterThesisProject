@@ -55,11 +55,11 @@ StatementList
 
 Statement
     : Assignment          { $$ = $1; }
-    | expr                { $$ = $1; }
+    | expr { var seq = new SequenceNodeExpr(); seq.Statements.Add($1); $$ = seq; } /*was before: | expr { $$ = $1; }*/ /* is is also recommended to cast instead of doing as*/
     | IF LPAREN expr RPAREN Statement %prec IF
-      { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5); }
+      { $$ = new IfNodeExpr((ExpressionNodeExpr)$3, $5); }
     | IF LPAREN expr RPAREN Statement ELSE Statement
-      { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5, $7); }
+      { $$ = new IfNodeExpr((ExpressionNodeExpr)$3, $5, $7); }
     | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement 
       { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $9); }
     | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN LBRACE StatementList RBRACE

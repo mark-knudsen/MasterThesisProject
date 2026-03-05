@@ -40,6 +40,7 @@ namespace MyCompiler
         private int _replCounter = 0;
         private MyType _lastType; // Store the type of the last expression for auto-printing
         private NodeExpr _lastNode; // Store the last expression for auto-printing
+        private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
         private LLVMTypeRef _mallocType;
@@ -99,8 +100,6 @@ namespace MyCompiler
             // Define the value struct: tag + pointer to the data (value)
             _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
         }
-
-        private LLVMTypeRef _runtimeValueType;
 
         // private void BuildAutoPrint(LLVMValueRef value, MyType type)
         // {
@@ -334,6 +333,9 @@ namespace MyCompiler
                 case ValueTag.Float:
                     return Marshal.PtrToStructure<double>(result.data);
 
+                case ValueTag.String:
+                    return Marshal.PtrToStringAnsi(result.data);
+
                 case ValueTag.Bool:
                     long b = Marshal.ReadInt64(result.data);
                     return b != 0;
@@ -341,8 +343,9 @@ namespace MyCompiler
                 case ValueTag.Array:
                     return HandleArray(result.data);
 
-                case ValueTag.String:
-                    return Marshal.PtrToStringAnsi(result.data);
+                case ValueTag.None:
+                    return default;
+
             }
 
             //Console.WriteLine("raw result from JIT: " + result);
@@ -727,10 +730,10 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value ? 1.0 : 0.0);   // Use 1.0 for True to match your Int-to-Bool promotion
         }
 
-        // public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
-        // {
-        //     return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
-        // }
+        public LLVMValueRef VisitFloatExpr(FloatNodeExpr expr)
+        {
+            return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
+        }
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
@@ -776,6 +779,68 @@ namespace MyCompiler
             return value;
         }
 
+        public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
+        {
+            var llvmCtx = _module.Context;
+            var i32 = llvmCtx.Int32Type;
+
+            // 1. Get or declare rand()
+            var randFunc = _module.GetNamedFunction("rand");
+            if (randFunc.Handle == IntPtr.Zero)
+            {
+                var randType = LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>(), false);
+                randFunc = _module.AddFunction("rand", randType);
+            }
+
+            var randValue = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>()),
+                randFunc, Array.Empty<LLVMValueRef>(), "randcall");
+
+            if (expr.MinValue != null && expr.MaxValue != null)
+            {
+                var minVal = Visit(expr.MinValue);
+                var maxVal = Visit(expr.MaxValue);
+
+                // Ensure we are working with Integers for rand math
+                if (minVal.TypeOf == LLVMTypeRef.Double) minVal = _builder.BuildFPToSI(minVal, i32, "min_i");
+                if (maxVal.TypeOf == LLVMTypeRef.Double) maxVal = _builder.BuildFPToSI(maxVal, i32, "max_i");
+
+                // --- THE "VISIT IF" STYLE ---
+                var func = _builder.InsertBlock.Parent;
+                var thenBB = func.AppendBasicBlock("rand.correct"); // min <= max
+                var elseBB = func.AppendBasicBlock("rand.swap");    // min > max
+                var mergeBB = func.AppendBasicBlock("rand.cont");
+
+                // Create a local variable to store the result (since blocks can't "return")
+                var resultPtr = _builder.BuildAlloca(i32, "rand_result_ptr");
+
+                var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, minVal, maxVal, "order_check");
+                _builder.BuildCondBr(cond, thenBB, elseBB);
+
+                // "Then" Part (Correct Order)
+                _builder.PositionAtEnd(thenBB);
+                var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
+                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i32, 1), "range1");
+                var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
+                _builder.BuildStore(res1, resultPtr); // Save result
+                _builder.BuildBr(mergeBB);
+
+                // "Else" Part (Wrong Order - Swap logic)
+                _builder.PositionAtEnd(elseBB);
+                var diff2 = _builder.BuildSub(minVal, maxVal, "diff2");
+                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i32, 1), "range2");
+                var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
+                _builder.BuildStore(res2, resultPtr); // Save result
+                _builder.BuildBr(mergeBB);
+
+                // Merge
+                _builder.PositionAtEnd(mergeBB);
+                var finalInt = _builder.BuildLoad2(i32, resultPtr, "final_rand_int");
+                return _builder.BuildSIToFP(finalInt, LLVMTypeRef.Double, "final_rand_dbl");
+            }
+
+            return _builder.BuildSIToFP(randValue, LLVMTypeRef.Double, "rand_simple");
+        }
 
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {

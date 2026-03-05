@@ -5,24 +5,24 @@ namespace MyCompiler
 {
     public interface IExpressionVisitor
     {
-        LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
-        // LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
-        LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
-        LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
-        LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
-        // LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
-        // LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
-        LLVMValueRef VisitIfExpr(IfNodeExpr expr);
-        LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
-        // LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
-        LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
+        LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);
         LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
+        LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
         LLVMValueRef VisitStringExpr(StringNodeExpr expr);
+        LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
+        LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
+        LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
         LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
-        LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);
         LLVMValueRef VisitIdExpr(IdNodeExpr expr);
         LLVMValueRef VisitAssignExpr(AssignNodeExpr expr);
+        LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
+        LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
+        LLVMValueRef VisitIfExpr(IfNodeExpr expr);
+        LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
+        LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
+        // LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
+        // LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 
 
         // // Visit for define and usage of created functions

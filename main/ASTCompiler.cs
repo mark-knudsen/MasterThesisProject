@@ -59,8 +59,7 @@ namespace MyCompiler
             MinValue = minValue;
             MaxValue = maxValue;
         }
-        //  public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandomExpr(this);
     }
 
     public class RoundNodeExpr : ExpressionNodeExpr
@@ -136,8 +135,7 @@ namespace MyCompiler
             Type = MyType.Float;
         }
 
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
     }
     // Represents a single number (e.g., 10)
     public class NumberNodeExpr : ExpressionNodeExpr

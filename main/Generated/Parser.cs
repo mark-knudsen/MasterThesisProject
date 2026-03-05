@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 04/03/2026 23:01:16
-// Input file <Parser/Parser.y - 04/03/2026 20:40:47>
+// DateTime: 05/03/2026 09:43:52
+// Input file <Parser/Parser.y - 05/03/2026 09:29:39>
 
 // options: lines gplex
 
@@ -57,11 +57,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 04/03/2026 20:40:47
+  // Verbatim content from Parser/Parser.y - 05/03/2026 09:29:39
 #line 40 "Parser/Parser.y"
     public MyCompiler.NodeExpr RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 04/03/2026 20:40:47
+  // End verbatim content from Parser/Parser.y - 05/03/2026 09:29:39
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -285,17 +285,17 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         break;
       case 8: // Statement -> expr
 #line 58 "Parser/Parser.y"
-                          { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-1].node; }
+           { var seq = new SequenceNodeExpr(); seq.Statements.Add(ValueStack[ValueStack.Depth-1].node); CurrentSemanticValue.node = seq; }
 #line default
         break;
       case 9: // Statement -> IF, LPAREN, expr, RPAREN, Statement
 #line 60 "Parser/Parser.y"
-      { CurrentSemanticValue.node = new IfNodeExpr(ValueStack[ValueStack.Depth-3].node as ExpressionNodeExpr, ValueStack[ValueStack.Depth-1].node); }
+      { CurrentSemanticValue.node = new IfNodeExpr((ExpressionNodeExpr)ValueStack[ValueStack.Depth-3].node, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 10: // Statement -> IF, LPAREN, expr, RPAREN, Statement, ELSE, Statement
 #line 62 "Parser/Parser.y"
-      { CurrentSemanticValue.node = new IfNodeExpr(ValueStack[ValueStack.Depth-5].node as ExpressionNodeExpr, ValueStack[ValueStack.Depth-3].node, ValueStack[ValueStack.Depth-1].node); }
+      { CurrentSemanticValue.node = new IfNodeExpr((ExpressionNodeExpr)ValueStack[ValueStack.Depth-5].node, ValueStack[ValueStack.Depth-3].node, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 11: // Statement -> FOR, LPAREN, Assignment, SEMICOLON, expr, SEMICOLON, Assignment, 
