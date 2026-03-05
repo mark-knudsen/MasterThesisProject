@@ -19,7 +19,7 @@ namespace MyCompiler
         MyType VisitForLoop(ForLoopNodeExpr expr);
         MyType VisitArray(ArrayNodeExpr expr);
         // MyType VisitIndex(IndexNodeExpr expr);
-        // MyType VisitRound(RoundNodeExpr expr);
+        MyType VisitRound(RoundNodeExpr expr);
         // MyType VisitFunctionDef(FunctionDefNode expr);
         // MyType VisitFunctionCall(FunctionCallNode expr);
     }

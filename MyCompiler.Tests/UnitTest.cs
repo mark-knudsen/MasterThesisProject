@@ -26,9 +26,9 @@ namespace MyCompiler.Tests
             Assert.Contains(expectedOutput, actualOutput);
         }
         [Theory]
-        [InlineData("2", "Result: 2.000000")]
-        [InlineData("222", "Result: 222.000000")]
-        [InlineData("13453453", "Result: 13453453.000000")]
+        [InlineData("2", "Result: 2")]
+        [InlineData("222", "Result: 222")]
+        [InlineData("13453453", "Result: 13453453")]
         public void TestCompiler_Number_ShouldReturnCorrectResults(string input, string expectedOutput)
         {
             var outputWriter = ReadWriteToConsole(input);
@@ -54,8 +54,8 @@ namespace MyCompiler.Tests
         }
 
         [Theory]
-        [InlineData("true", "Result: true")]
-        [InlineData("false", "Result: false")]
+        [InlineData("true", "Result: True")]
+        [InlineData("false", "Result: False")]
         public void TestCompiler_Boolean_ReturnsCorrectResults(string input, string expectedOutput)
         {
             var outputWriter = ReadWriteToConsole(input);
@@ -76,18 +76,18 @@ namespace MyCompiler.Tests
         }
 
         [Theory]
-        [InlineData("x=2; x", "Result: 2.000000")]
+        [InlineData("x=2; x", "Result: 2")]
         [InlineData("x=true; x", "Result: true")]
         [InlineData("x=\"Harry the wizard\"; x", "Result: Harry the wizard")]
-        [InlineData("le_variable2=500; le_variable2", "Result: 500.000000")]
-        [InlineData("x=2; x=3; x", "Result: 3.000000")]
-        [InlineData("x=2; y=4; z=5; x", "Result: 2.000000")]
-        [InlineData("x=2; y=4; z=5; y", "Result: 4.000000")]
-        [InlineData("x=2; y=4; z=5; z", "Result: 5.000000")]
+        [InlineData("le_variable2=500; le_variable2", "Result: 500")]
+        [InlineData("x=2; x=3; x", "Result: 3")]
+        [InlineData("x=2; y=4; z=5; x", "Result: 2")]
+        [InlineData("x=2; y=4; z=5; y", "Result: 4")]
+        [InlineData("x=2; y=4; z=5; z", "Result: 5")]
         [InlineData("x=2; y=true; z=5; y", "Result: true")]
-        [InlineData("x=2; y=x; y", "Result: 2.000000")]
-        [InlineData("x=2; y=x; x=5; y", "Result: 2.000000")]
-        [InlineData("x=[1,2,3,4]; x", "Result: [1.000000,2.000000,3.000000,4.000000]")]
+        [InlineData("x=2; y=x; y", "Result: 2")]
+        [InlineData("x=2; y=x; x=5; y", "Result: 2")]
+        [InlineData("x=[1,2,3,4]; x", "Result: [1,2,3,4]")]
         public void TestCompiler_Id_ReturnsCorrectResults(string input, string expectedOutput)
         {
             var outputWriter = ReadWriteToConsole(input);
@@ -95,21 +95,21 @@ namespace MyCompiler.Tests
         }
 
         [Theory]
-        [InlineData("10>5", "Result: true")]
-        [InlineData("10<5", "Result: false")]
-        [InlineData("10>=10", "Result: true")]
-        [InlineData("10>=11", "Result: false")]
-        [InlineData("10<=10", "Result: true")]
-        [InlineData("10<=9", "Result: false")]
-        [InlineData("9==9", "Result: true")]
-        [InlineData("9==10", "Result: false")]
-        [InlineData("2+5==9-2", "Result: true")]
-        [InlineData("(2+5)*3<=7*3", "Result: true")]
-        [InlineData("2+5*3>=6*3", "Result: false")]
-        [InlineData("\"harry potter\"==\"harry potter\"", "Result: true")]
-        [InlineData("\"harry potter\"==\"harry potter\" == true", "Result: true")]
-        [InlineData("\"harry potter\"!=\"harry potter\"", "Result: false")]
-        [InlineData("\"harry G\"!=\"once upon a time\"", "Result: true")]
+        [InlineData("10>5", "Result: True")]
+        [InlineData("10<5", "Result: False")]
+        [InlineData("10>=10", "Result: True")]
+        [InlineData("10>=11", "Result: False")]
+        [InlineData("10<=10", "Result: True")]
+        [InlineData("10<=9", "Result: False")]
+        [InlineData("9==9", "Result: True")]
+        [InlineData("9==10", "Result: False")]
+        [InlineData("2+5==9-2", "Result: True")]
+        [InlineData("(2+5)*3<=7*3", "Result: True")]
+        [InlineData("2+5*3>=6*3", "Result: False")]
+        [InlineData("\"harry potter\"==\"harry potter\"", "Result: True")]
+        [InlineData("\"harry potter\"==\"harry potter\" == true", "Result: True")]
+        [InlineData("\"harry potter\"!=\"harry potter\"", "Result: False")]
+        [InlineData("\"harry G\"!=\"once upon a time\"", "Result: True")]
         public void TestCompiler_Comparison_ReturnsCorrectResults(string input, string expectedOutput)
         {
             var outputWriter = ReadWriteToConsole(input);
@@ -173,12 +173,12 @@ namespace MyCompiler.Tests
         }
 
         [Theory]
-        [InlineData("if(2<100) 100", "Result: 100.000000")]
+        [InlineData("if(2<100) 100", "Result: 100")]
         [InlineData("if(2<3) \"yes\" else \"no\"", "Result: yes")]
         [InlineData("if(5<3) \"yes\" else \"no\"", "Result: no")]
         [InlineData("if(\"dog\"==\"dog\") x=2 else x=5", "Result: null")]
-        [InlineData("if(\"dog\"==\"dog\") 2 else x=5", "Result: 2.000000")]
-        [InlineData("if(\"dog\"!=\"dog\") x=2 else x=5; x", "Result: 5.000000")]
+        [InlineData("if(\"dog\"==\"dog\") 2 else x=5", "Result: 2")]
+        [InlineData("if(\"dog\"!=\"dog\") x=2 else x=5; x", "Result: 5")]
 
         public void TestCompiler_If_ReturnsCorrectResults(string input, string expectedOutput)
         {
@@ -187,15 +187,15 @@ namespace MyCompiler.Tests
         }
 
         [Theory]
-        [InlineData("print(435368)", "Result: 435368.000000")]
-        [InlineData("print(574+8)", "Result: 582.000000")]
+        [InlineData("print(435368)", "Result: 435368")]
+        [InlineData("print(574+8)", "Result: 582")]
         [InlineData("print(574+8 == 582)", "Result: true")]
         [InlineData("print(\"harry\")", "Result: harry")]
         [InlineData("print(\"Run\")", "Result: Run")]
         [InlineData("print(true)", "Result: true")]
         [InlineData("print(false)", "Result: false")]
         [InlineData("print(\"harry\" + \" potter\")", "Result: harry potter")]
-        [InlineData("x=575; print(x)", "Result: 575.000000")]
+        [InlineData("x=575; print(x)", "Result: 575")]
         [InlineData("x=false; print(x)", "Result: false")]
         [InlineData("x=\"a pot\"; print(x)", "Result: a pot")]
 

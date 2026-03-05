@@ -267,8 +267,17 @@ namespace MyCompiler
 
             LLVMValueRef resultValue = Visit(expr);
 
-            var boxed = BoxValue(resultValue, prediction);
-            _builder.BuildRet(boxed);
+            Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
+            Console.WriteLine("LANG TYPE: " + prediction);
+
+            if (_lastNode is ExpressionNodeExpr)
+            {
+                var boxed = BoxValue(resultValue, prediction);
+                _builder.BuildRet(boxed);
+            }
+            else
+                _builder.BuildRet(_runtimeValueType.Undef);
+
 
             // if (prediction != MyType.None && !(_lastNode is PrintNodeExpr))
             // {
@@ -382,18 +391,15 @@ namespace MyCompiler
             };
 
             var ctx = _module.Context;
-
-            // --- Prepare data pointer (i8*) ---
             LLVMValueRef dataPtr;
 
-            if (value.TypeOf == LLVMTypeRef.Double)
+            var kind = value.TypeOf.Kind;
+
+            if (kind == LLVMTypeKind.LLVMDoubleTypeKind)
             {
-                // allocate 8 bytes
                 var malloc = GetOrDeclareMalloc();
 
-                var size = LLVMValueRef.CreateConstInt(
-                    LLVMTypeRef.Int64,
-                    8);
+                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
 
                 var rawMem = _builder.BuildCall2(
                     _mallocType,
@@ -410,23 +416,20 @@ namespace MyCompiler
 
                 dataPtr = rawMem;
             }
-            else if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+            else if (kind == LLVMTypeKind.LLVMPointerTypeKind)
             {
                 dataPtr = _builder.BuildBitCast(
                     value,
                     LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                     "ptrcast");
             }
-            else
+            else if (kind == LLVMTypeKind.LLVMIntegerTypeKind)
             {
-                // bool or small int → extend to i64 and allocate
                 var extended = _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
 
                 var malloc = GetOrDeclareMalloc();
 
-                var size = LLVMValueRef.CreateConstInt(
-                    LLVMTypeRef.Int64,
-                    8);
+                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
 
                 var rawMem = _builder.BuildCall2(
                     _mallocType,
@@ -443,8 +446,11 @@ namespace MyCompiler
 
                 dataPtr = rawMem;
             }
+            else
+            {
+                throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
+            }
 
-            // --- Build struct using insertvalue ---
             var boxed = _runtimeValueType.Undef;
 
             boxed = _builder.BuildInsertValue(
@@ -668,36 +674,89 @@ namespace MyCompiler
             };
         }
 
-        public LLVMValueRef VisitIfExpr(IfNodeExpr expr)
+        public LLVMValueRef VisitIfExpr(IfNodeExpr node)
         {
-            if (expr.Condition == null) throw new Exception("IF condition is null");
+            var condValue = Visit(node.Condition);
 
-            var cond = Visit(expr.Condition);
+            var function = _builder.InsertBlock.Parent;
 
-            // Safety: LLVM CondBr requires an i1. If your condition is i32, convert it.
-            if (cond.TypeOf == LLVMTypeRef.Int32)
-                cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, cond, LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, 0), "ifcond");
+            var thenBlock = function.AppendBasicBlock("then");
+            var elseBlock = function.AppendBasicBlock("else");
+            var mergeBlock = function.AppendBasicBlock("ifcont");
 
-            var func = _builder.InsertBlock.Parent;
-            var thenBB = func.AppendBasicBlock("then");
-            var elseBB = func.AppendBasicBlock("else");
-            var mergeBB = func.AppendBasicBlock("ifcont");
+            _builder.BuildCondBr(condValue, thenBlock, elseBlock);
 
-            _builder.BuildCondBr(cond, thenBB, elseBB);
+            // THEN
+            _builder.PositionAtEnd(thenBlock);
+            var thenValue = Visit(node.ThenPart);
+            _builder.BuildBr(mergeBlock);
+            thenBlock = _builder.InsertBlock;
 
-            // Then
-            _builder.PositionAtEnd(thenBB);
-            Visit(expr.ThenPart); // Ensure ThenPart is not null
-            _builder.BuildBr(mergeBB);
+            // ELSE
+            _builder.PositionAtEnd(elseBlock);
 
-            // Else
-            _builder.PositionAtEnd(elseBB);
-            if (expr.ElsePart != null)
-                Visit(expr.ElsePart);
-            _builder.BuildBr(mergeBB);
+            LLVMValueRef elseValue;
 
-            _builder.PositionAtEnd(mergeBB);
-            return default;
+            if (node.ElsePart != null)
+                elseValue = Visit(node.ElsePart);
+            else
+                elseValue = LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0);
+
+            _builder.BuildBr(mergeBlock);
+            elseBlock = _builder.InsertBlock;
+
+            // MERGE
+            _builder.PositionAtEnd(mergeBlock);
+
+            var phi = _builder.BuildPhi(thenValue.TypeOf, "iftmp");
+
+            phi.AddIncoming(
+                new[] { thenValue, elseValue },
+                new[] { thenBlock, elseBlock },
+                2);
+
+            return phi;
+        }
+
+        private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
+        {
+            if (value.TypeOf == LLVMTypeRef.Double) return value;
+            if (value.TypeOf == LLVMTypeRef.Int32)
+                return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_tmp");
+
+            return value; // Hope for the best, or throw an error
+        }
+
+        public LLVMValueRef VisitRoundExpr(RoundNodeExpr expr)
+        {
+            var val = EnsureFloat(Visit(expr.Value), expr.Value.Type);
+            var decimals = EnsureFloat(Visit(expr.Decimals), expr.Decimals.Type);
+
+            var doubleType = LLVMTypeRef.Double;
+            var powType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
+            var roundType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
+
+            // FIX: Change GetFunction to GetNamedFunction
+            var powFunc = _module.GetNamedFunction("pow");
+            if (powFunc.Handle == IntPtr.Zero) // Check if it exists
+                powFunc = _module.AddFunction("pow", powType);
+
+            var roundFunc = _module.GetNamedFunction("round");
+            if (roundFunc.Handle == IntPtr.Zero)
+                roundFunc = _module.AddFunction("round", roundType);
+
+            // multiplier = pow(10.0, decimals)
+            var ten = LLVMValueRef.CreateConstReal(doubleType, 10.0);
+            var multiplier = _builder.BuildCall2(powType, powFunc, new[] { ten, decimals }, "multiplier");
+
+            // temp = val * multiplier
+            var temp = _builder.BuildFMul(val, multiplier, "temp");
+
+            // roundedTemp = round(temp)
+            var roundedTemp = _builder.BuildCall2(roundType, roundFunc, new[] { temp }, "roundedTemp");
+
+            // result = roundedTemp / multiplier
+            return _builder.BuildFDiv(roundedTemp, multiplier, "rounded_final");
         }
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)

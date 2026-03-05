@@ -233,8 +233,11 @@ namespace MyCompiler
                 throw new Exception("If condition must be Bool");
 
             // Use .Then and .Else to match your Node definition
-            var thenType = Visit(expr.ThenPart);
-            var elseType = Visit(expr.ElsePart);
+            MyType thenType = Visit(expr.ThenPart);
+
+            MyType elseType = MyType.None;
+            if (expr.ElsePart != null)
+                elseType = Visit(expr.ElsePart);
 
             MyType finalType;
 
@@ -254,22 +257,14 @@ namespace MyCompiler
                 }
                 // Handle cases where one side is None (Void)
                 else if (thenType == MyType.None)
-                {
                     finalType = elseType;
-                }
                 else if (elseType == MyType.None)
-                {
                     finalType = thenType;
-                }
                 else
-                {
                     throw new Exception($"Type Mismatch: Then branch is {thenType}, Else is {elseType}");
-                }
             }
             else
-            {
-                finalType = thenType;
-            }
+                finalType = thenType; 
 
             // 3. Set the type and return
             expr.SetType(finalType);

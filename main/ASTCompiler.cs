@@ -74,8 +74,7 @@ namespace MyCompiler
             Type = MyType.Float;
         }
 
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
     }
 
     //------Function-nodes------//

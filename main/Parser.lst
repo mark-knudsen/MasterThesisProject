@@ -1,3 +1,12 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 05/03/2026 11:11:29>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 05/03/2026 11:11:31
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
@@ -56,11 +65,17 @@ StatementList
 
 Statement
     : Assignment          { $$ = $1; }
-    | expr                { $$ = $1; }             
+    | expr                { $$ = $1; }             */  it is recommended to cast instead of doing as*/
+//------------------------------------------------^^^
+// Error: This character is invalid in this context
+// Error: This character is invalid in this context
+// Error: This character is invalid in this context
+// Error: This character is invalid in this context
+// ------------------------------------------------
     | IF LPAREN expr RPAREN Statement %prec IF
-      { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5); }
+      { $$ = new IfNodeExpr((ExpressionNodeExpr)$3, $5); }
     | IF LPAREN expr RPAREN Statement ELSE Statement
-      { $$ = new IfNodeExpr($3 as ExpressionNodeExpr, $5, $7); }
+      { $$ = new IfNodeExpr($3, $5, $7); }
     | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN Statement 
       { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $9); }
     | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN LBRACE StatementList RBRACE
@@ -143,4 +158,5 @@ args
     ;
 %%
 
-internal Parser(Scanner s) : base(s) { }
+internal Parser(Scanner s) : base(s) { }// ==========================================================================
+
