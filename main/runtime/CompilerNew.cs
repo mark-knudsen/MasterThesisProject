@@ -11,7 +11,7 @@ using System.Reflection; // for using the stopwatch!
 
 namespace MyCompiler
 {
-    public unsafe class Compiler : IExpressionVisitor
+    public unsafe class CompilerNew : IExpressionVisitor
     {
         private LLVMValueRef _printf;
         private LLVMTypeRef _printfType;
@@ -35,7 +35,7 @@ namespace MyCompiler
         // 1. Store the type globally so it never gets garbage collected or lost
         private LLVMTypeRef _mallocType;
 
-        public Compiler()
+        public CompilerNew()
         {
             LLVM.InitializeNativeTarget();
             LLVM.InitializeNativeAsmPrinter();
