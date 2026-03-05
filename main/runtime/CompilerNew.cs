@@ -1011,17 +1011,7 @@ namespace MyCompiler
             return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
         }
 
-        // Function below is not used at the moment!
-        // private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
-        // {
-        //     if (target == MyType.Float || target == MyType.Int)
-        //         return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
 
-        //     if (target == MyType.String || target == MyType.Array)
-        //         return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
-
-        //     return boxed;
-        // }
         private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
         {
             // If we want a number, and it's already a double, just return it!

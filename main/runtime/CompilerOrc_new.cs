@@ -12,10 +12,12 @@ using Microsoft.VisualBasic;
 
 namespace MyCompiler
 {
+   
     public struct RuntimeValue
     {
-        public int tag;
-        public IntPtr data;
+        public int tag;      // 4 bytes
+                             // The [Pack = 8] or an explicit field tells C# to skip 4 bytes here
+        public IntPtr data;  // 8 bytes
     }
 
     public enum ValueTag
@@ -45,7 +47,11 @@ namespace MyCompiler
         private Context _context;
         private LLVMTypeRef _mallocType;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate RuntimeValue MainDelegate();
+        private delegate IntPtr MainDelegate();
+        private LLVMContextRef _llvmContext; // Persistent context
+        private readonly List<IntPtr> _persistentStrings = new();
+
+
 
         public CompilerOrc()
         {
@@ -53,17 +59,17 @@ namespace MyCompiler
             LLVM.InitializeNativeAsmPrinter();
             LLVM.InitializeNativeAsmParser();
 
-            // Initialize the JIT only once
+            // 1. Create a single persistent context for the whole session
+            _llvmContext = LLVMContextRef.Create();
+            _builder = _llvmContext.CreateBuilder();
+
+            // 2. Initialize JIT
             EnsureJit();
 
-            // Create the module and builder for the entire session
-            _module = LLVMModuleRef.CreateWithName("repl_module");
-            _builder = _module.Context.CreateBuilder();
-
-            _context = Context.Empty; // stores variables/functions
-
-            // Declare malloc and other required functions
+            // 3. Define types once in the persistent context
             DeclareValueStruct();
+
+            _context = Context.Empty;
         }
 
         private LLVMValueRef GetOrDeclareMalloc()
@@ -79,6 +85,7 @@ namespace MyCompiler
 
             return _module.AddFunction("malloc", _mallocType);
         }
+
         private LLVMValueRef BoxToI64(LLVMValueRef value)
         {
             if (value.TypeOf == LLVMTypeRef.Int64) return value;
@@ -91,14 +98,17 @@ namespace MyCompiler
 
             return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
         }
+
+
         private void DeclareValueStruct()
         {
-            var ctx = _module.Context;
-            var tagType = ctx.Int32Type; // Tag type
-            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // Pointer to data
+            // Use the persistent _llvmContext
+            var tagType = _llvmContext.Int32Type;
+            var ptrType = LLVMTypeRef.CreatePointer(_llvmContext.Int8Type, 0);
 
-            // Define the value struct: tag + pointer to the data (value)
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
+            // Define the value struct: [i32 (tag), i8* (dataPtr)]
+            _runtimeValueType = _llvmContext.CreateNamedStruct("RuntimeValue");
+            _runtimeValueType.StructSetBody(new[] { tagType, ptrType }, false);
         }
 
         private void DeclarePrintf()
@@ -160,104 +170,67 @@ namespace MyCompiler
 
         public object Run(NodeExpr expr, bool generateIR = false)
         {
-            // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
-
-            LLVMTypeRef llvmRetType = _runtimeValueType;
-
-            // Unique function name per REPL execution
             string funcName = $"main_{_replCounter++}";
 
-            // 1 Create a fresh context + module for this command
-            var context = LLVMContextRef.Create();
-            _module = context.CreateModuleWithName("repl_module");
+            // Create a new module for this specific command, using the SHARED context
+            _module = _llvmContext.CreateModuleWithName($"module_{_replCounter}");
 
-            var builder = context.CreateBuilder();
-
-            // 2 Create:  define double @__anon_expr_X()
-            var funcType = LLVMTypeRef.CreateFunction( // the integration test does not like that the return type is a struct, it cant run
-                _runtimeValueType,
+            // Define the function return type: RuntimeValue*
+            var funcType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(_runtimeValueType, 0),
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
             var function = _module.AddFunction(funcName, funcType);
             var entry = function.AppendBasicBlock("entry");
-            builder.PositionAtEnd(entry);
+            _builder.PositionAtEnd(entry);
 
-            // 3 Generate IR for the expression
-            // IMPORTANT: Visit must use THIS builder/module
-            _builder = builder;
-            //DeclareBoolStrings();
-            DeclarePrintf();
-
+            // Visiting logic
             LLVMValueRef resultValue = Visit(expr);
 
-            Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
-            Console.WriteLine("LANG TYPE: " + prediction);
-
-            if (_lastNode is ExpressionNodeExpr)
+            if (_lastNode is ExpressionNodeExpr exprNode)
             {
-                var boxed = BoxValue(resultValue, prediction);
-                _builder.BuildRet(boxed);
+                var boxedPtr = BoxValue(resultValue, exprNode.Type);
+                _builder.BuildRet(boxedPtr);
             }
-            else
-                _builder.BuildRet(_runtimeValueType.Undef);
+            else if (_lastNode is AssignNodeExpr assignNode)
+            {
+                // Important: Use the type of the assignment!
+                var boxedPtr = BoxValue(resultValue, assignNode.Type);
+                _builder.BuildRet(boxedPtr);
+            }
 
-            DumpIR(_module);
+            if (generateIR) DumpIR(_module);
 
-            // 5 Wrap in ThreadSafeModule
+            // --- JIT Hand-off ---
+            // Note: LLVMOrcCreateNewThreadSafeModule takes ownership of the module
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
 
             var dylib = OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit);
+            ThrowIfError(OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, dylib, tsm));
 
-            ThrowIfError(
-                OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, dylib, tsm)
-            );
-
-            // 6 Lookup function pointer
             ulong addr;
-            ThrowIfError(
-                OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName)
-            );
-            //DumpIR(module);
+            ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, funcName));
 
-            // 7 Call it
-            var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
+            var fnPtr = (IntPtr)addr;
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
+            IntPtr resultPtr = delegateResult();
 
-            var result = delegateResult();
+            if (resultPtr == IntPtr.Zero) return null;
 
-            switch ((ValueTag)result.tag)
+            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(resultPtr);
+
+            return (ValueTag)result.tag switch
             {
-                //case ValueTag.Int:
-                //System.Console.WriteLine("we return int");
-                    //return Marshal.ReadInt64(result.data);
-                    
-                case ValueTag.Int:
-                case ValueTag.Float:
-                System.Console.WriteLine("we return double");
-                    return Marshal.PtrToStructure<double>(result.data);
-
-                case ValueTag.String:
-                    return Marshal.PtrToStringAnsi(result.data);
-
-                case ValueTag.Bool:
-                    long b = Marshal.ReadInt64(result.data);
-                    return b != 0;
-
-                case ValueTag.Array:
-                    return HandleArray(result.data);
-
-                case ValueTag.None:
-                    return default;
-
-            }
-
-            //Console.WriteLine("raw result from JIT: " + result);
-
-            return result;
-            //return ExtractResult(result, prediction, expr);
+                ValueTag.Int => Marshal.ReadInt64(result.data),
+                ValueTag.Float => Marshal.PtrToStructure<double>(result.data),
+                ValueTag.String => Marshal.PtrToStringUTF8(Marshal.ReadIntPtr(result.data)),
+                ValueTag.Bool => Marshal.ReadInt64(result.data) != 0,
+                ValueTag.Array => HandleArray(result.data),
+                _ => null
+            };
         }
 
         private object HandleArray(IntPtr dataPtr)
@@ -277,93 +250,65 @@ namespace MyCompiler
         }
         private LLVMValueRef BoxValue(LLVMValueRef value, MyType type)
         {
-            int tag = type switch
-            {
-                MyType.Int => (int)ValueTag.Int,
-                MyType.Float => (int)ValueTag.Float,
-                MyType.Bool => (int)ValueTag.Bool,
-                MyType.String => (int)ValueTag.String,
-                MyType.Array => (int)ValueTag.Array,
-                _ => (int)ValueTag.None
-            };
-
             var ctx = _module.Context;
-            LLVMValueRef dataPtr;
+            var (mType, mFunc) = GetMalloc();
+            int tag = (int)GetTag(type);
 
-            var kind = value.TypeOf.Kind;
+            // 1. Allocate data payload (8 bytes)
+            var dataMem = _builder.BuildCall2(mType, mFunc, new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8) }, "data_mem");
 
-            if (kind == LLVMTypeKind.LLVMDoubleTypeKind)
+            // 2. Storage Logic based on the Tag
+            if (tag == (int)ValueTag.Int)
             {
-                var malloc = GetOrDeclareMalloc();
+                var intVal = value.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind
+                    ? _builder.BuildFPToSI(value, LLVMTypeRef.Int64, "to_i64")
+                    : _builder.BuildZExtOrBitCast(value, LLVMTypeRef.Int64, "to_i64");
 
-                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
+                var cast = _builder.BuildBitCast(dataMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0), "int_ptr");
+                _builder.BuildStore(intVal, cast);
+            }
+            else if (tag == (int)ValueTag.Float)
+            {
+                var dblVal = value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind
+                    ? _builder.BuildSIToFP(value, LLVMTypeRef.Double, "to_dbl")
+                    : value;
 
-                var rawMem = _builder.BuildCall2(
-                    _mallocType,
-                    malloc,
-                    new[] { size },
-                    "num_mem");
+                var cast = _builder.BuildBitCast(dataMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Double, 0), "dbl_ptr");
+                _builder.BuildStore(dblVal, cast);
+            }
+            else if (tag == (int)ValueTag.Bool)
+            {
+                // Zero-extend i1 to i64 so Marshal.ReadInt64(data) != 0 works correctly
+                var boolVal = _builder.BuildZExt(value, LLVMTypeRef.Int64, "bool_to_i64");
+                var cast = _builder.BuildBitCast(dataMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0), "bool_ptr");
+                _builder.BuildStore(boolVal, cast);
+            }
+            else // String, Array
+            {
+                // IMPORTANT: value is already a pointer (i8*). 
+                // We want to store the pointer itself into the 8 bytes of dataMem.
+                // So we cast dataMem to i8** (pointer to a pointer).
+                var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+                var i8PtrPtr = LLVMTypeRef.CreatePointer(i8Ptr, 0);
 
-                var cast = _builder.BuildBitCast(
-                    rawMem,
-                    LLVMTypeRef.CreatePointer(LLVMTypeRef.Double, 0),
-                    "num_cast");
-
+                var cast = _builder.BuildBitCast(dataMem, i8PtrPtr, "ptr_box_cast");
                 _builder.BuildStore(value, cast);
-
-                dataPtr = rawMem;
-            }
-            else if (kind == LLVMTypeKind.LLVMPointerTypeKind)
-            {
-                dataPtr = _builder.BuildBitCast(
-                    value,
-                    LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                    "ptrcast");
-            }
-            else if (kind == LLVMTypeKind.LLVMIntegerTypeKind)
-            {
-                var extended = _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
-
-                var malloc = GetOrDeclareMalloc();
-
-                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
-
-                var rawMem = _builder.BuildCall2(
-                    _mallocType,
-                    malloc,
-                    new[] { size },
-                    "int_mem");
-
-                var cast = _builder.BuildBitCast(
-                    rawMem,
-                    LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0),
-                    "int_cast");
-
-                _builder.BuildStore(extended, cast);
-
-                dataPtr = rawMem;
-            }
-            else
-            {
-                throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
             }
 
-            var boxed = _runtimeValueType.Undef;
+            // 3. Allocate the RuntimeValue struct (16 bytes)
+            var structMem = _builder.BuildCall2(mType, mFunc, new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 16) }, "struct_mem");
 
-            boxed = _builder.BuildInsertValue(
-                boxed,
-                LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)tag),
-                0,
-                "with_tag");
+            // Store Tag (at offset 0)
+            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, structMem, 0, "tag_ptr");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)tag), tagPtr);
 
-            boxed = _builder.BuildInsertValue(
-                boxed,
-                dataPtr,
-                1,
-                "with_data");
+            // Store Data Pointer (at offset 8)
+            var dataPtrField = _builder.BuildStructGEP2(_runtimeValueType, structMem, 1, "data_ptr");
+            _builder.BuildStore(dataMem, dataPtrField);
 
-            return boxed;
+            return structMem;
         }
+
         private NodeExpr GetLastExpression(NodeExpr expr)
         {
             if (expr is SequenceNodeExpr seq)
@@ -375,6 +320,19 @@ namespace MyCompiler
             }
 
             return expr;
+        }
+
+        private ValueTag GetTag(MyType type)
+        {
+            return type switch
+            {
+                MyType.Int => ValueTag.Int,
+                MyType.Float => ValueTag.Float,
+                MyType.Bool => ValueTag.Bool,
+                MyType.String => ValueTag.String,
+                MyType.Array => ValueTag.Array,
+                _ => ValueTag.None
+            };
         }
 
         public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
@@ -576,27 +534,105 @@ namespace MyCompiler
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
-            var lhs = Visit(expr.Left); // Visit left operand
-            var rhs = Visit(expr.Right); // Visit right operand
+            // 1. Visit sides
+            var lhs = Visit(expr.Left);
+            var rhs = Visit(expr.Right);
 
-            Console.WriteLine($"lhs: {lhs} rhs: {rhs}");
+            // 2. Handle Strings (Concatenation)
+            if (expr.Operator == "+" && (expr.Left.Type == MyType.String || expr.Right.Type == MyType.String))
+            {
+                return BuildStringConcat(lhs, expr.Left.Type, rhs, expr.Right.Type);
+            }
+
+            // 3. Handle Numbers
+            // Ensure both are Doubles so BuildFAdd doesn't crash
+            lhs = EnsureDouble(lhs);
+            rhs = EnsureDouble(rhs);
 
             return expr.Operator switch
             {
-                "+" => _builder.BuildFAdd(lhs, rhs, "faddtmp"),
-                "-" => _builder.BuildFSub(lhs, rhs, "fsubtmp"),
-                "*" => _builder.BuildFMul(lhs, rhs, "fmultmp"),
-                "/" => _builder.BuildFDiv(lhs, rhs, "fdivtmp"),
-                _ => throw new InvalidOperationException($"Math operator {expr.Operator} not supported for numeric types")
+                "+" => _builder.BuildFAdd(lhs, rhs, "add"),
+                "-" => _builder.BuildFSub(lhs, rhs, "sub"),
+                "*" => _builder.BuildFMul(lhs, rhs, "mul"),
+                "/" => _builder.BuildFDiv(lhs, rhs, "div"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, lhs, rhs, "cmp"),
+                _ => throw new Exception($"Unknown operator {expr.Operator}")
             };
         }
 
-        public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
+
+        private (LLVMTypeRef Type, LLVMValueRef Func) GetMalloc()
         {
-            return _builder.BuildGlobalStringPtr(expr.Value, "str");
+            // Look for it in the CURRENT module
+            var existing = _module.GetNamedFunction("malloc");
+
+            // Define the type: i8* malloc(i64)
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { LLVMTypeRef.Int64 }, false);
+
+            if (existing.Handle != IntPtr.Zero)
+                return (mallocType, existing);
+
+            return (mallocType, _module.AddFunction("malloc", mallocType));
         }
+        private LLVMValueRef GetSprintf()
+        {
+            var fn = _module.GetNamedFunction("sprintf");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("sprintf", LLVMTypeRef.CreateFunction(
+                _module.Context.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0) },
+                true));
+        }
+        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
+        {
+            var ctx = _module.Context;
+            var malloc = GetMalloc(); // Returns (LLVMTypeRef Type, LLVMValueRef Func)
+            var sprintf = GetSprintf();
+            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // Prepare Arguments for sprintf
+            LLVMValueRef Prepare(LLVMValueRef val, MyType type)
+            {
+                if (type == MyType.String) return _builder.BuildBitCast(val, ptrType, "str_ptr");
+                return EnsureDouble(val);
+            }
+
+            var arg1 = Prepare(lhs, lhsType);
+            var arg2 = Prepare(rhs, rhsType);
+
+            // 1. Malloc buffer (Use malloc.Type instead of _mallocType)
+            var buffer = _builder.BuildCall2(malloc.Type, malloc.Func,
+                new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 256) }, "concat_buf");
+
+            // 2. Format String (using %g for cleaner number formatting)
+            string fmtStr = (lhsType == MyType.String ? "%s" : "%g") +
+                            (rhsType == MyType.String ? "%s" : "%g");
+            var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "fmt");
+            var fmtArg = _builder.BuildBitCast(fmtPtr, ptrType, "fmt_ptr");
+
+            // 3. Call sprintf
+            // We define the type for this specific call to match the arguments exactly
+            var sprintfType = LLVMTypeRef.CreateFunction(ctx.Int32Type,
+                new[] { ptrType, ptrType, arg1.TypeOf, arg2.TypeOf }, false);
+
+            _builder.BuildCall2(sprintfType, sprintf, new[] { buffer, fmtArg, arg1, arg2 }, "sprintf_call");
+
+            return buffer;
+        }
+
+        // Helper to ensure numbers are always doubles in the IR
+        private LLVMValueRef EnsureDouble(LLVMValueRef val)
+        {
+            if (val.TypeOf == LLVMTypeRef.Double) return val;
+            // Converts i32 or i64 to double
+            return _builder.BuildSIToFP(val, LLVMTypeRef.Double, "conv");
+        }
+
+
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
+            // Force everything to Double at the source
             return LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, expr.Value);
         }
         public LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr)
@@ -607,51 +643,53 @@ namespace MyCompiler
         {
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
+        public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
+        {
+        
+            return _builder.BuildGlobalStringPtr(expr.Value, "tmp_str");
 
+        }
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             Console.WriteLine($"visiting assignment: {expr.Id}");
 
             var value = Visit(expr.Expression);
 
-            // Ensure numeric values are double
+            // 1. Ensure numeric values are double for consistency
             if (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
                 value = _builder.BuildSIToFP(value, LLVMTypeRef.Double, "assign_cvt");
 
             var storageType = value.TypeOf;
             var module = _module;
 
-            LLVMValueRef global;
+            // 2. Check if it already exists in THIS module
+            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
 
-            if (module.GetNamedGlobal(expr.Id) == null) // local
+            if (global.Handle == IntPtr.Zero)
             {
-                if (!_definedGlobals.Contains(expr.Id)) // global
-                {
-                    //Console.WriteLine("we dont have the id");
-                    // First definition: define global in this module
-                    global = module.AddGlobal(storageType, expr.Id);
-                    global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                // Not in this module. Is it totally new or defined in a previous REPL run?
+                global = module.AddGlobal(storageType, expr.Id);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
 
+                if (!_definedGlobals.Contains(expr.Id))
+                {
+                    // BRAND NEW: Needs an initializer to be "defined"
                     _definedGlobals.Add(expr.Id);
+
+                    if (storageType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                        global.Initializer = LLVMValueRef.CreateConstPointerNull(storageType);
+                    else
+                        global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
                 }
-                else
-                {
-                    global = module.AddGlobal(storageType, expr.Id);
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                }
-            }
-            else
-            {
-                global = module.GetNamedGlobal(expr.Id);
+                // If it WAS in _definedGlobals, we leave it as External Linkage without 
+                // an initializer so the JIT links it to the previous module's memory.
             }
 
+            // 3. Perform the store
             _builder.BuildStore(value, global);
 
-            // Assignment returns value
             return value;
         }
-
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
             var llvmCtx = _module.Context;
@@ -835,21 +873,21 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
-            Console.WriteLine($"visiting variable: {expr.Name}");
-
-            // 1 Lookup symbol by name
             var module = _module;
             LLVMValueRef global = module.GetNamedGlobal(expr.Name);
 
+            // Check if it's an array or string based on your MyType
+            var llvmType = (expr.Type == MyType.Array || expr.Type == MyType.String)
+                ? LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0)
+                : LLVMTypeRef.Double;
+
             if (global.Handle == IntPtr.Zero)
             {
-                // Not defined in this module → declare external
-                global = module.AddGlobal(LLVMTypeRef.Double, expr.Name);
+                global = module.AddGlobal(llvmType, expr.Name);
                 global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
-            // 2 Load value
-            return _builder.BuildLoad2(LLVMTypeRef.Double, global, expr.Name);
+            return _builder.BuildLoad2(llvmType, global, expr.Name);
         }
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)

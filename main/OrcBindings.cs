@@ -1,8 +1,8 @@
 using System.Runtime.InteropServices;
 internal static class OrcBindings
 {
-    private const string LibLLVM = "libLLVM-20.so"; // linux
-    //private const string LibLLVM = "libLLVM.dll"; // windows
+    //private const string LibLLVM = "libLLVM-20.so"; // linux
+    private const string LibLLVM = "libLLVM.dll"; // windows
 
     [DllImport(LibLLVM)]
     public static extern IntPtr LLVMOrcCreateLLJIT(
