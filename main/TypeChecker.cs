@@ -392,8 +392,8 @@ namespace MyCompiler
         public MyType VisitRound(RoundNodeExpr expr)
         {
             Visit(expr.Value);
-            expr.SetType(MyType.Int);
-            return MyType.Int;
+            expr.SetType(MyType.Float);
+            return MyType.Float;
         }
 
         public MyType VisitFloat(FloatNodeExpr expr)

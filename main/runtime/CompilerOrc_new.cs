@@ -116,14 +116,27 @@ namespace MyCompiler
 
         private void DeclareBoolStrings()
         {
-            _trueStr = _builder.BuildGlobalStringPtr("true\n", "true_str");
-            _falseStr = _builder.BuildGlobalStringPtr("false\n", "false_str");
+            _trueStr = _builder.BuildGlobalStringPtr("True\n", "true_str");
+            _falseStr = _builder.BuildGlobalStringPtr("False\n", "false_str");
         }
 
         private LLVMValueRef CreateFormatString(string format)
         {
             var str = _builder.BuildGlobalStringPtr(format, "fmt");
             return str;
+        }
+
+        static uint GetAlignment(LLVMTypeRef type)
+        {
+            return type.Kind switch
+            {
+                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 64 => 8,
+                LLVMTypeKind.LLVMDoubleTypeKind => 8,
+                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 32 => 4,
+                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 16 => 2,
+                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 8 => 1,
+                _ => 8
+            };
         }
 
         private void EnsureJit()
@@ -162,15 +175,15 @@ namespace MyCompiler
             _lastType = checker.Check(expr);
             _context = checker.UpdatedContext;
 
-            _lastNode = GetLastExpression(expr);
+            //_lastNode = GetLastExpression(expr);
 
-            if (_lastNode == null) return MyType.None;
-            if (_lastNode is ExpressionNodeExpr exp) return exp.Type;
+            var programedResult = GetProgramResult(expr);
+
+            if (programedResult == null) return MyType.None;
+            if (programedResult is ExpressionNodeExpr exp) return exp.Type; // it says the type is int right here for round
 
             return MyType.None;
         }
-
-
 
         // Problems
 
@@ -182,9 +195,7 @@ namespace MyCompiler
         // can't print booleans                    print(5<4) | print(true)
         // can't use numbers if assigned as ints   x=5; x+2
 
-
         // create a orc unit test
-
 
         void CreateMain()
         {
@@ -211,12 +222,9 @@ namespace MyCompiler
             _builder = builder;
         }
 
-
         public object Run(NodeExpr expr, bool generateIR = false)
         {
             // 1. Semantic analysis
-            // we set the return type to the last nodes type, but if we do a print then it doesn't matter what the last nodes type is
-            // we don't want to return a type if we call print
             var prediction = PerformSemanticAnalysis(expr);
 
             CreateMain();
@@ -375,18 +383,14 @@ namespace MyCompiler
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
             }
 
-
             // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
-
             var mallocReturn = GetOrDeclareMalloc();
             var sizeReturn = LLVMValueRef.CreateConstInt(i64, 16);
             var obj = _builder.BuildCall2(mallocType, mallocReturn, new[] { sizeReturn }, "runtime_obj");
 
-
             // 5. Store tag and data using the local runtimeValueType
             var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)tag), tagPtr);
-
 
             var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr);
@@ -394,6 +398,24 @@ namespace MyCompiler
             return obj;
         }
 
+        private ExpressionNodeExpr GetProgramResult(NodeExpr expr)
+        {
+            if (expr is SequenceNodeExpr seq)
+            {
+                foreach (var node in seq.Statements)
+                {
+                    if (node is ExpressionNodeExpr exp && !(node is PrintNodeExpr))
+                        return exp;
+                }
+
+                return null;
+            }
+
+            if (expr is ExpressionNodeExpr exp2 && !(expr is PrintNodeExpr))
+                return exp2;
+
+            return null;
+        }
 
         private NodeExpr GetLastExpression(NodeExpr expr)
         {
@@ -597,7 +619,6 @@ namespace MyCompiler
             };
         }
 
-
         public LLVMValueRef VisitIfExpr(IfNodeExpr node)
         {
             var condValue = Visit(node.Condition);
@@ -768,8 +789,6 @@ namespace MyCompiler
                 true));
         }
 
-
-
         private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
         {
             var ctx = _module.Context;
@@ -810,8 +829,6 @@ namespace MyCompiler
 
             return concatBuf;
         }
-
-
 
         public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
         {
@@ -878,18 +895,18 @@ namespace MyCompiler
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
             var llvmCtx = _module.Context;
-            var i64 = llvmCtx.Int64Type;
+            var i32 = llvmCtx.Int32Type;
 
             // 1. Get or declare rand()
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
-                var randType = LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>(), false);
+                var randType = LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>(), false);
                 randFunc = _module.AddFunction("rand", randType);
             }
 
             var randValue = _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>()),
+                LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>()),
                 randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
             if (expr.MinValue != null && expr.MaxValue != null)
@@ -898,8 +915,8 @@ namespace MyCompiler
                 var maxVal = Visit(expr.MaxValue);
 
                 // Ensure we are working with Integers for rand math
-                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i64, "min_i");
-                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i64, "max_i");
+                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i32, "min_i");
+                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i32, "max_i");
 
                 // --- THE "VISIT IF" STYLE ---
                 var func = _builder.InsertBlock.Parent;
@@ -908,7 +925,7 @@ namespace MyCompiler
                 var mergeBB = func.AppendBasicBlock("rand.cont");
 
                 // Create a local variable to store the result (since blocks can't "return")
-                var resultPtr = _builder.BuildAlloca(i64, "rand_result_ptr");
+                var resultPtr = _builder.BuildAlloca(i32, "rand_result_ptr");
 
                 var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, minVal, maxVal, "order_check");
                 _builder.BuildCondBr(cond, thenBB, elseBB);
@@ -916,31 +933,31 @@ namespace MyCompiler
                 // "Then" Part (Correct Order)
                 _builder.PositionAtEnd(thenBB);
                 var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
-                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i64, 1), "range1");
+                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i32, 1), "range1");
                 var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
 
-                var store = _builder.BuildStore(res1, resultPtr);
-                store.SetAlignment(8);
+                var store = _builder.BuildStore(res1, resultPtr); // this is probably wrong should be res2
+                store.SetAlignment(8); // should be 4
 
                 _builder.BuildBr(mergeBB);
 
                 // "Else" Part (Wrong Order - Swap logic)
                 _builder.PositionAtEnd(elseBB);
                 var diff2 = _builder.BuildSub(minVal, maxVal, "diff2");
-                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i64, 1), "range2");
+                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i32, 1), "range2");
                 var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
                 var store2 = _builder.BuildStore(res1, resultPtr);
-                store2.SetAlignment(8);
+                store2.SetAlignment(8);  // should be 4
 
                 _builder.BuildBr(mergeBB);
 
                 // Merge
                 _builder.PositionAtEnd(mergeBB);
-                var finalInt = _builder.BuildLoad2(i64, resultPtr, "final_rand_int");
-                return _builder.BuildSIToFP(finalInt, _module.Context.Int64Type, "final_rand_dbl");
+                var finalInt = _builder.BuildLoad2(i32, resultPtr, "final_rand_int");
+                return _builder.BuildSIToFP(finalInt, _module.Context.DoubleType, "final_rand_dbl");
             }
 
-            return _builder.BuildSIToFP(randValue, _module.Context.Int64Type, "rand_simple");
+            return _builder.BuildSIToFP(randValue, _module.Context.DoubleType, "rand_simple");
         }
 
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
