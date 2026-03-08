@@ -878,18 +878,18 @@ namespace MyCompiler
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
             var llvmCtx = _module.Context;
-            var i32 = llvmCtx.Int32Type;
+            var i64 = llvmCtx.Int64Type;
 
             // 1. Get or declare rand()
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
-                var randType = LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>(), false);
+                var randType = LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>(), false);
                 randFunc = _module.AddFunction("rand", randType);
             }
 
             var randValue = _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>()),
+                LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>()),
                 randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
             if (expr.MinValue != null && expr.MaxValue != null)
@@ -898,8 +898,8 @@ namespace MyCompiler
                 var maxVal = Visit(expr.MaxValue);
 
                 // Ensure we are working with Integers for rand math
-                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i32, "min_i");
-                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i32, "max_i");
+                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i64, "min_i");
+                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i64, "max_i");
 
                 // --- THE "VISIT IF" STYLE ---
                 var func = _builder.InsertBlock.Parent;
@@ -908,7 +908,7 @@ namespace MyCompiler
                 var mergeBB = func.AppendBasicBlock("rand.cont");
 
                 // Create a local variable to store the result (since blocks can't "return")
-                var resultPtr = _builder.BuildAlloca(i32, "rand_result_ptr");
+                var resultPtr = _builder.BuildAlloca(i64, "rand_result_ptr");
 
                 var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, minVal, maxVal, "order_check");
                 _builder.BuildCondBr(cond, thenBB, elseBB);
@@ -916,7 +916,7 @@ namespace MyCompiler
                 // "Then" Part (Correct Order)
                 _builder.PositionAtEnd(thenBB);
                 var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
-                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i32, 1), "range1");
+                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i64, 1), "range1");
                 var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
 
                 var store = _builder.BuildStore(res1, resultPtr);
@@ -927,7 +927,7 @@ namespace MyCompiler
                 // "Else" Part (Wrong Order - Swap logic)
                 _builder.PositionAtEnd(elseBB);
                 var diff2 = _builder.BuildSub(minVal, maxVal, "diff2");
-                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i32, 1), "range2");
+                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i64, 1), "range2");
                 var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
                 var store2 = _builder.BuildStore(res1, resultPtr);
                 store2.SetAlignment(8);
@@ -936,11 +936,11 @@ namespace MyCompiler
 
                 // Merge
                 _builder.PositionAtEnd(mergeBB);
-                var finalInt = _builder.BuildLoad2(i32, resultPtr, "final_rand_int");
-                return _builder.BuildSIToFP(finalInt, _module.Context.DoubleType, "final_rand_dbl");
+                var finalInt = _builder.BuildLoad2(i64, resultPtr, "final_rand_int");
+                return _builder.BuildSIToFP(finalInt, _module.Context.Int64Type, "final_rand_dbl");
             }
 
-            return _builder.BuildSIToFP(randValue, _module.Context.DoubleType, "rand_simple");
+            return _builder.BuildSIToFP(randValue, _module.Context.Int64Type, "rand_simple");
         }
 
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
