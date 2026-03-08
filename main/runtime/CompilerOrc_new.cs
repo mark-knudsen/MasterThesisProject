@@ -46,7 +46,7 @@ namespace MyCompiler
         private Context _context;
         private LLVMTypeRef _mallocType;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-        private delegate RuntimeValue MainDelegate();
+        private delegate IntPtr MainDelegate();
 
         public CompilerOrc()
         {
@@ -188,7 +188,7 @@ namespace MyCompiler
 
             // 2 Create:  define double @__anon_expr_X()
             var funcType = LLVMTypeRef.CreateFunction( // the integration test does not like that the return type is a struct, it cant run
-                _runtimeValueType,
+                LLVMTypeRef.CreatePointer(_runtimeValueType, 0), // return type is now a pointer to the boxed struct
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
@@ -218,7 +218,8 @@ namespace MyCompiler
             if (_lastNode is ExpressionNodeExpr)
             {
                 var boxed = BoxValue(resultValue, prediction);
-                _builder.BuildRet(boxed);
+                var boxedPtr = BoxValue(resultValue, prediction);
+                _builder.BuildRet(boxedPtr);
             }
             else
                 _builder.BuildRet(_runtimeValueType.Undef);
@@ -246,7 +247,8 @@ namespace MyCompiler
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-            var result = delegateResult();
+            var result1 = delegateResult();
+            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(result1);
 
             switch ((ValueTag)result.tag)
             {
@@ -361,21 +363,38 @@ namespace MyCompiler
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
             }
 
-            var boxed = _runtimeValueType.Undef;
 
-            boxed = _builder.BuildInsertValue(
-                boxed,
-                LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)tag),
+            // allocate RuntimeValue struct on heap
+            var mallocReturn = GetOrDeclareMalloc();
+            var sizeReturn = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 16);
+
+            var obj = _builder.BuildCall2(
+                _mallocType,
+                mallocReturn,
+                new[] { sizeReturn },
+                "runtime_obj");
+
+            // store tag
+            var tagPtr = _builder.BuildStructGEP2(
+                _runtimeValueType,
+                obj,
                 0,
-                "with_tag");
+                "tag_ptr");
 
-            boxed = _builder.BuildInsertValue(
-                boxed,
-                dataPtr,
+            _builder.BuildStore(
+                LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)tag),
+                tagPtr);
+
+            // store data pointer
+            var dataFieldPtr = _builder.BuildStructGEP2(
+                _runtimeValueType,
+                obj,
                 1,
-                "with_data");
+                "data_ptr");
 
-            return boxed;
+            _builder.BuildStore(dataPtr, dataFieldPtr);
+
+            return obj;
         }
 
         private NodeExpr GetLastExpression(NodeExpr expr)
