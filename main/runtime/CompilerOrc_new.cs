@@ -215,14 +215,10 @@ namespace MyCompiler
             Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             Console.WriteLine("LANG TYPE: " + prediction);
 
-            if (_lastNode is ExpressionNodeExpr)
-            {
-                var boxed = BoxValue(resultValue, prediction);
-                var boxedPtr = BoxValue(resultValue, prediction);
-                _builder.BuildRet(boxedPtr);
-            }
-            else
-                _builder.BuildRet(_runtimeValueType.Undef);
+            // var boxed = BoxValue(resultValue, prediction);
+            var boxedPtr = BoxValue(resultValue, prediction);
+            _builder.BuildRet(boxedPtr);
+
 
             DumpIR(_module);
 
@@ -253,25 +249,32 @@ namespace MyCompiler
             switch ((ValueTag)result.tag)
             {
                 case ValueTag.Int:
+                System.Console.WriteLine("return int");
                     return Marshal.ReadInt64(result.data);
 
                 case ValueTag.Float:
+                System.Console.WriteLine("return float");
                     return Marshal.PtrToStructure<double>(result.data);
 
                 case ValueTag.String:
+                System.Console.WriteLine("return string");
                     return Marshal.PtrToStringAnsi(result.data);
 
                 case ValueTag.Bool:
+                System.Console.WriteLine("return bool");
                     long b = Marshal.ReadByte(result.data);
                     return b != 0;
 
                 case ValueTag.Array:
+                System.Console.WriteLine("return array");
                     return HandleArray(result.data);
 
                 case ValueTag.None:
+                System.Console.WriteLine("return none");
                     return default;
 
             }
+
             return result;
         }
 
@@ -1014,23 +1017,40 @@ namespace MyCompiler
             }
             return arrayPtr;
         }
+
+        LLVMTypeRef GetLLVMType(MyType type)
+        {
+            return type switch
+            {
+                MyType.Int => LLVMTypeRef.Int64,
+                MyType.Float => LLVMTypeRef.Double,
+                MyType.Bool => LLVMTypeRef.Int1,
+                MyType.String => LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0),
+                _ => throw new Exception("Unsupported type")
+            };
+        }
+
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
+            var varType = _context.Get(expr.Name).Type; // returns MyType
             Console.WriteLine($"visiting variable: {expr.Name}");
 
             // 1 Lookup symbol by name
+            var llvm_type = GetLLVMType(varType);
+
             var module = _module;
             LLVMValueRef global = module.GetNamedGlobal(expr.Name);
 
             if (global.Handle == IntPtr.Zero)
             {
                 // Not defined in this module → declare external
-                global = module.AddGlobal(LLVMTypeRef.Double, expr.Name);
+                global = module.AddGlobal(llvm_type, expr.Name);
                 global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
+            System.Console.WriteLine("global: " + global);
             // 2 Load value
-            return _builder.BuildLoad2(LLVMTypeRef.Double, global, expr.Name);
+            return _builder.BuildLoad2(llvm_type, global, expr.Name);
         }
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
