@@ -14,7 +14,7 @@ namespace MyCompiler
 {
     public struct RuntimeValue
     {
-        public int tag;
+        public int tag; // should this be changed to Int64?
         public IntPtr data;
     }
 
@@ -80,6 +80,7 @@ namespace MyCompiler
 
             return _module.AddFunction("malloc", _mallocType);
         }
+
         private LLVMValueRef BoxToI64(LLVMValueRef value)
         {
             if (value.TypeOf == LLVMTypeRef.Int64) return value;
@@ -322,7 +323,8 @@ namespace MyCompiler
                     LLVMTypeRef.CreatePointer(LLVMTypeRef.Double, 0),
                     "num_cast");
 
-                _builder.BuildStore(value, cast);
+                var store = _builder.BuildStore(value, cast);
+                store.SetAlignment(8);
 
                 dataPtr = rawMem;
             }
@@ -339,7 +341,8 @@ namespace MyCompiler
                 var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
                 var rawMem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "int_mem");
                 var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0), "int_cast");
-                _builder.BuildStore(value, cast);
+                var store = _builder.BuildStore(value, cast);
+                store.SetAlignment(8);
                 dataPtr = rawMem;
             }
             else if (type == MyType.Bool) // this might have to check with kind, but works 
@@ -348,7 +351,8 @@ namespace MyCompiler
                 var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 1); // just 1 byte
                 var rawMem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "bool_mem");
                 var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int1, 0), "bool_cast");
-                _builder.BuildStore(value, cast);
+                var store = _builder.BuildStore(value, cast);
+                store.SetAlignment(8);
 
                 dataPtr = rawMem;
             }
@@ -454,7 +458,8 @@ namespace MyCompiler
                 newValue = _builder.BuildFSub(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "dec_sub");
 
 
-            _builder.BuildStore(newValue, global);
+            var store = _builder.BuildStore(newValue, global);
+            store.SetAlignment(8);
             return newValue;
         }
 
@@ -470,7 +475,8 @@ namespace MyCompiler
             else
                 newValue = _builder.BuildFAdd(value, LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 1.0), "inc_add");
 
-            _builder.BuildStore(newValue, global);
+            var store = _builder.BuildStore(newValue, global);
+            store.SetAlignment(8);
             return newValue;
         }
 
@@ -793,7 +799,8 @@ namespace MyCompiler
                 global = module.GetNamedGlobal(expr.Id);
             }
 
-            _builder.BuildStore(value, global);
+            var store = _builder.BuildStore(value, global);
+            store.SetAlignment(8);
 
             // Assignment returns value
             return value;
@@ -842,7 +849,10 @@ namespace MyCompiler
                 var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
                 var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i32, 1), "range1");
                 var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
-                _builder.BuildStore(res1, resultPtr); // Save result
+
+                var store = _builder.BuildStore(res1, resultPtr);
+                store.SetAlignment(8);
+
                 _builder.BuildBr(mergeBB);
 
                 // "Else" Part (Wrong Order - Swap logic)
@@ -850,7 +860,9 @@ namespace MyCompiler
                 var diff2 = _builder.BuildSub(minVal, maxVal, "diff2");
                 var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i32, 1), "range2");
                 var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
-                _builder.BuildStore(res2, resultPtr); // Save result
+                var store2 = _builder.BuildStore(res1, resultPtr);
+                store2.SetAlignment(8);
+
                 _builder.BuildBr(mergeBB);
 
                 // Merge
@@ -976,7 +988,10 @@ namespace MyCompiler
                 var idx = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int32, (ulong)i);
                 // Ensure we index into an i64 array
                 var elementPtr = _builder.BuildGEP2(LLVMTypeRef.Int64, arrayPtr, new[] { idx }, $"idx_{i}");
-                _builder.BuildStore(boxed, elementPtr);
+
+                var store = _builder.BuildStore(boxed, elementPtr);
+                store.SetAlignment(8);
+
             }
             return arrayPtr;
         }
