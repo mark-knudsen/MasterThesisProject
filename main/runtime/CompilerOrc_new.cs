@@ -272,6 +272,7 @@ namespace MyCompiler
 
                 case ValueTag.Bool:
                     Console.WriteLine("return bool");
+
                     long b = Marshal.ReadByte(result.data);
                     return b != 0;
 
@@ -281,6 +282,7 @@ namespace MyCompiler
 
                 case ValueTag.None:
                     Console.WriteLine("return none");
+
                     return default;
             }
 
@@ -302,9 +304,19 @@ namespace MyCompiler
 
             return elements;
         }
-
         private LLVMValueRef BoxValue(LLVMValueRef value, MyType type)
         {
+            // 1. Get the current context and define types locally for THIS run
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i32 = ctx.Int32Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 2. Local type definitions tied to THIS context (replaces stale class fields)
+            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
+            // Option A: Literal/Anonymous struct (most common for temporary boxing)
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i32, i8Ptr }, false);
+
             int tag = type switch
             {
                 MyType.Int => (Int16)ValueTag.Int,
@@ -315,59 +327,47 @@ namespace MyCompiler
                 _ => (Int16)ValueTag.None
             };
 
-            var ctx = _module.Context;
             LLVMValueRef dataPtr;
 
-            var kind = value.TypeOf.Kind;
+            // 3. Handle data allocation and storage
+            if (type == MyType.String)
+            {
+                dataPtr = value;
+            }
+            else if (type == MyType.None)
+            {
+                // For 'None' (void), we don't need to malloc data, just use a null pointer
+                dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
+            }
 
-            if (kind == LLVMTypeKind.LLVMDoubleTypeKind)
+            else if (type == MyType.Int)
             {
                 var malloc = GetOrDeclareMalloc();
-
-                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
-
-                var rawMem = _builder.BuildCall2(
-                    _mallocType,
-                    malloc,
-                    new[] { size },
-                    "num_mem");
-
-                var cast = _builder.BuildBitCast(
-                    rawMem,
-                    LLVMTypeRef.CreatePointer(LLVMTypeRef.Double, 0),
-                    "num_cast");
-
-                var store = _builder.BuildStore(value, cast);
-                store.SetAlignment(8);
-
+                var size = LLVMValueRef.CreateConstInt(i64, 8);
+                // Use local mallocType instead of _mallocType
+                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { size }, "int_mem");
+                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(i64, 0), "int_cast");
+                _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
             }
-            else if (kind == LLVMTypeKind.LLVMPointerTypeKind)
-            {
-                dataPtr = _builder.BuildBitCast(
-                    value,
-                    LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                    "ptrcast");
-            }
-            else if (kind == LLVMTypeKind.LLVMIntegerTypeKind)
+            else if (type == MyType.Float)
             {
                 var malloc = GetOrDeclareMalloc();
-                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 8);
-                var rawMem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "int_mem");
-                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int64, 0), "int_cast");
-                var store = _builder.BuildStore(value, cast);
-                store.SetAlignment(8);
+                var size = LLVMValueRef.CreateConstInt(i64, 8);
+                // Use local mallocType instead of _mallocType
+                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { size }, "float_mem");
+                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(ctx.DoubleType, 0), "float_cast");
+                _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
             }
-            else if (type == MyType.Bool) // this might have to check with kind, but works 
+            else if (type == MyType.Bool)
             {
                 var malloc = GetOrDeclareMalloc();
-                var size = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 1); // just 1 byte
-                var rawMem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "bool_mem");
-                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int1, 0), "bool_cast");
-                var store = _builder.BuildStore(value, cast);
-                store.SetAlignment(8);
-
+                var size = LLVMValueRef.CreateConstInt(i64, 1);
+                // Use local mallocType instead of _mallocType
+                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { size }, "bool_mem");
+                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(ctx.Int1Type, 0), "bool_cast");
+                _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
             }
             else
@@ -375,38 +375,25 @@ namespace MyCompiler
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
             }
 
-            // allocate RuntimeValue struct on heap
+
+            // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
+
             var mallocReturn = GetOrDeclareMalloc();
-            var sizeReturn = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 16);
+            var sizeReturn = LLVMValueRef.CreateConstInt(i64, 16);
+            var obj = _builder.BuildCall2(mallocType, mallocReturn, new[] { sizeReturn }, "runtime_obj");
 
-            var obj = _builder.BuildCall2(
-                _mallocType,
-                mallocReturn,
-                new[] { sizeReturn },
-                "runtime_obj");
 
-            // store tag
-            var tagPtr = _builder.BuildStructGEP2(
-                _runtimeValueType,
-                obj,
-                0,
-                "tag_ptr");
+            // 5. Store tag and data using the local runtimeValueType
+            var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)tag), tagPtr);
 
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)tag),
-                tagPtr);
 
-            // store data pointer
-            var dataFieldPtr = _builder.BuildStructGEP2(
-                _runtimeValueType,
-                obj,
-                1,
-                "data_ptr");
-
+            var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr);
 
             return obj;
         }
+
 
         private NodeExpr GetLastExpression(NodeExpr expr)
         {
@@ -750,43 +737,133 @@ namespace MyCompiler
 
         public LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr)
         {
+            // 1. Visit sides to get LLVM values
             var lhs = Visit(expr.Left);
             var rhs = Visit(expr.Right);
 
-            bool lhsIsInt = lhs.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind;
-            bool rhsIsInt = rhs.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind;
+            // Get the semantic types (MyType) from the nodes
+            var leftType = expr.Left.Type;
+            var rightType = expr.Right.Type;
 
+            // 2. Handle Strings (Concatenation)
+            // We check MyType because LLVM 'ptr' can be confusing
+            if (expr.Operator == "+" && (leftType == MyType.String || rightType == MyType.String))
+            {
+                // BuildStringConcat handles Int/Float -> String conversion internally
+                return BuildStringConcat(lhs, leftType, rhs, rightType);
+            }
+
+            // 3. Check for numeric types (Int/Float)
+            bool lhsIsInt = leftType == MyType.Int;
+            bool rhsIsInt = rightType == MyType.Int;
+            bool lhsIsFloat = leftType == MyType.Float;
+            bool rhsIsFloat = rightType == MyType.Float;
+
+            // 4. Integer arithmetic
             if (lhsIsInt && rhsIsInt)
             {
-                // Both integers → integer arithmetic
                 return expr.Operator switch
                 {
                     "+" => _builder.BuildAdd(lhs, rhs, "addtmp"),
                     "-" => _builder.BuildSub(lhs, rhs, "subtmp"),
                     "*" => _builder.BuildMul(lhs, rhs, "multmp"),
-                    "/" => _builder.BuildSDiv(lhs, rhs, "divtmp"), // signed div
-                    _ => throw new InvalidOperationException($"Unsupported operator {expr.Operator}")
+                    "/" => _builder.BuildSDiv(lhs, rhs, "divtmp"),
+                    _ => throw new InvalidOperationException($"Unsupported operator {expr.Operator} for Int")
                 };
             }
-            else
+
+            // 5. Mixed or Floating-point arithmetic
+            if ((lhsIsInt || lhsIsFloat) && (rhsIsInt || rhsIsFloat))
             {
-                // Promote any int operand to double
+                // Promote lhs to double if it's currently an int
                 if (lhsIsInt)
                     lhs = _builder.BuildSIToFP(lhs, LLVMTypeRef.Double, "int2double");
+
+                // Promote rhs to double if it's currently an int
                 if (rhsIsInt)
                     rhs = _builder.BuildSIToFP(rhs, LLVMTypeRef.Double, "int2double");
 
-                // Floating point arithmetic
                 return expr.Operator switch
                 {
                     "+" => _builder.BuildFAdd(lhs, rhs, "faddtmp"),
                     "-" => _builder.BuildFSub(lhs, rhs, "fsubtmp"),
                     "*" => _builder.BuildFMul(lhs, rhs, "fmultmp"),
                     "/" => _builder.BuildFDiv(lhs, rhs, "fdivtmp"),
-                    _ => throw new InvalidOperationException($"Unsupported operator {expr.Operator}")
+                    _ => throw new InvalidOperationException($"Unsupported operator {expr.Operator} for Float")
                 };
             }
+
+            throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
         }
+
+        private (LLVMTypeRef Type, LLVMValueRef Func) GetMalloc()
+        {
+            // Look for it in the CURRENT module
+            var existing = _module.GetNamedFunction("malloc");
+
+            // Define the type: i8* malloc(i64)
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { LLVMTypeRef.Int64 }, false);
+
+            if (existing.Handle != IntPtr.Zero)
+                return (mallocType, existing);
+
+            return (mallocType, _module.AddFunction("malloc", mallocType));
+        }
+        private LLVMValueRef GetSprintf()
+        {
+            var fn = _module.GetNamedFunction("sprintf");
+            if (fn.Handle != IntPtr.Zero) return fn;
+            return _module.AddFunction("sprintf", LLVMTypeRef.CreateFunction(
+                _module.Context.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0) },
+                true));
+        }
+
+
+
+        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
+        {
+            var ctx = _module.Context;
+            var malloc = GetMalloc();
+            var sprintf = GetSprintf();
+            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 1. Helper to ensure we have an i8* for sprintf
+            LLVMValueRef PrepareArg(LLVMValueRef val, MyType type)
+            {
+                if (type == MyType.String) return val;
+
+                // Allocate buffer for number conversion
+                var buf = _builder.BuildCall2(malloc.Type, malloc.Func, new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 32) }, "num_buf");
+                var fmtStr = type == MyType.Int ? "%ld" : "%g";
+                var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "fmt_num");
+
+                // sprintf(buf, fmt, val)
+                // We must use a variadic signature: i32 (i8*, i8*, ...)
+                var sprintfType = LLVMTypeRef.CreateFunction(ctx.Int32Type, new[] { ptrType, ptrType }, true);
+                _builder.BuildCall2(sprintfType, sprintf, new[] { buf, fmtPtr, val }, "sprintf_num");
+                return buf;
+            }
+
+            var arg1 = PrepareArg(lhs, lhsType);
+            var arg2 = PrepareArg(rhs, rhsType);
+
+            // 2. Allocate buffer for final result (256 bytes is a bit risky but okay for REPL)
+            var concatBuf = _builder.BuildCall2(malloc.Type, malloc.Func, new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 512) }, "concat_buf");
+
+            // 3. Perform final Concatenation: sprintf(concatBuf, "%s%s", arg1, arg2)
+            var fmtConcat = _builder.BuildGlobalStringPtr("%s%s", "fmt_concat");
+
+            // Define correct variadic type: Result is i32, Args are (dest, format, ...)
+            var varArgSprintfType = LLVMTypeRef.CreateFunction(ctx.Int32Type, new[] { ptrType, ptrType }, true);
+
+            _builder.BuildCall2(varArgSprintfType, sprintf, new[] { concatBuf, fmtConcat, arg1, arg2 }, "sprintf_result");
+
+            return concatBuf;
+        }
+
+
 
         public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
         {

@@ -97,12 +97,15 @@ namespace MyCompiler
                     expr.SetType(resultType);
                     return resultType;
                 }
-
-                // 2. Handle String Concatenation
-                if (leftType == MyType.String && rightType == MyType.String)
+                // 2. Handle String Concatenation (Updated to allow Mixed Types)
+                if (expr.Operator == "+")
                 {
-                    expr.SetType(MyType.String);
-                    return MyType.String;
+                    // If either side is a string, the result is a string
+                    if (leftType == MyType.String || rightType == MyType.String)
+                    {
+                        expr.SetType(MyType.String);
+                        return MyType.String;
+                    }
                 }
 
                 throw new Exception($"Invalid operands {leftType} and {rightType} for +");
