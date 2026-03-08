@@ -14,7 +14,7 @@ namespace MyCompiler
 {
     public struct RuntimeValue
     {
-        public int tag; // should this be changed to Int64?
+        public Int16 tag;
         public IntPtr data;
     }
 
@@ -96,7 +96,7 @@ namespace MyCompiler
         private void DeclareValueStruct()
         {
             var ctx = _module.Context;
-            var tagType = ctx.Int32Type; // Tag type
+            var tagType = ctx.Int16Type; // Tag type
             var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // Pointer to data
 
             // Define the value struct: tag + pointer to the data (value)
@@ -112,6 +112,12 @@ namespace MyCompiler
                 true); // varargs
 
             _printf = _module.AddFunction("printf", _printfType);
+        }
+
+        private void DeclareBoolStrings()
+        {
+            _trueStr = _builder.BuildGlobalStringPtr("true\n", "true_str");
+            _falseStr = _builder.BuildGlobalStringPtr("false\n", "false_str");
         }
 
         private LLVMValueRef CreateFormatString(string format)
@@ -149,6 +155,7 @@ namespace MyCompiler
             Console.WriteLine(llvmIR);
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
+
         private MyType PerformSemanticAnalysis(NodeExpr expr)
         {
             var checker = new TypeChecker(_context);
@@ -157,7 +164,10 @@ namespace MyCompiler
 
             _lastNode = GetLastExpression(expr);
 
-            return _lastNode is ExpressionNodeExpr exp ? exp.Type : MyType.None;
+            if (_lastNode == null) return MyType.None;
+            if (_lastNode is ExpressionNodeExpr exp) return exp.Type;
+
+            return MyType.None;
         }
 
 
@@ -205,6 +215,8 @@ namespace MyCompiler
         public object Run(NodeExpr expr, bool generateIR = false)
         {
             // 1. Semantic analysis
+            // we set the return type to the last nodes type, but if we do a print then it doesn't matter what the last nodes type is
+            // we don't want to return a type if we call print
             var prediction = PerformSemanticAnalysis(expr);
 
             CreateMain();
@@ -215,10 +227,8 @@ namespace MyCompiler
             Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             Console.WriteLine("LANG TYPE: " + prediction);
 
-            // var boxed = BoxValue(resultValue, prediction);
-            var boxedPtr = BoxValue(resultValue, prediction);
+            var boxedPtr = BoxValue(resultValue, prediction); // don't we just need one of them?
             _builder.BuildRet(boxedPtr);
-
 
             DumpIR(_module);
 
@@ -249,30 +259,29 @@ namespace MyCompiler
             switch ((ValueTag)result.tag)
             {
                 case ValueTag.Int:
-                System.Console.WriteLine("return int");
+                    Console.WriteLine("return int");
                     return Marshal.ReadInt64(result.data);
 
                 case ValueTag.Float:
-                System.Console.WriteLine("return float");
+                    Console.WriteLine("return float");
                     return Marshal.PtrToStructure<double>(result.data);
 
                 case ValueTag.String:
-                System.Console.WriteLine("return string");
+                    Console.WriteLine("return string");
                     return Marshal.PtrToStringAnsi(result.data);
 
                 case ValueTag.Bool:
-                System.Console.WriteLine("return bool");
+                    Console.WriteLine("return bool");
                     long b = Marshal.ReadByte(result.data);
                     return b != 0;
 
                 case ValueTag.Array:
-                System.Console.WriteLine("return array");
+                    Console.WriteLine("return array");
                     return HandleArray(result.data);
 
                 case ValueTag.None:
-                System.Console.WriteLine("return none");
+                    Console.WriteLine("return none");
                     return default;
-
             }
 
             return result;
@@ -298,12 +307,12 @@ namespace MyCompiler
         {
             int tag = type switch
             {
-                MyType.Int => (int)ValueTag.Int,
-                MyType.Float => (int)ValueTag.Float,
-                MyType.Bool => (int)ValueTag.Bool,
-                MyType.String => (int)ValueTag.String,
-                MyType.Array => (int)ValueTag.Array,
-                _ => (int)ValueTag.None
+                MyType.Int => (Int16)ValueTag.Int,
+                MyType.Float => (Int16)ValueTag.Float,
+                MyType.Bool => (Int16)ValueTag.Bool,
+                MyType.String => (Int16)ValueTag.String,
+                MyType.Array => (Int16)ValueTag.Array,
+                _ => (Int16)ValueTag.None
             };
 
             var ctx = _module.Context;
@@ -366,7 +375,6 @@ namespace MyCompiler
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
             }
 
-
             // allocate RuntimeValue struct on heap
             var mallocReturn = GetOrDeclareMalloc();
             var sizeReturn = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 16);
@@ -385,7 +393,7 @@ namespace MyCompiler
                 "tag_ptr");
 
             _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)tag),
+                LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)tag),
                 tagPtr);
 
             // store data pointer
@@ -404,13 +412,32 @@ namespace MyCompiler
         {
             if (expr is SequenceNodeExpr seq)
             {
-                var last = seq.Statements.LastOrDefault();
-                // If the sequence is empty, return the sequence itself; 
-                // otherwise, recurse into the last statement.
-                return last != null ? GetLastExpression(last) : expr;
+                // iterate from last to first
+                for (int i = seq.Statements.Count - 1; i >= 0; i--)
+                {
+                    var last = seq.Statements[i];
+
+                    // Only consider actual value expressions, skip statements like print
+                    if (last is ExpressionNodeExpr && !(last is PrintNodeExpr))
+                        return last;
+
+                    // If last is a sequence itself, recurse
+                    if (last is SequenceNodeExpr nestedSeq)
+                    {
+                        var nestedLast = GetLastExpression(nestedSeq);
+                        if (nestedLast != null) return nestedLast;
+                    }
+                }
+
+                // No expression found
+                return null;
             }
 
-            return expr;
+            // Single expression node
+            if (expr is ExpressionNodeExpr && !(expr is PrintNodeExpr))
+                return expr;
+
+            return null;
         }
 
         public LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr)
@@ -899,95 +926,76 @@ namespace MyCompiler
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
-            //var printf = GetPrintf(); // Use your helper // declare i32 thing
+
+            System.Console.WriteLine("prints type: " + expr.Expression.Type);
+            System.Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
+
+            LLVMValueRef finalArg;
+            LLVMValueRef formatStr;
             var llvmCtx = _module.Context;
             var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
 
-            LLVMValueRef formatStr;
-            LLVMValueRef finalArg = valueToPrint;
-
-            // 1. STRINGS
-            if (expr.Expression.Type == MyType.String)
+            switch (expr.Expression.Type)
             {
-                // If it's stored as a Double (smuggled), we must extract the pointer
-                if (valueToPrint.TypeOf == LLVMTypeRef.Double)
-                {
-                    var asInt64 = _builder.BuildBitCast(valueToPrint, llvmCtx.Int64Type, "print_smuggle_cast");
-                    finalArg = _builder.BuildIntToPtr(asInt64, i8Ptr, "print_ptr_cast");
-                }
-                // If it's already a pointer (global string literal)
-                else if (valueToPrint.TypeOf.Kind != LLVMTypeKind.LLVMPointerTypeKind)
-                {
-                    finalArg = _builder.BuildIntToPtr(valueToPrint, i8Ptr, "print_ptr_cast");
-                }
+                case MyType.Int:
+                    finalArg = valueToPrint; // keep as i64
+                    formatStr = _builder.BuildGlobalStringPtr("%ld\n", "fmt_int"); // long format
+                    break;
 
-                formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
-            }
-            else if (expr.Expression.Type == MyType.Bool)
-            {
-                LLVMValueRef boolCond;
+                case MyType.Float:
+                    finalArg = valueToPrint; // already double
+                    formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
+                    break;
 
-                // If your bool is stored as double (0.0 or 1.0)
-                if (valueToPrint.TypeOf == LLVMTypeRef.Double)
-                {
-                    var zero = LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0.0);
-                    boolCond = _builder.BuildFCmp(
-                        LLVMRealPredicate.LLVMRealONE,
-                        valueToPrint,
-                        zero,
-                        "boolcond");
-                }
-                // If stored as integer
-                else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind &&
-                         valueToPrint.TypeOf.IntWidth > 1)
-                {
-                    var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
-                    boolCond = _builder.BuildICmp(
-                        LLVMIntPredicate.LLVMIntNE,
-                        valueToPrint,
-                        zero,
-                        "boolcond");
-                }
-                else
-                {
-                    // already i1
-                    boolCond = valueToPrint;
-                }
+                case MyType.Bool:
+                    LLVMValueRef boolCond;
+                    DeclareBoolStrings();
 
-                var selectedStr = _builder.BuildSelect(
-                    boolCond,
-                    _trueStr,
-                    _falseStr,
-                    "boolstr");
+                    if (valueToPrint.TypeOf == LLVMTypeRef.Double)
+                    {
+                        var zero = LLVMValueRef.CreateConstReal(LLVMTypeRef.Double, 0.0);
+                        boolCond = _builder.BuildFCmp(
+                            LLVMRealPredicate.LLVMRealONE,
+                            valueToPrint,
+                            zero,
+                            "boolcond");
+                    }
+                    else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                    {
+                        var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
+                        boolCond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, valueToPrint, zero, "boolcond");
+                    }
+                    else
+                    {
+                        boolCond = valueToPrint; // already i1
+                    }
+                    System.Console.WriteLine("hi");
 
-                // Use the exact signature of printf: (ptr, ...) -> i32
-                var printfType2 = LLVMTypeRef.CreateFunction(
-                    llvmCtx.Int32Type,
-                    new[] { i8Ptr },
-                    true);
+                    var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
 
-                return _builder.BuildCall2(
-                    printfType2,
-                    _printf,
-                    new[] { selectedStr },
-                    "print_bool");
-            }
-            // 2. NUMBERS
-            else
-            {
-                // Printf %f expects a Double. If it's an i32 or i64, convert it.
-                if (valueToPrint.TypeOf != LLVMTypeRef.Double)
-                {
-                    finalArg = _builder.BuildSIToFP(valueToPrint, LLVMTypeRef.Double, "print_to_dbl");
-                }
-                formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
+                    var printfTypeBool = LLVMTypeRef.CreateFunction(
+                        llvmCtx.Int32Type,
+                        new[] { i8Ptr },
+                        true);
+
+                    return _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
+
+                case MyType.String:
+                    // valueToPrint should already be a pointer to i8
+                    finalArg = valueToPrint;
+                    formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
+                    break;
+
+                default:
+                    throw new Exception("Unsupported type for printing");
             }
 
-            // Use the exact signature of printf: (ptr, ...) -> i32
+            // printf signature: (ptr, ...) -> i32
             var printfType = LLVMTypeRef.CreateFunction(
                 llvmCtx.Int32Type,
                 new[] { i8Ptr },
-                true);
+                true
+            );
 
             return _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
         }
@@ -1067,6 +1075,7 @@ namespace MyCompiler
 
         private LLVMValueRef Visit(NodeExpr expr)
         {
+            System.Console.WriteLine("visiting: " + expr);
             return expr.Accept(this);
         }
     }

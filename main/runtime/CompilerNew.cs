@@ -70,6 +70,7 @@ namespace MyCompiler
 
         private void DeclareBoolStrings()
         {
+            if(_trueStr != null && _falseStr != null) return;
             _trueStr = _builder.BuildGlobalStringPtr("true\n", "true_str");
             _falseStr = _builder.BuildGlobalStringPtr("false\n", "false_str");
         }

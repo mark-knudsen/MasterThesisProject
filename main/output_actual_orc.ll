@@ -1,17 +1,18 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@str = private unnamed_addr constant [3 x i8] c"df\00", align 1
-@x = global ptr null
+@x = external global i64
 
-define ptr @main_0() {
+define ptr @main_7() {
 entry:
-  store ptr @str, ptr @x, align 8
+  %x = load i64, ptr @x, align 4
+  %int_mem = call ptr @malloc(i64 8)
+  store i64 %x, ptr %int_mem, align 8
   %runtime_obj = call ptr @malloc(i64 16)
-  %tag_ptr = getelementptr inbounds nuw { i32, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i32 0, ptr %tag_ptr, align 4
-  %data_ptr = getelementptr inbounds nuw { i32, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr @str, ptr %data_ptr, align 8
+  %tag_ptr = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_obj, i32 0, i32 0
+  store i16 1, ptr %tag_ptr, align 2
+  %data_ptr = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_obj, i32 0, i32 1
+  store ptr %int_mem, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
 
