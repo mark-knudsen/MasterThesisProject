@@ -21,7 +21,7 @@ namespace MyCompiler
         LLVMValueRef VisitIfExpr(IfNodeExpr expr);
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
-        // LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
+        LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 
 

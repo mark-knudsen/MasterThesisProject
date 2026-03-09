@@ -201,27 +201,18 @@ namespace MyCompiler
             return type;
         }
 
+
         public MyType VisitAssign(AssignNodeExpr expr)
         {
-            var valueType = Visit(expr.Expression);
-            MyType? elementType = null;
+            MyType valType = Check(expr.Expression);
+            MyType? elemType = (expr.Expression is ArrayNodeExpr arr) ? arr.ElementType : null;
 
-            // 1. Determine element type if it's an array
-            if (expr.Expression is ArrayNodeExpr ae && ae.Elements.Count > 0)
-            {
-                elementType = Visit(ae.Elements[0]);
-            }
-
-            // 2. Update the context
-            // We pass expr.Id as the name, default as the LLVM value (since we are in TypeChecker),
-            // and the valueType we just discovered.
-            _context = _context.Add(expr.Id, default!, valueType, elementType);
-
-            // 3. IMPORTANT: Set the type on the assignment node itself
-            expr.SetType(valueType);
-
-            return valueType;
+            // Use 'default' for LLVMValueRef to avoid CS0246
+            _context = _context.Add(expr.Id, default, valType, elemType);
+            return valType;
         }
+
+
 
         public MyType VisitRandom(RandomNodeExpr expr)
         {
@@ -315,10 +306,9 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public MyType VisitArray(ArrayNodeExpr expr)
         {
-            foreach (var element in expr.Elements)
-            {
-                Visit(element); // Check types of all elements
-            }
+            if (expr.Elements.Count > 0)
+                expr.ElementType = Check(expr.Elements[0]);
+
             expr.SetType(MyType.Array);
             return MyType.Array;
         }
@@ -327,18 +317,23 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public MyType VisitIndex(IndexNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
-            if (expr.ArrayExpression is IdNodeExpr id)
+            Check(expr.ArrayExpression); // Ensure target is valid
+
+            if (expr.ArrayExpression is IdNodeExpr idNode)
             {
-                var entry = _context.Get(id.Name);
-                // If the array was created with mixed types, this is where you decide
-                // how to handle it. For now, let's trust the ElementType we saved.
-                var t = entry?.ElementType ?? MyType.Float;
-                expr.SetType(t);
-                return t;
+                var entry = _context.Get(idNode.Name);
+                if (entry != null && entry.Type == MyType.Array)
+                {
+                    var inferred = entry.ElementType ?? MyType.Float;
+                    expr.SetType(inferred);
+                    return inferred;
+                }
             }
+            expr.SetType(MyType.Float);
             return MyType.Float;
         }
+
+
 
         public MyType VisitFunctionDef(FunctionDefNode node)
         {

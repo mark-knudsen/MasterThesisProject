@@ -27,6 +27,13 @@ namespace MyCompiler
         Array = 5,
         None = 0
     }
+
+    public class SymbolInfo
+    {
+        public MyType Type { get; set; }
+        public MyType? ElementType { get; set; } // Only used if Type == Array
+    }
+
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
         private LLVMModuleRef _module;
@@ -1020,54 +1027,95 @@ namespace MyCompiler
             return _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
         }
 
+
+
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
         {
+            var ctx = _module.Context;
             uint count = (uint)expr.Elements.Count;
-            var size = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, count * 8);
+
+            // Allocate space for elements + 1 extra slot for the length header
+            var size = LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)(count + 1) * 8);
 
             var mallocFunc = GetOrDeclareMalloc();
-
-            // CRITICAL FIX: Pass _mallocType directly, NOT mallocFunc.TypeOf
             var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { size }, "arr_ptr");
 
+            // --- Store Length Header at Index 0 ---
+            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+            var lengthPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)count), lengthPtr);
+
+            // --- Store Elements starting at Index 1 ---
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var boxed = BoxToI64(val);
 
-                var idx = LLVMValueRef.CreateConstInt(_module.Context.Int32Type, (ulong)i);
-                // Ensure we index into an i64 array
-                var elementPtr = _builder.BuildGEP2(_module.Context.Int64Type, arrayPtr, new[] { idx }, $"idx_{i}");
+                // offset by 1 because index 0 is the length
+                var idx = LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)(i + 1));
+                var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { idx }, $"idx_{i}");
 
-                var store = _builder.BuildStore(boxed, elementPtr);
-                store.SetAlignment(8);
-
+                _builder.BuildStore(boxed, elementPtr).SetAlignment(8);
             }
+
+            expr.SetType(MyType.Array);
             return arrayPtr;
         }
 
-        LLVMTypeRef GetLLVMType(MyType type)
+        public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
         {
-            // Always fetch the context owned by the current module
             var ctx = _module.Context;
+            var arrayPtr = Visit(expr.ArrayExpression);
+            var indexVal = Visit(expr.IndexExpression);
 
+            // 1. Ensure Index is i64
+            if (indexVal.TypeOf == ctx.DoubleType)
+                indexVal = _builder.BuildFPToSI(indexVal, ctx.Int64Type, "idx_int");
+
+            // 2. Adjust for Header: Actual index in memory is UserIndex + 1
+            var one = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
+            var actualIdx = _builder.BuildAdd(indexVal, one, "offset_idx");
+
+            // 3. GEP2 and Load
+            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { actualIdx }, "elem_ptr");
+            var rawValue = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "raw_val");
+            rawValue.SetAlignment(8);
+
+            // 4. Transform based on Type Inference
+            return expr.Type switch
+            {
+                MyType.String => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
+                MyType.Float => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
+                _ => rawValue
+            };
+        }
+
+
+
+        private LLVMTypeRef GetLLVMType(MyType type)
+        {
             return type switch
             {
-                MyType.Int => ctx.Int64Type,
-                MyType.Float => ctx.DoubleType,
-                MyType.Bool => ctx.Int1Type,
-                MyType.String => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
+                MyType.Float => _module.Context.DoubleType,
+                MyType.Int => _module.Context.Int64Type,
+                MyType.String => LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
+                MyType.Array => LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), // Arrays are pointers
+                MyType.Bool => _module.Context.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}")
             };
         }
 
 
+
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
-            var varType = _context.Get(expr.Name).Type; // returns MyType
-            Console.WriteLine($"visiting variable: {expr.Name}");
+            var entry = _context.Get(expr.Name);
+            if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
 
-            // 1 Lookup symbol by name
+            var varType = entry.Type;
+            Console.WriteLine($"visiting variable: {expr.Name} (Type: {varType})");
+
+            // Get the LLVM representation of the type (e.g., double, i64, or ptr)
             var llvm_type = GetLLVMType(varType);
 
             var module = _module;
@@ -1075,15 +1123,15 @@ namespace MyCompiler
 
             if (global.Handle == IntPtr.Zero)
             {
-                // Not defined in this module → declare external
+                // Declare external if not in current module
                 global = module.AddGlobal(llvm_type, expr.Name);
                 global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
-            System.Console.WriteLine("global: " + global);
-            // 2 Load value
-            return _builder.BuildLoad2(llvm_type, global, expr.Name);
+            // Use the explicit llvm_type for the Load2 instruction
+            return _builder.BuildLoad2(llvm_type, global, expr.Name + "_load");
         }
+
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
         {
