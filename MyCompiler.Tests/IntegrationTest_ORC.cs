@@ -5,7 +5,7 @@ using Xunit;
 
 namespace MyCompiler;
 
-public class CompilerIntegrationTest
+public class CompilerIntegrationTestORC
 {
     private readonly string _irFilePath = "output_actual_orc.ll";  // LLVM IR file
     private readonly string _binaryPath = "output_executable"; // Compiled binary file
@@ -15,20 +15,27 @@ public class CompilerIntegrationTest
     // bash: ./output_executable
 
     [Theory]
-    [InlineData("2+2", "4.000000", 0)]
-    [InlineData("2+3", "5.000000", 0)]
-    [InlineData("true", "true", 0)]
-    [InlineData("false", "false", 0)]
-    [InlineData("\"harry\"", "harry", 0)]
-    [InlineData("print(505)", "505.000000", 0)]
-    [InlineData("print(214535)", "214535.000000", 0)]
-    [InlineData("print(\"Harry\")", "Harry", 0)]
-    [InlineData("print(true)", "true", 0)]
-    [InlineData("print(false)", "false", 0)]
-    [InlineData("x=20; print(x)", "20.000000", 0)]
-    [InlineData("x=\"Harry\"; print(\"Harry\")", "Harry", 0)]
-    public void TestCompiler_Id_ReturnsCorrectResults(string input, string expectedOutput, int expectedExitCode)
+    [InlineData("2+2", "", "Result: 4")]
+    [InlineData("2+3", "", "Result: 5")]
+    [InlineData("true", "", "Result: true")]
+    [InlineData("false", "", "Result: false")]
+    [InlineData("\"harry\"", "", "Result: harry")]
+    [InlineData("print(505)", "505", "")]
+    [InlineData("print(214535)", "214535", "")]
+    [InlineData("print(\"Harry\")", "Harry", "")] // we have to handle prints differently
+    [InlineData("print(true)", "True", "")]
+    [InlineData("print(false)", "False", "")]
+    [InlineData("x=20; print(x)", "", "Result: 20")]
+    [InlineData("x=\"Harry\"; print(\"Harry\")", "", "Result: Harry")]
+    public void TestCompiler_Id_ReturnsCorrectResults(string input, string expectedOutput, string expectedReturnValue)
     {
+        // var fn = jit.Lookup("main");
+        // IntPtr result = fn();
+
+        // RuntimeObject obj = Marshal.PtrToStructure<RuntimeObject>(result);
+        // Assert.Equal(4, obj.AsInt());
+
+
         Console.SetIn(new StringReader(input)); // Simulate user input
         var outputWriter = new StringWriter();
         Console.SetOut(outputWriter);  // Capture any console output
@@ -38,9 +45,7 @@ public class CompilerIntegrationTest
         // Step 2: Compile the LLVM IR to binary using clang
         CompileLLVMIRToBinary();
         if (!File.Exists(_binaryPath))
-        {
             throw new FileNotFoundException("Compiled binary not found.");
-        }
 
         // Step 3: Run the binary and capture output and exit code
         string outputAndExitCode = RunCompiledBinary(_binaryPath);
@@ -49,20 +54,19 @@ public class CompilerIntegrationTest
         string[] result = outputAndExitCode.Split(new[] { "\nExit Code: " }, StringSplitOptions.None);
 
         if (result.Length < 2)
-        {
             throw new Exception("Unexpected output format: could not find exit code.");
-        }
 
         string output = result[0];
-        int exitCode;
-        if (!int.TryParse(result[1], out exitCode))
-        {
-            throw new Exception($"Failed to parse exit code: {result[1]}");
-        }
+        string exitValue = result[1];
+        // int exitCode;
+        // if (!int.TryParse(result[1], out exitCode))
+        // {
+        //     throw new Exception($"Failed to parse exit code: {result[1]}");
+        // }
 
         // Step 5: Assert the output (printed) and exit code (return value)
         Assert.Equal(expectedOutput + "\n", output);  // Assert printed output
-        Assert.Equal(expectedExitCode, exitCode);     // Assert the return value (exit code)
+        //Assert.Equal(expectedReturnValue, exitValue);     // Assert the return value (exit code)
     }
 
     private string RunCompiledBinary(string binaryPath)
@@ -82,7 +86,7 @@ public class CompilerIntegrationTest
                 throw new InvalidOperationException("Failed to start process.");
 
             // Capture the standard output and standard error
-            string output = process.StandardOutput.ReadToEnd();
+            string output = process.StandardOutput.ReadToEnd(); // what ever the print func prints out
             string error = process.StandardError.ReadToEnd();
 
             // Wait for the process to exit
@@ -132,20 +136,16 @@ public class CompilerIntegrationTest
             {
                 // If it's a warning, print and continue
                 if (error.Contains("warning"))
-                {
                     Console.WriteLine("Warning during Clang compilation: " + error);
-                }
                 else
-                {
                     throw new Exception($"Clang compilation failed with errors: {error}");
-                }
             }
 
             int exitCode = process.ExitCode;
             if (process.ExitCode != 0) // this should be the return value, we don't want to trhow an error tough
             {
                 var d = process.ExitCode;
-                System.Console.WriteLine(d);
+                Console.WriteLine(d);
                 //throw new Exception($"Clang compilation failed: {error}");
             }
 

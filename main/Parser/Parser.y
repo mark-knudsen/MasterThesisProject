@@ -125,8 +125,15 @@ expr
     | expr GT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, ">", $3 as ExpressionNodeExpr); }    
     | expr LT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<", $3 as ExpressionNodeExpr); }
 
-    | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); }
-
+    | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); } /*[1,2,3] */
+    | ID LBRACKET expr RBRACKET 
+    { 
+        // Cast $1 to string so the IdNodeExpr constructor accepts it
+        string idName = (string)$1;
+        var idExpr = new IdNodeExpr(idName); 
+        
+        $$ = new IndexNodeExpr(idExpr, $3 as ExpressionNodeExpr); 
+    }
     | LPAREN expr RPAREN  { $$ = $2; }
     ;
 
