@@ -291,17 +291,20 @@ namespace MyCompiler
 
     public class ArrayNodeExpr : ExpressionNodeExpr
     {
-        public List<ExpressionNodeExpr> Elements { get; } = new List<ExpressionNodeExpr>();
-        public int Length => Elements.Count;
+        public List<ExpressionNodeExpr> Elements { get; }
+        // Add this to store what's inside the array
+        public MyType? ElementType { get; set; }
 
         public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
         {
             Elements = elements;
             Type = MyType.Array;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
 
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
+        
     }
+
     public class IndexNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr ArrayExpression { get; }
@@ -311,13 +314,11 @@ namespace MyCompiler
         {
             ArrayExpression = arrayExpr;
             IndexExpression = indexExpr;
-
-            // Defaulting to Float/Int for now. 
-            // In a more complex compiler, you'd look up the array's subtype.
-            Type = MyType.Float;
+            Type = MyType.Float; // Initial default
         }
 
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+        // Fix: Remove the throw and call the visitor
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
+
 }
