@@ -171,7 +171,7 @@ namespace MyCompiler
         // Problems
 
         // TODO: fix the problems
-            
+
         // FUNCTIONALITY
         // can't do the command: "harry"
         // can get a result back with: do c=2; c++; c. 
@@ -215,7 +215,7 @@ namespace MyCompiler
             _builder = builder;
         }
 
-        private void AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
+        private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
         {
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
@@ -265,13 +265,22 @@ namespace MyCompiler
                         true);
 
                     // Call printf for boolean
-                    _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
-                    return;
+                    return _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
+
 
                 case MyType.String:
                     // valueToPrint should already be a pointer to i8
                     finalArg = valueToPrint;
                     formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
+                    break;
+
+                case MyType.Array:
+                    // Arrays are stored as i8* with a length header (i64) at index 0.
+                    // Print a simple representation (length) to avoid treating the raw bytes as a C-string.
+                    var arrPtr = _builder.BuildBitCast(valueToPrint, LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0), "arr_len_ptr");
+                    var arrLen = _builder.BuildLoad2(llvmCtx.Int64Type, arrPtr, "arr_len");
+                    finalArg = arrLen;
+                    formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
                     break;
 
                 default:
@@ -286,7 +295,7 @@ namespace MyCompiler
             );
 
             // Print the value
-            _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
+            return _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
         }
 
         public object Run(NodeExpr expr, bool debug = false)
@@ -361,18 +370,31 @@ namespace MyCompiler
 
         private object HandleArray(IntPtr dataPtr)
         {
-            // Assuming you know the number of elements, or retrieve it somehow
-            int elementCount = 3;  // Replace with actual logic for determining array size
-            List<double> elements = new List<double>();
+            // The array is stored as:
+            // [0] = length (i64)
+            // [1..length] = element values (boxed as i64)
+            if (dataPtr == IntPtr.Zero)
+                return Array.Empty<long>();
 
-            for (int i = 0; i < elementCount; i++)
+            long length = Marshal.ReadInt64(dataPtr);
+            var elements = new List<long>((int)length);
+
+            for (long i = 0; i < length; i++)
             {
-                IntPtr elementPtr = new IntPtr(dataPtr.ToInt64() + i * 8);  // 8 bytes for double
-                double element = Marshal.PtrToStructure<double>(elementPtr);
-                elements.Add(element);
+                // Element offset = (i + 1) * 8 bytes (skip the length header)
+                var elementPtr = IntPtr.Add(dataPtr, (int)((i + 1) * 8));
+                long rawValue = Marshal.ReadInt64(elementPtr);
+                elements.Add(rawValue);
             }
+            // Need to fix strings! Currently it gains pointer to the string...
 
-            return elements;
+            string arrtext = "[";
+            foreach (var el in elements)
+            {
+                arrtext += el + ", ";
+            }
+            arrtext = arrtext.TrimEnd(',', ' ') + "]";
+            return arrtext;
         }
 
         private LLVMValueRef BoxValue(LLVMValueRef value, MyType type)
@@ -440,6 +462,12 @@ namespace MyCompiler
                 var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(ctx.Int1Type, 0), "bool_cast");
                 _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
+            }
+            else if (type == MyType.Array)
+            {
+                // Arrays are represented as an i8* pointer (with a length header at index 0).
+                // We can box it the same way as strings.
+                dataPtr = value;
             }
             else
             {
@@ -909,6 +937,7 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
 
+
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
             Console.WriteLine($"visiting assignment: {expr.Id}");
@@ -949,7 +978,8 @@ namespace MyCompiler
                 }
             }
 
-            _builder.BuildStore(value, global).SetAlignment(8);
+            var store = _builder.BuildStore(value, global);
+            store.SetAlignment(8);
 
             return value;
         }
@@ -1026,73 +1056,7 @@ namespace MyCompiler
             Console.WriteLine("prints type: " + expr.Expression.Type);
             Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
 
-            LLVMValueRef finalArg;
-            LLVMValueRef formatStr;
-            var llvmCtx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
-
-            switch (expr.Expression.Type)
-            {
-                case MyType.Int:
-                    finalArg = valueToPrint; // keep as i64
-                    formatStr = _builder.BuildGlobalStringPtr("%ld\n", "fmt_int"); // long format
-                    break;
-
-                case MyType.Float:
-                    finalArg = valueToPrint; // already double
-                    formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
-                    break;
-
-                case MyType.Bool:
-                    LLVMValueRef boolCond;
-                    DeclareBoolStrings();
-
-                    if (valueToPrint.TypeOf == _module.Context.DoubleType)
-                    {
-                        var zero = LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0.0);
-                        boolCond = _builder.BuildFCmp(
-                            LLVMRealPredicate.LLVMRealONE,
-                            valueToPrint,
-                            zero,
-                            "boolcond");
-                    }
-                    else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                    {
-                        var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
-                        boolCond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, valueToPrint, zero, "boolcond");
-                    }
-                    else
-                    {
-                        boolCond = valueToPrint; // already i1
-                    }
-
-                    var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
-
-                    var printfTypeBool = LLVMTypeRef.CreateFunction(
-                        llvmCtx.Int32Type,
-                        new[] { i8Ptr },
-                        true);
-
-                    return _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
-
-                case MyType.String:
-                    // valueToPrint should already be a pointer to i8
-                    finalArg = valueToPrint;
-                    formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
-                    break;
-
-                default:
-                    throw new Exception("Unsupported type for printing");
-            }
-
-            // printf signature: (ptr, ...) -> i32
-            var printfType = LLVMTypeRef.CreateFunction(
-                llvmCtx.Int32Type,
-                new[] { i8Ptr },
-                true
-            );
-
-            return _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
+            return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
 
@@ -1158,6 +1122,7 @@ namespace MyCompiler
             };
         }
 
+
         private LLVMTypeRef GetLLVMType(MyType type)
         {
             var ctx = _module.Context;
@@ -1185,12 +1150,19 @@ namespace MyCompiler
             if (llvmType.Equals(_module.Context.Int1Type)) // boolean type
                 return MyType.Bool;
 
-            if (llvmType.Equals(_module.Context.Int8Type)) // string pointer, but we also have array pointers
+            // LLVM uses i8* for both C-strings and our array representation.
+            // Use this mapping mainly for string literal cases; array cases should be handled
+            // based on semantic types instead of relying on LLVM type introspection.
+            if (llvmType.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
+                llvmType.ElementType.Equals(_module.Context.Int8Type))
+            {
                 return MyType.String;
+            }
 
             // Add more cases as needed...
 
-            throw new Exception($"Unsupported LLVM type: {llvmType}"); // this fails for command: "harry"
+            // Default to None to avoid throwing for pointer/complex types we don't handle.
+            return MyType.None;
         }
 
 
@@ -1229,7 +1201,14 @@ namespace MyCompiler
                 last = Visit(stmt);
             }
 
-            AddImplicitPrint(last, MapLLVMTypeToMyType(last.TypeOf));
+            // Use the semantic type from the AST rather than inferring from LLVM types.
+            // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
+            // MapLLVMTypeToMyType from throwing for pointer types.
+            var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
+            if (lastExpr != null && lastExpr.Type != MyType.None)
+            {
+                AddImplicitPrint(last, lastExpr.Type);
+            }
 
             return last;
         }
