@@ -383,10 +383,11 @@ namespace MyCompiler
             {
                 // Element offset = (i + 1) * 8 bytes (skip the length header)
                 var elementPtr = IntPtr.Add(dataPtr, (int)((i + 1) * 8));
-                long rawValue = Marshal.ReadInt64(elementPtr);
+                long rawValue = Marshal.ReadInt64(elementPtr);   // HERE we need to do something else for the different type like float!
                 elements.Add(rawValue);
             }
-            // Need to fix strings! Currently it gains pointer to the string...
+            // Need to fix for strings and float! Currently it gains pointer to the string...
+
 
             string arrtext = "[";
             foreach (var el in elements)
