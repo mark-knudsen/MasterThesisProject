@@ -302,7 +302,6 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
-        
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -317,8 +316,6 @@ namespace MyCompiler
             Type = MyType.Float; // Initial default
         }
 
-        // Fix: Remove the throw and call the visitor
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
-
 }

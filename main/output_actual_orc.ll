@@ -1,20 +1,19 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@arr = external global ptr
+@str = private unnamed_addr constant [6 x i8] c"harry\00", align 1
+@fmt_str = private unnamed_addr constant [4 x i8] c"%s\0A\00", align 1
+@fmt_int = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
 
 define ptr @main_3() {
 entry:
-  %arr_load = load ptr, ptr @arr, align 8
-  %elem_ptr = getelementptr i64, ptr %arr_load, i64 3
-  %raw_val = load i64, ptr %elem_ptr, align 8
-  %int_mem = call ptr @malloc(i64 8)
-  store i64 %raw_val, ptr %int_mem, align 8
+  %printcall = call i32 (ptr, ...) @printf(ptr @fmt_str, ptr @str)
+  %printcall1 = call i32 (ptr, ptr, ...) @printf(ptr @fmt_int, i32 %printcall)
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i32, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i16 1, ptr %tag_ptr, align 2
+  store i16 0, ptr %tag_ptr, align 2
   %data_ptr = getelementptr inbounds nuw { i32, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr %int_mem, ptr %data_ptr, align 8
+  store ptr null, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
 
