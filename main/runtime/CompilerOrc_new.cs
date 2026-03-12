@@ -28,11 +28,6 @@ namespace MyCompiler
         None = 0
     }
 
-    // public class SymbolInfo
-    // {
-    //     public MyType Type { get; set; }
-    //     public MyType? ElementType { get; set; } // Only used if Type == Array
-    // }
 
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
@@ -126,19 +121,6 @@ namespace MyCompiler
             _trueStr = _builder.BuildGlobalStringPtr("True\n", "true_str");
             _falseStr = _builder.BuildGlobalStringPtr("False\n", "false_str");
         }
-
-        // static uint GetAlignment(LLVMTypeRef type)
-        // {
-        //     return type.Kind switch
-        //     {
-        //         LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 64 => 8,
-        //         LLVMTypeKind.LLVMDoubleTypeKind => 8,
-        //         LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 32 => 4,
-        //         LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 16 => 2,
-        //         LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 8 => 1,
-        //         _ => 8
-        //     };
-        // }
 
         private void EnsureJit()
         {
