@@ -28,11 +28,6 @@ namespace MyCompiler
         None = 0
     }
 
-    public class SymbolInfo
-    {
-        public MyType Type { get; set; }
-        public MyType? ElementType { get; set; } // Only used if Type == Array
-    }
 
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
@@ -127,24 +122,6 @@ namespace MyCompiler
             _falseStr = _builder.BuildGlobalStringPtr("False\n", "false_str");
         }
 
-        private LLVMValueRef CreateFormatString(string format)
-        {
-            var str = _builder.BuildGlobalStringPtr(format, "fmt");
-            return str;
-        }
-
-        static uint GetAlignment(LLVMTypeRef type)
-        {
-            return type.Kind switch
-            {
-                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 64 => 8,
-                LLVMTypeKind.LLVMDoubleTypeKind => 8,
-                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 32 => 4,
-                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 16 => 2,
-                LLVMTypeKind.LLVMIntegerTypeKind when type.IntWidth == 8 => 1,
-                _ => 8
-            };
-        }
 
         private void EnsureJit()
         {
@@ -971,8 +948,8 @@ namespace MyCompiler
         {
             var valueToPrint = Visit(expr.Expression);
 
-            System.Console.WriteLine("prints type: " + expr.Expression.Type);
-            System.Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
+            Console.WriteLine("prints type: " + expr.Expression.Type);
+            Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
 
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
@@ -1013,7 +990,7 @@ namespace MyCompiler
                     {
                         boolCond = valueToPrint; // already i1
                     }
-                    System.Console.WriteLine("hi");
+                    Console.WriteLine("hi");
 
                     var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
 
@@ -1164,7 +1141,7 @@ namespace MyCompiler
 
         private LLVMValueRef Visit(NodeExpr expr)
         {
-            System.Console.WriteLine("visiting: " + expr);
+            Console.WriteLine("visiting: " + expr);
             return expr.Accept(this);
         }
     }
