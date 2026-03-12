@@ -16,6 +16,8 @@
 "round"         { return (int)Tokens.ROUND; }
 "func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
+"where"         { return (int)Tokens.WHERE; }
+"=>"            { return (int)Tokens.LAMBDA; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
@@ -47,6 +49,7 @@
 ":"             { return (int)Tokens.COLON; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
+"."             { return (int)Tokens.DOT; }
 
 [ \t\r\n]       { /* skip */ }
 .               { return (int)Tokens.error; }

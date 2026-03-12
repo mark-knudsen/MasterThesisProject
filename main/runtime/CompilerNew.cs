@@ -1217,5 +1217,10 @@ namespace MyCompiler
         {
             return expr.Accept(this);
         }
+
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
