@@ -22,6 +22,7 @@ namespace MyCompiler
 
         //private LLVMOpaquePassBuilderOptions* _passBuilderOptions;
         private Context _context;
+        public Context GetContext() => _context;
 
         // Global variables (persists across REPL lines)
         //private Dictionary<string, LLVMValueRef> _globalScope = new Dictionary<string, LLVMValueRef>();
@@ -617,7 +618,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(mergeBB);
             return default;
         }
-        
+
         public LLVMValueRef VisitRoundExpr(RoundNodeExpr expr)
         {
             var val = EnsureFloat(Visit(expr.Value), expr.Value.Type);
@@ -1061,7 +1062,7 @@ namespace MyCompiler
             if (currentType == MyType.Int)
                 return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_tmp");
 
-            return value; 
+            return value;
         }
         private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
         {
@@ -1177,6 +1178,11 @@ namespace MyCompiler
         }
 
         public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
+
+        public void ClearContext()
         {
             throw new NotImplementedException();
         }

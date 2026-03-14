@@ -18,7 +18,7 @@
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR 
 %token PRINT RANDOM ROUND FUNC WHERE
 
-%token GE LE EQ NE GT LT 
+%token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
 %nonassoc IF
 %nonassoc ELSE
@@ -26,6 +26,8 @@
 %left GE LE EQ NE GT LT
 %left PLUS MINUS
 %left MULT DIV
+%left LOGICAL_AND
+%left LOGICAL_OR
 %left LBRACKET /* Add this to give indexing high priority */
 
 %type <node> Prog Statement StatementList Assignment
@@ -117,6 +119,8 @@ expr
     | expr MINUS expr     { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "-", $3 as ExpressionNodeExpr); }
     | expr MULT expr      { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "*", $3 as ExpressionNodeExpr); }
     | expr DIV expr       { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "/", $3 as ExpressionNodeExpr); }
+    | expr LOGICAL_AND expr { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "&&", $3 as ExpressionNodeExpr); }  
+    | expr LOGICAL_OR expr  { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "||", $3 as ExpressionNodeExpr); }  
 
     | expr GE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, ">=", $3 as ExpressionNodeExpr); }    
     | expr LE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<=", $3 as ExpressionNodeExpr); }
@@ -137,7 +141,6 @@ expr
     | LPAREN expr RPAREN  { $$ = $2; }
     | expr DOT WHERE LPAREN expr LAMBDA expr RPAREN
     | LPAREN expr RPAREN
-
     ;
 
 params

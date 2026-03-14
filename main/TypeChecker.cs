@@ -18,8 +18,8 @@ namespace MyCompiler
 
         private MyType Visit(NodeExpr node)
         {
-            // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
+            var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+            Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
@@ -125,8 +125,40 @@ namespace MyCompiler
                 throw new Exception($"Arithmetic operator {expr.Operator} requires numeric types, got {leftType} and {rightType}");
             }
 
+
+            // it fails on comparison with '&' and '|'
+
+            // > (5<7 and true)  // fails
+            // AST Structure:
+            // we checking
+            // visiting Sequence
+            // visiting Comparison
+            // visiting Number
+            // visiting BinaryOp
+            // visiting Number
+            // visiting Boolean
+            // Compiler Error: Unknown operator && or type mismatch: Int and Bool
+
+            // > 5<7             // succeeds
+            // AST Structure:
+            // we checking
+            // visiting Sequence
+            // visiting Comparison
+            // visiting Number
+            // visiting Number
+            // visiting: MyCompiler.SequenceNodeExpr
+            // visiting: MyCompiler.ComparisonNodeExpr
+            // visiting: MyCompiler.NumberNodeExpr
+            // visiting: MyCompiler.NumberNodeExpr
+            // prints type: Bool
+            // value to print type: i1
+            // LLVM TYPE: i1
+            // LANG TYPE: Bool
+            // Generated LLVM IR:
+
+
             // Handle Comparisons (==, !=, <, >)
-            if (expr.Operator is "==" or "!=" or "<" or ">")
+            if (expr.Operator is "==" or "!=" or "<" or ">" or "&&" or "||")
             {
                 // For comparisons, we just need the types to be compatible 
                 // (e.g., comparing a Float and an Int is fine)
@@ -151,8 +183,11 @@ namespace MyCompiler
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
 
+            // expr.SetType(MyType.Bool);
+            // return MyType.Bool;
+
             // Numeric comparisons
-            if (expr.Operator is ">" or "<" or ">=" or "<=")
+            if (expr.Operator is ">" or "<" or ">=" or "<=" or "&&" or "||")
             {
                 if (leftType != MyType.Int && leftType != MyType.Float)
                     throw new Exception("Ordering operators require number");
@@ -201,27 +236,22 @@ namespace MyCompiler
             return type;
         }
 
-
         public MyType VisitAssign(AssignNodeExpr expr)
         {
             MyType valType = Check(expr.Expression);
             MyType? elemType = (expr.Expression is ArrayNodeExpr arr) ? arr.ElementType : null;
 
             // Use 'default' for LLVMValueRef to avoid CS0246
-            _context = _context.Add(expr.Id, default, valType, elemType);
+            _context = _context.Add(expr.Id, default, null, valType, elemType);
             return valType;
         }
 
-
-
         public MyType VisitRandom(RandomNodeExpr expr)
         {
-            // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
-            // var valueTypeMax = Visit(expr.MaxValue);
-
             expr.SetType(MyType.Int);
             return MyType.Int;
         }
+
         public MyType VisitIf(IfNodeExpr expr)
         {
             var condType = Visit(expr.Condition);
@@ -333,8 +363,6 @@ namespace MyCompiler
             return MyType.Float;
         }
 
-
-
         public MyType VisitFunctionDef(FunctionDefNode node)
         {
             // 1. Convert the string return type (e.g., "int") to your MyType enum
@@ -353,7 +381,7 @@ namespace MyCompiler
                 // Otherwise, assume they are numbers.
                 MyType pType = (returnType == MyType.String) ? MyType.String : MyType.Float;
 
-                _context = _context.Add(paramName, default!, pType, null);
+                _context = _context.Add(paramName, default!, null, pType, null);
             }
 
             // 4. Visit the body to ensure variables like 'x' and 'y' are defined
@@ -364,7 +392,7 @@ namespace MyCompiler
 
             // 6. Register the FUNCTION itself so we can call it
             // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
-            _context = _context.Add(node.Name, default!, returnType, null);
+            _context = _context.Add(node.Name, default!, null, returnType, null);
 
             return MyType.None;
         }

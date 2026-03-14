@@ -148,7 +148,6 @@ namespace MyCompiler
         None = 0
     }
 
-
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
         private LLVMModuleRef _module;
@@ -167,6 +166,9 @@ namespace MyCompiler
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
+        public Context GetContext() => _context;
+        public void ClearContext() => _context = Context.Empty;
+
         private LLVMTypeRef _mallocType;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate IntPtr MainDelegate();
@@ -338,89 +340,6 @@ namespace MyCompiler
             _builder = builder;
         }
 
-        private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
-        {
-            LLVMValueRef finalArg;
-            LLVMValueRef formatStr;
-            var llvmCtx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
-
-            switch (type)
-            {
-                case MyType.Int:
-                    finalArg = valueToPrint; // keep as i64
-                    formatStr = _builder.BuildGlobalStringPtr("%ld\n", "fmt_int"); // long format
-                    break;
-
-                case MyType.Float:
-                    finalArg = valueToPrint; // already double
-                    formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
-                    break;
-
-                case MyType.Bool:
-                    LLVMValueRef boolCond;
-                    DeclareBoolStrings();
-
-                    if (valueToPrint.TypeOf == _module.Context.DoubleType)
-                    {
-                        var zero = LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0.0);
-                        boolCond = _builder.BuildFCmp(
-                            LLVMRealPredicate.LLVMRealONE,
-                            valueToPrint,
-                            zero,
-                            "boolcond");
-                    }
-                    else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                    {
-                        var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
-                        boolCond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, valueToPrint, zero, "boolcond");
-                    }
-                    else
-                    {
-                        boolCond = valueToPrint; // already i1
-                    }
-
-                    var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
-
-                    var printfTypeBool = LLVMTypeRef.CreateFunction(
-                        llvmCtx.Int32Type,
-                        new[] { i8Ptr },
-                        true);
-
-                    // Call printf for boolean
-                    return _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
-
-
-                case MyType.String:
-                    // valueToPrint should already be a pointer to i8
-                    finalArg = valueToPrint;
-                    formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
-                    break;
-
-                case MyType.Array:
-                    // Arrays are stored as i8* with a length header (i64) at index 0.
-                    // Print a simple representation (length) to avoid treating the raw bytes as a C-string.
-                    var arrPtr = _builder.BuildBitCast(valueToPrint, LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0), "arr_len_ptr");
-                    var arrLen = _builder.BuildLoad2(llvmCtx.Int64Type, arrPtr, "arr_len");
-                    finalArg = arrLen;
-                    formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
-                    break;
-
-                default:
-                    throw new Exception("Unsupported type for printing");
-            }
-
-            // Call printf with the correct format and value
-            var printfType = LLVMTypeRef.CreateFunction(
-                llvmCtx.Int32Type,
-                new[] { i8Ptr, i8Ptr },
-                true
-            );
-
-            // Print the value
-            return _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
-        }
-
         public object Run(NodeExpr expr, bool debug = false)
         {
             // 1. Semantic analysis
@@ -459,6 +378,15 @@ namespace MyCompiler
 
             var result1 = delegateResult();
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(result1);
+
+            // var table = "";
+            // foreach (var item in _context.GetAll())
+            // {
+            //     table += "\nkey name: " + item.Key + " data type: " + item.Value.Type;
+            //     //Console.WriteLine("key name: " + item.Key + " data type: " + item.Value.Type);    
+            // }
+            // var d = new PrintNodeExpr(new StringNodeExpr(table));
+            // VisitPrintExpr(d);
 
             switch ((ValueTag)result.tag)
             {
@@ -817,17 +745,41 @@ namespace MyCompiler
 
             return newValue;
         }
-
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
         {
             var left = Visit(expr.Left);
             var right = Visit(expr.Right);
 
-            // Determine numeric integers only (ignore i1)
+            // Determine the types of the operands
             bool lhsIsInt = left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth > 1;
             bool rhsIsInt = right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth > 1;
+            bool lhsIsBool = left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth == 1;
+            bool rhsIsBool = right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth == 1;
 
-            // Case 1: both integers → ICmp
+            // Case 1: logical AND (&&) or logical OR (||) - only valid if both operands are boolean
+            if (expr.Operator == "&&" || expr.Operator == "||")
+            {
+                if (!(lhsIsBool && rhsIsBool))
+                {
+                    throw new Exception("Both operands must be booleans for logical AND/OR.");
+                }
+
+                // Handle logical AND (&&)
+                if (expr.Operator == "&&")
+                {
+                    var and = _builder.BuildAnd(left, right, "and_tmp");
+                    return and;
+                }
+
+                // Handle logical OR (||)
+                if (expr.Operator == "||")
+                {
+                    var or = _builder.BuildOr(left, right, "or_tmp");
+                    return or;
+                }
+            }
+
+            // Case 2: both integers → ICmp
             if (lhsIsInt && rhsIsInt)
             {
                 return expr.Operator switch
@@ -842,25 +794,24 @@ namespace MyCompiler
                 };
             }
 
-            // Case 2: at least one is float/double → promote integers (not booleans) to double
+            // Case 3: at least one is float/double → promote integers (not booleans) to double
             if (lhsIsInt)
                 left = _builder.BuildSIToFP(left, _module.Context.DoubleType, "int2double");
             if (rhsIsInt)
                 right = _builder.BuildSIToFP(right, _module.Context.DoubleType, "int2double");
 
-            // Case 3: boolean comparison? Only allow equality/inequality
-            if (left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth == 1 &&
-                right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth == 1)
+            // Case 4: boolean comparison? Only allow equality/inequality
+            if (lhsIsBool && rhsIsBool)
             {
                 return expr.Operator switch
                 {
                     "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "bool_eq"),
                     "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "bool_ne"),
-                    _ => throw new Exception("Cannot order boolean values with < > <= >=")
+                    _ => throw new Exception("Cannot compare booleans with < > <= >=")
                 };
             }
 
-            // Case 4: both are doubles → FCmp
+            // Case 5: both are doubles → FCmp
             return expr.Operator switch
             {
                 "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "fcmp_tmp"),
@@ -969,20 +920,44 @@ namespace MyCompiler
             var rightType = expr.Right.Type;
 
             // 2. Handle Strings (Concatenation)
-            // We check MyType because LLVM 'ptr' can be confusing
             if (expr.Operator == "+" && (leftType == MyType.String || rightType == MyType.String))
             {
                 // BuildStringConcat handles Int/Float -> String conversion internally
                 return BuildStringConcat(lhs, leftType, rhs, rightType);
             }
 
-            // 3. Check for numeric types (Int/Float)
+            // 3. Check for logical operations (AND/OR)
+            if (expr.Operator == "&&" || expr.Operator == "||")
+            {
+                // Both operands must be booleans (LLVM integer type with width 1, i1)
+                bool lhsIsBool = leftType == MyType.Bool;
+                bool rhsIsBool = rightType == MyType.Bool;
+
+                if (!(lhsIsBool && rhsIsBool))
+                {
+                    throw new InvalidOperationException($"Cannot perform {expr.Operator} on non-boolean types ({leftType}, {rightType})");
+                }
+
+                // Handle logical AND (&&)
+                if (expr.Operator == "&&")
+                {
+                    return _builder.BuildAnd(lhs, rhs, "andtmp");
+                }
+
+                // Handle logical OR (||)
+                if (expr.Operator == "||")
+                {
+                    return _builder.BuildOr(lhs, rhs, "ortmp");
+                }
+            }
+
+            // 4. Check for numeric types (Int/Float)
             bool lhsIsInt = leftType == MyType.Int;
             bool rhsIsInt = rightType == MyType.Int;
             bool lhsIsFloat = leftType == MyType.Float;
             bool rhsIsFloat = rightType == MyType.Float;
 
-            // 4. Integer arithmetic
+            // 5. Integer arithmetic
             if (lhsIsInt && rhsIsInt)
             {
                 return expr.Operator switch
@@ -995,7 +970,7 @@ namespace MyCompiler
                 };
             }
 
-            // 5. Mixed or Floating-point arithmetic
+            // 6. Mixed or Floating-point arithmetic
             if ((lhsIsInt || lhsIsFloat) && (rhsIsInt || rhsIsFloat))
             {
                 // Promote lhs to double if it's currently an int
@@ -1152,18 +1127,18 @@ namespace MyCompiler
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
             var llvmCtx = _module.Context;
-            var i32 = llvmCtx.Int32Type;
+            var i64 = llvmCtx.Int64Type;
 
             // 1. Get or declare rand()
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
-                var randType = LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>(), false);
+                var randType = LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>(), false);
                 randFunc = _module.AddFunction("rand", randType);
             }
 
             var randValue = _builder.BuildCall2(
-                LLVMTypeRef.CreateFunction(i32, Array.Empty<LLVMTypeRef>()),
+                LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>()),
                 randFunc, Array.Empty<LLVMValueRef>(), "randcall");
 
             if (expr.MinValue != null && expr.MaxValue != null)
@@ -1172,8 +1147,8 @@ namespace MyCompiler
                 var maxVal = Visit(expr.MaxValue);
 
                 // Ensure we are working with Integers for rand math
-                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i32, "min_i");
-                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i32, "max_i");
+                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i64, "min_i");
+                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i64, "max_i");
 
                 // --- THE "VISIT IF" STYLE ---
                 var func = _builder.InsertBlock.Parent;
@@ -1182,7 +1157,7 @@ namespace MyCompiler
                 var mergeBB = func.AppendBasicBlock("rand.cont");
 
                 // Create a local variable to store the result (since blocks can't "return")
-                var resultPtr = _builder.BuildAlloca(i32, "rand_result_ptr");
+                var resultPtr = _builder.BuildAlloca(i64, "rand_result_ptr");
 
                 var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, minVal, maxVal, "order_check");
                 _builder.BuildCondBr(cond, thenBB, elseBB);
@@ -1190,16 +1165,16 @@ namespace MyCompiler
                 // "Then" Part (Correct Order)
                 _builder.PositionAtEnd(thenBB);
                 var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
-                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i32, 1), "range1");
+                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i64, 1), "range1");
                 var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
-                _builder.BuildStore(res1, resultPtr).SetAlignment(4);
+                _builder.BuildStore(res1, resultPtr).SetAlignment(4); // it says %res1 = add i32 %mod1, i64 1   // what is the i64 1?
 
                 _builder.BuildBr(mergeBB);
 
                 // "Else" Part (Wrong Order - Swap logic)
                 _builder.PositionAtEnd(elseBB);
-                var diff2 = _builder.BuildSub(minVal, maxVal, "diff2");
-                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i32, 1), "range2");
+                var diff2 = _builder.BuildSub(minVal, maxVal, "diff2"); // again this says i64 -99
+                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i64, 1), "range2");
                 var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
                 _builder.BuildStore(res2, resultPtr).SetAlignment(4);
 
@@ -1207,19 +1182,102 @@ namespace MyCompiler
 
                 // Merge
                 _builder.PositionAtEnd(mergeBB);
-                var finalInt = _builder.BuildLoad2(i32, resultPtr, "final_rand_int");
-                return _builder.BuildSIToFP(finalInt, _module.Context.DoubleType, "final_rand_dbl");
+                var finalInt = _builder.BuildLoad2(i64, resultPtr, "final_rand_int");
+                return _builder.BuildSIToFP(finalInt, _module.Context.Int64Type, "final_rand_dbl");
             }
 
-            return _builder.BuildSIToFP(randValue, _module.Context.DoubleType, "rand_simple");
+            return _builder.BuildSIToFP(randValue, _module.Context.Int64Type, "rand_simple");
+        }
+
+        private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
+        {
+            Console.WriteLine("prints type: " + type);
+            Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
+
+            LLVMValueRef finalArg;
+            LLVMValueRef formatStr;
+            var llvmCtx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
+
+            switch (type)
+            {
+                case MyType.Int:
+                    finalArg = valueToPrint; // keep as i64
+                    formatStr = _builder.BuildGlobalStringPtr("%ld\n", "fmt_int"); // long format
+                    break;
+
+                case MyType.Float:
+                    finalArg = valueToPrint; // already double
+                    formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
+                    break;
+
+                case MyType.Bool:
+                    LLVMValueRef boolCond;
+                    DeclareBoolStrings();
+
+                    if (valueToPrint.TypeOf == _module.Context.DoubleType)
+                    {
+                        var zero = LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0.0);
+                        boolCond = _builder.BuildFCmp(
+                            LLVMRealPredicate.LLVMRealONE,
+                            valueToPrint,
+                            zero,
+                            "boolcond");
+                    }
+                    else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                    {
+                        var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
+                        boolCond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, valueToPrint, zero, "boolcond");
+                    }
+                    else
+                    {
+                        boolCond = valueToPrint; // already i1
+                    }
+
+                    var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
+
+                    var printfTypeBool = LLVMTypeRef.CreateFunction(
+                        llvmCtx.Int32Type,
+                        new[] { i8Ptr },
+                        true);
+
+                    // Call printf for boolean
+                    return _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
+
+
+                case MyType.String:
+                    // valueToPrint should already be a pointer to i8
+                    finalArg = valueToPrint;
+                    formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
+                    break;
+
+                case MyType.Array:
+                    // Arrays are stored as i8* with a length header (i64) at index 0.
+                    // Print a simple representation (length) to avoid treating the raw bytes as a C-string.
+                    var arrPtr = _builder.BuildBitCast(valueToPrint, LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0), "arr_len_ptr");
+                    var arrLen = _builder.BuildLoad2(llvmCtx.Int64Type, arrPtr, "arr_len");
+                    finalArg = arrLen;
+                    formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
+                    break;
+
+                default:
+                    throw new Exception("Unsupported type for printing");
+            }
+
+            // Call printf with the correct format and value
+            var printfType = LLVMTypeRef.CreateFunction(
+                llvmCtx.Int32Type,
+                new[] { i8Ptr, i8Ptr },
+                true
+            );
+
+            // Print the value
+            return _builder.BuildCall2(printfType, _printf, new[] { formatStr, finalArg }, "printcall");
         }
 
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
-
-            Console.WriteLine("prints type: " + expr.Expression.Type);
-            Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
 
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
@@ -1260,7 +1318,7 @@ namespace MyCompiler
             var element = _arrayHelper.ArrayGetValue(inputArray, currentIndex);
 
             // 8b️⃣ Bind iterator variable (e.g., "x") to element in context
-            _context.Add(expr.IteratorName, element);
+            _context.Add(expr.IteratorName, null, element);
 
             // 8c️⃣ Evaluate the condition
             var condVal = Visit(expr.Condition); // LLVMValueRef (i1)
@@ -1567,7 +1625,6 @@ namespace MyCompiler
             return MyType.None;
         }
 
-
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
@@ -1592,7 +1649,6 @@ namespace MyCompiler
             // Use the explicit llvm_type for the Load2 instruction
             return _builder.BuildLoad2(llvm_type, global, expr.Name + "_load");
         }
-
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
         {
