@@ -160,6 +160,7 @@ namespace MyCompiler
         private bool _jitInitialized = false;
         private string _funcName;
         private int _replCounter = 0;
+        private bool _debug = true;
         private ArrayHelpers _arrayHelper;
         private MyType _lastType; // Store the type of the last expression for auto-printing
         private NodeExpr _lastNode; // Store the last expression for auto-printing
@@ -279,7 +280,7 @@ namespace MyCompiler
 
         private MyType PerformSemanticAnalysis(NodeExpr expr)
         {
-            var checker = new TypeChecker(_context);
+            var checker = new TypeChecker(_context, _debug);
             _lastType = checker.Check(expr);
             _context = checker.UpdatedContext;
 
@@ -316,10 +317,11 @@ namespace MyCompiler
         // AddImplicitPrint and visitprint are very similar, can be refactored
         // int is sometimes set to i64, but int is standard i32 in many langauges, it should be consistent and don't think we need int64 as standard for our language
 
-        void CreateMain(bool debug)
+        void CreateMain()
         {
             //_funcName = $"main";
-            _funcName = debug ? "main" : $"main_{_replCounter++}";
+            //_funcName = _debug ? "main" : $"main_{_replCounter++}";
+            _funcName = $"main_{_replCounter++}";
 
             // 1 Create a fresh context + module for this command
             var context = LLVMContextRef.Create();
@@ -342,23 +344,24 @@ namespace MyCompiler
 
         public object Run(NodeExpr expr, bool debug = false)
         {
+            _debug = debug;
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
-            CreateMain(debug);
+            CreateMain();
             DeclarePrintf();
 
             LLVMValueRef resultValue = Visit(expr);
 
             //PrintArray(resultValue);
 
-            Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
-            Console.WriteLine("LANG TYPE: " + prediction);
+            if(_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
+            if(_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
             var boxedPtr = BoxValue(resultValue, prediction); // don't we just need one of them?
             _builder.BuildRet(boxedPtr);
 
-            DumpIR(_module);
+            if(debug) DumpIR(_module);
 
             // 5 Wrap in ThreadSafeModule
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
@@ -391,29 +394,29 @@ namespace MyCompiler
             switch ((ValueTag)result.tag)
             {
                 case ValueTag.Int:
-                    Console.WriteLine("return int");
+                    if(_debug) Console.WriteLine("return int");
                     return Marshal.ReadInt64(result.data);
 
                 case ValueTag.Float:
-                    Console.WriteLine("return float");
+                    if(_debug) Console.WriteLine("return float");
                     return Marshal.PtrToStructure<double>(result.data);
 
                 case ValueTag.String:
-                    Console.WriteLine("return string");
+                    if(_debug) Console.WriteLine("return string");
                     return Marshal.PtrToStringAnsi(result.data);
 
                 case ValueTag.Bool:
-                    Console.WriteLine("return bool");
+                    if(_debug) Console.WriteLine("return bool");
 
                     long b = Marshal.ReadByte(result.data);
                     return b != 0;
 
                 case ValueTag.Array:
-                    Console.WriteLine("return array");
+                    if(_debug) Console.WriteLine("return array");
                     return HandleArray(result.data);
 
                 case ValueTag.None:
-                    Console.WriteLine("return none");
+                    if(_debug) Console.WriteLine("return none");
 
                     return default;
             }
@@ -430,17 +433,17 @@ namespace MyCompiler
             long length = Marshal.ReadInt64(dataPtr);
             var elements = new List<string>((int)length);
 
-            Console.WriteLine("we about to iterate and print array");
+            if(_debug) Console.WriteLine("we about to iterate and print array");
 
             for (long i = 0; i < length; i++)
             {
                 // Each element pointer offset
                 var elementPtr = IntPtr.Add(dataPtr, (int)((i + 1) * 8));
 
-                Console.WriteLine("we about to iterate and print array1"); // we fail right here
+                if(_debug) Console.WriteLine("we about to iterate and print array1"); // we fail right here
                 // Read as a RuntimeValue struct
                 RuntimeValue element = Marshal.PtrToStructure<RuntimeValue>(Marshal.ReadIntPtr(elementPtr));
-                Console.WriteLine("we about to iterate and print array2");
+                if(_debug) Console.WriteLine("we about to iterate and print array2");
 
                 string elStr = element.tag switch
                 {
@@ -452,11 +455,11 @@ namespace MyCompiler
                     _ => "none"
                 };
 
-                Console.WriteLine("we about to iterate and print array3");
+                if(_debug) Console.WriteLine("we about to iterate and print array3");
                 elements.Add(elStr);
             }
 
-            Console.WriteLine("we about to iterate and print array4");
+            if(_debug) Console.WriteLine("we about to iterate and print array4");
             return "[" + string.Join(", ", elements) + "]";
         }
 
@@ -479,7 +482,6 @@ namespace MyCompiler
                 elements.Add(rawValue);
             }
             // Need to fix for strings and float! Currently it gains pointer to the string...
-
 
             string arrtext = "[";
             foreach (var el in elements)
@@ -1077,10 +1079,9 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
 
-
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
-            Console.WriteLine($"visiting assignment: {expr.Id}");
+            if(_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
 
             var value = Visit(expr.Expression);
             var storageType = value.TypeOf;
@@ -1191,8 +1192,8 @@ namespace MyCompiler
 
         private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
         {
-            Console.WriteLine("prints type: " + type);
-            Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
+            if(_debug) Console.WriteLine("prints type: " + type);
+            if(_debug) Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
 
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
@@ -1550,7 +1551,7 @@ namespace MyCompiler
             }
 
             //expr.SetType(MyType.Array);
-            System.Console.WriteLine("array pointer: " + arrayPtr);
+            if(_debug) Console.WriteLine("array pointer: " + arrayPtr);
             return arrayPtr;
         }
 
@@ -1631,7 +1632,7 @@ namespace MyCompiler
             if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
 
             var varType = entry.Type;
-            Console.WriteLine($"visiting variable: {expr.Name} (Type: {varType})");
+            if(_debug) Console.WriteLine($"visiting variable: {expr.Name} (Type: {varType})");
 
             // Get the LLVM representation of the type (e.g., double, i64, or ptr)
             var llvm_type = GetLLVMType(varType);
@@ -1673,7 +1674,7 @@ namespace MyCompiler
 
         private LLVMValueRef Visit(NodeExpr expr)
         {
-            Console.WriteLine("visiting: " + expr);
+            if(_debug) Console.WriteLine("visiting: " + expr);
             return expr.Accept(this);
         }
     }

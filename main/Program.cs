@@ -32,11 +32,12 @@ namespace MyCompiler
         public static void Main(string[] args)
         {
             Console.WriteLine("--- AST Compiler Shell ---");
-    
+
             ICompiler compiler = new CompilerOrc();
             bool KeepRunning;
-            bool Debug = args.Length > 0 && args[0] == "True";
-            KeepRunning = !Debug;
+            //bool Debug = args.Length > 0 && args[0] == "True";
+            bool Debug = true;
+            KeepRunning = true;
             bool multipleLines = true;
 
             StringBuilder userInput = new StringBuilder();
@@ -126,6 +127,30 @@ namespace MyCompiler
                     userInput.Clear();
                     continue;
                 }
+                
+                if (userInput.ToString() == "verbose")
+                {
+                    Debug = !Debug;
+                    if(Debug)
+                        Console.WriteLine("\n verbose on");
+                    else
+                        Console.WriteLine("\n verbose off");
+
+                    userInput.Clear();
+                    continue;
+                }
+
+                if (userInput.ToString() == "multi lines")
+                {
+                    multipleLines = !multipleLines;
+                    if(multipleLines)
+                        Console.WriteLine("\n multi lines on");
+                    else
+                        Console.WriteLine("\n multi lines off");
+
+                    userInput.Clear();
+                    continue;
+                }
 
                 try
                 {
@@ -138,8 +163,8 @@ namespace MyCompiler
                         if (parser.Parse() && parser.RootNode != null)
                         {
                             Console.ForegroundColor = ConsoleColor.Cyan;
-                            Console.WriteLine("\nAST Structure:");
-                            PrintNode(parser.RootNode, 0); // Print AST
+                            if(Debug) Console.WriteLine("\nAST Structure:");
+                            if(Debug) PrintNode(parser.RootNode, 0); // Print AST
 
                             try
                             {

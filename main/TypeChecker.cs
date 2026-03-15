@@ -4,22 +4,24 @@ namespace MyCompiler
     {
         private Context _context;
         public Context UpdatedContext => _context;
+        private bool _debug;
 
-        public TypeChecker(Context context)
+        public TypeChecker(Context context, bool debug = true)
         {
+            _debug = debug;
             _context = context;
         }
 
         public MyType Check(NodeExpr node)
         {
-            Console.WriteLine("we checking");
+            if(_debug) Console.WriteLine("we checking");
             return Visit(node);
         }
 
         private MyType Visit(NodeExpr node)
         {
-            var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
+            // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+            // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
