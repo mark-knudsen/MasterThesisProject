@@ -42,7 +42,7 @@ namespace MyCompiler
         private string _funcName;
         private int _replCounter = 0;
         private MyType _lastType; // Store the type of the last expression for auto-printing
-        private NodeExpr _lastNode; // Store the last expression for auto-printing
+        //private NodeExpr _lastNode; // Store the last expression for auto-printing
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
@@ -591,6 +591,72 @@ namespace MyCompiler
             return default;
         }
 
+        public LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr)
+        {
+            var ctx = _module.Context;
+            var func = _builder.InsertBlock.Parent;
+
+            // 1. Get the Array Pointer and Load Length from Header (Index 0)
+            var arrayPtr = Visit(expr.Array);
+            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+
+
+
+            // 2. Ensure the iterator variable (e.g., 'item') exists in the LLVM Module
+            VisitAssignExpr(new AssignNodeExpr(expr.Iterator.Name, new BooleanNodeExpr(true)));
+
+            LLVMValueRef iteratorGlobal = _module.GetNamedGlobal(expr.Iterator.Name);
+
+
+            // 3. Setup Loop Blocks
+            var condBlock = func.AppendBasicBlock("foreach.cond");
+            var bodyBlock = func.AppendBasicBlock("foreach.body");
+            var endBlock = func.AppendBasicBlock("foreach.end");
+
+            // 4. Initialize hidden counter (alloca)
+            var counterAlloc = _builder.BuildAlloca(ctx.Int64Type, "foreach_counter");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), counterAlloc).SetAlignment(8);
+            _builder.BuildBr(condBlock);
+
+            // 5. Condition Block: Is counter < arrayLen?
+            _builder.PositionAtEnd(condBlock);
+            var currentIdx = _builder.BuildLoad2(ctx.Int64Type, counterAlloc, "cur_idx");
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, currentIdx, arrayLen, "foreach_test");
+            _builder.BuildCondBr(cond, bodyBlock, endBlock);
+
+            // 6. Body Block
+            _builder.PositionAtEnd(bodyBlock);
+
+            // Calculate memory index (UserIndex + 1 to skip header)
+            var one = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
+            var memIdx = _builder.BuildAdd(currentIdx, one, "mem_idx");
+
+            // Load the element
+            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { memIdx }, "elem_ptr");
+            var elementValRaw = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "elem_val");
+            elementValRaw.SetAlignment(8);
+
+            // Store current element into the global iterator variable
+            // This makes 'item' accessible to the code inside Visit(expr.Body)
+            _builder.BuildStore(elementValRaw, iteratorGlobal).SetAlignment(8);
+
+            // Execute the loop body (e.g., the print statement)
+            Visit(expr.Body);
+
+            // Increment counter and jump back
+            var nextIdx = _builder.BuildAdd(currentIdx, one, "next_idx");
+            _builder.BuildStore(nextIdx, counterAlloc).SetAlignment(8);
+            _builder.BuildBr(condBlock);
+
+            // 7. Exit the loop
+            _builder.PositionAtEnd(endBlock);
+
+            return default;
+        }
+
+
         public LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr)
         {
             LLVMValueRef global = _module.GetNamedGlobal(expr.Id);
@@ -1097,23 +1163,53 @@ namespace MyCompiler
         public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
         {
             var ctx = _module.Context;
+            var func = _builder.InsertBlock.Parent;
+
+            // 1. Visit the Array and the Index expressions
             var arrayPtr = Visit(expr.ArrayExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            // 1. Ensure Index is i64
+            // 2. Ensure Index is i64 (convert from Double if necessary)
             if (indexVal.TypeOf == ctx.DoubleType)
                 indexVal = _builder.BuildFPToSI(indexVal, ctx.Int64Type, "idx_int");
 
-            // 2. Adjust for Header: Actual index in memory is UserIndex + 1
+            // 3. --- BOUNDS CHECK LOGIC ---
+            // Load the Length from the Header (Index 0)
+            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+
+            // Check: (index < 0) OR (index >= arrayLen)
+            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), "is_neg");
+            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen, "is_too_big");
+            var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
+
+            var failBlock = func.AppendBasicBlock("bounds.fail");
+            var safeBlock = func.AppendBasicBlock("bounds.ok");
+            _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
+
+            // --- FAIL BLOCK: Handle Error ---
+            _builder.PositionAtEnd(failBlock);
+            var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
+            _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+
+            // Return a null runtime object to stop execution gracefully
+            var nullReturn = LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0));
+            _builder.BuildRet(nullReturn);
+
+            // --- SAFE BLOCK: Proceed with access ---
+            _builder.PositionAtEnd(safeBlock);
+
+            // 4. Adjust for Header: Actual index in memory is indexVal + 1
             var one = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
             var actualIdx = _builder.BuildAdd(indexVal, one, "offset_idx");
 
-            // 3. GEP2 and Load
+            // 5. GEP2 and Load the data
             var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { actualIdx }, "elem_ptr");
             var rawValue = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "raw_val");
             rawValue.SetAlignment(8);
 
-            // 4. Transform based on Type Inference
+            // 6. Transform based on Type Inference
             return expr.Type switch
             {
                 MyType.String => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
@@ -1121,7 +1217,6 @@ namespace MyCompiler
                 _ => rawValue
             };
         }
-
 
         private LLVMTypeRef GetLLVMType(MyType type)
         {
@@ -1135,34 +1230,6 @@ namespace MyCompiler
                 MyType.Bool => ctx.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}")
             };
-        }
-
-        private MyType MapLLVMTypeToMyType(LLVMTypeRef llvmType)
-        {
-            if (llvmType.Equals(_module.Context.Int64Type))
-                return MyType.Int;
-            if (llvmType.Equals(_module.Context.Int32Type))
-                return MyType.Int;
-
-            if (llvmType.Equals(_module.Context.DoubleType))
-                return MyType.Float;
-
-            if (llvmType.Equals(_module.Context.Int1Type)) // boolean type
-                return MyType.Bool;
-
-            // LLVM uses i8* for both C-strings and our array representation.
-            // Use this mapping mainly for string literal cases; array cases should be handled
-            // based on semantic types instead of relying on LLVM type introspection.
-            if (llvmType.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
-                llvmType.ElementType.Equals(_module.Context.Int8Type))
-            {
-                return MyType.String;
-            }
-
-            // Add more cases as needed...
-
-            // Default to None to avoid throwing for pointer/complex types we don't handle.
-            return MyType.None;
         }
 
 

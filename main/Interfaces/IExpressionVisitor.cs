@@ -20,6 +20,7 @@ namespace MyCompiler
         LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
         LLVMValueRef VisitIfExpr(IfNodeExpr expr);
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
+        LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr);
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
         LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);

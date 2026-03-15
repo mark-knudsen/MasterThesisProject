@@ -259,6 +259,22 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForLoopExpr(this);
     }
 
+    public class ForEachLoopNodeExpr : StatementNodeExpr
+    {
+        public IdNodeExpr Iterator { get; }      // e.g., "item"
+        public ExpressionNodeExpr Array { get; } // e.g., "arr"
+        public NodeExpr Body { get; }
+
+
+        public ForEachLoopNodeExpr(IdNodeExpr iterator, ExpressionNodeExpr array, NodeExpr body)
+        {
+            Iterator = iterator;
+            Array = array;
+            Body = body;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForEachLoopExpr(this);
+    }
+
     // Boolean
     public class BooleanNodeExpr : ExpressionNodeExpr
     {

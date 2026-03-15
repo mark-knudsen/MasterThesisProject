@@ -17,6 +17,7 @@ namespace MyCompiler
         MyType VisitPrint(PrintNodeExpr expr);
         MyType VisitIf(IfNodeExpr expr);
         MyType VisitForLoop(ForLoopNodeExpr expr);
+        MyType VisitForEachLoop(ForEachLoopNodeExpr expr);
         MyType VisitArray(ArrayNodeExpr expr);
         MyType VisitIndex(IndexNodeExpr expr);
         MyType VisitRound(RoundNodeExpr expr);

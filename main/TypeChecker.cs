@@ -36,6 +36,7 @@ namespace MyCompiler
                 IfNodeExpr _if => VisitIf(_if),
                 PrintNodeExpr pr => VisitPrint(pr),
                 ForLoopNodeExpr _for => VisitForLoop(_for),
+                ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
 
                 IndexNodeExpr idx => VisitIndex(idx),
@@ -46,6 +47,39 @@ namespace MyCompiler
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
         }
+
+
+        public MyType VisitForEachLoop(ForEachLoopNodeExpr expr)
+        {
+            // 1. Check the array expression to ensure it's actually an array
+            MyType arrayType = Check(expr.Array);
+            if (arrayType != MyType.Array)
+            {
+                throw new Exception("Foreach target must be an array.");
+            }
+
+            // 2. Determine the element type (e.g., MyType.Float for [12, 200])
+            MyType elementType = MyType.Float; // Default
+            if (expr.Array is ArrayNodeExpr arrayNode)
+            {
+                elementType = arrayNode.ElementType ?? MyType.Float;
+            }
+            else if (expr.Array is IdNodeExpr idNode)
+            {
+                var entry = _context.Get(idNode.Name);
+                elementType = entry?.ElementType ?? MyType.Float;
+            }
+
+            // 3. Register the iterator variable (e.g., 'item') in the context
+            // This allows the Body to know 'item' is a Float/String
+            _context = _context.Add(expr.Iterator.Name, default, elementType);
+
+            // 4. Check the body
+            Check(expr.Body);
+
+            return MyType.None; // Loops don't return a value
+        }
+
 
         public MyType VisitNumber(NumberNodeExpr expr)
         {
@@ -396,5 +430,7 @@ namespace MyCompiler
             expr.SetType(MyType.Float);
             return MyType.Float;
         }
+
+
     }
 }

@@ -16,6 +16,8 @@
 "round"         { return (int)Tokens.ROUND; }
 "func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
+"foreach"       { return (int)Tokens.FOREACH; }
+"in"            { return (int)Tokens.IN; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }

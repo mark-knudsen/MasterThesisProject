@@ -617,7 +617,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(mergeBB);
             return default;
         }
-        
+
         public LLVMValueRef VisitRoundExpr(RoundNodeExpr expr)
         {
             var val = EnsureFloat(Visit(expr.Value), expr.Value.Type);
@@ -863,6 +863,11 @@ namespace MyCompiler
             return default;
         }
 
+        public LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
+
         public LLVMValueRef VisitFunctionDef(FunctionDefNode node)
         {
             // 1. Map the Return Type (Fixes error CS0103 for llvmRetType)
@@ -954,6 +959,8 @@ namespace MyCompiler
             return result;
         }
 
+
+
         //------Helper-functions------//    
 
         private LLVMValueRef BoxToI64(LLVMValueRef value)
@@ -969,17 +976,7 @@ namespace MyCompiler
             return _builder.BuildZExt(value, LLVMTypeRef.Int64, "zext");
         }
 
-        // Function below is not used at the moment!
-        // private LLVMValueRef UnboxFromI64(LLVMValueRef boxed, MyType target)
-        // {
-        //     if (target == MyType.Float || target == MyType.Int)
-        //         return _builder.BuildBitCast(boxed, LLVMTypeRef.Double, "i2d");
 
-        //     if (target == MyType.String || target == MyType.Array)
-        //         return _builder.BuildIntToPtr(boxed, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "i2p");
-
-        //     return boxed;
-        // }
         private LLVMValueRef UnboxFromDouble(LLVMValueRef val, MyType target)
         {
             // If we want a number, and it's already a double, just return it!
@@ -1011,22 +1008,6 @@ namespace MyCompiler
             return _module.AddFunction("malloc", _mallocType);
         }
 
-        // private MyType MapStringToMyType(string name)
-        // {
-        //     if (string.IsNullOrEmpty(name)) return MyType.Float; // Default fallback
-
-        //     return name.ToLower() switch
-        //     {
-        //         "int" => MyType.Int,
-        //         "string" => MyType.String,
-        //         "float" => MyType.Float,
-        //         "double" => MyType.Float,
-        //         "bool" => MyType.Bool,
-        //         "void" => MyType.None,
-        //         "array" => MyType.Array,
-        //         _ => throw new Exception($"Compiler Error: Type '{name}' is not recognized.")
-        //     };
-        // }
 
         private LLVMValueRef MatchType(LLVMValueRef value, LLVMTypeRef targetType)
         {
@@ -1061,7 +1042,7 @@ namespace MyCompiler
             if (currentType == MyType.Int)
                 return _builder.BuildSIToFP(value, LLVMTypeRef.Double, "cast_tmp");
 
-            return value; 
+            return value;
         }
         private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
         {
@@ -1175,5 +1156,7 @@ namespace MyCompiler
         {
             return expr.Accept(this);
         }
+
+
     }
 }
