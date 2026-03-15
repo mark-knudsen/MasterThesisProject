@@ -23,14 +23,14 @@ namespace MyCompiler
     // Intermediate category
     public abstract class ExpressionNodeExpr : NodeExpr
     {
-        public Type? Type { get; protected set; }
+        public Type Type { get; protected set; }
         // Add this setter helper
         public void SetType(Type type) => Type = type;
     }
 
     public abstract class StatementNodeExpr : NodeExpr
     {
-        public Type? Type { get; protected set; }
+        public Type Type { get; protected set; }
         // Add this setter helper
         public void SetType(Type type) => Type = type;
     }
@@ -309,7 +309,7 @@ namespace MyCompiler
     {
         public List<ExpressionNodeExpr> Elements { get; }
         // Add this to store what's inside the array
-        public Type? ElementType { get; set; }
+        public Type ElementType { get; set; }
 
         public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
         {

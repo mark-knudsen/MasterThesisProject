@@ -246,7 +246,7 @@ namespace MyCompiler
             Type valType = Check(expr.Expression);
 
             // Obtain element type from either literal array or array type expression
-            Type? elemType = null;
+            Type elemType = null;
             if (expr.Expression is ArrayNodeExpr arrLiteral)
                 elemType = arrLiteral.ElementType;
             else if (valType is ArrayType arrayType)
