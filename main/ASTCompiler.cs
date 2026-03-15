@@ -318,17 +318,50 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
+    public class AddNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr AddExpression { get; }
+
+        public AddNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addExpression)
+        {
+            ArrayExpression = arrayExpr;
+            AddExpression = addExpression;
+            Type = MyType.None; // Initial default
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
+    }
+
+    // public class WhereNodeExpr : ExpressionNodeExpr
+    // {
+    //     public IdNodeExpr IteratorId;
+    //     public ArrayNodeExpr ArrayNodeExpr;
+    //     public ComparisonNodeExpr Condition;
+    //     public WhereNodeExpr(IdNodeExpr iteratorId, ArrayNodeExpr arrayNodeExpr, ComparisonNodeExpr condition)
+    //     {
+    //         IteratorId = iteratorId;
+    //         ArrayNodeExpr = arrayNodeExpr;
+    //         Condition = condition;
+    //     }
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
+    // }
 
     public class WhereNodeExpr : ExpressionNodeExpr
     {
-        public string IteratorName;
-        public ArrayNodeExpr ArrayNodeExpr;
-        public ComparisonNodeExpr Condition;
-        public WhereNodeExpr(ArrayNodeExpr arrayNodeExpr, ComparisonNodeExpr condition)
+        public IdNodeExpr IteratorId;
+        
+        public ExpressionNodeExpr ArrayNodeExpr;
+        public ExpressionNodeExpr Condition;
+
+        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
         {
-            ArrayNodeExpr = arrayNodeExpr;
+            IteratorId = iteratorId;
+            ArrayNodeExpr = arrayExpr;
             Condition = condition;
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitWhereExpr(this);
     }
 }

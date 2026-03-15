@@ -14,7 +14,7 @@ namespace MyCompiler
 
         public MyType Check(NodeExpr node)
         {
-            if(_debug) Console.WriteLine("we checking");
+            if (_debug) Console.WriteLine("we checking");
             return Visit(node);
         }
 
@@ -39,8 +39,10 @@ namespace MyCompiler
                 PrintNodeExpr pr => VisitPrint(pr),
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ArrayNodeExpr arr => VisitArray(arr),
-
                 IndexNodeExpr idx => VisitIndex(idx),
+                WhereNodeExpr whe => VisitWhere(whe),
+                AddNodeExpr add => VisitAdd(add),
+
                 FunctionDefNode fdef => VisitFunctionDef(fdef),
                 FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNodeExpr rnd => VisitRound(rnd),
@@ -425,6 +427,43 @@ namespace MyCompiler
         {
             expr.SetType(MyType.Float);
             return MyType.Float;
+        }
+
+        public MyType VisitAdd(AddNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.AddExpression);
+            expr.SetType(expr.AddExpression.Type);
+            return expr.AddExpression.Type;
+        }
+
+        public MyType VisitWhere(WhereNodeExpr expr)
+        {
+            System.Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
+            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+
+
+
+            Visit(expr.IteratorId);
+            Visit(expr.ArrayNodeExpr);
+            Visit(expr.Condition);
+            var arrayType = Visit(expr.ArrayNodeExpr);
+
+            if (arrayType != MyType.Array)
+                throw new Exception("where can only be used on arrays");
+
+            // 2. Determine element type (adjust depending on your language)
+
+            // 5. Check condition
+            var condType = Visit(expr.Condition);
+
+            if (condType != MyType.Bool)
+                throw new Exception("where condition must return bool");
+
+
+
+            expr.SetType(MyType.Array);
+            return MyType.Array;
         }
     }
 }

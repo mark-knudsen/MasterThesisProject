@@ -127,11 +127,11 @@ namespace MyCompiler
                     userInput.Clear();
                     continue;
                 }
-                
+
                 if (userInput.ToString() == "verbose")
                 {
                     Debug = !Debug;
-                    if(Debug)
+                    if (Debug)
                         Console.WriteLine("\n verbose on");
                     else
                         Console.WriteLine("\n verbose off");
@@ -143,7 +143,7 @@ namespace MyCompiler
                 if (userInput.ToString() == "multi lines")
                 {
                     multipleLines = !multipleLines;
-                    if(multipleLines)
+                    if (multipleLines)
                         Console.WriteLine("\n multi lines on");
                     else
                         Console.WriteLine("\n multi lines off");
@@ -163,8 +163,8 @@ namespace MyCompiler
                         if (parser.Parse() && parser.RootNode != null)
                         {
                             Console.ForegroundColor = ConsoleColor.Cyan;
-                            if(Debug) Console.WriteLine("\nAST Structure:");
-                            if(Debug) PrintNode(parser.RootNode, 0); // Print AST
+                            if (Debug) Console.WriteLine("\nAST Structure:");
+                            if (Debug) PrintNode(parser.RootNode, 0); // Print AST
 
                             try
                             {
@@ -198,6 +198,7 @@ namespace MyCompiler
                             {
                                 Console.ForegroundColor = ConsoleColor.DarkRed;
                                 Console.WriteLine($"Compiler Error: {ex.Message}");
+                                Console.ForegroundColor = ConsoleColor.Gray;
                             }
                         }
                         else
@@ -211,6 +212,7 @@ namespace MyCompiler
                 {
                     Console.ForegroundColor = ConsoleColor.DarkRed;
                     Console.WriteLine($"Critical Error: {ex.Message}");
+                    Console.ForegroundColor = ConsoleColor.Gray;
                 }
 
                 // Clear input for the next round
@@ -296,8 +298,8 @@ namespace MyCompiler
                     break;
 
                 case WhereNodeExpr whe:
-                    Console.WriteLine($"{space}Where: {whe.IteratorName}");
-                    Console.WriteLine($"{space}Iterator name: {whe.IteratorName}");
+                    Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
+                    Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
                     PrintNode(whe.ArrayNodeExpr, indent + 1);
                     PrintNode(whe.Condition, indent + 1);
                     break;

@@ -1186,5 +1186,10 @@ namespace MyCompiler
         {
             throw new NotImplementedException();
         }
+
+        public LLVMValueRef VisitAddExpr(AddNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
     }
 }

@@ -23,6 +23,7 @@
 "for"           { return (int)Tokens.FOR; }
 "where"         { return (int)Tokens.WHERE; }
 "=>"            { return (int)Tokens.LAMBDA; }
+"add"           { return (int)Tokens.ADD; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }

@@ -355,13 +355,13 @@ namespace MyCompiler
 
             //PrintArray(resultValue);
 
-            if(_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
-            if(_debug) Console.WriteLine("LANG TYPE: " + prediction);
+            if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
+            if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
             var boxedPtr = BoxValue(resultValue, prediction); // don't we just need one of them?
             _builder.BuildRet(boxedPtr);
 
-            if(debug) DumpIR(_module);
+            if (debug) DumpIR(_module);
 
             // 5 Wrap in ThreadSafeModule
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
@@ -382,41 +382,32 @@ namespace MyCompiler
             var result1 = delegateResult();
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(result1);
 
-            // var table = "";
-            // foreach (var item in _context.GetAll())
-            // {
-            //     table += "\nkey name: " + item.Key + " data type: " + item.Value.Type;
-            //     //Console.WriteLine("key name: " + item.Key + " data type: " + item.Value.Type);    
-            // }
-            // var d = new PrintNodeExpr(new StringNodeExpr(table));
-            // VisitPrintExpr(d);
-
             switch ((ValueTag)result.tag)
             {
                 case ValueTag.Int:
-                    if(_debug) Console.WriteLine("return int");
+                    if (_debug) Console.WriteLine("return int");
                     return Marshal.ReadInt64(result.data);
 
                 case ValueTag.Float:
-                    if(_debug) Console.WriteLine("return float");
+                    if (_debug) Console.WriteLine("return float");
                     return Marshal.PtrToStructure<double>(result.data);
 
                 case ValueTag.String:
-                    if(_debug) Console.WriteLine("return string");
+                    if (_debug) Console.WriteLine("return string");
                     return Marshal.PtrToStringAnsi(result.data);
 
                 case ValueTag.Bool:
-                    if(_debug) Console.WriteLine("return bool");
+                    if (_debug) Console.WriteLine("return bool");
 
                     long b = Marshal.ReadByte(result.data);
                     return b != 0;
 
                 case ValueTag.Array:
-                    if(_debug) Console.WriteLine("return array");
-                    return HandleArray(result.data);
+                    if (_debug) Console.WriteLine("return array");
+                    return HandleArray2(result.data);
 
                 case ValueTag.None:
-                    if(_debug) Console.WriteLine("return none");
+                    if (_debug) Console.WriteLine("return none");
 
                     return default;
             }
@@ -433,17 +424,17 @@ namespace MyCompiler
             long length = Marshal.ReadInt64(dataPtr);
             var elements = new List<string>((int)length);
 
-            if(_debug) Console.WriteLine("we about to iterate and print array");
+            if (_debug) Console.WriteLine("we about to iterate and print array");
 
             for (long i = 0; i < length; i++)
             {
                 // Each element pointer offset
                 var elementPtr = IntPtr.Add(dataPtr, (int)((i + 1) * 8));
 
-                if(_debug) Console.WriteLine("we about to iterate and print array1"); // we fail right here
+                if (_debug) Console.WriteLine("we about to iterate and print array1"); // we fail right here
                 // Read as a RuntimeValue struct
                 RuntimeValue element = Marshal.PtrToStructure<RuntimeValue>(Marshal.ReadIntPtr(elementPtr));
-                if(_debug) Console.WriteLine("we about to iterate and print array2");
+                if (_debug) Console.WriteLine("we about to iterate and print array2");
 
                 string elStr = element.tag switch
                 {
@@ -455,11 +446,11 @@ namespace MyCompiler
                     _ => "none"
                 };
 
-                if(_debug) Console.WriteLine("we about to iterate and print array3");
+                if (_debug) Console.WriteLine("we about to iterate and print array3");
                 elements.Add(elStr);
             }
 
-            if(_debug) Console.WriteLine("we about to iterate and print array4");
+            if (_debug) Console.WriteLine("we about to iterate and print array4");
             return "[" + string.Join(", ", elements) + "]";
         }
 
@@ -1081,7 +1072,7 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
-            if(_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
+            if (_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
 
             var value = Visit(expr.Expression);
             var storageType = value.TypeOf;
@@ -1192,8 +1183,8 @@ namespace MyCompiler
 
         private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
         {
-            if(_debug) Console.WriteLine("prints type: " + type);
-            if(_debug) Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
+            if (_debug) Console.WriteLine("prints type: " + type);
+            if (_debug) Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
 
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
@@ -1283,134 +1274,329 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
-        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
+        // public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
+        // {
+        //     // 1 Evaluate the array expression
+        //     var inputArray = Visit(expr.ArrayNodeExpr); // LLVMValueRef
+
+        //     // 2 Create the result array
+        //     var resultArray = _arrayHelper.CreateArray(); // LLVMValueRef
+
+        //     // 3 Get array length
+        //     var arrayLen = _arrayHelper.ArrayLength(inputArray);
+
+        //     // 4 Create loop index i = 0
+        //     var i = _builder.BuildAlloca(_module.Context.Int64Type, "i");
+        //     _builder.BuildStore(LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0), i);
+
+        //     // 5 Create basic blocks
+        //     var loopBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.loop");
+        //     var bodyBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.body");
+        //     var afterBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.after");
+
+        //     // 6 Branch to loop
+        //     _builder.BuildBr(loopBlock);
+
+        //     // 7 Loop block
+        //     _builder.PositionAtEnd(loopBlock);
+        //     var currentIndex = _builder.BuildLoad2(_module.Context.Int64Type, i, "i.load");
+        //     var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, currentIndex, arrayLen, "loopcond");
+        //     _builder.BuildCondBr(cond, bodyBlock, afterBlock);
+
+        //     // 8 Body block
+        //     _builder.PositionAtEnd(bodyBlock);
+
+        //     // 8a️⃣ Get element at index i
+        //     var element = _arrayHelper.ArrayGetValue(inputArray, currentIndex);
+
+        //     // 8b️⃣ Bind iterator variable (e.g., "x") to element in context
+        //     _context.Add(expr.IteratorName, null, element);
+
+        //     // 8c️⃣ Evaluate the condition
+        //     var condVal = Visit(expr.Condition); // LLVMValueRef (i1)
+
+        //     // 8d️⃣ If condition is true, push element to result array
+        //     var pushBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.push");
+        //     var skipBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.skip");
+
+        //     _builder.BuildCondBr(condVal, pushBlock, skipBlock);
+
+        //     // Push block
+        //     _builder.PositionAtEnd(pushBlock);
+        //     _arrayHelper.ArrayPushValue(resultArray, element);
+        //     _builder.BuildBr(skipBlock);
+
+        //     // Skip block
+        //     _builder.PositionAtEnd(skipBlock);
+
+        //     // 8e️⃣ Increment i
+        //     var nextIndex = _builder.BuildAdd(currentIndex,
+        //         LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1),
+        //         "i.next");
+        //     _builder.BuildStore(nextIndex, i);
+
+        //     // Branch back to loop
+        //     _builder.BuildBr(loopBlock);
+
+        //     // 9 After loop
+        //     _builder.PositionAtEnd(afterBlock);
+
+        //     // 10 Return result array
+        //     return resultArray;
+        // }
+
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) // Mine
         {
-            // 1️⃣ Evaluate the array expression
-            var inputArray = Visit(expr.ArrayNodeExpr); // LLVMValueRef
+            Console.WriteLine("visiting where0");
+            // myArray.where(x => x < 5)
 
-            // 2️⃣ Create the result array
-            var resultArray = _arrayHelper.CreateArray(); // LLVMValueRef
+            // newArray = [];
+            // existingArray = [7,6,8,9];
+            // for(i=0; i<myArray.Length; i++)
+            // {
+            //   if(existingArray[i] < 5) newArray.add(existingArray[i])
+            // }
 
-            // 3️⃣ Get array length
-            var arrayLen = _arrayHelper.ArrayLength(inputArray);
+            //var arrayVal = Visit(expr.ArrayNodeExpr);
 
-            // 4️⃣ Create loop index i = 0
-            var i = _builder.BuildAlloca(_module.Context.Int64Type, "i");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0), i);
+            var elements = new List<ExpressionNodeExpr>();
+            var myArray = new ArrayNodeExpr(elements);
 
-            // 5️⃣ Create basic blocks
-            var loopBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.loop");
-            var bodyBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.body");
-            var afterBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.after");
+            var fullSequence = new SequenceNodeExpr();
+            var forLoopsequence = new SequenceNodeExpr();
 
-            // 6️⃣ Branch to loop
-            _builder.BuildBr(loopBlock);
+            var assignedVal = new AssignNodeExpr(expr.IteratorId.Name, expr.IteratorId);
 
-            // 7️⃣ Loop block
-            _builder.PositionAtEnd(loopBlock);
-            var currentIndex = _builder.BuildLoad2(_module.Context.Int64Type, i, "i.load");
-            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, currentIndex, arrayLen, "loopcond");
-            _builder.BuildCondBr(cond, bodyBlock, afterBlock);
+            var ifVal = new IfNodeExpr(expr.Condition, new AddNodeExpr(myArray, new NumberNodeExpr(2)));
 
-            // 8️⃣ Body block
-            _builder.PositionAtEnd(bodyBlock);
 
-            // 8a️⃣ Get element at index i
-            var element = _arrayHelper.ArrayGetValue(inputArray, currentIndex);
+            forLoopsequence.Statements.Add(ifVal); // example
+            System.Console.WriteLine("visiting where1");
 
-            // 8b️⃣ Bind iterator variable (e.g., "x") to element in context
-            _context.Add(expr.IteratorName, null, element);
+            //sequence.Statements.Add(expr.Condition);
+            // do the for loop and return an array
 
-            // 8c️⃣ Evaluate the condition
-            var condVal = Visit(expr.Condition); // LLVMValueRef (i1)
+            //var arrayNode = ((IdNodeExpr)expr.ArrayNodeExpr);
 
-            // 8d️⃣ If condition is true, push element to result array
-            var pushBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.push");
-            var skipBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.skip");
+            var arrayPtr = Visit(expr.ArrayNodeExpr);
 
-            _builder.BuildCondBr(condVal, pushBlock, skipBlock);
+            // index 0 contains the length
+            var zero = LLVMValueRef.CreateConstInt(_module.Context.Int32Type, 0);
+            var lengthPtr = _builder.BuildGEP2(_module.Context.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
 
-            // Push block
-            _builder.PositionAtEnd(pushBlock);
-            _arrayHelper.ArrayPushValue(resultArray, element);
-            _builder.BuildBr(skipBlock);
+            var length = _builder.BuildLoad2(_module.Context.Int64Type, lengthPtr, "len");
 
-            // Skip block
-            _builder.PositionAtEnd(skipBlock);
 
-            // 8e️⃣ Increment i
-            var nextIndex = _builder.BuildAdd(currentIndex,
-                LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1),
-                "i.next");
-            _builder.BuildStore(nextIndex, i);
+            ForLoopNodeExpr forLoopNodeExpr = new ForLoopNodeExpr( // this one fails, it can't cast it to an array node
+                assignedVal,
+                //expr.Condition,
+                new ComparisonNodeExpr(new NumberNodeExpr(0), "<", new NumberNodeExpr(3)),// it should take the actual length
+                new IncrementNodeExpr(expr.IteratorId.Name),
+                forLoopsequence); // body
+            System.Console.WriteLine("visiting where2");
 
-            // Branch back to loop
-            _builder.BuildBr(loopBlock);
+            //var array = new ArrayNodeExpr(elements);
+            fullSequence.Statements.Add(forLoopNodeExpr);
+            System.Console.WriteLine("visiting where3");
 
-            // 9️⃣ After loop
-            _builder.PositionAtEnd(afterBlock);
-
-            // 10️⃣ Return result array
-            return resultArray;
+            return Visit(fullSequence);
         }
 
         // public LLVMValueRef VisitWhereExpr2(WhereNodeExpr expr)
         // {
-        //     var input = Visit(expr.ArrayNodeExpr);
+        //     Console.WriteLine("visiting where");
 
-        //     var result = _arrayHelper.CreateArray();
+        //     // result = []
+        //     var resultArray = new ArrayNodeExpr(new List<ExpressionNodeExpr>());
+        //     var resultAssign = new AssignNodeExpr("result_tmp", resultArray);
 
-        //     var len = ArrayLen(input);
+        //     // i = 0
+        //     var init = new AssignNodeExpr("i", new NumberNodeExpr(0));
 
-        //     for (int i = 0; i < len; i++)
-        //     {
-        //         var elem = ArrayGet(input, i);
+        //     // condition: i < length
+        //     // (we can't know length at AST level, so this assumes you support .length or similar)
+        //     var lengthExpr = new LengthNodeExpr(expr.ArrayNodeExpr);
+        //     var cond = new ComparisonNodeExpr(
+        //         new IdNodeExpr("i"),
+        //         "<",
+        //         lengthExpr
+        //     );
 
-        //         _context.Add(expr.IteratorName, elem);
+        //     // increment: i++
+        //     var inc = new IncrementNodeExpr("i");
 
-        //         var cond = Visit(expr.Condition);
-        //         _builder.BuildCall2(_arrayPush.TypeOf.ElementType, _arrayPush, new[] { arr, value }, "");
-        //         _builder.BuildCondBr(cond, ArrayPush(result, elem));
+        //     // body sequence
+        //     var body = new SequenceNodeExpr();
 
-        //         if (cond)
-        //             ArrayPush(result, elem);
-        //     }
+        //     // d = array[i]
+        //     var elementAccess = new IndexNodeExpr(
+        //         expr.ArrayNodeExpr,
+        //         new IdNodeExpr("i")
+        //     );
 
-        //     return result;
-        //     // var ctx = _module.Context;
-        //     // // Create a new array
+        //     var assignIterator = new AssignNodeExpr(
+        //         expr.IteratorId.Name,
+        //         elementAccess
+        //     );
 
-        //     // // Push a value
-        //     // _arrayHelper.ArrayPushValue(arr, LLVMValueRef.CreateConstInt(ctx.Int64Type, 42));
+        //     body.Statements.Add(assignIterator);
 
-        //     // // Get a value
-        //     // var val = _arrayHelper.ArrayGetValue(arr, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0));
+        //     // if(d > something)
+        //     var addExpr = new AddNodeExpr(
+        //         new IdNodeExpr("result_tmp"),
+        //         new IdNodeExpr(expr.IteratorId.Name)
+        //     );
 
-        //     // // Get length
-        //     // var len = _arrayHelper.ArrayLength(arr);
+        //     var ifNode = new IfNodeExpr(expr.Condition, addExpr);
 
-        //     // return arr;
-        //     // var arrayVal = Visit(expr.ArrayNodeExpr);
+        //     body.Statements.Add(ifNode);
 
-        //     // var assignedVal = new AssignNodeExpr("x", new NumberNodeExpr(0));
-        //     // var elements = new List<ExpressionNodeExpr>();
+        //     // for loop
+        //     var loop = new ForLoopNodeExpr(init, cond, inc, body);
 
-        //     // var sequence = new SequenceNodeExpr();
+        //     // full sequence
+        //     var seq = new SequenceNodeExpr();
+        //     seq.Statements.Add(resultAssign);
+        //     seq.Statements.Add(loop);
 
+        //     Console.WriteLine("where lowered to for-loop");
 
-        //     // var ifVal = new IfNodeExpr(expr.Condition, );
-        //     // sequence.Statements.Add(expr.Condition);
-        //     // // do the for loop and return an array
+        //     return Visit(seq);
+        // }
 
-        //     // ForLoopNodeExpr forLoopNodeExpr = new ForLoopNodeExpr(
-        //     //     assignedVal, 
-        //     //     new ComparisonNodeExpr(new NumberNodeExpr(0), "<", new NumberNodeExpr(expr.ArrayNodeExpr.Elements.Count)),
-        //     //     new IncrementNodeExpr("x"),
-        //     //     sequence); // body
+        // public LLVMValueRef VisitWhereExpr3(WhereNodeExpr expr)
+        // {
+        //     var ctx = _module.Context;
 
-        //     // var array = new ArrayNodeExpr(elements);
+        //     Console.WriteLine("visiting where");
 
-        //     // return Visit(forLoopNodeExpr);
+        //     // evaluate the source array
+        //     var arrayPtr = Visit(expr.ArrayNodeExpr);
+
+        //     // -----------------------------
+        //     // load array length
+        //     // -----------------------------
+
+        //     var zero32 = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+
+        //     var lenPtr = _builder.BuildGEP2(
+        //         ctx.Int64Type,
+        //         arrayPtr,
+        //         new[] { zero32 },
+        //         "len_ptr"
+        //     );
+
+        //     var lenVal = _builder.BuildLoad2(
+        //         ctx.Int64Type,
+        //         lenPtr,
+        //         "len"
+        //     );
+
+        //     // -----------------------------
+        //     // create result array []
+        //     // -----------------------------
+
+        //     var resultArray = Visit(new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
+
+        //     // -----------------------------
+        //     // allocate loop index
+        //     // -----------------------------
+
+        //     var indexAlloca = _builder.BuildAlloca(ctx.Int64Type, "i");
+
+        //     var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
+        //     _builder.BuildStore(zero64, indexAlloca);
+
+        //     // -----------------------------
+        //     // create blocks
+        //     // -----------------------------
+
+        //     var function = _builder.InsertBlock.Parent;
+
+        //     var condBlock = ctx.AppendBasicBlock(function, "where_cond");
+        //     var bodyBlock = ctx.AppendBasicBlock(function, "where_body");
+        //     var endBlock = ctx.AppendBasicBlock(function, "where_end");
+
+        //     _builder.BuildBr(condBlock);
+
+        //     // -----------------------------
+        //     // condition block
+        //     // -----------------------------
+
+        //     _builder.PositionAtEnd(condBlock);
+
+        //     var iVal = _builder.BuildLoad2(ctx.Int64Type, indexAlloca, "i");
+
+        //     var cond = _builder.BuildICmp(
+        //         LLVMIntPredicate.LLVMIntSLT,
+        //         iVal,
+        //         lenVal,
+        //         "loopcond"
+        //     );
+
+        //     _builder.BuildCondBr(cond, bodyBlock, endBlock);
+
+        //     // -----------------------------
+        //     // loop body
+        //     // -----------------------------
+
+        //     _builder.PositionAtEnd(bodyBlock);
+
+        //     // element index = i + 1 (skip length header)
+        //     var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
+        //     var elemIndex = _builder.BuildAdd(iVal, one64, "elem_index");
+
+        //     var elemPtr = _builder.BuildGEP2(
+        //         ctx.Int64Type,
+        //         arrayPtr,
+        //         new[] { elemIndex },
+        //         "elem_ptr"
+        //     );
+
+        //     var elemVal = _builder.BuildLoad2(
+        //         ctx.Int64Type,
+        //         elemPtr,
+        //         "elem"
+        //     );
+
+        //     // assign iterator variable (d = elem)
+        //     _namedValues[expr.IteratorId.Name] = elemVal;
+
+        //     // evaluate condition (d > something)
+        //     var condVal = Visit(expr.Condition);
+
+        //     // if true -> add to result
+        //     var thenBlock = ctx.AppendBasicBlock(function, "where_then");
+        //     var mergeBlock = ctx.AppendBasicBlock(function, "where_merge");
+
+        //     _builder.BuildCondBr(condVal, thenBlock, mergeBlock);
+
+        //     // then
+        //     _builder.PositionAtEnd(thenBlock);
+
+        //     Visit(new AddNodeExpr(
+        //         new IdNodeExpr("result_tmp"),
+        //         new IdNodeExpr(expr.IteratorId.Name)
+        //     ));
+
+        //     _builder.BuildBr(mergeBlock);
+
+        //     // merge
+        //     _builder.PositionAtEnd(mergeBlock);
+
+        //     // increment i
+        //     var next = _builder.BuildAdd(iVal, one64, "next");
+        //     _builder.BuildStore(next, indexAlloca);
+
+        //     _builder.BuildBr(condBlock);
+
+        //     // -----------------------------
+        //     // end block
+        //     // -----------------------------
+
+        //     _builder.PositionAtEnd(endBlock);
+
+        //     return resultArray;
         // }
 
         [UnmanagedCallersOnly(EntryPoint = "array_new")]
@@ -1520,7 +1706,6 @@ namespace MyCompiler
             _builder.BuildCall2(printfType, _printf, new[] { fmtNewline }, "newline");
         }
 
-
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
         {
             var ctx = _module.Context;
@@ -1551,7 +1736,7 @@ namespace MyCompiler
             }
 
             //expr.SetType(MyType.Array);
-            if(_debug) Console.WriteLine("array pointer: " + arrayPtr);
+            if (_debug) Console.WriteLine("array pointer: " + arrayPtr);
             return arrayPtr;
         }
 
@@ -1582,7 +1767,6 @@ namespace MyCompiler
                 _ => rawValue
             };
         }
-
 
         private LLVMTypeRef GetLLVMType(MyType type)
         {
@@ -1632,7 +1816,7 @@ namespace MyCompiler
             if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
 
             var varType = entry.Type;
-            if(_debug) Console.WriteLine($"visiting variable: {expr.Name} (Type: {varType})");
+            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {varType}, Value: {entry.Value})");
 
             // Get the LLVM representation of the type (e.g., double, i64, or ptr)
             var llvm_type = GetLLVMType(varType);
@@ -1666,7 +1850,7 @@ namespace MyCompiler
             var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
             if (lastExpr != null && lastExpr.Type != MyType.None)
             {
-                AddImplicitPrint(last, lastExpr.Type);
+                //AddImplicitPrint(last, lastExpr.Type);
             }
 
             return last;
@@ -1674,8 +1858,39 @@ namespace MyCompiler
 
         private LLVMValueRef Visit(NodeExpr expr)
         {
-            if(_debug) Console.WriteLine("visiting: " + expr);
+            if (_debug) Console.WriteLine("visiting: " + expr);
             return expr.Accept(this);
+        }
+
+        public LLVMValueRef VisitAddExpr(AddNodeExpr expr)
+        {
+            var ctx = _module.Context;
+
+            var arrayPtr = Visit(expr.ArrayExpression);
+            var value = Visit(expr.AddExpression);
+            var boxed = BoxToI64(value);
+
+            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+
+            // load length
+            var lengthPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
+            var length = _builder.BuildLoad2(ctx.Int64Type, lengthPtr, "length");
+
+            // compute index = length + 1
+            var one = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
+            var elementIndex = _builder.BuildAdd(length, one, "elem_index");
+
+            // compute pointer to new element
+            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { elementIndex }, "elem_ptr");
+
+            // store element
+            _builder.BuildStore(boxed, elementPtr);
+
+            // update length
+            var newLength = _builder.BuildAdd(length, one, "new_length");
+            _builder.BuildStore(newLength, lengthPtr);
+
+            return arrayPtr;
         }
     }
 }

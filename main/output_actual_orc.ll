@@ -1,23 +1,25 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@x = global i64 0
-@fmt_int = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
+@x = global ptr null
 
-define ptr @main_1() {
+define ptr @main_0() {
 entry:
-  store i64 5, ptr @x, align 8
-  %x_load = load i64, ptr @x, align 4
-  %x_load1 = load i64, ptr @x, align 4
-  %multmp = mul i64 %x_load, %x_load1
-  %printcall = call i32 (ptr, ptr, ...) @printf(ptr @fmt_int, i64 %multmp)
-  %int_mem = call ptr @malloc(i64 8)
-  store i64 %multmp, ptr %int_mem, align 8
+  %arr_ptr = call ptr @malloc(i64 32)
+  %len_ptr = getelementptr i64, ptr %arr_ptr, i32 0
+  store i64 3, ptr %len_ptr, align 4
+  %idx_0 = getelementptr i64, ptr %arr_ptr, i32 1
+  store i64 7, ptr %idx_0, align 8
+  %idx_1 = getelementptr i64, ptr %arr_ptr, i32 2
+  store i64 8, ptr %idx_1, align 8
+  %idx_2 = getelementptr i64, ptr %arr_ptr, i32 3
+  store i64 9, ptr %idx_2, align 8
+  store ptr %arr_ptr, ptr @x, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i32, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i16 1, ptr %tag_ptr, align 2
+  store i16 0, ptr %tag_ptr, align 2
   %data_ptr = getelementptr inbounds nuw { i32, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr %int_mem, ptr %data_ptr, align 8
+  store ptr null, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
 
