@@ -4,15 +4,17 @@ namespace MyCompiler
     {
         private Context _context;
         public Context UpdatedContext => _context;
+        private bool _debug;
 
-        public TypeChecker(Context context)
+        public TypeChecker(Context context, bool debug = true)
         {
+            _debug = debug;
             _context = context;
         }
 
         public Type Check(NodeExpr node)
         {
-            Console.WriteLine("we checking");
+            if(_debug) Console.WriteLine("we checking");
             return Visit(node);
         }
 
@@ -164,8 +166,40 @@ namespace MyCompiler
                 throw new Exception($"Arithmetic operator {expr.Operator} requires numeric types, got {leftType} and {rightType}");
             }
 
+
+            // it fails on comparison with '&' and '|'
+
+            // > (5<7 and true)  // fails
+            // AST Structure:
+            // we checking
+            // visiting Sequence
+            // visiting Comparison
+            // visiting Number
+            // visiting BinaryOp
+            // visiting Number
+            // visiting Boolean
+            // Compiler Error: Unknown operator && or type mismatch: Int and Bool
+
+            // > 5<7             // succeeds
+            // AST Structure:
+            // we checking
+            // visiting Sequence
+            // visiting Comparison
+            // visiting Number
+            // visiting Number
+            // visiting: MyCompiler.SequenceNodeExpr
+            // visiting: MyCompiler.ComparisonNodeExpr
+            // visiting: MyCompiler.NumberNodeExpr
+            // visiting: MyCompiler.NumberNodeExpr
+            // prints type: Bool
+            // value to print type: i1
+            // LLVM TYPE: i1
+            // LANG TYPE: Bool
+            // Generated LLVM IR:
+
+
             // Handle Comparisons (==, !=, <, >)
-            if (expr.Operator is "==" or "!=" or "<" or ">")
+            if (expr.Operator is "==" or "!=" or "<" or ">" or "&&" or "||")
             {
                 // For comparisons, we just need the types to be compatible 
                 // (e.g., comparing a Float and an Int is fine)
@@ -190,8 +224,11 @@ namespace MyCompiler
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
 
+            // expr.SetType(MyType.Bool);
+            // return MyType.Bool;
+
             // Numeric comparisons
-            if (expr.Operator is ">" or "<" or ">=" or "<=")
+            if (expr.Operator is ">" or "<" or ">=" or "<=" or "&&" or "||")
             {
                 if (leftType is not IntType && leftType is not IntType)
                     throw new Exception("Ordering operators require number");
@@ -253,7 +290,7 @@ namespace MyCompiler
                 elemType = arrayType.ElementType;
 
             // Use 'default' for LLVMValueRef to avoid CS0246
-            _context = _context.Add(expr.Id, default, valType, elemType);
+            _context = _context.Add(expr.Id, default, null, valType, elemType);
             return valType;
         }
 
@@ -410,7 +447,7 @@ namespace MyCompiler
                 // Otherwise, assume they are numbers.
                 Type pType = (returnType is StringType) ? new StringType() : new FloatType();
 
-                _context = _context.Add(paramName, default!, pType, null);
+                _context = _context.Add(paramName, default!, null, pType, null);
             }
 
             // 4. Visit the body to ensure variables like 'x' and 'y' are defined
@@ -421,7 +458,7 @@ namespace MyCompiler
 
             // 6. Register the FUNCTION itself so we can call it
             // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
-            _context = _context.Add(node.Name, default!, returnType, null);
+            _context = _context.Add(node.Name, default!, null, returnType, null);
 
             return new VoidType();
         }

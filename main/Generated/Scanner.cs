@@ -1031,47 +1031,51 @@ return (int)Tokens.error;
 /* skip comment */
             break;
         case 6:
-return (int)Tokens.LPAREN;
+return (int)Tokens.LOGICAL_AND;
             break;
         case 7:
-return (int)Tokens.RPAREN;
+return (int)Tokens.LPAREN;
             break;
         case 8:
-return (int)Tokens.MULT;
+return (int)Tokens.RPAREN;
             break;
         case 9:
-return (int)Tokens.PLUS;
+return (int)Tokens.MULT;
             break;
         case 10:
-return (int)Tokens.COMMA;
+return (int)Tokens.PLUS;
             break;
         case 11:
-return (int)Tokens.MINUS;
+return (int)Tokens.COMMA;
             break;
         case 12:
-return (int)Tokens.DIV;
+return (int)Tokens.MINUS;
             break;
         case 13:
-yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER;
+return (int)Tokens.DOT;
             break;
         case 14:
-return (int)Tokens.COLON;
+return (int)Tokens.DIV;
             break;
         case 15:
-return (int)Tokens.SEMICOLON;
+yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER;
             break;
         case 16:
-return (int)Tokens.LT;
+return (int)Tokens.COLON;
             break;
         case 17:
-return (int)Tokens.ASSIGN;
+return (int)Tokens.SEMICOLON;
             break;
         case 18:
-return (int)Tokens.GT;
+return (int)Tokens.LT;
             break;
         case 19:
-        case 22:
-        case 23:
+return (int)Tokens.ASSIGN;
+            break;
+        case 20:
+return (int)Tokens.GT;
+            break;
+        case 21:
         case 24:
         case 25:
         case 26:
@@ -1119,10 +1123,10 @@ return (int)Tokens.GT;
         case 86:
 yylval.obj = yytext; return (int)Tokens.ID;
             break;
-        case 20:
+        case 22:
 return (int)Tokens.LBRACKET;
             break;
-        case 21:
+        case 23:
 return (int)Tokens.RBRACKET;
             break;
         case 32:

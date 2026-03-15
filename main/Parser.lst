@@ -23,7 +23,7 @@
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA COLON
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDAz
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND FUNC
@@ -161,6 +161,9 @@ expr
         $$ = new IndexNodeExpr(idExpr, $3 as ExpressionNodeExpr); 
     }
     | LPAREN expr RPAREN  { $$ = $2; }
+    | expr DOT WHERE LPAREN expr LAMBDA expr RPAREN
+    | LPAREN expr RPAREN
+
     ;
 
 params

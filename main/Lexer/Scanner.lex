@@ -7,6 +7,11 @@
 
 "#".*          { /* skip comment */ }
 
+"&"             { return (int)Tokens.LOGICAL_AND; } 
+"and"           { return (int)Tokens.LOGICAL_AND; } 
+"|"             { return (int)Tokens.LOGICAL_OR; } 
+"or"            { return (int)Tokens.LOGICAL_OR; }  
+
 "if"            { return (int)Tokens.IF; }
 "else"          { return (int)Tokens.ELSE; }
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }
@@ -25,6 +30,8 @@
 "void"          { return (int)Tokens.VOID; }
 "bool"          { return (int)Tokens.BOOL; }
 "array"         { return (int)Tokens.ARRAY; }
+"where"         { return (int)Tokens.WHERE; }
+"=>"            { return (int)Tokens.LAMBDA; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
@@ -56,6 +63,7 @@
 ":"             { return (int)Tokens.COLON; }
 ";"             { return (int)Tokens.SEMICOLON; }
 ","             { return (int)Tokens.COMMA; }
+"."             { return (int)Tokens.DOT; }
 
 [ \t\r\n]       { /* skip */ }
 .               { return (int)Tokens.error; }

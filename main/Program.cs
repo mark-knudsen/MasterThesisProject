@@ -9,88 +9,212 @@ namespace MyCompiler
 {
     public class Program
     {
-        public static int ManagedPrint(int value)
+        // public static int ManagedPrint(int value)
+        // {
+        //     OutputBuffer.AppendLine(value.ToString());
+        //     return value;
+        // }
+        // public static StringBuilder OutputBuffer = new();
+
+        static void PrintVariableTable(ICompiler compiler)
         {
-            OutputBuffer.AppendLine(value.ToString());
-            return value;
+            Console.WriteLine("Variable table:\n");
+            var context = compiler.GetContext();
+            var elements = context.GetAll();
+
+            foreach (var item in elements)
+            {
+                Console.WriteLine($"Variable: {item.Key} - Type: {item.Value.Type}");
+            }
+            Console.WriteLine("Count: " + elements.Count);
         }
-        public static StringBuilder OutputBuffer = new();
+
         public static void Main(string[] args)
         {
             Console.WriteLine("--- AST Compiler Shell ---");
-            ICompiler compiler = new CompilerOrc();
-            bool KeepRunning = true;
 
+            ICompiler compiler = new CompilerOrc();
+            bool KeepRunning;
+            //bool Debug = args.Length > 0 && args[0] == "True";
+            bool Debug = true;
+            KeepRunning = true;
+            bool multipleLines = true;
+
+            StringBuilder userInput = new StringBuilder();
+
+            // Multi-line input loop with Shift + Enter detection
             do
             {
-                bool Debug = false;
-                if (args.Length > 0)
-                    if (args[0] == "True")
+                Console.ForegroundColor = ConsoleColor.Gray;
+                Console.Write("> "); // Prompt for input
+
+                var currentLine = new StringBuilder();
+                bool isComplete = false;
+
+                if (multipleLines)
+                {
+                    // Reading input line by line
+                    while (!isComplete)
                     {
-                        KeepRunning = false;
-                        Debug = true;
+                        var key = Console.ReadKey(intercept: true); // intercept key press
+
+                        if (key.Key == ConsoleKey.Enter)  // Handle Enter key
+                        {
+                            if ((key.Modifiers & ConsoleModifiers.Alt) == ConsoleModifiers.Alt)
+                            {
+                                // If Shift + Enter is pressed, submit the command
+                                isComplete = true;
+                            }
+                            else
+                            {
+                                // Otherwise, treat it as a new line
+                                currentLine.Append(Environment.NewLine);
+                                Console.WriteLine(); // Move to the next line
+                                continue; // Exit for the new line
+                            }
+                        }
+                        else if (key.Key == ConsoleKey.Backspace)  // Handle Backspace key
+                        {
+                            if (currentLine.Length > 0)
+                            {
+                                currentLine.Length--;  // Remove last character
+                                Console.Write("\b \b"); // Clear the character on the console
+                            }
+                        }
+                        else
+                        {
+                            currentLine.Append(key.KeyChar);  // Add character to the current line
+                            Console.Write(key.KeyChar);  // Display character on console
+                        }
                     }
+                }
+                else
+                {
+                    var input = Console.ReadLine();
+                    currentLine.Append(input);
+                }
 
-                Console.Write("\n> ");
-                string input = Console.ReadLine();
+                // Add the current line to user input
+                userInput.Append(currentLine.ToString().Trim());
+                currentLine.Clear();
 
-                if (string.IsNullOrWhiteSpace(input)) continue;
-                if (input == "exit") break;
+                if (string.IsNullOrWhiteSpace(userInput.ToString()))
+                {
+                    userInput.Clear();
+                    continue;
+                }
+
+                // Check for special command before accepting the input (e.g., "exit")
+                if (userInput.ToString() == "exit")
+                {
+                    Console.ForegroundColor = ConsoleColor.Red;
+                    Console.WriteLine("Exiting...");
+                    break;  // Exit the loop when "exit" command is entered
+                }
+
+                // Check for special table or clear commands
+                if (userInput.ToString() == "table")
+                {
+                    PrintVariableTable(compiler);
+                    userInput.Clear();
+                    continue;
+                }
+
+                if (userInput.ToString() == "clearTable")
+                {
+                    compiler.ClearContext();
+                    Console.WriteLine("\ntable is cleared");
+                    userInput.Clear();
+                    continue;
+                }
+                
+                if (userInput.ToString() == "verbose")
+                {
+                    Debug = !Debug;
+                    if(Debug)
+                        Console.WriteLine("\n verbose on");
+                    else
+                        Console.WriteLine("\n verbose off");
+
+                    userInput.Clear();
+                    continue;
+                }
+
+                if (userInput.ToString() == "multi lines")
+                {
+                    multipleLines = !multipleLines;
+                    if(multipleLines)
+                        Console.WriteLine("\n multi lines on");
+                    else
+                        Console.WriteLine("\n multi lines off");
+
+                    userInput.Clear();
+                    continue;
+                }
 
                 try
                 {
-                    using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(input)))
+                    // Process the input (parse and generate IR)
+                    using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(userInput.ToString())))
                     {
                         Scanner scanner = new Scanner(stream);
                         Parser parser = new Parser(scanner);
 
                         if (parser.Parse() && parser.RootNode != null)
                         {
-                            Console.WriteLine("AST Structure:");
-                            PrintNode(parser.RootNode, 0); // I don't think this prints anymore
+                            Console.ForegroundColor = ConsoleColor.Cyan;
+                            if(Debug) Console.WriteLine("\nAST Structure:");
+                            if(Debug) PrintNode(parser.RootNode, 0); // Print AST
 
                             try
                             {
+                                // Run the IR and print the result
                                 object result = compiler.Run(parser.RootNode, Debug);
 
                                 if (result is int[])
                                 {
                                     foreach (var item in result as int[])
                                     {
+                                        Console.ForegroundColor = ConsoleColor.Green;
                                         Console.WriteLine(item);
                                     }
                                 }
-
-                                if (result == null)
+                                else if (result == null)
                                 {
+                                    Console.ForegroundColor = ConsoleColor.Yellow;
                                     Console.WriteLine("Result: null");
                                 }
                                 else
                                 {
                                     // Use InvariantCulture to ensure dots instead of commas
                                     string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
-
-                                    // Add a little extra info if it's a string, otherwise just the value
                                     string suffix = (result is string s) ? $" (Length: {s.Length})" : "";
 
+                                    Console.ForegroundColor = ConsoleColor.Green;
                                     Console.WriteLine($"Result: {formatted}{suffix}");
                                 }
                             }
                             catch (Exception ex)
                             {
+                                Console.ForegroundColor = ConsoleColor.DarkRed;
                                 Console.WriteLine($"Compiler Error: {ex.Message}");
                             }
                         }
                         else
                         {
+                            Console.ForegroundColor = ConsoleColor.DarkRed;
                             Console.WriteLine("Syntax Error: The input could not be parsed into an AST.");
                         }
                     }
                 }
                 catch (Exception ex)
                 {
+                    Console.ForegroundColor = ConsoleColor.DarkRed;
                     Console.WriteLine($"Critical Error: {ex.Message}");
                 }
+
+                // Clear input for the next round
+                userInput.Clear();
             } while (KeepRunning);
         }
 
@@ -151,6 +275,31 @@ namespace MyCompiler
                 case PrintNodeExpr pn:
                     Console.WriteLine($"{space}PRINT Statement:");
                     PrintNode(pn.Expression, indent + 1);
+                    break;
+
+                case RandomNodeExpr rn:
+                    Console.WriteLine($"{space}Min value: {rn.MinValue}, Max value: {rn.MaxValue}");
+                    break;
+
+                case RoundNodeExpr ro:
+                    Console.WriteLine($"{space}Value: {ro.Value}, Decimals: {ro.Decimals}");
+                    break;
+
+                case ArrayNodeExpr ar:
+                    Console.WriteLine($"{space}Elements: {ar.Elements}, Decimals: {ar.ElementType}");
+                    break;
+
+                case IndexNodeExpr ind:
+                    Console.WriteLine($"{space}Array: ");
+                    PrintNode(ind.ArrayExpression, indent + 1);
+                    PrintNode(ind.IndexExpression, indent + 1);
+                    break;
+
+                case WhereNodeExpr whe:
+                    Console.WriteLine($"{space}Where: {whe.IteratorName}");
+                    Console.WriteLine($"{space}Iterator name: {whe.IteratorName}");
+                    PrintNode(whe.ArrayNodeExpr, indent + 1);
+                    PrintNode(whe.Condition, indent + 1);
                     break;
 
                 case ForLoopNodeExpr forNode:

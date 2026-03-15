@@ -334,4 +334,17 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
+
+    public class WhereNodeExpr : ExpressionNodeExpr
+    {
+        public string IteratorName;
+        public ArrayNodeExpr ArrayNodeExpr;
+        public ComparisonNodeExpr Condition;
+        public WhereNodeExpr(ArrayNodeExpr arrayNodeExpr, ComparisonNodeExpr condition)
+        {
+            ArrayNodeExpr = arrayNodeExpr;
+            Condition = condition;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
+    }
 }
