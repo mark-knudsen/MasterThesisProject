@@ -10,13 +10,13 @@ namespace MyCompiler
             _context = context;
         }
 
-        public MyType Check(NodeExpr node)
+        public Type Check(NodeExpr node)
         {
             Console.WriteLine("we checking");
             return Visit(node);
         }
 
-        private MyType Visit(NodeExpr node)
+        private Type Visit(NodeExpr node)
         {
             // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
             // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
@@ -49,26 +49,31 @@ namespace MyCompiler
         }
 
 
-        public MyType VisitForEachLoop(ForEachLoopNodeExpr expr)
+        public Type VisitForEachLoop(ForEachLoopNodeExpr expr)
         {
             // 1. Check the array expression to ensure it's actually an array
-            MyType arrayType = Check(expr.Array);
-            if (arrayType != MyType.Array)
+            Type arrayType = Check(expr.Array);
+            if (arrayType is not ArrayType)
             {
                 throw new Exception("Foreach target must be an array.");
             }
 
             // 2. Determine the element type (e.g., MyType.Float for [12, 200])
-            MyType elementType = MyType.Float; // Default
+            Type elementType = null; // Default
             if (expr.Array is ArrayNodeExpr arrayNode)
             {
-                elementType = arrayNode.ElementType ?? MyType.Float;
+                elementType = arrayNode.ElementType ?? new FloatType();
             }
             else if (expr.Array is IdNodeExpr idNode)
             {
                 var entry = _context.Get(idNode.Name);
-                elementType = entry?.ElementType ?? MyType.Float;
+                elementType = entry?.ElementType ?? new FloatType();
             }
+
+            // arr = ["a", "b", "c"];
+            // arr = [1, 2, 3];
+            // arr = [true, false, false];
+
 
             // 3. Register the iterator variable (e.g., 'item') in the context
             // This allows the Body to know 'item' is a Float/String
@@ -77,28 +82,28 @@ namespace MyCompiler
             // 4. Check the body
             Check(expr.Body);
 
-            return MyType.None; // Loops don't return a value
+            return new VoidType(); // Loops don't return a value
         }
 
 
-        public MyType VisitNumber(NumberNodeExpr expr)
+        public Type VisitNumber(NumberNodeExpr expr)
         {
-            expr.SetType(MyType.Int);
-            return MyType.Int;
+            expr.SetType(new IntType());
+            return new IntType();
         }
-        public MyType VisitString(StringNodeExpr expr)
+        public Type VisitString(StringNodeExpr expr)
         {
-            expr.SetType(MyType.String);
-            return MyType.String;
+            expr.SetType(new StringType());
+            return new StringType();
         }
 
-        public MyType VisitBoolean(BooleanNodeExpr expr)
+        public Type VisitBoolean(BooleanNodeExpr expr)
         {
-            expr.SetType(MyType.Bool);
-            return MyType.Bool;
+            expr.SetType(new BoolType());
+            return new BoolType();
         }
 
-        public MyType VisitId(IdNodeExpr expr)
+        public Type VisitId(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
             if (entry == null)
@@ -111,14 +116,14 @@ namespace MyCompiler
             return entry.Type;
         }
 
-        public MyType VisitBinary(BinaryOpNodeExpr expr)
+        public Type VisitBinary(BinaryOpNodeExpr expr)
         {
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
 
             // Helper to check if a type is numeric (Int or Float)
-            bool isLeftNum = leftType == MyType.Int || leftType == MyType.Float;
-            bool isRightNum = rightType == MyType.Int || rightType == MyType.Float;
+            bool isLeftNum = leftType is IntType || leftType is FloatType;
+            bool isRightNum = rightType is IntType || rightType is FloatType;
 
             if (expr.Operator == "+")
             {
@@ -126,8 +131,8 @@ namespace MyCompiler
                 if (isLeftNum && isRightNum)
                 {
                     // If both are Int, result is Int. If any is Float, promote to Float.
-                    MyType resultType = (leftType == MyType.Float || rightType == MyType.Float)
-                                        ? MyType.Float : MyType.Int;
+                    Type resultType = (leftType is FloatType || rightType is FloatType)
+                                        ? new FloatType() : new IntType();
                     expr.SetType(resultType);
                     return resultType;
                 }
@@ -135,10 +140,10 @@ namespace MyCompiler
                 if (expr.Operator == "+")
                 {
                     // If either side is a string, the result is a string
-                    if (leftType == MyType.String || rightType == MyType.String)
+                    if (leftType is StringType || rightType is StringType)
                     {
-                        expr.SetType(MyType.String);
-                        return MyType.String;
+                        expr.SetType(new StringType());
+                        return new StringType();
                     }
                 }
 
@@ -150,8 +155,8 @@ namespace MyCompiler
                 // Allow math on any numeric types
                 if (isLeftNum && isRightNum)
                 {
-                    MyType resultType = (leftType == MyType.Float || rightType == MyType.Float)
-                                        ? MyType.Float : MyType.Int;
+                    Type resultType = (leftType is FloatType || rightType is FloatType)
+                                        ? new FloatType() : new IntType();
                     expr.SetType(resultType);
                     return resultType;
                 }
@@ -166,21 +171,21 @@ namespace MyCompiler
                 // (e.g., comparing a Float and an Int is fine)
                 if (isLeftNum && isRightNum)
                 {
-                    expr.SetType(MyType.Bool);
-                    return MyType.Bool;
+                    expr.SetType(new BoolType());
+                    return new BoolType();
                 }
 
                 if (leftType == rightType)
                 {
-                    expr.SetType(MyType.Bool);
-                    return MyType.Bool;
+                    expr.SetType(new BoolType());
+                    return new BoolType();
                 }
             }
 
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
         }
 
-        public MyType VisitComparison(ComparisonNodeExpr expr)
+        public Type VisitComparison(ComparisonNodeExpr expr)
         {
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
@@ -188,14 +193,14 @@ namespace MyCompiler
             // Numeric comparisons
             if (expr.Operator is ">" or "<" or ">=" or "<=")
             {
-                if (leftType != MyType.Int && leftType != MyType.Float)
+                if (leftType is not IntType && leftType is not IntType)
                     throw new Exception("Ordering operators require number");
 
-                if (rightType != MyType.Int && rightType != MyType.Float)
+                if (rightType is not IntType && rightType is not FloatType)
                     throw new Exception("Ordering operators require number");
 
-                expr.SetType(MyType.Bool);
-                return MyType.Bool;
+                expr.SetType(new BoolType());
+                return new BoolType();
             }
 
             // Equality comparisons
@@ -204,14 +209,14 @@ namespace MyCompiler
                 if (leftType != rightType)
                     throw new Exception($"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
 
-                expr.SetType(MyType.Bool);
-                return MyType.Bool;
+                expr.SetType(new BoolType());
+                return new BoolType();
             }
 
             throw new Exception($"Unknown operator {expr.Operator}");
         }
 
-        public MyType VisitIncrement(IncrementNodeExpr expr)
+        public Type VisitIncrement(IncrementNodeExpr expr)
         {
             var entry = _context.Get(expr.Id);
             if (entry == null) throw new Exception($"Variable {expr.Id} not defined");
@@ -223,7 +228,7 @@ namespace MyCompiler
             return type;
         }
 
-        public MyType VisitDecrement(DecrementNodeExpr expr)
+        public Type VisitDecrement(DecrementNodeExpr expr)
         {
             var entry = _context.Get(expr.Id);
             if (entry == null) throw new Exception($"Variable {expr.Id} not defined");
@@ -236,10 +241,16 @@ namespace MyCompiler
         }
 
 
-        public MyType VisitAssign(AssignNodeExpr expr)
+        public Type VisitAssign(AssignNodeExpr expr)
         {
-            MyType valType = Check(expr.Expression);
-            MyType? elemType = (expr.Expression is ArrayNodeExpr arr) ? arr.ElementType : null;
+            Type valType = Check(expr.Expression);
+
+            // Obtain element type from either literal array or array type expression
+            Type? elemType = null;
+            if (expr.Expression is ArrayNodeExpr arrLiteral)
+                elemType = arrLiteral.ElementType;
+            else if (valType is ArrayType arrayType)
+                elemType = arrayType.ElementType;
 
             // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(expr.Id, default, valType, elemType);
@@ -248,49 +259,49 @@ namespace MyCompiler
 
 
 
-        public MyType VisitRandom(RandomNodeExpr expr)
+        public Type VisitRandom(RandomNodeExpr expr)
         {
             // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
             // var valueTypeMax = Visit(expr.MaxValue);
 
-            expr.SetType(MyType.Int);
-            return MyType.Int;
+            expr.SetType(new IntType());
+            return new IntType();
         }
-        public MyType VisitIf(IfNodeExpr expr)
+        public Type VisitIf(IfNodeExpr expr)
         {
             var condType = Visit(expr.Condition);
 
             // 1. Condition Check
-            if (condType != MyType.Bool)
+            if (condType is not BoolType)
                 throw new Exception("If condition must be Bool");
 
             // Use .Then and .Else to match your Node definition
-            MyType thenType = Visit(expr.ThenPart);
+            Type thenType = Visit(expr.ThenPart);
 
-            MyType elseType = MyType.None;
+            Type elseType = new VoidType();
             if (expr.ElsePart != null)
                 elseType = Visit(expr.ElsePart);
 
-            MyType finalType;
+            Type finalType;
 
             // 2. Promotion Logic (Bool <-> Number)
             if (thenType != elseType)
             {
                 // Allow mixing any Numeric type (Int/Float) with Booleans
-                bool isThenNumeric = (thenType == MyType.Float || thenType == MyType.Int || thenType == MyType.Bool);
-                bool isElseNumeric = (elseType == MyType.Float || elseType == MyType.Int || elseType == MyType.Bool);
+                bool isThenNumeric = (thenType is FloatType || thenType is IntType || thenType is BoolType);
+                bool isElseNumeric = (elseType is FloatType || elseType is IntType || elseType is BoolType);
 
                 // If we have mixed Numbers and Bools
                 if (isThenNumeric && isElseNumeric)
                 {
                     // If either side is an Int, let's treat the result as an Int/Float 
                     // so we see numbers instead of "True/False"
-                    finalType = MyType.Float;
+                    finalType = new FloatType();
                 }
                 // Handle cases where one side is None (Void)
-                else if (thenType == MyType.None)
+                else if (thenType is VoidType)
                     finalType = elseType;
-                else if (elseType == MyType.None)
+                else if (elseType is VoidType)
                     finalType = thenType;
                 else
                     throw new Exception($"Type Mismatch: Then branch is {thenType}, Else is {elseType}");
@@ -303,7 +314,7 @@ namespace MyCompiler
             return finalType;
         }
 
-        public MyType VisitPrint(PrintNodeExpr expr)
+        public Type VisitPrint(PrintNodeExpr expr)
         {
             var innerType = Visit(expr.Expression);
 
@@ -311,24 +322,24 @@ namespace MyCompiler
             return innerType;
         }
 
-        public MyType VisitForLoop(ForLoopNodeExpr expr)
+        public Type VisitForLoop(ForLoopNodeExpr expr)
         {
             if (expr.Initialization != null) Visit(expr.Initialization);
 
             var condType = Visit(expr.Condition);
             // Optimization: Allow Float as condition (0.0 is false)
-            if (condType != MyType.Bool && condType != MyType.Float)
+            if (condType is not BoolType && condType is not FloatType)
                 throw new Exception("For loop condition must be Bool or Number");
 
             if (expr.Step != null) Visit(expr.Step);
 
             Visit(expr.Body); // Now visits the sequence/block
-            return MyType.None;
+            return new VoidType();
         }
 
-        public MyType VisitSequence(SequenceNodeExpr expr)
+        public Type VisitSequence(SequenceNodeExpr expr)
         {
-            MyType lastType = MyType.None;
+            Type lastType = new VoidType();
 
             foreach (var stmt in expr.Statements)
                 lastType = Visit(stmt);
@@ -338,41 +349,53 @@ namespace MyCompiler
 
         // Inside public class TypeChecker : ITypeVisitor
         // Handle [1, 2, 3]
-        public MyType VisitArray(ArrayNodeExpr expr)
+        public Type VisitArray(ArrayNodeExpr expr)
         {
-            if (expr.Elements.Count > 0)
-                expr.ElementType = Check(expr.Elements[0]);
+            Type elementType = new FloatType();
 
-            expr.SetType(MyType.Array);
-            return MyType.Array;
+            if (expr.Elements.Count > 0)
+            {
+                elementType = Check(expr.Elements[0]);
+                expr.ElementType = elementType;
+            }
+
+            var arrayType = new ArrayType(elementType);
+            expr.SetType(arrayType);
+            return arrayType;
         }
 
         // Handle arr[0]
         // Inside TypeChecker.cs
-        public MyType VisitIndex(IndexNodeExpr expr)
+        public Type VisitIndex(IndexNodeExpr expr)
         {
             Check(expr.ArrayExpression); // Ensure target is valid
 
+            Type inferred = new FloatType();
             if (expr.ArrayExpression is IdNodeExpr idNode)
             {
                 var entry = _context.Get(idNode.Name);
-                if (entry != null && entry.Type == MyType.Array)
-                {
-                    var inferred = entry.ElementType ?? MyType.Float;
-                    expr.SetType(inferred);
-                    return inferred;
-                }
+                if (entry?.Type is ArrayType arrType)
+                    inferred = entry.ElementType ?? arrType.ElementType ?? new FloatType();
             }
-            expr.SetType(MyType.Float);
-            return MyType.Float;
+            else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
+            {
+                inferred = arrayLiteral.ElementType ?? new FloatType();
+            }
+            else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
+            {
+                inferred = arrayExprType.ElementType;
+            }
+
+            expr.SetType(inferred);
+            return inferred;
         }
 
 
 
-        public MyType VisitFunctionDef(FunctionDefNode node)
+        public Type VisitFunctionDef(FunctionDefNode node)
         {
             // 1. Convert the string return type (e.g., "int") to your MyType enum
-            MyType returnType = node.ReturnTypeName;
+            Type returnType = node.ReturnTypeName;
 
             // 2. Save the global context
             var globalContext = _context;
@@ -385,7 +408,7 @@ namespace MyCompiler
             {
                 // If the function returns a string, assume parameters are strings.
                 // Otherwise, assume they are numbers.
-                MyType pType = (returnType == MyType.String) ? MyType.String : MyType.Float;
+                Type pType = (returnType is StringType) ? new StringType() : new FloatType();
 
                 _context = _context.Add(paramName, default!, pType, null);
             }
@@ -400,10 +423,10 @@ namespace MyCompiler
             // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
             _context = _context.Add(node.Name, default!, returnType, null);
 
-            return MyType.None;
+            return new VoidType();
         }
 
-        public MyType VisitFunctionCall(FunctionCallNode expr)
+        public Type VisitFunctionCall(FunctionCallNode expr)
         {
             var entry = _context.Get(expr.Name);
             if (entry == null) throw new Exception($"Function {expr.Name} is not defined");
@@ -418,17 +441,17 @@ namespace MyCompiler
             return entry.Type;
         }
 
-        public MyType VisitRound(RoundNodeExpr expr)
+        public Type VisitRound(RoundNodeExpr expr)
         {
             Visit(expr.Value);
-            expr.SetType(MyType.Float);
-            return MyType.Float;
+            expr.SetType(new FloatType());
+            return new FloatType();
         }
 
-        public MyType VisitFloat(FloatNodeExpr expr)
+        public Type VisitFloat(FloatNodeExpr expr)
         {
-            expr.SetType(MyType.Float);
-            return MyType.Float;
+            expr.SetType(new FloatType());
+            return new FloatType();
         }
 
 

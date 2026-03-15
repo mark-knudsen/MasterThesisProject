@@ -5,15 +5,15 @@ using LLVMSharp;
 
 namespace MyCompiler
 {
-    public enum MyType
-    {
-        Int,
-        String,
-        Bool,
-        Float,
-        Array,
-        None
-    }
+    // public enum MyType
+    // {
+    //     Int,
+    //     String,
+    //     Bool,
+    //     Float,
+    //     Array,
+    //     None
+    // }
     // The base class for all NodeExprs in your tree
     public abstract class NodeExpr
     {
@@ -23,16 +23,16 @@ namespace MyCompiler
     // Intermediate category
     public abstract class ExpressionNodeExpr : NodeExpr
     {
-        public MyType Type { get; protected set; }
+        public Type? Type { get; protected set; }
         // Add this setter helper
-        public void SetType(MyType type) => Type = type;
+        public void SetType(Type type) => Type = type;
     }
 
     public abstract class StatementNodeExpr : NodeExpr
     {
-        public MyType Type { get; protected set; }
+        public Type? Type { get; protected set; }
         // Add this setter helper
-        public void SetType(MyType type) => Type = type;
+        public void SetType(Type type) => Type = type;
     }
 
     //-----Built-in-function-nodes-----//
@@ -71,7 +71,7 @@ namespace MyCompiler
         {
             Value = value;
             Decimals = decimals;
-            Type = MyType.Float;
+            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRoundExpr(this);
@@ -81,7 +81,7 @@ namespace MyCompiler
     public class FunctionDefNode : NodeExpr
     {
         public string Name { get; }
-        public MyType ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
+        public Type ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
         public List<string> Parameters { get; set; }
         public NodeExpr Body { get; set; }
 
@@ -91,13 +91,13 @@ namespace MyCompiler
 
             ReturnTypeName = returnType.ToLower() switch
             {
-                "int" => MyType.Int,
-                "float" => MyType.Float,
-                "double" => MyType.Float,
-                "bool" => MyType.Bool,
-                "string" => MyType.String,
-                "array" => MyType.Array,
-                _ => MyType.None
+                "int" => new IntType(),
+                "float" => new FloatType(),
+                "double" => new FloatType(),
+                "bool" => new BoolType(),
+                "string" => new StringType(),
+                "array" => new ArrayType(new FloatType()), // Temporarily default element type until type-analysis updates it
+                _ => new VoidType()
             };
 
             Parameters = parameters;
@@ -118,7 +118,7 @@ namespace MyCompiler
             Name = name;
             Arguments = arguments;
             // For now, we assume functions return Float to be safe with math
-            Type = MyType.Float;
+            Type = new FloatType();
         }
 
         // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
@@ -131,7 +131,7 @@ namespace MyCompiler
         public FloatNodeExpr(double value)
         {
             Value = value;
-            Type = MyType.Float;
+            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloatExpr(this);
@@ -144,7 +144,7 @@ namespace MyCompiler
         public NumberNodeExpr(int value)
         {
             Value = value;
-            Type = MyType.Int;
+            Type = new IntType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNumberExpr(this);
     }
@@ -156,7 +156,7 @@ namespace MyCompiler
         public StringNodeExpr(string value)
         {
             Value = value;
-            Type = MyType.String;
+            Type = new StringType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
@@ -236,7 +236,7 @@ namespace MyCompiler
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
-            this.Type = MyType.None;
+            this.Type = new VoidType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
     }
@@ -283,7 +283,7 @@ namespace MyCompiler
         public BooleanNodeExpr(bool value)
         {
             Value = value;
-            Type = MyType.Bool;
+            Type = new BoolType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
     }
@@ -299,7 +299,7 @@ namespace MyCompiler
             Left = left;
             Operator = op;
             Right = right;
-            Type = MyType.Bool;
+            Type = new BoolType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparisonExpr(this);
@@ -309,12 +309,12 @@ namespace MyCompiler
     {
         public List<ExpressionNodeExpr> Elements { get; }
         // Add this to store what's inside the array
-        public MyType? ElementType { get; set; }
+        public Type? ElementType { get; set; }
 
         public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
         {
             Elements = elements;
-            Type = MyType.Array;
+            Type = new ArrayType(ElementType);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
@@ -329,7 +329,7 @@ namespace MyCompiler
         {
             ArrayExpression = arrayExpr;
             IndexExpression = indexExpr;
-            Type = MyType.Float; // Initial default
+            Type = new FloatType(); // Initial default
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);

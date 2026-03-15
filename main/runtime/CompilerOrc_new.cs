@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.VisualBasic;
+using System.Runtime.CompilerServices;
 
 namespace MyCompiler
 {
@@ -41,7 +42,7 @@ namespace MyCompiler
         private bool _jitInitialized = false;
         private string _funcName;
         private int _replCounter = 0;
-        private MyType _lastType; // Store the type of the last expression for auto-printing
+        private Type _lastType; // Store the type of the last expression for auto-printing
         //private NodeExpr _lastNode; // Store the last expression for auto-printing
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
@@ -152,7 +153,7 @@ namespace MyCompiler
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
 
-        private MyType PerformSemanticAnalysis(NodeExpr expr)
+        private Type PerformSemanticAnalysis(NodeExpr expr)
         {
             var checker = new TypeChecker(_context);
             _lastType = checker.Check(expr);
@@ -162,10 +163,10 @@ namespace MyCompiler
 
             var programedResult = GetProgramResult(expr);
 
-            if (programedResult == null) return MyType.None;
+            if (programedResult == null) return new VoidType();
             if (programedResult is ExpressionNodeExpr exp) return exp.Type; // it says the type is int right here for round
 
-            return MyType.None;
+            return new VoidType();
         }
 
         // Problems
@@ -215,7 +216,7 @@ namespace MyCompiler
             _builder = builder;
         }
 
-        private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, MyType type)
+        private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, Type type)
         {
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
@@ -224,17 +225,17 @@ namespace MyCompiler
 
             switch (type)
             {
-                case MyType.Int:
+                case IntType:
                     finalArg = valueToPrint; // keep as i64
                     formatStr = _builder.BuildGlobalStringPtr("%ld\n", "fmt_int"); // long format
                     break;
 
-                case MyType.Float:
+                case FloatType:
                     finalArg = valueToPrint; // already double
                     formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float");
                     break;
 
-                case MyType.Bool:
+                case BoolType:
                     LLVMValueRef boolCond;
                     DeclareBoolStrings();
 
@@ -268,13 +269,13 @@ namespace MyCompiler
                     return _builder.BuildCall2(printfTypeBool, _printf, new[] { selectedStr }, "print_bool");
 
 
-                case MyType.String:
+                case StringType:
                     // valueToPrint should already be a pointer to i8
                     finalArg = valueToPrint;
                     formatStr = _builder.BuildGlobalStringPtr("%s\n", "fmt_str");
                     break;
 
-                case MyType.Array:
+                case ArrayType:
                     // Arrays are stored as i8* with a length header (i64) at index 0.
                     // Print a simple representation (length) to avoid treating the raw bytes as a C-string.
                     var arrPtr = _builder.BuildBitCast(valueToPrint, LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0), "arr_len_ptr");
@@ -397,7 +398,7 @@ namespace MyCompiler
             return arrtext;
         }
 
-        private LLVMValueRef BoxValue(LLVMValueRef value, MyType type)
+        private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
             // 1. Get the current context and define types locally for THIS run
             var ctx = _module.Context;
@@ -412,28 +413,28 @@ namespace MyCompiler
 
             int tag = type switch
             {
-                MyType.Int => (Int16)ValueTag.Int,
-                MyType.Float => (Int16)ValueTag.Float,
-                MyType.Bool => (Int16)ValueTag.Bool,
-                MyType.String => (Int16)ValueTag.String,
-                MyType.Array => (Int16)ValueTag.Array,
+                IntType => (Int16)ValueTag.Int,
+                FloatType => (Int16)ValueTag.Float,
+                BoolType => (Int16)ValueTag.Bool,
+                StringType => (Int16)ValueTag.String,
+                ArrayType => (Int16)ValueTag.Array,
                 _ => (Int16)ValueTag.None
             };
 
             LLVMValueRef dataPtr;
 
             // 3. Handle data allocation and storage
-            if (type == MyType.String)
+            if (type is StringType)
             {
                 dataPtr = value;
             }
-            else if (type == MyType.None)
+            else if (type is VoidType)
             {
                 // For 'None' (void), we don't need to malloc data, just use a null pointer
                 dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
             }
 
-            else if (type == MyType.Int)
+            else if (type is IntType)
             {
                 var malloc = GetOrDeclareMalloc();
                 var size = LLVMValueRef.CreateConstInt(i64, 8);
@@ -443,7 +444,7 @@ namespace MyCompiler
                 _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
             }
-            else if (type == MyType.Float)
+            else if (type is FloatType)
             {
                 var malloc = GetOrDeclareMalloc();
                 var size = LLVMValueRef.CreateConstInt(i64, 8);
@@ -453,7 +454,7 @@ namespace MyCompiler
                 _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
             }
-            else if (type == MyType.Bool)
+            else if (type is BoolType)
             {
                 var malloc = GetOrDeclareMalloc();
                 var size = LLVMValueRef.CreateConstInt(i64, 1);
@@ -463,7 +464,7 @@ namespace MyCompiler
                 _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = rawMem;
             }
-            else if (type == MyType.Array)
+            else if (type is ArrayType)
             {
                 // Arrays are represented as an i8* pointer (with a length header at index 0).
                 // We can box it the same way as strings.
@@ -664,7 +665,7 @@ namespace MyCompiler
             // If not in this module, but we know it exists globally
             if (global.Handle == IntPtr.Zero && _definedGlobals.Contains(expr.Id))
             {
-                LLVMTypeRef llvmType = (expr.Type == MyType.Float) ? _module.Context.DoubleType : _module.Context.Int64Type;
+                LLVMTypeRef llvmType = (expr.Type is FloatType) ? _module.Context.DoubleType : _module.Context.Int64Type;
                 global = _module.AddGlobal(llvmType, expr.Id);
                 global.Linkage = LLVMLinkage.LLVMExternalLinkage; // Extern
             }
@@ -673,12 +674,12 @@ namespace MyCompiler
                 throw new Exception($"Variable {expr.Id} not found.");
 
             // Explicit type for LLVM 20
-            LLVMTypeRef type = (expr.Type == MyType.Float) ? _module.Context.DoubleType : _module.Context.Int64Type;
+            LLVMTypeRef type = (expr.Type is FloatType) ? _module.Context.DoubleType : _module.Context.Int64Type;
 
             var oldValue = _builder.BuildLoad2(type, global, "inc_load");
 
             LLVMValueRef newValue;
-            if (expr.Type == MyType.Int)
+            if (expr.Type is IntType)
                 newValue = _builder.BuildAdd(oldValue, LLVMValueRef.CreateConstInt(type, 1), "inc_add");
             else
                 newValue = _builder.BuildFAdd(oldValue, LLVMValueRef.CreateConstReal(type, 1.0), "inc_add");
@@ -695,7 +696,7 @@ namespace MyCompiler
             // If not in this module, but we know it exists globally
             if (global.Handle == IntPtr.Zero && _definedGlobals.Contains(expr.Id))
             {
-                LLVMTypeRef llvmType = (expr.Type == MyType.Float) ? _module.Context.DoubleType : _module.Context.Int64Type;
+                LLVMTypeRef llvmType = (expr.Type is FloatType) ? _module.Context.DoubleType : _module.Context.Int64Type;
                 global = _module.AddGlobal(llvmType, expr.Id);
                 global.Linkage = LLVMLinkage.LLVMExternalLinkage; // Extern
             }
@@ -704,12 +705,12 @@ namespace MyCompiler
                 throw new Exception($"Variable {expr.Id} not found.");
 
             // Explicit type for LLVM 20
-            LLVMTypeRef type = (expr.Type == MyType.Float) ? _module.Context.DoubleType : _module.Context.Int64Type;
+            LLVMTypeRef type = (expr.Type is FloatType) ? _module.Context.DoubleType : _module.Context.Int64Type;
 
             var oldValue = _builder.BuildLoad2(type, global, "dec_load");
 
             LLVMValueRef newValue;
-            if (expr.Type == MyType.Int)
+            if (expr.Type is IntType)
                 newValue = _builder.BuildSub(oldValue, LLVMValueRef.CreateConstInt(type, 1), "dec_sub");
             else
                 newValue = _builder.BuildFSub(oldValue, LLVMValueRef.CreateConstReal(type, 1.0), "dec_sub");
@@ -818,10 +819,10 @@ namespace MyCompiler
             return phi;
         }
 
-        private LLVMValueRef EnsureFloat(LLVMValueRef value, MyType currentType)
+        private LLVMValueRef EnsureFloat(LLVMValueRef value, Type currentType)
         {
-            if (currentType == MyType.Float) return value;
-            if (currentType == MyType.Int)
+            if (currentType is FloatType) return value;
+            if (currentType is IntType)
                 return _builder.BuildSIToFP(value, _module.Context.DoubleType, "cast_tmp");
 
             return value; // Hope for the best, or throw an error
@@ -871,17 +872,17 @@ namespace MyCompiler
 
             // 2. Handle Strings (Concatenation)
             // We check MyType because LLVM 'ptr' can be confusing
-            if (expr.Operator == "+" && (leftType == MyType.String || rightType == MyType.String))
+            if (expr.Operator == "+" && (leftType is StringType || rightType is StringType))
             {
                 // BuildStringConcat handles Int/Float -> String conversion internally
                 return BuildStringConcat(lhs, leftType, rhs, rightType);
             }
 
             // 3. Check for numeric types (Int/Float)
-            bool lhsIsInt = leftType == MyType.Int;
-            bool rhsIsInt = rightType == MyType.Int;
-            bool lhsIsFloat = leftType == MyType.Float;
-            bool rhsIsFloat = rightType == MyType.Float;
+            bool lhsIsInt = leftType is IntType;
+            bool rhsIsInt = rightType is IntType;
+            bool lhsIsFloat = leftType is FloatType;
+            bool rhsIsFloat = rightType is FloatType;
 
             // 4. Integer arithmetic
             if (lhsIsInt && rhsIsInt)
@@ -945,7 +946,7 @@ namespace MyCompiler
                 true));
         }
 
-        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, MyType lhsType, LLVMValueRef rhs, MyType rhsType)
+        private LLVMValueRef BuildStringConcat(LLVMValueRef lhs, Type lhsType, LLVMValueRef rhs, Type rhsType)
         {
             var ctx = _module.Context;
             var malloc = GetMalloc();
@@ -953,13 +954,13 @@ namespace MyCompiler
             var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // 1. Helper to ensure we have an i8* for sprintf
-            LLVMValueRef PrepareArg(LLVMValueRef val, MyType type)
+            LLVMValueRef PrepareArg(LLVMValueRef val, Type type)
             {
-                if (type == MyType.String) return val;
+                if (type is StringType) return val;
 
                 // Allocate buffer for number conversion
                 var buf = _builder.BuildCall2(malloc.Type, malloc.Func, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 32) }, "num_buf");
-                var fmtStr = type == MyType.Int ? "%ld" : "%g";
+                var fmtStr = type is IntType ? "%ld" : "%g";
                 var fmtPtr = _builder.BuildGlobalStringPtr(fmtStr, "fmt_num");
 
                 // sprintf(buf, fmt, val)
@@ -1156,7 +1157,8 @@ namespace MyCompiler
                 _builder.BuildStore(boxed, elementPtr).SetAlignment(8);
             }
 
-            expr.SetType(MyType.Array);
+            var elementType = expr.ElementType ?? new FloatType();
+            expr.SetType(new ArrayType(elementType));
             return arrayPtr;
         }
 
@@ -1212,22 +1214,24 @@ namespace MyCompiler
             // 6. Transform based on Type Inference
             return expr.Type switch
             {
-                MyType.String => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
-                MyType.Float => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
+                StringType => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
+                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
+                IntType => rawValue,
+                BoolType => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, rawValue, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), "to_bool"),
                 _ => rawValue
             };
         }
 
-        private LLVMTypeRef GetLLVMType(MyType type)
+        private LLVMTypeRef GetLLVMType(Type type)
         {
             var ctx = _module.Context;
             return type switch
             {
-                MyType.Float => ctx.DoubleType,
-                MyType.Int => ctx.Int64Type,
-                MyType.String => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                MyType.Array => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
-                MyType.Bool => ctx.Int1Type,
+                FloatType => ctx.DoubleType,
+                IntType => ctx.Int64Type,
+                StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
+                ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
+                BoolType => ctx.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}")
             };
         }
@@ -1272,7 +1276,7 @@ namespace MyCompiler
             // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
             // MapLLVMTypeToMyType from throwing for pointer types.
             var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
-            if (lastExpr != null && lastExpr.Type != MyType.None)
+            if (lastExpr != null && lastExpr.Type is not BoolType)
             {
                 AddImplicitPrint(last, lastExpr.Type);
             }

@@ -2,26 +2,26 @@ namespace MyCompiler
 {
     public interface ITypeVisitor
     {
-        MyType VisitSequence(SequenceNodeExpr expr);
-        MyType VisitNumber(NumberNodeExpr expr);
-        MyType VisitFloat(FloatNodeExpr expr);
-        MyType VisitString(StringNodeExpr expr);
-        MyType VisitBoolean(BooleanNodeExpr expr);
-        MyType VisitBinary(BinaryOpNodeExpr expr);
-        MyType VisitComparison(ComparisonNodeExpr expr);
-        MyType VisitIncrement(IncrementNodeExpr expr);
-        MyType VisitDecrement(DecrementNodeExpr expr);
-        MyType VisitId(IdNodeExpr expr);
-        MyType VisitAssign(AssignNodeExpr expr);
-        MyType VisitRandom(RandomNodeExpr expr);
-        MyType VisitPrint(PrintNodeExpr expr);
-        MyType VisitIf(IfNodeExpr expr);
-        MyType VisitForLoop(ForLoopNodeExpr expr);
-        MyType VisitForEachLoop(ForEachLoopNodeExpr expr);
-        MyType VisitArray(ArrayNodeExpr expr);
-        MyType VisitIndex(IndexNodeExpr expr);
-        MyType VisitRound(RoundNodeExpr expr);
-        // MyType VisitFunctionDef(FunctionDefNode expr);
-        // MyType VisitFunctionCall(FunctionCallNode expr);
+        Type VisitSequence(SequenceNodeExpr expr);
+        Type VisitNumber(NumberNodeExpr expr);
+        Type VisitFloat(FloatNodeExpr expr);
+        Type VisitString(StringNodeExpr expr);
+        Type VisitBoolean(BooleanNodeExpr expr);
+        Type VisitBinary(BinaryOpNodeExpr expr);
+        Type VisitComparison(ComparisonNodeExpr expr);
+        Type VisitIncrement(IncrementNodeExpr expr);
+        Type VisitDecrement(DecrementNodeExpr expr);
+        Type VisitId(IdNodeExpr expr);
+        Type VisitAssign(AssignNodeExpr expr);
+        Type VisitRandom(RandomNodeExpr expr);
+        Type VisitPrint(PrintNodeExpr expr);
+        Type VisitIf(IfNodeExpr expr);
+        Type VisitForLoop(ForLoopNodeExpr expr);
+        Type VisitForEachLoop(ForEachLoopNodeExpr expr);
+        Type VisitArray(ArrayNodeExpr expr);
+        Type VisitIndex(IndexNodeExpr expr);
+        Type VisitRound(RoundNodeExpr expr);
+        // Type VisitFunctionDef(FunctionDefNode expr);
+        // Type VisitFunctionCall(FunctionCallNode expr);
     }
 }

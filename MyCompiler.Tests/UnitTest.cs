@@ -95,6 +95,16 @@ namespace MyCompiler.Tests
         }
 
         [Theory]
+        [InlineData("x=[1,2,3,4]; print(x[0]);", "0\n")]
+        [InlineData("x=[5,6,7,8]; print(x[3]);", "8\n")]
+        [InlineData("print([9,8,7][1]);", "8\n")]
+        public void TestCompiler_ArrayIndex_ReturnsCorrectResults(string input, string expectedOutput)
+        {
+            var outputWriter = ReadWriteToConsole(input);
+            RunCompilerAndCompare(outputWriter, expectedOutput);
+        }
+
+        [Theory]
         [InlineData("10>5", "Result: True")]
         [InlineData("10<5", "Result: False")]
         [InlineData("10>=10", "Result: True")]

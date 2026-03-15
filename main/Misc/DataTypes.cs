@@ -1,0 +1,54 @@
+namespace MyCompiler
+{
+
+    public abstract class Type
+    {
+        public abstract override string ToString();
+
+    }
+
+
+    public class IntType : Type
+    {
+
+        public override string ToString() { return "int"; }
+    }
+    public class FloatType : Type
+    {
+        public override string ToString() { return "float"; }
+
+    }
+    public class BoolType : Type
+    {
+        public override string ToString() { return "bool"; }
+
+    }
+    public class StringType : Type
+    {
+        public override string ToString() { return "string"; }
+
+    }
+    public class VoidType : Type
+    {
+        public override string ToString() { return "void"; }
+
+    }
+
+    public class ArrayType : Type
+    {
+        public Type ElementType { get; }
+
+        public ArrayType(Type elementType)
+        {
+            ElementType = elementType;
+        }
+
+        public override string ToString()
+        {
+            return "array" + "(" + ElementType.ToString() + ")";
+        }
+    }
+
+
+
+}

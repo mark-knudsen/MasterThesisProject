@@ -19,6 +19,13 @@
 "foreach"       { return (int)Tokens.FOREACH; }
 "in"            { return (int)Tokens.IN; }
 
+"int"           { return (int)Tokens.INT; }
+"float"         { return (int)Tokens.FLOAT; }
+"string"        { return (int)Tokens.STRING; }
+"void"          { return (int)Tokens.VOID; }
+"bool"          { return (int)Tokens.BOOL; }
+"array"         { return (int)Tokens.ARRAY; }
+
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
 "=="            { return (int)Tokens.EQ; }

@@ -4,7 +4,7 @@ using LLVMSharp.Interop;
 
 namespace MyCompiler
 {
-    public record ContextEntry(LLVMValueRef Value, MyType Type, MyType? ElementType = null);
+    public record ContextEntry(LLVMValueRef Value, Type? Type, Type? ElementType = null);
 
     public sealed class Context
     {
@@ -18,7 +18,7 @@ namespace MyCompiler
         private Context(ImmutableDictionary<string, ContextEntry> source)
             => _source = source;
 
-        public Context Add(string name, LLVMValueRef value, MyType type = MyType.Int, MyType? elementType = null)
+        public Context Add(string name, LLVMValueRef value, Type? type = null, Type? elementType = null)
         {
             var newEntry = new ContextEntry(value, type, elementType);
             return new Context(_source.SetItem(name, newEntry));

@@ -3,9 +3,10 @@
 %visibility internal
 
 %union { 
-   public object obj; 
+    public object obj; 
     public bool boolVal;
     public double fval;
+    public MyCompiler.Type type; 
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
 }
@@ -17,6 +18,7 @@
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND FUNC
+%token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT 
 
@@ -30,9 +32,8 @@
 
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
+%type <type> Type
 %type <obj> params args  /* Use <obj> for lists */
-%type <exprList> expr_list
-
 %type <exprList> expr_list
 
 
@@ -70,6 +71,15 @@ Statement
 
       { $$ = new ForEachLoopNodeExpr(new IdNodeExpr((string)$3), $5 as ExpressionNodeExpr, $8 ); }
    
+    ;
+
+Type
+    : INT                 { $$ = new IntType(); }
+    | FLOAT               { $$ = new FloatType(); }
+    | BOOL                { $$ = new BoolType(); }
+    | STRING              { $$ = new StringType(); }    
+    | VOID                { $$ = new VoidType(); }
+    | ARRAY GT Type LT    { $$ = new ArrayType($3); }
     ;
 
 Assignment 
