@@ -9,12 +9,13 @@ namespace MyCompiler
 {
     public class Program
     {
+        public static StringBuilder OutputBuffer = new();
+
         // public static int ManagedPrint(int value)
         // {
         //     OutputBuffer.AppendLine(value.ToString());
         //     return value;
         // }
-        // public static StringBuilder OutputBuffer = new();
 
         static void PrintVariableTable(ICompiler compiler)
         {
@@ -38,7 +39,7 @@ namespace MyCompiler
             //bool Debug = args.Length > 0 && args[0] == "True";
             bool Debug = true;
             KeepRunning = true;
-            bool multipleLines = true;
+            bool multipleLines = false;
 
             StringBuilder userInput = new StringBuilder();
 
@@ -48,43 +49,101 @@ namespace MyCompiler
                 Console.ForegroundColor = ConsoleColor.Gray;
                 Console.Write("> "); // Prompt for input
 
+                var lines = new List<string>();
                 var currentLine = new StringBuilder();
+                int cursorPosition = 0;
                 bool isComplete = false;
+                int promptStartLeft = Console.CursorLeft;
+                int promptStartTop = Console.CursorTop;
+                int prevRenderedLength = 0;
+
+                void RenderCurrentLine()
+                {
+                    Console.SetCursorPosition(promptStartLeft, Console.CursorTop);
+                    Console.Write(currentLine.ToString());
+                    if (prevRenderedLength > currentLine.Length)
+                    {
+                        Console.Write(new string(' ', prevRenderedLength - currentLine.Length));
+                    }
+                    prevRenderedLength = currentLine.Length;
+                    Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
+                }
 
                 if (multipleLines)
                 {
-                    // Reading input line by line
+                    // Reading input line by line with arrow/edit support
                     while (!isComplete)
                     {
                         var key = Console.ReadKey(intercept: true); // intercept key press
 
-                        if (key.Key == ConsoleKey.Enter)  // Handle Enter key
+                        if (key.Key == ConsoleKey.Enter)
                         {
                             if ((key.Modifiers & ConsoleModifiers.Alt) == ConsoleModifiers.Alt)
                             {
-                                // If Shift + Enter is pressed, submit the command
+                                // If Alt + Enter is pressed, submit the command
                                 isComplete = true;
+                                Console.WriteLine();
                             }
                             else
                             {
-                                // Otherwise, treat it as a new line
-                                currentLine.Append(Environment.NewLine);
-                                Console.WriteLine(); // Move to the next line
-                                continue; // Exit for the new line
+                                // Otherwise, treat it as a new line inside multi-line input
+                                lines.Add(currentLine.ToString());
+                                currentLine.Clear();
+                                cursorPosition = 0;
+                                prevRenderedLength = 0;
+                                Console.WriteLine();
+                                promptStartLeft = 0; // no prompt for continuation lines
+                                continue;
                             }
                         }
-                        else if (key.Key == ConsoleKey.Backspace)  // Handle Backspace key
+                        else if (key.Key == ConsoleKey.Backspace)
                         {
-                            if (currentLine.Length > 0)
+                            if (cursorPosition > 0)
                             {
-                                currentLine.Length--;  // Remove last character
-                                Console.Write("\b \b"); // Clear the character on the console
+                                cursorPosition--;
+                                currentLine.Remove(cursorPosition, 1);
+                                RenderCurrentLine();
                             }
                         }
-                        else
+                        else if (key.Key == ConsoleKey.Delete)
                         {
-                            currentLine.Append(key.KeyChar);  // Add character to the current line
-                            Console.Write(key.KeyChar);  // Display character on console
+                            if (cursorPosition < currentLine.Length)
+                            {
+                                currentLine.Remove(cursorPosition, 1);
+                                RenderCurrentLine();
+                            }
+                        }
+                        else if (key.Key == ConsoleKey.LeftArrow)
+                        {
+                            if (cursorPosition > 0)
+                            {
+                                cursorPosition--;
+                                Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
+                            }
+                        }
+                        else if (key.Key == ConsoleKey.RightArrow)
+                        {
+                            if (cursorPosition < currentLine.Length)
+                            {
+                                cursorPosition++;
+                                Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
+                            }
+                        }
+                        else if (key.Key == ConsoleKey.Home)
+                        {
+                            cursorPosition = 0;
+                            Console.SetCursorPosition(promptStartLeft, Console.CursorTop);
+                        }
+                        else if (key.Key == ConsoleKey.End)
+                        {
+                            cursorPosition = currentLine.Length;
+                            Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
+                        }
+                        else if (!char.IsControl(key.KeyChar))
+                        {
+                            currentLine.Insert(cursorPosition, key.KeyChar);
+                            cursorPosition++;
+                            RenderCurrentLine();
                         }
                     }
                 }
@@ -94,8 +153,20 @@ namespace MyCompiler
                     currentLine.Append(input);
                 }
 
-                // Add the current line to user input
-                userInput.Append(currentLine.ToString().Trim());
+                // Add the current lines to user input
+                if (multipleLines)
+                {
+                    if (currentLine.Length > 0)
+                        lines.Add(currentLine.ToString());
+
+                    userInput.Append(string.Join(Environment.NewLine, lines).Trim());
+                    lines.Clear();
+                }
+                else
+                {
+                    userInput.Append(currentLine.ToString().Trim());
+                }
+
                 currentLine.Clear();
 
                 if (string.IsNullOrWhiteSpace(userInput.ToString()))
@@ -109,6 +180,7 @@ namespace MyCompiler
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("Exiting...");
+                    Console.ResetColor();
                     break;  // Exit the loop when "exit" command is entered
                 }
 
@@ -127,11 +199,11 @@ namespace MyCompiler
                     userInput.Clear();
                     continue;
                 }
-                
+
                 if (userInput.ToString() == "verbose")
                 {
                     Debug = !Debug;
-                    if(Debug)
+                    if (Debug)
                         Console.WriteLine("\n verbose on");
                     else
                         Console.WriteLine("\n verbose off");
@@ -143,7 +215,7 @@ namespace MyCompiler
                 if (userInput.ToString() == "multi lines")
                 {
                     multipleLines = !multipleLines;
-                    if(multipleLines)
+                    if (multipleLines)
                         Console.WriteLine("\n multi lines on");
                     else
                         Console.WriteLine("\n multi lines off");
@@ -163,8 +235,8 @@ namespace MyCompiler
                         if (parser.Parse() && parser.RootNode != null)
                         {
                             Console.ForegroundColor = ConsoleColor.Cyan;
-                            if(Debug) Console.WriteLine("\nAST Structure:");
-                            if(Debug) PrintNode(parser.RootNode, 0); // Print AST
+                            if (Debug) Console.WriteLine("\nAST Structure:");
+                            if (Debug) PrintNode(parser.RootNode, 0); // Print AST
 
                             try
                             {
@@ -215,6 +287,7 @@ namespace MyCompiler
 
                 // Clear input for the next round
                 userInput.Clear();
+                Console.ForegroundColor = ConsoleColor.Gray;
             } while (KeepRunning);
         }
 

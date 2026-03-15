@@ -414,7 +414,7 @@ namespace MyCompiler
 
                 case ValueTag.Array:
                     if (_debug) Console.WriteLine("return array");
-                    return HandleArray(result.data);
+                    return HandleArray2(result.data);
 
                 case ValueTag.None:
                     if (_debug) Console.WriteLine("return none");
@@ -1257,12 +1257,8 @@ namespace MyCompiler
 
             return _builder.BuildSIToFP(randValue, _module.Context.Int64Type, "rand_simple");
         }
-
-        private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, Type type)
+  private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, Type type)
         {
-            if (_debug) Console.WriteLine("prints type: " + type);
-            if (_debug) Console.WriteLine("value to print type: " + valueToPrint.TypeOf);
-
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
             var llvmCtx = _module.Context;
@@ -1620,7 +1616,7 @@ namespace MyCompiler
 
             var elementType = expr.ElementType ?? new FloatType();
             expr.SetType(new ArrayType(elementType));
-            //expr.SetType(MyType.Array);
+
             if (_debug) Console.WriteLine("array pointer: " + arrayPtr);
             return arrayPtr;
         }
