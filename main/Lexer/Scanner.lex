@@ -24,6 +24,7 @@
 "where"         { return (int)Tokens.WHERE; }
 "=>"            { return (int)Tokens.LAMBDA; }
 "add"           { return (int)Tokens.ADD; }
+"remove"        { return (int)Tokens.REMOVE; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }

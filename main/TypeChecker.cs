@@ -42,6 +42,7 @@ namespace MyCompiler
                 IndexNodeExpr idx => VisitIndex(idx),
                 WhereNodeExpr whe => VisitWhere(whe),
                 AddNodeExpr add => VisitAdd(add),
+                RemoveNodeExpr remo => VisitRemove(remo),
 
                 FunctionDefNode fdef => VisitFunctionDef(fdef),
                 FunctionCallNode fcall => VisitFunctionCall(fcall),
@@ -464,6 +465,14 @@ namespace MyCompiler
 
             expr.SetType(MyType.Array);
             return MyType.Array;
+        }
+
+        public MyType VisitRemove(RemoveNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.RemoveExpression);
+            expr.SetType(expr.RemoveExpression.Type);
+            return expr.RemoveExpression.Type;
         }
     }
 }

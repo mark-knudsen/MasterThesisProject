@@ -318,6 +318,23 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
+    public class WhereNodeExpr : ExpressionNodeExpr
+    {
+        public IdNodeExpr IteratorId;
+
+        public ExpressionNodeExpr ArrayNodeExpr;
+        public ExpressionNodeExpr Condition;
+
+        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
+        {
+            IteratorId = iteratorId;
+            ArrayNodeExpr = arrayExpr;
+            Condition = condition;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
+    }
+
     public class AddNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr ArrayExpression { get; }
@@ -331,6 +348,21 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
+    }
+
+    public class RemoveNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr RemoveExpression { get; }
+
+        public RemoveNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeExpression)
+        {
+            ArrayExpression = arrayExpr;
+            RemoveExpression = removeExpression;
+            Type = MyType.None; // Initial default
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveExpr(this);
     }
 
     // public class WhereNodeExpr : ExpressionNodeExpr
@@ -347,21 +379,4 @@ namespace MyCompiler
     //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
     // }
 
-    public class WhereNodeExpr : ExpressionNodeExpr
-    {
-        public IdNodeExpr IteratorId;
-        
-        public ExpressionNodeExpr ArrayNodeExpr;
-        public ExpressionNodeExpr Condition;
-
-        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
-        {
-            IteratorId = iteratorId;
-            ArrayNodeExpr = arrayExpr;
-            Condition = condition;
-        }
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-            => visitor.VisitWhereExpr(this);
-    }
 }

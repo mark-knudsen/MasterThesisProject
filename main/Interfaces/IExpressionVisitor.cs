@@ -23,6 +23,7 @@ namespace MyCompiler
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
         LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitAddExpr(AddNodeExpr expr);
+        LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 
 
