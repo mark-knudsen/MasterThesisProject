@@ -20,7 +20,9 @@ namespace MyCompiler
         MyType VisitArray(ArrayNodeExpr expr);
         MyType VisitIndex(IndexNodeExpr expr);
         MyType VisitAdd(AddNodeExpr expr);
+        MyType VisitAddRange(AddRangeNodeExpr expr);
         MyType VisitRemove(RemoveNodeExpr expr);
+        MyType VisitLength(LengthNodeExpr expr);
         MyType VisitWhere(WhereNodeExpr expr);
         MyType VisitRound(RoundNodeExpr expr);
         // MyType VisitFunctionDef(FunctionDefNode expr);

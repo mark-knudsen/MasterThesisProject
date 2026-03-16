@@ -16,7 +16,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR 
-%token PRINT RANDOM ROUND FUNC WHERE ADD REMOVE
+%token PRINT RANDOM ROUND FUNC WHERE ADD ADDRANGE REMOVE LENGTH
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
@@ -141,8 +141,10 @@ expr
     | LPAREN expr RPAREN  { $$ = $2; }
     //| expr DOT WHERE LPAREN ID LAMBDA expr RPAREN   {$$ = new WhereNodeExpr($5 as IdNodeExpr, $1 as ArrayNodeExpr, $7 as ComparisonNodeExpr); }
     | LPAREN expr RPAREN
-    | expr DOT ADD LPAREN expr RPAREN   { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
-    | expr DOT REMOVE LPAREN expr RPAREN   { $$ = new RemoveNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT LENGTH                       { $$ = new LengthNodeExpr($1 as ExpressionNodeExpr); }
 
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {

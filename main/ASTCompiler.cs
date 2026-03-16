@@ -271,6 +271,7 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
     }
+
     public class ComparisonNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr Left;
@@ -292,7 +293,6 @@ namespace MyCompiler
     public class ArrayNodeExpr : ExpressionNodeExpr
     {
         public List<ExpressionNodeExpr> Elements { get; }
-        // Add this to store what's inside the array
         public MyType? ElementType { get; set; }
 
         public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
@@ -344,10 +344,24 @@ namespace MyCompiler
         {
             ArrayExpression = arrayExpr;
             AddExpression = addExpression;
-            Type = MyType.None; // Initial default
+            Type = MyType.Array;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
+    }
+    public class AddRangeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr AddRangeExpression { get; }
+
+        public AddRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addRangeExpression)
+        {
+            ArrayExpression = arrayExpr;
+            AddRangeExpression = addRangeExpression;
+            Type = MyType.Array;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddRangeExpr(this);
     }
 
     public class RemoveNodeExpr : ExpressionNodeExpr
@@ -359,10 +373,23 @@ namespace MyCompiler
         {
             ArrayExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = MyType.None; // Initial default
+            Type = MyType.Array; 
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveExpr(this);
+    }
+
+    public class LengthNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+
+        public LengthNodeExpr(ExpressionNodeExpr arrayExpr)
+        {
+            ArrayExpression = arrayExpr;
+            Type = MyType.Int; 
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLengthExpr(this);
     }
 
     // public class WhereNodeExpr : ExpressionNodeExpr

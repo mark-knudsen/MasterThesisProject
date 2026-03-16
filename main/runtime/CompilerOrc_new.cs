@@ -42,6 +42,8 @@ namespace MyCompiler
         private string _funcName;
         private int _replCounter = 0;
         private bool _debug = true;
+        LLVMTypeRef _memmoveType;
+        LLVMTypeRef _reallocType;
         private MyType _lastType; // Store the type of the last expression for auto-printing
         private NodeExpr _lastNode; // Store the last expression for auto-printing
         private LLVMTypeRef _runtimeValueType;
@@ -180,14 +182,10 @@ namespace MyCompiler
         // add length func
         // add you can add more than one element to array
         // add you can remove more than one element from an array
+        // add and remove prints out the new array
 
-        // FUNCTIONALITY
-        // can't do the command: "harry"
-        // can get a result back with: do c=2; c++; c. 
-        // but cannot get a result back from: c=2; c++                              
-        // can't use random, it receives double?                    
-        // can't print out array or assign it without error
-        // but can use index on an array
+        // BROKEN FUNCTIONALITY                           
+        // doing this in the same command fails: x.add(1); x.length 
 
         // UNIT TESTING
         // create a orc unit test
@@ -199,6 +197,7 @@ namespace MyCompiler
         // currently it also prints out the lenght when calling print, not sure where it happends
         // AddImplicitPrint and visitprint are very similar, can be refactored
         // int is sometimes set to i64, but int is standard i32 in many langauges, it should be consistent and don't think we need int64 as standard for our language
+        // FIX: having int be i64 is a massive number, we do not need that kind of precision, it would be better to use i32
 
         void CreateMain()
         {
@@ -262,13 +261,13 @@ namespace MyCompiler
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-            var result1 = delegateResult();
-            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(result1);
+            var tempResult = delegateResult();
+            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
 
             switch ((ValueTag)result.tag)
             {
                 case ValueTag.Int:
-                    if (_debug) Console.WriteLine("return int"); // this fails for x.add, but works fine without it, but it it a simple console write line, why would it crash with it?
+                    if (_debug) Console.WriteLine("return int");
                     return Marshal.ReadInt64(result.data);
 
                 case ValueTag.Float:
@@ -885,6 +884,90 @@ namespace MyCompiler
             return (mallocType, _module.AddFunction("malloc", mallocType));
         }
 
+        private LLVMValueRef GetOrDeclareRealloc()
+        {
+            var ctx = _module.Context;
+
+            var i8ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            var type = LLVMTypeRef.CreateFunction(
+                i8ptr,
+                new[] { i8ptr, ctx.Int64Type },
+                false
+            );
+
+            _reallocType = type;
+
+            var fn = _module.GetNamedFunction("realloc");
+
+            if (fn.Handle != IntPtr.Zero)
+                return fn;
+
+            return _module.AddFunction("realloc", type);
+        }
+
+        private LLVMValueRef GetOrDeclareMemmove()
+        {
+            var ctx = _module.Context;
+
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            var memmoveType = LLVMTypeRef.CreateFunction(
+                ctx.VoidType,
+                new[] { i8Ptr, i8Ptr, ctx.Int64Type },
+                false
+            );
+
+            _memmoveType = memmoveType;
+
+            var fn = _module.GetNamedFunction("memmove");
+            if (fn.Handle != IntPtr.Zero)
+                return fn;
+
+            return _module.AddFunction("memmove", memmoveType);
+        }
+        private LLVMTypeRef GetLLVMType(MyType type)
+        {
+            var ctx = _module.Context;
+            return type switch
+            {
+                MyType.Float => ctx.DoubleType,
+                MyType.Int => ctx.Int64Type,
+                MyType.String => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
+                MyType.Array => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
+                MyType.Bool => ctx.Int1Type,
+                _ => throw new Exception($"Unsupported type: {type}")
+            };
+        }
+
+        // private MyType MapLLVMTypeToMyType(LLVMTypeRef llvmType)
+        // {
+        //     if (llvmType.Equals(_module.Context.Int64Type))
+        //         return MyType.Int;
+        //     if (llvmType.Equals(_module.Context.Int32Type))
+        //         return MyType.Int;
+
+        //     if (llvmType.Equals(_module.Context.DoubleType))
+        //         return MyType.Float;
+
+        //     if (llvmType.Equals(_module.Context.Int1Type)) // boolean type
+        //         return MyType.Bool;
+
+        //     // LLVM uses i8* for both C-strings and our array representation.
+        //     // Use this mapping mainly for string literal cases; array cases should be handled
+        //     // based on semantic types instead of relying on LLVM type introspection.
+        //     if (llvmType.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
+        //         llvmType.ElementType.Equals(_module.Context.Int8Type))
+        //     {
+        //         return MyType.String;
+        //     }
+
+        //     // Add more cases as needed...
+
+        //     // Default to None to avoid throwing for pointer/complex types we don't handle.
+        //     return MyType.None;
+        // }
+
         private LLVMValueRef GetSprintf()
         {
             var fn = _module.GetNamedFunction("sprintf");
@@ -1158,77 +1241,6 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
-        // public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
-        // {
-        //     // 1 Evaluate the array expression
-        //     var inputArray = Visit(expr.ArrayNodeExpr); // LLVMValueRef
-
-        //     // 2 Create the result array
-        //     var resultArray = _arrayHelper.CreateArray(); // LLVMValueRef
-
-        //     // 3 Get array length
-        //     var arrayLen = _arrayHelper.ArrayLength(inputArray);
-
-        //     // 4 Create loop index i = 0
-        //     var i = _builder.BuildAlloca(_module.Context.Int64Type, "i");
-        //     _builder.BuildStore(LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0), i);
-
-        //     // 5 Create basic blocks
-        //     var loopBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.loop");
-        //     var bodyBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.body");
-        //     var afterBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.after");
-
-        //     // 6 Branch to loop
-        //     _builder.BuildBr(loopBlock);
-
-        //     // 7 Loop block
-        //     _builder.PositionAtEnd(loopBlock);
-        //     var currentIndex = _builder.BuildLoad2(_module.Context.Int64Type, i, "i.load");
-        //     var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, currentIndex, arrayLen, "loopcond");
-        //     _builder.BuildCondBr(cond, bodyBlock, afterBlock);
-
-        //     // 8 Body block
-        //     _builder.PositionAtEnd(bodyBlock);
-
-        //     // 8a️⃣ Get element at index i
-        //     var element = _arrayHelper.ArrayGetValue(inputArray, currentIndex);
-
-        //     // 8b️⃣ Bind iterator variable (e.g., "x") to element in context
-        //     _context.Add(expr.IteratorName, null, element);
-
-        //     // 8c️⃣ Evaluate the condition
-        //     var condVal = Visit(expr.Condition); // LLVMValueRef (i1)
-
-        //     // 8d️⃣ If condition is true, push element to result array
-        //     var pushBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.push");
-        //     var skipBlock = _module.Context.AppendBasicBlock(_builder.InsertBlock.Parent, "where.skip");
-
-        //     _builder.BuildCondBr(condVal, pushBlock, skipBlock);
-
-        //     // Push block
-        //     _builder.PositionAtEnd(pushBlock);
-        //     _arrayHelper.ArrayPushValue(resultArray, element);
-        //     _builder.BuildBr(skipBlock);
-
-        //     // Skip block
-        //     _builder.PositionAtEnd(skipBlock);
-
-        //     // 8e️⃣ Increment i
-        //     var nextIndex = _builder.BuildAdd(currentIndex,
-        //         LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1),
-        //         "i.next");
-        //     _builder.BuildStore(nextIndex, i);
-
-        //     // Branch back to loop
-        //     _builder.BuildBr(loopBlock);
-
-        //     // 9 After loop
-        //     _builder.PositionAtEnd(afterBlock);
-
-        //     // 10 Return result array
-        //     return resultArray;
-        // }
-
         public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) // Mine
         {
             Console.WriteLine("visiting where0");
@@ -1350,125 +1362,7 @@ namespace MyCompiler
             };
         }
 
-        private LLVMTypeRef GetLLVMType(MyType type)
-        {
-            var ctx = _module.Context;
-            return type switch
-            {
-                MyType.Float => ctx.DoubleType,
-                MyType.Int => ctx.Int64Type,
-                MyType.String => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                MyType.Array => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
-                MyType.Bool => ctx.Int1Type,
-                _ => throw new Exception($"Unsupported type: {type}")
-            };
-        }
-
-        private MyType MapLLVMTypeToMyType(LLVMTypeRef llvmType)
-        {
-            if (llvmType.Equals(_module.Context.Int64Type))
-                return MyType.Int;
-            if (llvmType.Equals(_module.Context.Int32Type))
-                return MyType.Int;
-
-            if (llvmType.Equals(_module.Context.DoubleType))
-                return MyType.Float;
-
-            if (llvmType.Equals(_module.Context.Int1Type)) // boolean type
-                return MyType.Bool;
-
-            // LLVM uses i8* for both C-strings and our array representation.
-            // Use this mapping mainly for string literal cases; array cases should be handled
-            // based on semantic types instead of relying on LLVM type introspection.
-            if (llvmType.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
-                llvmType.ElementType.Equals(_module.Context.Int8Type))
-            {
-                return MyType.String;
-            }
-
-            // Add more cases as needed...
-
-            // Default to None to avoid throwing for pointer/complex types we don't handle.
-            return MyType.None;
-        }
-
-        public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
-        {
-            var entry = _context.Get(expr.Name);
-            if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
-
-            var varType = entry.Type;
-            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {varType}, Value: {entry.Value})");
-
-            // Get the LLVM representation of the type (e.g., double, i64, or ptr)
-            var llvm_type = GetLLVMType(varType);
-
-            var module = _module;
-            LLVMValueRef global = module.GetNamedGlobal(expr.Name);
-
-            if (global.Handle == IntPtr.Zero)
-            {
-                // Declare external if not in current module
-                global = module.AddGlobal(llvm_type, expr.Name);
-                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-            }
-
-            // Use the explicit llvm_type for the Load2 instruction
-            return _builder.BuildLoad2(llvm_type, global, expr.Name + "_load");
-        }
-
-        public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
-        {
-            LLVMValueRef last = default;
-
-            foreach (var stmt in expr.Statements)
-            {
-                last = Visit(stmt);
-            }
-
-            // Use the semantic type from the AST rather than inferring from LLVM types.
-            // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
-            // MapLLVMTypeToMyType from throwing for pointer types.
-            var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
-            if (lastExpr != null && lastExpr.Type != MyType.None)
-            {
-                AddImplicitPrint(last, lastExpr.Type);
-            }
-
-            return last;
-        }
-
-        private LLVMValueRef Visit(NodeExpr expr)
-        {
-            if (_debug) Console.WriteLine("visiting: " + expr);
-            return expr.Accept(this);
-        }
-
-        private LLVMValueRef GetOrDeclareRealloc()
-        {
-            var ctx = _module.Context;
-
-            var i8ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            var type = LLVMTypeRef.CreateFunction(
-                i8ptr,
-                new[] { i8ptr, ctx.Int64Type },
-                false
-            );
-
-            _reallocType = type;
-
-            var fn = _module.GetNamedFunction("realloc");
-
-            if (fn.Handle != IntPtr.Zero)
-                return fn;
-
-            return _module.AddFunction("realloc", type);
-        }
-
-        LLVMTypeRef _reallocType;
-
-        public LLVMValueRef VisitAddExpr(AddNodeExpr expr)
+        public LLVMValueRef VisitAddExpr(AddNodeExpr expr) // the working one, but not fully safe
         {
             var ctx = _module.Context;
 
@@ -1538,32 +1432,26 @@ namespace MyCompiler
             var newLength = _builder.BuildAdd(length, one64, "new_length");
             _builder.BuildStore(newLength, lenPtr).SetAlignment(8);
 
-            return default;
+            return arrayPtrPhi;
         }
-        
-        LLVMTypeRef _memmoveType;
 
-        private LLVMValueRef GetOrDeclareMemmove()
+        public LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr)
         {
-            var ctx = _module.Context;
+            var arrayPtr = Visit(expr.ArrayExpression);
+            var range = Visit(expr.AddRangeExpression); // visits the array we are , like x.addRange, then we visit x on this line of code
 
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var fullSequence = new SequenceNodeExpr();
 
-            var memmoveType = LLVMTypeRef.CreateFunction(
-                ctx.VoidType,
-                new[] { i8Ptr, i8Ptr, ctx.Int64Type },
-                false
-            );
+            foreach (var item in ((ArrayNodeExpr)expr.AddRangeExpression).Elements)
+            {
+                var d = new AddNodeExpr(expr.ArrayExpression, item);
+                fullSequence.Statements.Add(d);
+            }
+            var newRange = Visit(fullSequence);
 
-            _memmoveType = memmoveType;
-
-            var fn = _module.GetNamedFunction("memmove");
-            if (fn.Handle != IntPtr.Zero)
-                return fn;
-
-            return _module.AddFunction("memmove", memmoveType);
+            return newRange;
         }
-        
+
         public LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr)
         {
             var ctx = _module.Context;
@@ -1632,6 +1520,76 @@ namespace MyCompiler
             _builder.PositionAtEnd(skipBlock);
 
             return arrayPtr;
+        }
+
+        public LLVMValueRef VisitLengthExpr(LengthNodeExpr expr)
+        {
+            var ctx = _module.Context;
+
+            var arrayPtr = Visit(expr.ArrayExpression); // LLVMValueRef pointing to the array struct
+            var zero32 = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero32 }, "len_ptr");
+            var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "length");
+            length.SetAlignment(8); // make sure alignment matches allocation
+
+            return length;
+        }
+
+        public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
+        {
+            var entry = _context.Get(expr.Name);
+            if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
+
+            var varType = entry.Type;
+            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {varType}, Value: {entry.Value})");
+
+            // Get the LLVM representation of the type (e.g., double, i64, or ptr)
+            var llvm_type = GetLLVMType(varType);
+
+            var module = _module;
+            LLVMValueRef global = module.GetNamedGlobal(expr.Name);
+
+            if (global.Handle == IntPtr.Zero)
+            {
+                // Declare external if not in current module
+                global = module.AddGlobal(llvm_type, expr.Name);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+            }
+
+            // Use the explicit llvm_type for the Load2 instruction
+            return _builder.BuildLoad2(llvm_type, global, expr.Name + "_load");
+        }
+
+        public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
+        {
+            LLVMValueRef last = default;
+
+            foreach (var stmt in expr.Statements)
+            {
+                last = Visit(stmt);
+            }
+
+            // Use the semantic type from the AST rather than inferring from LLVM types.
+            // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
+            // MapLLVMTypeToMyType from throwing for pointer types.
+            var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
+            if (lastExpr != null && lastExpr.Type != MyType.None)
+            {
+                AddImplicitPrint(last, lastExpr.Type);
+            }
+
+            return last;
+        }
+
+        private LLVMValueRef Visit(NodeExpr expr)
+        {
+            if (_debug)
+            {
+                //Console.WriteLine("visiting: " + expr);
+                var name = expr.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
+            }
+            return expr.Accept(this);
         }
     }
 }

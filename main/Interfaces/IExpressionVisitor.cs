@@ -23,9 +23,10 @@ namespace MyCompiler
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
         LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitAddExpr(AddNodeExpr expr);
+        LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr);
         LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr);
+        LLVMValueRef VisitLengthExpr(LengthNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
-
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);

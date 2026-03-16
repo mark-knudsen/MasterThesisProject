@@ -20,8 +20,8 @@ namespace MyCompiler
 
         private MyType Visit(NodeExpr node)
         {
-            // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
+            var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+            if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
@@ -42,7 +42,9 @@ namespace MyCompiler
                 IndexNodeExpr idx => VisitIndex(idx),
                 WhereNodeExpr whe => VisitWhere(whe),
                 AddNodeExpr add => VisitAdd(add),
+                AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
+                LengthNodeExpr len => VisitLength(len),
 
                 FunctionDefNode fdef => VisitFunctionDef(fdef),
                 FunctionCallNode fcall => VisitFunctionCall(fcall),
@@ -129,38 +131,6 @@ namespace MyCompiler
 
                 throw new Exception($"Arithmetic operator {expr.Operator} requires numeric types, got {leftType} and {rightType}");
             }
-
-
-            // it fails on comparison with '&' and '|'
-
-            // > (5<7 and true)  // fails
-            // AST Structure:
-            // we checking
-            // visiting Sequence
-            // visiting Comparison
-            // visiting Number
-            // visiting BinaryOp
-            // visiting Number
-            // visiting Boolean
-            // Compiler Error: Unknown operator && or type mismatch: Int and Bool
-
-            // > 5<7             // succeeds
-            // AST Structure:
-            // we checking
-            // visiting Sequence
-            // visiting Comparison
-            // visiting Number
-            // visiting Number
-            // visiting: MyCompiler.SequenceNodeExpr
-            // visiting: MyCompiler.ComparisonNodeExpr
-            // visiting: MyCompiler.NumberNodeExpr
-            // visiting: MyCompiler.NumberNodeExpr
-            // prints type: Bool
-            // value to print type: i1
-            // LLVM TYPE: i1
-            // LANG TYPE: Bool
-            // Generated LLVM IR:
-
 
             // Handle Comparisons (==, !=, <, >)
             if (expr.Operator is "==" or "!=" or "<" or ">" or "&&" or "||")
@@ -364,7 +334,7 @@ namespace MyCompiler
                     return inferred;
                 }
             }
-            expr.SetType(MyType.Float);
+            expr.SetType(MyType.Float); // why is index type a float? Wouldn't it be an int`
             return MyType.Float;
         }
 
@@ -430,20 +400,10 @@ namespace MyCompiler
             return MyType.Float;
         }
 
-        public MyType VisitAdd(AddNodeExpr expr)
-        {
-            Visit(expr.ArrayExpression);
-            Visit(expr.AddExpression);
-            expr.SetType(expr.AddExpression.Type);
-            return expr.AddExpression.Type;
-        }
-
         public MyType VisitWhere(WhereNodeExpr expr)
         {
-            System.Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
+            Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
             VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
-
-
 
             Visit(expr.IteratorId);
             Visit(expr.ArrayNodeExpr);
@@ -461,8 +421,21 @@ namespace MyCompiler
             if (condType != MyType.Bool)
                 throw new Exception("where condition must return bool");
 
-
-
+            expr.SetType(MyType.Array);
+            return MyType.Array;
+        }
+   
+        public MyType VisitAdd(AddNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.AddExpression);
+            expr.SetType(MyType.Array);
+            return MyType.Array;
+        }
+        public MyType VisitAddRange(AddRangeNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.AddRangeExpression);
             expr.SetType(MyType.Array);
             return MyType.Array;
         }
@@ -472,7 +445,13 @@ namespace MyCompiler
             Visit(expr.ArrayExpression);
             Visit(expr.RemoveExpression);
             expr.SetType(expr.RemoveExpression.Type);
-            return expr.RemoveExpression.Type;
+            return MyType.Array;
+        }
+
+        public MyType VisitLength(LengthNodeExpr expr)
+        {
+            expr.SetType(MyType.Int);
+            return MyType.Int;
         }
     }
 }

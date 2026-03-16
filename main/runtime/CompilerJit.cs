@@ -1196,5 +1196,15 @@ namespace MyCompiler
         {
             throw new NotImplementedException();
         }
+
+        public LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
+
+        public LLVMValueRef VisitLengthExpr(LengthNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
