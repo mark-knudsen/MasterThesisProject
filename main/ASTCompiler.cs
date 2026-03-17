@@ -373,10 +373,25 @@ namespace MyCompiler
         {
             ArrayExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = MyType.Array; 
+            Type = MyType.Array;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveExpr(this);
+    }
+
+    public class RemoveRangeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr RemoveRangeExpression { get; }
+
+        public RemoveRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeRangeExpression)
+        {
+            ArrayExpression = arrayExpr;
+            RemoveRangeExpression = removeRangeExpression;
+            Type = MyType.Array;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveRangeExpr(this);
     }
 
     public class LengthNodeExpr : ExpressionNodeExpr
@@ -386,10 +401,24 @@ namespace MyCompiler
         public LengthNodeExpr(ExpressionNodeExpr arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = MyType.Int; 
+            Type = MyType.Int;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLengthExpr(this);
+    }
+
+    public class UnaryOpNodeExpr : ExpressionNodeExpr
+    {
+        public string Operator { get; }
+        public ExpressionNodeExpr Operand { get; }
+
+        public UnaryOpNodeExpr(string operatorSymbol, ExpressionNodeExpr operand)
+        {
+            Operator = operatorSymbol;
+            Operand = operand;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
     }
 
     // public class WhereNodeExpr : ExpressionNodeExpr

@@ -28,6 +28,7 @@ namespace MyCompiler
                 StringNodeExpr str => VisitString(str),
                 BooleanNodeExpr b => VisitBoolean(b),
                 IdNodeExpr id => VisitId(id),
+                UnaryOpNodeExpr un => VisitUnaryOp(un),
                 BinaryOpNodeExpr bin => VisitBinary(bin),
                 ComparisonNodeExpr cmp => VisitComparison(cmp),
                 IncrementNodeExpr inc => VisitIncrement(inc),
@@ -44,6 +45,7 @@ namespace MyCompiler
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
+                RemoveRangeNodeExpr remor => VisitRemoveRange(remor),
                 LengthNodeExpr len => VisitLength(len),
 
                 FunctionDefNode fdef => VisitFunctionDef(fdef),
@@ -424,7 +426,7 @@ namespace MyCompiler
             expr.SetType(MyType.Array);
             return MyType.Array;
         }
-   
+
         public MyType VisitAdd(AddNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
@@ -448,10 +450,43 @@ namespace MyCompiler
             return MyType.Array;
         }
 
+        public MyType VisitRemoveRange(RemoveRangeNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.RemoveRangeExpression);
+            expr.SetType(MyType.Array);
+            return MyType.Array;
+        }
+
         public MyType VisitLength(LengthNodeExpr expr)
         {
             expr.SetType(MyType.Int);
             return MyType.Int;
+        }
+
+        public MyType VisitUnaryOp(UnaryOpNodeExpr expr)
+        {
+            // Visit the operand first
+            MyType operandType = Visit(expr.Operand);
+
+            // Check the type of the operand and apply the unary minus operation
+            if (operandType == MyType.Int)
+            {
+                // Unary minus on an integer, result is also an integer
+                expr.SetType(MyType.Int);
+                return MyType.Int;
+            }
+            else if (operandType == MyType.Float)
+            {
+                // Unary minus on a float, result is also a float
+                expr.SetType(MyType.Float);
+                return MyType.Float;
+            }
+            else
+            {
+                // If it's neither an integer nor a float, raise a type error
+                throw new Exception("Unary minus operator can only be applied to integers or floats.");
+            }
         }
     }
 }

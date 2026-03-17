@@ -10,6 +10,7 @@ namespace MyCompiler
         LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
         LLVMValueRef VisitStringExpr(StringNodeExpr expr);
         LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
+        LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr);
         LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
         LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
@@ -25,6 +26,7 @@ namespace MyCompiler
         LLVMValueRef VisitAddExpr(AddNodeExpr expr);
         LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr);
         LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr);
+        LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr);
         LLVMValueRef VisitLengthExpr(LengthNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 

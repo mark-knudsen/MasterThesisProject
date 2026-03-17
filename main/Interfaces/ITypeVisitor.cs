@@ -7,6 +7,7 @@ namespace MyCompiler
         MyType VisitFloat(FloatNodeExpr expr);
         MyType VisitString(StringNodeExpr expr);
         MyType VisitBoolean(BooleanNodeExpr expr);
+        MyType VisitUnaryOp(UnaryOpNodeExpr expr);
         MyType VisitBinary(BinaryOpNodeExpr expr);
         MyType VisitComparison(ComparisonNodeExpr expr);
         MyType VisitIncrement(IncrementNodeExpr expr);
@@ -22,6 +23,7 @@ namespace MyCompiler
         MyType VisitAdd(AddNodeExpr expr);
         MyType VisitAddRange(AddRangeNodeExpr expr);
         MyType VisitRemove(RemoveNodeExpr expr);
+        MyType VisitRemoveRange(RemoveRangeNodeExpr expr);
         MyType VisitLength(LengthNodeExpr expr);
         MyType VisitWhere(WhereNodeExpr expr);
         MyType VisitRound(RoundNodeExpr expr);

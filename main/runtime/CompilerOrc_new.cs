@@ -1334,6 +1334,7 @@ namespace MyCompiler
 
             return arrayPtr;
         }
+
         public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
         {
             var ctx = _module.Context;
@@ -1358,6 +1359,7 @@ namespace MyCompiler
             {
                 MyType.String => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
                 MyType.Float => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
+                MyType.Int => _builder.BuildBitCast(rawValue, ctx.Int64Type, "to_int"),
                 _ => rawValue
             };
         }
@@ -1437,8 +1439,8 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr)
         {
-            var arrayPtr = Visit(expr.ArrayExpression);
-            var range = Visit(expr.AddRangeExpression); // visits the array we are , like x.addRange, then we visit x on this line of code
+            Visit(expr.ArrayExpression);
+            Visit(expr.AddRangeExpression); // visits the array we are on, like x.addRange, then we visit x on this line of code
 
             var fullSequence = new SequenceNodeExpr();
 
@@ -1522,6 +1524,26 @@ namespace MyCompiler
             return arrayPtr;
         }
 
+        public LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.RemoveRangeExpression); // visits the array we are on, like x.addRange, then we visit x on this line of code
+
+            var fullSequence = new SequenceNodeExpr();
+
+            var elements = ((ArrayNodeExpr)expr.RemoveRangeExpression).Elements;
+
+            // iterate backwards
+            for (int i = elements.Count - 1; i >= 0; i--)
+            {
+                var item = elements[i];
+                var removeElement = new RemoveNodeExpr(expr.ArrayExpression, item);
+                fullSequence.Statements.Add(removeElement);
+            }
+
+            return Visit(fullSequence);
+        }
+
         public LLVMValueRef VisitLengthExpr(LengthNodeExpr expr)
         {
             var ctx = _module.Context;
@@ -1590,6 +1612,29 @@ namespace MyCompiler
                 Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             }
             return expr.Accept(this);
+        }
+
+        public LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr)
+        {
+            if(expr.Operator == "-") return VisitUnaryMinus(expr);
+            return default;
+        }
+
+        public LLVMValueRef VisitUnaryMinus(UnaryOpNodeExpr expr)
+        {
+            // Visit the operand (the expression on the right of the '-')
+            var ctx = _module.Context;
+            var value = Visit(expr.Operand);
+
+            // Negate the value, depending on whether it's a float or an integer
+            if (value.TypeOf == ctx.DoubleType)
+            {
+                return _builder.BuildFNeg(value, "fneg");
+            }
+            else
+            {
+                return _builder.BuildNeg(value, "neg");
+            }
         }
     }
 }

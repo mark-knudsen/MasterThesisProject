@@ -26,6 +26,7 @@
 "add"           { return (int)Tokens.ADD; }
 "addRange"      { return (int)Tokens.ADDRANGE; }
 "remove"        { return (int)Tokens.REMOVE; }
+"removeRange"   { return (int)Tokens.REMOVERANGE; }
 "length"        { return (int)Tokens.LENGTH; }
 
 ">="            { return (int)Tokens.GE; }

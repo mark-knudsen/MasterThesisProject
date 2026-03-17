@@ -16,7 +16,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR INC DECR 
-%token PRINT RANDOM ROUND FUNC WHERE ADD ADDRANGE REMOVE LENGTH
+%token PRINT RANDOM ROUND FUNC WHERE ADD ADDRANGE REMOVE REMOVERANGE LENGTH
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
@@ -96,6 +96,7 @@ expr
     : BOOL_LITERAL        { $$ = new BooleanNodeExpr((bool)$1); }
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
+    | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
     
     /* 1. Standard function: Defaults to "Float" */
@@ -144,6 +145,7 @@ expr
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT REMOVERANGE LPAREN expr RPAREN    { $$ = new RemoveRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT LENGTH                       { $$ = new LengthNodeExpr($1 as ExpressionNodeExpr); }
 
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN

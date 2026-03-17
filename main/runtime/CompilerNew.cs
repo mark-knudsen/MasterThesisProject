@@ -1242,5 +1242,15 @@ namespace MyCompiler
         {
             throw new NotImplementedException();
         }
+
+        public LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
+
+        public LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr)
+        {
+            throw new NotImplementedException();
+        }
     }
 }
