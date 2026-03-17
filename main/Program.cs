@@ -53,9 +53,9 @@ namespace MyCompiler
                 var currentLine = new StringBuilder();
                 int cursorPosition = 0;
                 bool isComplete = false;
-          
 
-                
+
+
 
                 if (multipleLines)
                 {

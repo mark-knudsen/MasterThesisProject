@@ -51,6 +51,8 @@ namespace MyCompiler
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
+
+
         public Context GetContext() => _context;
         public void ClearContext() => _context = Context.Empty;
 
@@ -961,27 +963,26 @@ namespace MyCompiler
             return _module.AddFunction("realloc", type);
         }
 
-        private LLVMValueRef GetOrDeclareMemmove()
+
+          private LLVMValueRef GetOrDeclareMemmove()
         {
             var ctx = _module.Context;
 
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            var memmoveType = LLVMTypeRef.CreateFunction(
+            _memmoveType = LLVMTypeRef.CreateFunction(
                 ctx.VoidType,
                 new[] { i8Ptr, i8Ptr, ctx.Int64Type },
                 false
             );
 
-            _memmoveType = memmoveType;
 
             var fn = _module.GetNamedFunction("memmove");
             if (fn.Handle != IntPtr.Zero)
                 return fn;
 
-            return _module.AddFunction("memmove", memmoveType);
+            return _module.AddFunction("memmove", _memmoveType);
         }
-
 
 
 
@@ -1600,72 +1601,95 @@ namespace MyCompiler
         public LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // --- Evaluate array and index ---
-            var arrayPtr = Visit(expr.ArrayExpression);
+            // --- 1. Evaluate Array Pointer ---
+            var arrayPtrRaw = Visit(expr.ArrayExpression);
+
+            LLVMValueRef arrayPtr;
+            // Check if we are dealing with the Global variable itself or an already loaded pointer
+            if (arrayPtrRaw.IsAGlobalVariable.Handle != IntPtr.Zero)
+            {
+                // It's @arr (the global), so we load the malloc'd address stored inside it
+                arrayPtr = _builder.BuildLoad2(i8Ptr, arrayPtrRaw, "arr_load");
+            }
+            else
+            {
+                // It's already the malloc'd address (from a nested expression)
+                arrayPtr = arrayPtrRaw;
+            }
+
             var indexVal = Visit(expr.RemoveExpression);
-
             if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, ctx.Int64Type, "idx_int");
+                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-            var zero32 = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var three64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 3);
-            var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
-            var eight = LLVMValueRef.CreateConstInt(ctx.Int64Type, 8);
+            // Constants
+            var zero64 = LLVMValueRef.CreateConstInt(i64, 0);
+            var one64 = LLVMValueRef.CreateConstInt(i64, 1);
+            var two64 = LLVMValueRef.CreateConstInt(i64, 2);
+            var eight64 = LLVMValueRef.CreateConstInt(i64, 8);
+            var falseBit = LLVMValueRef.CreateConstInt(ctx.Int1Type, 0);
 
-            // --- Load length ---
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero32 }, "len_ptr");
-            var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "length");
+            // --- 2. Load Length (at offset 0) ---
+            var lenPtr = _builder.BuildGEP2(i64, arrayPtr, new[] { zero64 }, "len_ptr");
+            var length = _builder.BuildLoad2(i64, lenPtr, "length");
 
-            // --- Bounds check: index < length ---
+            // --- 3. Bounds Check ---
             var inBounds = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, indexVal, length, "in_bounds");
 
             var function = _builder.InsertBlock.Parent;
-            var removeBlock = ctx.AppendBasicBlock(function, "do_remove");
-            var skipBlock = ctx.AppendBasicBlock(function, "skip_remove");
+            var removeBlock = function.AppendBasicBlock("do_remove");
+            var skipBlock = function.AppendBasicBlock("skip_remove");
 
             _builder.BuildCondBr(inBounds, removeBlock, skipBlock);
 
-            // --- Remove block ---
+            // --- 4. Remove Block ---
             _builder.PositionAtEnd(removeBlock);
 
-            // compute moveCount = length - index - 1
-            var tmp = _builder.BuildSub(length, indexVal, "len_minus_idx");
-            var moveCount = _builder.BuildSub(tmp, one64, "move_count");
+            // moveCount = length - index - 1
+            var moveCount = _builder.BuildSub(_builder.BuildSub(length, indexVal, "tmp1"), one64, "move_count");
 
-            // dst = arr + (index + 2)
-            var dstIndex = _builder.BuildAdd(indexVal, two64, "dst_index");
-            var dstPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { dstIndex }, "dst_ptr");
+            var needMove = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, moveCount, zero64, "need_move");
+            var memmoveBlock = function.AppendBasicBlock("memmove_block");
+            var afterMoveBlock = function.AppendBasicBlock("after_memmove");
+            _builder.BuildCondBr(needMove, memmoveBlock, afterMoveBlock);
 
-            // src = arr + (index + 3)
-            var srcIndex = _builder.BuildAdd(indexVal, three64, "src_index");
-            var srcPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { srcIndex }, "src_ptr");
+            // --- 5. Memmove Block ---
+            _builder.PositionAtEnd(memmoveBlock);
 
-            // bytes = moveCount * 8
-            var bytes = _builder.BuildMul(moveCount, eight, "move_bytes");
+            // Header is [Len, Cap]. index 0 is at GEP offset 2.
+            var dstIdx = _builder.BuildAdd(two64, indexVal, "dst_idx");
+            var srcIdx = _builder.BuildAdd(dstIdx, one64, "src_idx");
 
-            // cast to i8*
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var dstCast = _builder.BuildBitCast(dstPtr, i8Ptr, "dst_cast");
-            var srcCast = _builder.BuildBitCast(srcPtr, i8Ptr, "src_cast");
+            var dstPtr = _builder.BuildGEP2(i64, arrayPtr, new[] { dstIdx }, "dst_ptr");
+            var srcPtr = _builder.BuildGEP2(i64, arrayPtr, new[] { srcIdx }, "src_ptr");
+            var bytes = _builder.BuildMul(moveCount, eight64, "move_bytes");
 
-            // call memmove
-            var memmove = GetOrDeclareMemmove();
-            _builder.BuildCall2(_memmoveType, memmove, new[] { dstCast, srcCast, bytes }, "");
+            // Execute Call with the 4-argument signature
+            var memmoveFunc = GetOrDeclareMemmove();
+            _builder.BuildCall2(
+                _memmoveType,
+                memmoveFunc,
+                new[] { dstPtr, srcPtr, bytes, falseBit },
+                ""
+            );
 
-            // decrease length
+            _builder.BuildBr(afterMoveBlock);
+
+            // --- 6. After Memmove ---
+            _builder.PositionAtEnd(afterMoveBlock);
             var newLength = _builder.BuildSub(length, one64, "new_length");
             _builder.BuildStore(newLength, lenPtr);
-
-            // jump to skip block
             _builder.BuildBr(skipBlock);
 
-            // --- Skip block ---
+            // --- 7. Skip Block ---
             _builder.PositionAtEnd(skipBlock);
 
-            return arrayPtr;
+            return arrayPtrRaw;
         }
+
+
 
         public LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr)
         {
@@ -1725,8 +1749,8 @@ namespace MyCompiler
                 {
                     // Allocate global in this module (not external)
                     global = _module.AddGlobal(llvmType, expr.Name);
-                    global.Linkage = LLVMLinkage.LLVMInternalLinkage; 
-                    
+                    global.Linkage = LLVMLinkage.LLVMInternalLinkage;
+
                     // Optional: initialize
                     //_builder.BuildStore(LLVMValueRef.CreateConstInt(llvmType, 0), global);
                 }
@@ -1745,6 +1769,7 @@ namespace MyCompiler
         {
             LLVMValueRef last = default;
 
+            Console.WriteLine("Before foreach...");
             foreach (var stmt in expr.Statements)
             {
                 last = Visit(stmt);
@@ -1753,9 +1778,11 @@ namespace MyCompiler
             // Use the semantic type from the AST rather than inferring from LLVM types.
             // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
             // MapLLVMTypeToMyType from throwing for pointer types.
+            Console.WriteLine("Before lastExpr...");
             var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
             if (lastExpr != null && lastExpr.Type is not BoolType)
             {
+                System.Console.WriteLine("Inside if...");
                 AddImplicitPrint(last, lastExpr.Type);
             }
 

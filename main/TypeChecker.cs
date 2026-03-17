@@ -502,24 +502,24 @@ namespace MyCompiler
         {
             Visit(expr.ArrayExpression);
             Visit(expr.AddRangeExpression);
-            expr.SetType(expr.AddRangeExpression.Type);
-            return expr.AddRangeExpression.Type;
+            expr.SetType(expr.ArrayExpression.Type);
+            return expr.ArrayExpression.Type;
         }
 
         public Type VisitRemove(RemoveNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
             Visit(expr.RemoveExpression);
-            expr.SetType(expr.RemoveExpression.Type);
-            return expr.RemoveExpression.Type;
+            expr.SetType(expr.ArrayExpression.Type);
+            return expr.ArrayExpression.Type;
         }
 
         public Type VisitRemoveRange(RemoveRangeNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
             Visit(expr.RemoveRangeExpression);
-            expr.SetType(expr.RemoveRangeExpression.Type);
-            return expr.RemoveRangeExpression.Type;
+            expr.SetType(expr.ArrayExpression.Type);
+            return expr.ArrayExpression.Type;
         }
 
         public Type VisitLength(LengthNodeExpr expr)
