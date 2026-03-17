@@ -53,21 +53,9 @@ namespace MyCompiler
                 var currentLine = new StringBuilder();
                 int cursorPosition = 0;
                 bool isComplete = false;
-                int promptStartLeft = Console.CursorLeft;
-                int promptStartTop = Console.CursorTop;
-                int prevRenderedLength = 0;
+          
 
-                void RenderCurrentLine()
-                {
-                    Console.SetCursorPosition(promptStartLeft, Console.CursorTop);
-                    Console.Write(currentLine.ToString());
-                    if (prevRenderedLength > currentLine.Length)
-                    {
-                        Console.Write(new string(' ', prevRenderedLength - currentLine.Length));
-                    }
-                    prevRenderedLength = currentLine.Length;
-                    Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
-                }
+                
 
                 if (multipleLines)
                 {
@@ -90,9 +78,7 @@ namespace MyCompiler
                                 lines.Add(currentLine.ToString());
                                 currentLine.Clear();
                                 cursorPosition = 0;
-                                prevRenderedLength = 0;
                                 Console.WriteLine();
-                                promptStartLeft = 0; // no prompt for continuation lines
                                 continue;
                             }
                         }
@@ -102,7 +88,6 @@ namespace MyCompiler
                             {
                                 cursorPosition--;
                                 currentLine.Remove(cursorPosition, 1);
-                                RenderCurrentLine();
                             }
                         }
                         else if (key.Key == ConsoleKey.Delete)
@@ -110,7 +95,6 @@ namespace MyCompiler
                             if (cursorPosition < currentLine.Length)
                             {
                                 currentLine.Remove(cursorPosition, 1);
-                                RenderCurrentLine();
                             }
                         }
                         else if (key.Key == ConsoleKey.LeftArrow)
@@ -118,7 +102,6 @@ namespace MyCompiler
                             if (cursorPosition > 0)
                             {
                                 cursorPosition--;
-                                Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
                             }
                         }
                         else if (key.Key == ConsoleKey.RightArrow)
@@ -126,24 +109,20 @@ namespace MyCompiler
                             if (cursorPosition < currentLine.Length)
                             {
                                 cursorPosition++;
-                                Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
                             }
                         }
                         else if (key.Key == ConsoleKey.Home)
                         {
                             cursorPosition = 0;
-                            Console.SetCursorPosition(promptStartLeft, Console.CursorTop);
                         }
                         else if (key.Key == ConsoleKey.End)
                         {
                             cursorPosition = currentLine.Length;
-                            Console.SetCursorPosition(promptStartLeft + cursorPosition, Console.CursorTop);
                         }
                         else if (!char.IsControl(key.KeyChar))
                         {
                             currentLine.Insert(cursorPosition, key.KeyChar);
                             cursorPosition++;
-                            RenderCurrentLine();
                         }
                     }
                 }

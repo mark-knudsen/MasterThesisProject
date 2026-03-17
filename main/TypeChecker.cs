@@ -495,8 +495,8 @@ namespace MyCompiler
         {
             Visit(expr.ArrayExpression);
             Visit(expr.AddExpression);
-            expr.SetType(expr.AddExpression.Type);
-            return expr.AddExpression.Type;
+            expr.SetType(expr.ArrayExpression.Type);
+            return expr.ArrayExpression.Type;
         }
         public Type VisitAddRange(AddRangeNodeExpr expr)
         {
