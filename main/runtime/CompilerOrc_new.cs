@@ -178,13 +178,8 @@ namespace MyCompiler
 
         // TODO: fix the problems
 
-        // add negative allowed numbers
-        // add length func
-        // add you can add more than one element to array
-        // add you can remove more than one element from an array
-        // add and remove prints out the new array
-
-        // BROKEN FUNCTIONALITY                           
+        // BROKEN FUNCTIONALITY   
+        // remove does not return the array, but works regardless                        
         // doing this in the same command fails: x.add(1); x.length 
 
         // UNIT TESTING
@@ -1453,7 +1448,7 @@ namespace MyCompiler
 
             return newRange;
         }
-
+  
         public LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr)
         {
             var ctx = _module.Context;
@@ -1616,7 +1611,7 @@ namespace MyCompiler
 
         public LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr)
         {
-            if(expr.Operator == "-") return VisitUnaryMinus(expr);
+            if (expr.Operator == "-") return VisitUnaryMinus(expr);
             return default;
         }
 
