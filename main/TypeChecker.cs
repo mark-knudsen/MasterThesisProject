@@ -404,7 +404,6 @@ namespace MyCompiler
 
         public MyType VisitWhere(WhereNodeExpr expr)
         {
-            Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
             VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
@@ -446,7 +445,7 @@ namespace MyCompiler
         {
             Visit(expr.ArrayExpression);
             Visit(expr.RemoveExpression);
-            expr.SetType(expr.RemoveExpression.Type);
+            expr.SetType(MyType.Array);
             return MyType.Array;
         }
 
