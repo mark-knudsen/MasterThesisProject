@@ -1,3 +1,4 @@
+using System.Reflection.Metadata;
 using System.Runtime.InteropServices;
 namespace MyCompiler
 {
@@ -6,9 +7,9 @@ namespace MyCompiler
         //private const string LibLLVM = "libLLVM-20.so"; // linux
         private const string LibLLVM = "libLLVM.dll"; // windows
 
-          static readonly string path = File.ReadAllText(".env")
-            .Split('=')[1]
-            .Trim();
+        //   const string LibLLVM = File.ReadAllText(".env")
+        //     .Split('=')[1]
+        //     .Trim();
 
         [DllImport(LibLLVM)]
         public static extern IntPtr LLVMOrcCreateLLJIT(

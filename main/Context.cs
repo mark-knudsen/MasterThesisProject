@@ -4,7 +4,7 @@ using LLVMSharp.Interop;
 
 namespace MyCompiler
 {
-    public record ContextEntry(LLVMValueRef Value, object value, Type? Type, Type? ElementType = null);
+    public record ContextEntry(LLVMValueRef Value, object value, Type? Type, Type? ElementType = null); // really wished we would also save the actual value for easy use
 
     public sealed class Context
     {

@@ -287,6 +287,7 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
     }
+
     public class ComparisonNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr Left;
@@ -334,17 +335,121 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
-
     public class WhereNodeExpr : ExpressionNodeExpr
     {
-        public string IteratorName;
-        public ArrayNodeExpr ArrayNodeExpr;
-        public ComparisonNodeExpr Condition;
-        public WhereNodeExpr(ArrayNodeExpr arrayNodeExpr, ComparisonNodeExpr condition)
+        public IdNodeExpr IteratorId;
+
+        public ExpressionNodeExpr ArrayNodeExpr;
+        public ExpressionNodeExpr Condition;
+
+        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
         {
-            ArrayNodeExpr = arrayNodeExpr;
+            IteratorId = iteratorId;
+            ArrayNodeExpr = arrayExpr;
             Condition = condition;
         }
+
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
     }
+
+    public class AddNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr AddExpression { get; }
+
+        public AddNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addExpression)
+        {
+            ArrayExpression = arrayExpr;
+            AddExpression = addExpression;
+            Type = new ArrayType(ArrayExpression.Type);
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
+    }
+    public class AddRangeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr AddRangeExpression { get; }
+
+        public AddRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addRangeExpression)
+        {
+            ArrayExpression = arrayExpr;
+            AddRangeExpression = addRangeExpression;
+            Type = new ArrayType(ArrayExpression.Type);
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddRangeExpr(this);
+    }
+
+    public class RemoveNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr RemoveExpression { get; }
+
+        public RemoveNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeExpression)
+        {
+            ArrayExpression = arrayExpr;
+            RemoveExpression = removeExpression;
+            Type = new ArrayType(ArrayExpression.Type);
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveExpr(this);
+    }
+
+    public class RemoveRangeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr RemoveRangeExpression { get; }
+
+        public RemoveRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeRangeExpression)
+        {
+            ArrayExpression = arrayExpr;
+            RemoveRangeExpression = removeRangeExpression;
+            Type = new ArrayType(ArrayExpression.Type);
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveRangeExpr(this);
+    }
+
+    public class LengthNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+
+        public LengthNodeExpr(ExpressionNodeExpr arrayExpr)
+        {
+            ArrayExpression = arrayExpr;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLengthExpr(this);
+    }
+
+    public class UnaryOpNodeExpr : ExpressionNodeExpr
+    {
+        public string Operator { get; }
+        public ExpressionNodeExpr Operand { get; }
+
+        public UnaryOpNodeExpr(string operatorSymbol, ExpressionNodeExpr operand)
+        {
+            Operator = operatorSymbol;
+            Operand = operand;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
+    }
+
+    // public class WhereNodeExpr : ExpressionNodeExpr
+    // {
+    //     public IdNodeExpr IteratorId;
+    //     public ArrayNodeExpr ArrayNodeExpr;
+    //     public ComparisonNodeExpr Condition;
+    //     public WhereNodeExpr(IdNodeExpr iteratorId, ArrayNodeExpr arrayNodeExpr, ComparisonNodeExpr condition)
+    //     {
+    //         IteratorId = iteratorId;
+    //         ArrayNodeExpr = arrayNodeExpr;
+    //         Condition = condition;
+    //     }
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
+    // }
+
 }

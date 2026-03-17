@@ -270,6 +270,7 @@ namespace MyCompiler
                             {
                                 Console.ForegroundColor = ConsoleColor.DarkRed;
                                 Console.WriteLine($"Compiler Error: {ex.Message}");
+                                Console.ForegroundColor = ConsoleColor.Gray;
                             }
                         }
                         else
@@ -283,6 +284,7 @@ namespace MyCompiler
                 {
                     Console.ForegroundColor = ConsoleColor.DarkRed;
                     Console.WriteLine($"Critical Error: {ex.Message}");
+                    Console.ForegroundColor = ConsoleColor.Gray;
                 }
 
                 // Clear input for the next round
@@ -369,8 +371,8 @@ namespace MyCompiler
                     break;
 
                 case WhereNodeExpr whe:
-                    Console.WriteLine($"{space}Where: {whe.IteratorName}");
-                    Console.WriteLine($"{space}Iterator name: {whe.IteratorName}");
+                    Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
+                    Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
                     PrintNode(whe.ArrayNodeExpr, indent + 1);
                     PrintNode(whe.Condition, indent + 1);
                     break;

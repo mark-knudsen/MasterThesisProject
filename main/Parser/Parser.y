@@ -17,7 +17,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE FUNC
+%token PRINT RANDOM ROUND WHERE FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH
 %token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
@@ -111,6 +111,7 @@ expr
     : BOOL_LITERAL        { $$ = new BooleanNodeExpr((bool)$1); }
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
+    | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
     
     /* 1. Standard function: Defaults to "Float" */
@@ -154,8 +155,22 @@ expr
         $$ = new IndexNodeExpr(idExpr, $3 as ExpressionNodeExpr); 
     }
     | LPAREN expr RPAREN  { $$ = $2; }
-    | expr DOT WHERE LPAREN expr LAMBDA expr RPAREN
+    //| expr DOT WHERE LPAREN ID LAMBDA expr RPAREN   {$$ = new WhereNodeExpr($5 as IdNodeExpr, $1 as ArrayNodeExpr, $7 as ComparisonNodeExpr); }
     | LPAREN expr RPAREN
+    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT REMOVERANGE LPAREN expr RPAREN    { $$ = new RemoveRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT LENGTH                       { $$ = new LengthNodeExpr($1 as ExpressionNodeExpr); }
+
+    | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
+    {
+        $$ = new WhereNodeExpr(
+            new IdNodeExpr((string)$5),
+            $1 as ExpressionNodeExpr,
+            $7 as ExpressionNodeExpr
+        );
+    }
     ;
 
 params

@@ -14,20 +14,21 @@ namespace MyCompiler
 
         public Type Check(NodeExpr node)
         {
-            if(_debug) Console.WriteLine("we checking");
+            if (_debug) Console.WriteLine("we checking");
             return Visit(node);
         }
 
         private Type Visit(NodeExpr node)
         {
-            // var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            // Console.WriteLine("visiting " + name.Substring(0, name.Length - 8));
+            var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+            if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
                 StringNodeExpr str => VisitString(str),
                 BooleanNodeExpr b => VisitBoolean(b),
                 IdNodeExpr id => VisitId(id),
+                UnaryOpNodeExpr un => VisitUnaryOp(un),
                 BinaryOpNodeExpr bin => VisitBinary(bin),
                 ComparisonNodeExpr cmp => VisitComparison(cmp),
                 IncrementNodeExpr inc => VisitIncrement(inc),
@@ -40,8 +41,14 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
-
                 IndexNodeExpr idx => VisitIndex(idx),
+                WhereNodeExpr whe => VisitWhere(whe),
+                AddNodeExpr add => VisitAdd(add),
+                AddRangeNodeExpr addr => VisitAddRange(addr),
+                RemoveNodeExpr remo => VisitRemove(remo),
+                RemoveRangeNodeExpr remor => VisitRemoveRange(remor),
+                LengthNodeExpr len => VisitLength(len),
+
                 FunctionDefNode fdef => VisitFunctionDef(fdef),
                 FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNodeExpr rnd => VisitRound(rnd),
@@ -165,38 +172,6 @@ namespace MyCompiler
 
                 throw new Exception($"Arithmetic operator {expr.Operator} requires numeric types, got {leftType} and {rightType}");
             }
-
-
-            // it fails on comparison with '&' and '|'
-
-            // > (5<7 and true)  // fails
-            // AST Structure:
-            // we checking
-            // visiting Sequence
-            // visiting Comparison
-            // visiting Number
-            // visiting BinaryOp
-            // visiting Number
-            // visiting Boolean
-            // Compiler Error: Unknown operator && or type mismatch: Int and Bool
-
-            // > 5<7             // succeeds
-            // AST Structure:
-            // we checking
-            // visiting Sequence
-            // visiting Comparison
-            // visiting Number
-            // visiting Number
-            // visiting: MyCompiler.SequenceNodeExpr
-            // visiting: MyCompiler.ComparisonNodeExpr
-            // visiting: MyCompiler.NumberNodeExpr
-            // visiting: MyCompiler.NumberNodeExpr
-            // prints type: Bool
-            // value to print type: i1
-            // LLVM TYPE: i1
-            // LANG TYPE: Bool
-            // Generated LLVM IR:
-
 
             // Handle Comparisons (==, !=, <, >)
             if (expr.Operator is "==" or "!=" or "<" or ">" or "&&" or "||")
@@ -491,6 +466,91 @@ namespace MyCompiler
             return new FloatType();
         }
 
+        public Type VisitWhere(WhereNodeExpr expr)
+        {
+            Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
+            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
+            Visit(expr.IteratorId);
+            Visit(expr.ArrayNodeExpr);
+            Visit(expr.Condition);
+            var arrayType = Visit(expr.ArrayNodeExpr);
+
+            if (arrayType is not ArrayType)
+                throw new Exception("where can only be used on arrays");
+
+            // 2. Determine element type (adjust depending on your language)
+
+            // 5. Check condition
+            var condType = Visit(expr.Condition);
+
+            if (condType is not BoolType)
+                throw new Exception("where condition must return bool");
+
+            expr.SetType(expr.ArrayNodeExpr.Type);
+            return expr.ArrayNodeExpr.Type;
+        }
+
+        public Type VisitAdd(AddNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.AddExpression);
+            expr.SetType(expr.AddExpression.Type);
+            return expr.AddExpression.Type;
+        }
+        public Type VisitAddRange(AddRangeNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.AddRangeExpression);
+            expr.SetType(expr.AddRangeExpression.Type);
+            return expr.AddRangeExpression.Type;
+        }
+
+        public Type VisitRemove(RemoveNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.RemoveExpression);
+            expr.SetType(expr.RemoveExpression.Type);
+            return expr.RemoveExpression.Type;
+        }
+
+        public Type VisitRemoveRange(RemoveRangeNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression);
+            Visit(expr.RemoveRangeExpression);
+            expr.SetType(expr.RemoveRangeExpression.Type);
+            return expr.RemoveRangeExpression.Type;
+        }
+
+        public Type VisitLength(LengthNodeExpr expr)
+        {
+            expr.SetType(new IntType());
+            return new IntType();
+        }
+
+        public Type VisitUnaryOp(UnaryOpNodeExpr expr)
+        {
+            // Visit the operand first
+            Type operandType = Visit(expr.Operand);
+
+            // Check the type of the operand and apply the unary minus operation
+            if (operandType is IntType)
+            {
+                // Unary minus on an integer, result is also an integer
+                expr.SetType(new IntType());
+                return new IntType();
+            }
+            else if (operandType is FloatType)
+            {
+                // Unary minus on a float, result is also a float
+                expr.SetType(new FloatType());
+                return new FloatType();
+            }
+            else
+            {
+                // If it's neither an integer nor a float, raise a type error
+                throw new Exception("Unary minus operator can only be applied to integers or floats.");
+            }
+        }
     }
 }

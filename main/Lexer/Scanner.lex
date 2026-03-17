@@ -32,6 +32,11 @@
 "array"         { return (int)Tokens.ARRAY; }
 "where"         { return (int)Tokens.WHERE; }
 "=>"            { return (int)Tokens.LAMBDA; }
+"add"           { return (int)Tokens.ADD; }
+"addRange"      { return (int)Tokens.ADDRANGE; }
+"remove"        { return (int)Tokens.REMOVE; }
+"removeRange"   { return (int)Tokens.REMOVERANGE; }
+"length"        { return (int)Tokens.LENGTH; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
