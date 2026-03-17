@@ -300,7 +300,7 @@ namespace MyCompiler
                 case WhereNodeExpr whe:
                     Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
                     Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
-                    PrintNode(whe.ArrayNodeExpr, indent + 1);
+                    PrintNode(whe.ArrayExpr, indent + 1);
                     PrintNode(whe.Condition, indent + 1);
                     break;
 

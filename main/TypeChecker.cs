@@ -21,7 +21,7 @@ namespace MyCompiler
         private MyType Visit(NodeExpr node)
         {
             var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
+            if (_debug) Console.WriteLine("visiting type: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
@@ -331,13 +331,13 @@ namespace MyCompiler
                 var entry = _context.Get(idNode.Name);
                 if (entry != null && entry.Type == MyType.Array)
                 {
-                    var inferred = entry.ElementType ?? MyType.Float;
+                    var inferred = entry.ElementType ?? MyType.Int;
                     expr.SetType(inferred);
                     return inferred;
                 }
             }
-            expr.SetType(MyType.Float); // why is index type a float? Wouldn't it be an int`
-            return MyType.Float;
+            expr.SetType(MyType.Int); 
+            return MyType.Int;
         }
 
         public MyType VisitFunctionDef(FunctionDefNode node)
@@ -407,9 +407,9 @@ namespace MyCompiler
             VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
-            Visit(expr.ArrayNodeExpr);
+            Visit(expr.ArrayExpr);
             Visit(expr.Condition);
-            var arrayType = Visit(expr.ArrayNodeExpr);
+            var arrayType = Visit(expr.ArrayExpr);
 
             if (arrayType != MyType.Array)
                 throw new Exception("where can only be used on arrays");

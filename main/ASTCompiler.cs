@@ -313,7 +313,7 @@ namespace MyCompiler
         {
             ArrayExpression = arrayExpr;
             IndexExpression = indexExpr;
-            Type = MyType.Float; // Initial default
+            Type = MyType.Int; 
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
@@ -322,13 +322,13 @@ namespace MyCompiler
     {
         public IdNodeExpr IteratorId;
 
-        public ExpressionNodeExpr ArrayNodeExpr;
+        public ExpressionNodeExpr ArrayExpr;
         public ExpressionNodeExpr Condition;
 
         public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
         {
             IteratorId = iteratorId;
-            ArrayNodeExpr = arrayExpr;
+            ArrayExpr = arrayExpr;
             Condition = condition;
         }
 
@@ -421,19 +421,4 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
     }
-
-    // public class WhereNodeExpr : ExpressionNodeExpr
-    // {
-    //     public IdNodeExpr IteratorId;
-    //     public ArrayNodeExpr ArrayNodeExpr;
-    //     public ComparisonNodeExpr Condition;
-    //     public WhereNodeExpr(IdNodeExpr iteratorId, ArrayNodeExpr arrayNodeExpr, ComparisonNodeExpr condition)
-    //     {
-    //         IteratorId = iteratorId;
-    //         ArrayNodeExpr = arrayNodeExpr;
-    //         Condition = condition;
-    //     }
-    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
-    // }
-
 }

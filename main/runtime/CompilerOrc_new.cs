@@ -1239,164 +1239,145 @@ namespace MyCompiler
 
         public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
         {
-            var ctx = _module.Context;
+            // 1️ Allocate local variables for source and result
+            var srcVarName = "__where_src";
+            var resultVarName = "__where_result";
+            var indexVarName = "__where_i";
 
-            // 1️⃣ Create the target array (z)
-            var d = new List<ExpressionNodeExpr>
-            {
-                new NumberNodeExpr(2)
-            };
+            // Save source array into a temp variable
+            var srcAssign = new AssignNodeExpr(srcVarName, new IdNodeExpr(expr.ArrayExpr is IdNodeExpr id ? id.Name : "__tmp_array"));
 
-            var zAssign = new AssignNodeExpr(expr.IteratorId.Name + "_filtered", new ArrayNodeExpr(d));
-            var zPtr = VisitAssignExpr(zAssign); // z = []
+            // Allocate result array
+            var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
 
-            // 2️⃣ Evaluate source array (x)
-            var arrayPtr = Visit(expr.ArrayNodeExpr);
+            // Initialize loop index
+            var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
 
-            // 3️⃣ Create the for-loop index variable
-            var indexVarName = expr.IteratorId.Name;
-            var initIndex = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
+            // Loop condition: i < src.length
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVarName),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(srcVarName))
+            );
 
-            // 4️⃣ Loop condition: i < array.length
-            var lengthExpr = new LengthNodeExpr(expr.ArrayNodeExpr);
-            var loopCond = new ComparisonNodeExpr(new IdNodeExpr(indexVarName), "<", lengthExpr);
-
-            // 5️⃣ Loop step: i++
+            // Loop step: i++
             var loopStep = new IncrementNodeExpr(indexVarName);
 
-            // 6️⃣ Build the if condition using IndexNodeExpr
-            var idxAccess = new IndexNodeExpr(expr.ArrayNodeExpr, new IdNodeExpr(indexVarName));
-            var ifCond = expr.Condition switch
-            {
-                ComparisonNodeExpr cmp => new ComparisonNodeExpr(
-                    new IndexNodeExpr(expr.ArrayNodeExpr, new IdNodeExpr(indexVarName)),
-                    cmp.Operator,
-                    cmp.Right
-                ),
-                _ => expr.Condition
-            };
+            // Current element: src[i]
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
 
-            // 7️⃣ Add to filtered array inside if
-            var addNode = new AddNodeExpr(
-                new IdNodeExpr(expr.IteratorId.Name + "_filtered"),
-                new IndexNodeExpr(expr.ArrayNodeExpr, new IdNodeExpr(indexVarName))
-            );
+            // Rewrite the iterator variable inside the condition
+            ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+            // Add element to result array if condition is true
+            var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
 
             var ifBody = new SequenceNodeExpr();
             ifBody.Statements.Add(addNode);
             var ifNode = new IfNodeExpr(ifCond, ifBody);
 
-            // 8️⃣ For loop body
+            // Loop body
             var loopBody = new SequenceNodeExpr();
             loopBody.Statements.Add(ifNode);
 
-            var forLoop = new ForLoopNodeExpr(initIndex, loopCond, loopStep, loopBody);
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
 
-            // 9️⃣ Wrap everything in a sequence and evaluate
+            // Sequence
             var program = new SequenceNodeExpr();
-            program.Statements.Add(zAssign);  // z = []
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
             program.Statements.Add(forLoop);
+
+            // Return the filtered array
+            program.Statements.Add(new IdNodeExpr(resultVarName));
+
+            // Perform semantic checks if you have them
+            PerformSemanticAnalysis(program);
 
             return VisitSequenceExpr(program);
         }
 
-        // public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) // Mine
+        // Helper: recursively replace iterator variable with current element
+        private ExpressionNodeExpr ReplaceIterator(ExpressionNodeExpr expr, string iteratorName, ExpressionNodeExpr replacement)
+        {
+            switch (expr)
+            {
+                case IdNodeExpr id when id.Name == iteratorName:
+                    return replacement;
+
+                case ComparisonNodeExpr cmp:
+                    return new ComparisonNodeExpr(
+                        ReplaceIterator(cmp.Left, iteratorName, replacement),
+                        cmp.Operator,
+                        ReplaceIterator(cmp.Right, iteratorName, replacement)
+                    );
+
+                case BinaryOpNodeExpr bin:
+                    return new BinaryOpNodeExpr(
+                        ReplaceIterator(bin.Left, iteratorName, replacement),
+                        bin.Operator,
+                        ReplaceIterator(bin.Right, iteratorName, replacement)
+                    );
+
+                default:
+                    return expr;
+            }
+        }
+
+        // public LLVMValueRef VisitWhereExpr2(WhereNodeExpr expr) // works, but probably unsafe and can't assign to itself x = x.where...
         // {
-        //     Console.WriteLine("visiting where0");
-        //     // myArray.where(x => x < 5)
+        //     // 1️ Create the target filtered array
+        //     var zVarName = expr.IteratorId.Name;
+        //     var zAssign = new AssignNodeExpr(zVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
 
-        //     // z = []; // the new one
-        //     // x = [7,6,8,9];
-        //     // for(i=0; i<x.length; i++) {if(x[i] > 5) z.add(x[i])}
+        //     // 2️ Initialize loop index i
+        //     var indexVarName = "filtered_where_index";
+        //     var initIndex = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
 
-
-        //     var zAssign = new AssignNodeExpr("z", new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
-        //     var xAssign = new AssignNodeExpr("x", new ArrayNodeExpr(new List<ExpressionNodeExpr> {
-        //         new NumberNodeExpr(7),
-        //         new NumberNodeExpr(6),
-        //         new NumberNodeExpr(8),
-        //         new NumberNodeExpr(9)
-        //     }));
-
-        //     // The body of the if
-        //     var addToZ = new AddNodeExpr(
-        //         new IdNodeExpr("z"),
-        //         new ArraySubscriptNodeExpr(new IdNodeExpr("x"), new IdNodeExpr("i"))
+        //     // 3️ For loop condition: i < array.length
+        //     var loopCond = new ComparisonNodeExpr(
+        //         new IdNodeExpr(indexVarName),
+        //         "<",
+        //         new LengthNodeExpr(expr.ArrayExpr)
         //     );
 
-        //     // The if condition
-        //     var seq = new SequenceNodeExpr();
-        //     seq.Statements.Add(addToZ);
-        //     var ifNode = new IfNodeExpr(
-        //         new BinaryOpNodeExpr(
-        //             new ArraySubscriptNodeExpr(new IdNodeExpr(expr.IteratorId.Name), new IdNodeExpr("i")),
-        //             ">",
-        //             new NumberNodeExpr(5)
-        //         ),
-        //         seq);
+        //     // 4️ Loop step: i++
+        //     var loopStep = new IncrementNodeExpr(indexVarName);
 
-        //     // The for loop
-        //     var seq2 = new SequenceNodeExpr();
-        //     seq2.Statements.Add(ifNode);
-        //     var theI = new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0));
-        //     var forLoop = new ForLoopNodeExpr(
-        //         theI,
-        //         new IdNodeExpr(expr.IteratorId.Name),
-        //         new IncrementNodeExpr(expr.IteratorId.Name),
-        //         seq2);
+        //     // 5️ Get current element
+        //     var currentElement = new IndexNodeExpr(expr.ArrayExpr, new IdNodeExpr(indexVarName));
 
+        //     // 6️ Build if condition
+        //     ExpressionNodeExpr ifCond;
+        //     if (expr.Condition is ComparisonNodeExpr cmp)
+        //         ifCond = new ComparisonNodeExpr(currentElement, cmp.Operator, cmp.Right);
+        //     else
+        //         ifCond = expr.Condition; // fallback
 
-        //     // Put everything into a sequence to evaluate
+        //     // 7️ Add element to filtered array inside if
+        //     var addNode = new AddNodeExpr(new IdNodeExpr(zVarName), currentElement);
+
+        //     var ifBody = new SequenceNodeExpr();
+        //     ifBody.Statements.Add(addNode);
+        //     var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+        //     // 8️ For-loop body
+        //     var loopBody = new SequenceNodeExpr();
+        //     loopBody.Statements.Add(ifNode);
+
+        //     var forLoop = new ForLoopNodeExpr(initIndex, loopCond, loopStep, loopBody);
+
+        //     // 9️ Sequence program
         //     var program = new SequenceNodeExpr();
-        //     program.Statements.AddRange([zAssign, xAssign, forLoop]);
+        //     program.Statements.Add(zAssign);
+        //     program.Statements.Add(forLoop);
 
+        //     // 10️ Return filtered array (as final expression)
+        //     program.Statements.Add(new IdNodeExpr(zVarName));
 
+        //     PerformSemanticAnalysis(program);
 
-        //     // var elements = new List<ExpressionNodeExpr>();
-        //     // var existingArray = new ArrayNodeExpr(elements);
-        //     // var theI = new AssignNode("i", new NumberNodeExpr(0));
-
-        //     // var add = new AddNodeExpr(new IndexNodeExpr(existingArray, theI));
-
-
-        //     // var fullSequence = new SequenceNodeExpr();
-        //     // var forLoopsequence = new SequenceNodeExpr();
-
-        //     // var assignedVal = new AssignNodeExpr(expr.IteratorId.Name, expr.IteratorId);
-
-        //     // var ifVal = new IfNodeExpr(expr.Condition, new AddNodeExpr(existingArray, new NumberNodeExpr(2)));
-
-
-        //     // forLoopsequence.Statements.Add(ifVal); // example
-        //     // System.Console.WriteLine("visiting where1");
-
-        //     // //sequence.Statements.Add(expr.Condition);
-        //     // // do the for loop and return an array
-
-        //     // //var arrayNode = ((IdNodeExpr)expr.ArrayNodeExpr);
-
-        //     // var arrayPtr = Visit(expr.ArrayNodeExpr);
-
-        //     // // index 0 contains the length
-        //     // var zero = LLVMValueRef.CreateConstInt(_module.Context.Int32Type, 0);
-        //     // var lengthPtr = _builder.BuildGEP2(_module.Context.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-
-        //     // var length = _builder.BuildLoad2(_module.Context.Int64Type, lengthPtr, "len");
-
-
-        //     // ForLoopNodeExpr forLoopNodeExpr = new ForLoopNodeExpr( // this one fails, it can't cast it to an array node
-        //     //     assignedVal,
-        //     //     //expr.Condition,
-        //     //     new ComparisonNodeExpr(new NumberNodeExpr(0), "<", new NumberNodeExpr(3)),// it should take the actual length
-        //     //     new IncrementNodeExpr(expr.IteratorId.Name),
-        //     //     forLoopsequence); // body
-        //     // System.Console.WriteLine("visiting where2");
-
-        //     // //var array = new ArrayNodeExpr(elements);
-        //     // fullSequence.Statements.Add(forLoopNodeExpr);
-        //     // System.Console.WriteLine("visiting where3");
-
-        //     // return Visit(fullSequence);
+        //     return VisitSequenceExpr(program);
         // }
 
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
@@ -1458,7 +1439,7 @@ namespace MyCompiler
             {
                 MyType.String => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
                 MyType.Float => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
-                MyType.Int => _builder.BuildBitCast(rawValue, ctx.Int64Type, "to_int"),
+                MyType.Int => _builder.BuildBitCast(rawValue, ctx.Int64Type, "to_int"), // should we even do this for int if it is the default?
                 _ => rawValue
             };
         }
@@ -1681,7 +1662,7 @@ namespace MyCompiler
             if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
 
             var varType = entry.Type;
-            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {varType}, Value: {entry.Value})");
+            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {varType})");
 
             // Get the LLVM representation of the type (e.g., double, i64, or ptr)
             var llvm_type = GetLLVMType(varType);
@@ -1726,8 +1707,8 @@ namespace MyCompiler
             if (_debug)
             {
                 //Console.WriteLine("visiting: " + expr);
-                var name = expr.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
+                var name = expr.GetType().Name;
+                Console.WriteLine("visiting code-gen: " + name.Substring(0, name.Length - 8));
             }
             return expr.Accept(this);
         }
@@ -1746,13 +1727,10 @@ namespace MyCompiler
 
             // Negate the value, depending on whether it's a float or an integer
             if (value.TypeOf == ctx.DoubleType)
-            {
                 return _builder.BuildFNeg(value, "fneg");
-            }
             else
-            {
                 return _builder.BuildNeg(value, "neg");
-            }
+
         }
     }
 }
