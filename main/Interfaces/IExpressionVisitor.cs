@@ -29,11 +29,11 @@ namespace MyCompiler
         LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr);
         LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr);
         LLVMValueRef VisitLengthExpr(LengthNodeExpr expr);
+        LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);
         // LLVMValueRef VisitFunctionCall(FunctionCallNode node);
-        LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
     }
 }

@@ -182,8 +182,7 @@ namespace MyCompiler
 
         // TODO: fix the problems
 
-        // BROKEN FUNCTIONALITY   
-        // remove does not return the array, but works regardless                        
+        // BROKEN FUNCTIONALITY                        
         // doing this in the same command fails: x.add(1); x.length 
 
         // UNIT TESTING
@@ -437,9 +436,8 @@ namespace MyCompiler
                 dataPtr = value;
             }
             else
-            {
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
-            }
+            
 
             // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
             var mallocReturn = GetOrDeclareMalloc();
@@ -557,6 +555,7 @@ namespace MyCompiler
 
             return default;
         }
+
         public LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr)
         {
             var ctx = _module.Context;
@@ -613,7 +612,6 @@ namespace MyCompiler
             _builder.PositionAtEnd(endBlock);
             return default;
         }
-
 
         public LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr)
         {
@@ -676,6 +674,7 @@ namespace MyCompiler
 
             return newValue;
         }
+
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
         {
             var left = Visit(expr.Left);
@@ -944,7 +943,6 @@ namespace MyCompiler
         private LLVMValueRef GetOrDeclareRealloc()
         {
             var ctx = _module.Context;
-
             var i8ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             var type = LLVMTypeRef.CreateFunction(
@@ -963,11 +961,9 @@ namespace MyCompiler
             return _module.AddFunction("realloc", type);
         }
 
-
-          private LLVMValueRef GetOrDeclareMemmove()
+        private LLVMValueRef GetOrDeclareMemmove()
         {
             var ctx = _module.Context;
-
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             _memmoveType = LLVMTypeRef.CreateFunction(
@@ -983,8 +979,6 @@ namespace MyCompiler
 
             return _module.AddFunction("memmove", _memmoveType);
         }
-
-
 
         private LLVMValueRef GetSprintf()
         {
@@ -1164,6 +1158,7 @@ namespace MyCompiler
 
             return _builder.BuildSIToFP(randValue, _module.Context.Int64Type, "rand_simple");
         }
+
         private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, Type type)
         {
             if (_debug) Console.WriteLine("prints type: " + type);
@@ -1271,8 +1266,6 @@ namespace MyCompiler
                 "printf_call");
         }
 
-
-
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
@@ -1280,61 +1273,91 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
-        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) // Mine
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
         {
-            Console.WriteLine("visiting where0");
-            // myArray.where(x => x < 5)
+            // 1️ Allocate local variables for source and result
+            var srcVarName = "__where_src";
+            var resultVarName = "__where_result";
+            var indexVarName = "__where_i";
 
-            // newArray = [];
-            // existingArray = [7,6,8,9];
-            // for(i=0; i<myArray.Length; i++)
-            // {
-            //   if(existingArray[i] < 5) newArray.add(existingArray[i])
-            // }
+            // Save source array into a temp variable
+            var srcAssign = new AssignNodeExpr(srcVarName, new IdNodeExpr(expr.ArrayExpr is IdNodeExpr id ? id.Name : "__tmp_array"));
 
-            //var arrayVal = Visit(expr.ArrayNodeExpr);
+            // Allocate result array
+            var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
 
-            var elements = new List<ExpressionNodeExpr>();
-            var myArray = new ArrayNodeExpr(elements);
+            // Initialize loop index
+            var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
 
-            var fullSequence = new SequenceNodeExpr();
-            var forLoopsequence = new SequenceNodeExpr();
+            // Loop condition: i < src.length
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVarName),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(srcVarName))
+            );
 
-            var assignedVal = new AssignNodeExpr(expr.IteratorId.Name, expr.IteratorId);
+            // Loop step: i++
+            var loopStep = new IncrementNodeExpr(indexVarName);
 
-            var ifVal = new IfNodeExpr(expr.Condition, new AddNodeExpr(myArray, new NumberNodeExpr(2)));
+            // Current element: src[i]
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
 
+            // Rewrite the iterator variable inside the condition
+            ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
 
-            forLoopsequence.Statements.Add(ifVal); // example
-            System.Console.WriteLine("visiting where1");
+            // Add element to result array if condition is true
+            var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
 
-            //sequence.Statements.Add(expr.Condition);
-            // do the for loop and return an array
+            var ifBody = new SequenceNodeExpr();
+            ifBody.Statements.Add(addNode);
+            var ifNode = new IfNodeExpr(ifCond, ifBody);
 
-            //var arrayNode = ((IdNodeExpr)expr.ArrayNodeExpr);
+            // Loop body
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(ifNode);
 
-            var arrayPtr = Visit(expr.ArrayNodeExpr);
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
 
-            // index 0 contains the length
-            var zero = LLVMValueRef.CreateConstInt(_module.Context.Int32Type, 0);
-            var lengthPtr = _builder.BuildGEP2(_module.Context.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
+            // Sequence
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(forLoop);
 
-            var length = _builder.BuildLoad2(_module.Context.Int64Type, lengthPtr, "len");
+            // Return the filtered array
+            program.Statements.Add(new IdNodeExpr(resultVarName));
 
+            // Perform semantic checks if you have them
+            PerformSemanticAnalysis(program);
 
-            ForLoopNodeExpr forLoopNodeExpr = new ForLoopNodeExpr( // this one fails, it can't cast it to an array node
-                assignedVal,
-                //expr.Condition,
-                new ComparisonNodeExpr(new NumberNodeExpr(0), "<", new NumberNodeExpr(3)),// it should take the actual length
-                new IncrementNodeExpr(expr.IteratorId.Name),
-                forLoopsequence); // body
-            System.Console.WriteLine("visiting where2");
+            return VisitSequenceExpr(program);
+        }
 
-            //var array = new ArrayNodeExpr(elements);
-            fullSequence.Statements.Add(forLoopNodeExpr);
-            System.Console.WriteLine("visiting where3");
+        // Helper: recursively replace iterator variable with current element
+        private ExpressionNodeExpr ReplaceIterator(ExpressionNodeExpr expr, string iteratorName, ExpressionNodeExpr replacement)
+        {
+            switch (expr)
+            {
+                case IdNodeExpr id when id.Name == iteratorName:
+                    return replacement;
 
-            return Visit(fullSequence);
+                case ComparisonNodeExpr cmp:
+                    return new ComparisonNodeExpr(
+                        ReplaceIterator(cmp.Left, iteratorName, replacement),
+                        cmp.Operator,
+                        ReplaceIterator(cmp.Right, iteratorName, replacement)
+                    );
+
+                case BinaryOpNodeExpr bin:
+                    return new BinaryOpNodeExpr(
+                        ReplaceIterator(bin.Left, iteratorName, replacement),
+                        bin.Operator,
+                        ReplaceIterator(bin.Right, iteratorName, replacement)
+                    );
+
+                default:
+                    return expr;
+            }
         }
 
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)
@@ -1348,16 +1371,14 @@ namespace MyCompiler
             var mallocFunc = GetOrDeclareMalloc();
             var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "arr_ptr");
 
-            var zero32 = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            // var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
-            // var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
+            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
 
             // Store length
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero32 }, "len_ptr");
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero64 }, "len_ptr");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, count), lenPtr).SetAlignment(8);
 
             // Store capacity = count
-            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 1) }, "cap_ptr");
+            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 1) }, "cap_ptr");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, count), capPtr).SetAlignment(8);
 
             // Store elements starting at index 2
@@ -1366,12 +1387,12 @@ namespace MyCompiler
                 var val = Visit(expr.Elements[i]);
                 var boxed = BoxToI64(val);
 
-                var idx = LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)(i + 2));
+                var idx = LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)(i + 2));
                 var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { idx }, $"idx_{i}");
                 _builder.BuildStore(boxed, elemPtr).SetAlignment(8);
             }
 
-            var elementType = expr.ElementType ?? new FloatType();
+            var elementType = expr.ElementType ?? new FloatType(); // why is this called?
             expr.SetType(new ArrayType(elementType));
 
             if (_debug) Console.WriteLine("array pointer: " + arrayPtr);
@@ -1470,26 +1491,23 @@ namespace MyCompiler
             // based on semantic types instead of relying on LLVM type introspection.
             if (llvmType.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
                 llvmType.ElementType.Equals(_module.Context.Int8Type))
-            {
                 return new StringType();
-
-            }
 
             // Default to None to avoid throwing for pointer/complex types we don't handle.
             return new VoidType();
-
         }
 
-        public LLVMValueRef VisitAddExpr(AddNodeExpr expr) // the working one, but not fully safe
+        public LLVMValueRef VisitAddExpr(AddNodeExpr expr)
         {
             var ctx = _module.Context;
 
             // Visit array and value
             var arrayPtr = Visit(expr.ArrayExpression); // i64* array
+            var arrayName = ((IdNodeExpr)expr.ArrayExpression).Name;
             var value = Visit(expr.AddExpression);
             var boxed = BoxToI64(value);
 
-            var zero32 = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
+            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
             var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
             var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
             var eight64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 8);
@@ -1498,11 +1516,11 @@ namespace MyCompiler
             var entryBlock = _builder.InsertBlock;
 
             // Load length and capacity
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero32 }, "len_ptr");
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero64 }, "len_ptr");
             var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "length");
             length.SetAlignment(8);
 
-            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 1) }, "cap_ptr");
+            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { one64 }, "cap_ptr");
             var capacity = _builder.BuildLoad2(ctx.Int64Type, capPtr, "capacity");
             capacity.SetAlignment(8);
 
@@ -1517,6 +1535,13 @@ namespace MyCompiler
             // ---- grow ----
             _builder.PositionAtEnd(growBlock);
             var newCap = _builder.BuildMul(capacity, two64, "new_capacity");
+            var minCap = LLVMValueRef.CreateConstInt(ctx.Int64Type, 4);
+            newCap = _builder.BuildSelect(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, zero64),
+                minCap,
+                newCap,
+                "new_capacity"
+            );
             var totalSlots = _builder.BuildAdd(newCap, two64, "slots"); // header
             var totalBytes = _builder.BuildMul(totalSlots, eight64, "total_bytes");
 
@@ -1541,42 +1566,24 @@ namespace MyCompiler
                 2
             );
 
-            // recompute lenPtr from correct base
-            var lenPtr2 = _builder.BuildGEP2(
-                ctx.Int64Type,
-                arrayPtrPhi,
-                new[] { zero32 },
-                "len_ptr2"
-            );
-
-            // IMPORTANT: reload length if you want to be 100% correct
-            var length2 = _builder.BuildLoad2(ctx.Int64Type, lenPtr2, "length2");
-            length2.SetAlignment(8);
-
             // store new element
-            var elemIndex = _builder.BuildAdd(length2, two64, "elem_index"); // offset 2
+            var elemIndex = _builder.BuildAdd(length, two64, "elem_index"); // offset 2
             var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtrPhi, new[] { elemIndex }, "elem_ptr");
             _builder.BuildStore(boxed, elemPtr).SetAlignment(8);
 
-
             // increment length
-            var newLength = _builder.BuildAdd(length2, one64, "new_length");
+            var newLength = _builder.BuildAdd(length, one64, "new_length");
+            //_builder.BuildStore(newLength, lenPtr).SetAlignment(8);
+
+            var lenPtr2 = _builder.BuildGEP2(ctx.Int64Type, arrayPtrPhi, new[] { zero64 }, "len_ptr2");
             _builder.BuildStore(newLength, lenPtr2).SetAlignment(8);
 
+            var global = _module.GetNamedGlobal(arrayName);
 
-            if (expr.ArrayExpression is IdNodeExpr id)
-            {
-                var name = id.Name;
+            if (global.Handle == IntPtr.Zero)
+                throw new Exception($"Undefined variable {arrayName}");
 
-                // 1. Update LLVM global (if exists)
-                var global = _module.GetNamedGlobal(name);
-                if (global.Handle != IntPtr.Zero)
-                {
-                    _builder.BuildStore(arrayPtrPhi, global);
-                }
-
-            }
-
+            _builder.BuildStore(arrayPtrPhi, global);
 
             return arrayPtrPhi;
         }
@@ -1610,15 +1617,11 @@ namespace MyCompiler
             LLVMValueRef arrayPtr;
             // Check if we are dealing with the Global variable itself or an already loaded pointer
             if (arrayPtrRaw.IsAGlobalVariable.Handle != IntPtr.Zero)
-            {
                 // It's @arr (the global), so we load the malloc'd address stored inside it
                 arrayPtr = _builder.BuildLoad2(i8Ptr, arrayPtrRaw, "arr_load");
-            }
             else
-            {
                 // It's already the malloc'd address (from a nested expression)
                 arrayPtr = arrayPtrRaw;
-            }
 
             var indexVal = Visit(expr.RemoveExpression);
             if (indexVal.TypeOf == ctx.DoubleType)
@@ -1689,8 +1692,6 @@ namespace MyCompiler
             return arrayPtrRaw;
         }
 
-
-
         public LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
@@ -1731,6 +1732,7 @@ namespace MyCompiler
             if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
 
             var llvmType = GetLLVMType(entry.Type);
+            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {llvmType})");
 
             LLVMValueRef ptrToLoad;
 
@@ -1764,7 +1766,6 @@ namespace MyCompiler
             return _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
         }
 
-
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
         {
             LLVMValueRef last = default;
@@ -1782,7 +1783,7 @@ namespace MyCompiler
             var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
             if (lastExpr != null && lastExpr.Type is not BoolType)
             {
-                System.Console.WriteLine("Inside if...");
+                Console.WriteLine("Inside if...");
                 AddImplicitPrint(last, lastExpr.Type);
             }
 

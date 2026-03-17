@@ -94,7 +94,6 @@ namespace MyCompiler
             return new VoidType(); // Loops don't return a value
         }
 
-
         public Type VisitNumber(NumberNodeExpr expr)
         {
             expr.SetType(new IntType());
@@ -252,7 +251,6 @@ namespace MyCompiler
             return type;
         }
 
-
         public Type VisitAssign(AssignNodeExpr expr)
         {
             Type valType = Check(expr.Expression);
@@ -269,8 +267,6 @@ namespace MyCompiler
             return valType;
         }
 
-
-
         public Type VisitRandom(RandomNodeExpr expr)
         {
             // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
@@ -279,6 +275,7 @@ namespace MyCompiler
             expr.SetType(new IntType());
             return new IntType();
         }
+
         public Type VisitIf(IfNodeExpr expr)
         {
             var condType = Visit(expr.Condition);
@@ -402,8 +399,6 @@ namespace MyCompiler
             return inferred;
         }
 
-
-
         public Type VisitFunctionDef(FunctionDefNode node)
         {
             // 1. Convert the string return type (e.g., "int") to your MyType enum
@@ -414,7 +409,6 @@ namespace MyCompiler
 
             // 3. Create Local Scope: Add parameters so the body can see them
             // We assume parameters are Floats/Numbers in your current setup
-
 
             foreach (var paramName in node.Parameters)
             {
@@ -468,13 +462,13 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
+            Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
             VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
-            Visit(expr.ArrayNodeExpr);
+            Visit(expr.ArrayExpr);
             Visit(expr.Condition);
-            var arrayType = Visit(expr.ArrayNodeExpr);
+            var arrayType = Visit(expr.ArrayExpr);
 
             if (arrayType is not ArrayType)
                 throw new Exception("where can only be used on arrays");
@@ -487,8 +481,8 @@ namespace MyCompiler
             if (condType is not BoolType)
                 throw new Exception("where condition must return bool");
 
-            expr.SetType(expr.ArrayNodeExpr.Type);
-            return expr.ArrayNodeExpr.Type;
+            expr.SetType(expr.ArrayExpr.Type);
+            return expr.ArrayExpr.Type;
         }
 
         public Type VisitAdd(AddNodeExpr expr)
@@ -498,6 +492,7 @@ namespace MyCompiler
             expr.SetType(expr.ArrayExpression.Type);
             return expr.ArrayExpression.Type;
         }
+        
         public Type VisitAddRange(AddRangeNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
