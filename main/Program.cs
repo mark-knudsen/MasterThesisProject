@@ -39,7 +39,7 @@ namespace MyCompiler
             //bool Debug = args.Length > 0 && args[0] == "True";
             bool Debug = true;
             KeepRunning = true;
-            bool multipleLines = true;
+            bool multipleLines = false;
 
             StringBuilder userInput = new StringBuilder();
 
@@ -67,7 +67,7 @@ namespace MyCompiler
                             {
                                 // If Alt + Enter is pressed, submit the command
                                 isComplete = true;
-                                Console.WriteLine();
+                                //Console.WriteLine();
                             }
                             else
                             {

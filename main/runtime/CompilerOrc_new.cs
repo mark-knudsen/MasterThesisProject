@@ -437,7 +437,7 @@ namespace MyCompiler
             }
             else
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
-            
+
 
             // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
             var mallocReturn = GetOrDeclareMalloc();
@@ -1726,6 +1726,468 @@ namespace MyCompiler
             return length;
         }
 
+        public LLVMValueRef VisitMinExpr(MinNodeExpr expr)
+        {
+            var arrayVar = "__min_array";
+            var indexVar = "__min_i";
+            var minVar = "__min_val";
+
+            // Save array to temp variable
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+
+            // Initialize loop index i = 1
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(1));
+
+            // Initialize min value = array[0]
+            var firstElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new NumberNodeExpr(0));
+            var minAssign = new AssignNodeExpr(minVar, firstElement);
+
+            // Loop condition: i < array.length
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            // Loop step: i++
+            var loopStep = new IncrementNodeExpr(indexVar);
+
+            // Current element: array[i]
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // Update min if current element < min
+            var ifCond = new ComparisonNodeExpr(currentElement, "<", new IdNodeExpr(minVar));
+            var ifBody = new SequenceNodeExpr();
+            ifBody.Statements.Add(new AssignNodeExpr(minVar, currentElement));
+            var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+            // Loop body
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(ifNode);
+
+            // Build for loop
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            // Sequence: array assign, min assign, loop
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(minAssign);
+            program.Statements.Add(forLoop);
+
+            // Return min value
+            program.Statements.Add(new IdNodeExpr(minVar));
+
+            // Semantic analysis (optional)
+            PerformSemanticAnalysis(program);
+
+            // Visit the AST to generate LLVM IR
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitMinExprRaw(MinNodeExpr expr)
+        {
+            var ctx = _module.Context;
+            var func = _builder.InsertBlock.Parent;
+
+            // Get the array pointer
+            var arrayPtr = Visit(expr.ArrayExpression);
+
+            // Load array length
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) }, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+
+            // Handle empty array
+            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
+            var isEmpty = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, arrayLen, zero64, "is_empty");
+
+            var nonEmptyBlock = func.AppendBasicBlock("min.nonempty");
+            var emptyBlock = func.AppendBasicBlock("min.empty");
+            var endBlock = func.AppendBasicBlock("min.end");
+
+            _builder.BuildCondBr(isEmpty, emptyBlock, nonEmptyBlock);
+
+            // Empty block
+            _builder.PositionAtEnd(emptyBlock);
+            _builder.BuildBr(endBlock);
+
+            // Non-empty block
+            _builder.PositionAtEnd(nonEmptyBlock);
+
+            // Allocate min_val = array[0]
+            var firstElemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr,
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 2) }, "first_elem_ptr"); // header is 2 slots
+            var firstVal = _builder.BuildLoad2(ctx.Int64Type, firstElemPtr, "first_val");
+            var minAlloca = _builder.BuildAlloca(ctx.Int64Type, "min_val");
+            _builder.BuildStore(firstVal, minAlloca);
+
+            // Allocate loop index i = 1
+            var iAlloca = _builder.BuildAlloca(ctx.Int64Type, "i");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, 1), iAlloca);
+
+            // Create loop blocks
+            var loopCondBlock = func.AppendBasicBlock("min.loop.cond");
+            var loopBodyBlock = func.AppendBasicBlock("min.loop.body");
+            var loopEndBlock = func.AppendBasicBlock("min.loop.end");
+
+            _builder.BuildBr(loopCondBlock);
+
+            // Loop condition
+            _builder.PositionAtEnd(loopCondBlock);
+            var i = _builder.BuildLoad2(ctx.Int64Type, iAlloca, "i");
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, i, arrayLen, "cond");
+            _builder.BuildCondBr(cond, loopBodyBlock, loopEndBlock);
+
+            // Loop body
+            _builder.PositionAtEnd(loopBodyBlock);
+
+            // Compute element pointer dynamically: elementPtr = arrayPtr + (i + 2)
+            var offsetIdx = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 2), "offset_idx");
+            var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { offsetIdx }, "elem_ptr");
+            var val = _builder.BuildLoad2(ctx.Int64Type, elemPtr, "val");
+
+            // Update min
+            var currentMin = _builder.BuildLoad2(ctx.Int64Type, minAlloca, "current_min");
+            var newMin = _builder.BuildSelect(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, val, currentMin),
+                val,
+                currentMin,
+                "min_select"
+            );
+            _builder.BuildStore(newMin, minAlloca);
+
+            // i++
+            var newI = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 1), "i_plus1");
+            _builder.BuildStore(newI, iAlloca);
+
+            _builder.BuildBr(loopCondBlock);
+
+            // Loop end
+            _builder.PositionAtEnd(loopEndBlock);
+            var finalMin = _builder.BuildLoad2(ctx.Int64Type, minAlloca, "final_min");
+            _builder.BuildBr(endBlock);
+
+            // End block: use AddIncoming correctly
+            _builder.PositionAtEnd(endBlock);
+            var phi = _builder.BuildPhi(ctx.Int64Type, "min_result");
+            phi.AddIncoming(new[] { zero64, finalMin }, new[] { emptyBlock, loopEndBlock }, 2);
+
+            return phi;
+        }
+
+        public LLVMValueRef VisitMaxExpr(MaxNodeExpr expr)
+        {
+            var arrayVar = "__max_array";
+            var indexVar = "__max_i";
+            var maxVar = "__max_val";
+
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+            var firstElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new NumberNodeExpr(0));
+            var maxAssign = new AssignNodeExpr(maxVar, firstElement);
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(1));
+
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            var loopStep = new IncrementNodeExpr(indexVar);
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // Update max if current element > max
+            var ifCond = new ComparisonNodeExpr(currentElement, ">", new IdNodeExpr(maxVar));
+            var ifBody = new SequenceNodeExpr();
+            ifBody.Statements.Add(new AssignNodeExpr(maxVar, currentElement));
+            var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(ifNode);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(maxAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNodeExpr(maxVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitMaxExprRaw(MaxNodeExpr expr)
+        {
+            var ctx = _module.Context;
+            var func = _builder.InsertBlock.Parent;
+
+            var arrayPtr = Visit(expr.ArrayExpression);
+
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) }, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+
+            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
+            var isEmpty = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, arrayLen, zero64, "is_empty");
+
+            var nonEmptyBlock = func.AppendBasicBlock("max.nonempty");
+            var emptyBlock = func.AppendBasicBlock("max.empty");
+            var endBlock = func.AppendBasicBlock("max.end");
+
+            _builder.BuildCondBr(isEmpty, emptyBlock, nonEmptyBlock);
+
+            _builder.PositionAtEnd(emptyBlock);
+            _builder.BuildBr(endBlock);
+
+            _builder.PositionAtEnd(nonEmptyBlock);
+
+            var firstElemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 2) }, "first_elem_ptr");
+            var firstVal = _builder.BuildLoad2(ctx.Int64Type, firstElemPtr, "first_val");
+            var maxAlloca = _builder.BuildAlloca(ctx.Int64Type, "max_val");
+            _builder.BuildStore(firstVal, maxAlloca);
+
+            var iAlloca = _builder.BuildAlloca(ctx.Int64Type, "i");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, 1), iAlloca);
+
+            var loopCondBlock = func.AppendBasicBlock("max.loop.cond");
+            var loopBodyBlock = func.AppendBasicBlock("max.loop.body");
+            var loopEndBlock = func.AppendBasicBlock("max.loop.end");
+
+            _builder.BuildBr(loopCondBlock);
+
+            _builder.PositionAtEnd(loopCondBlock);
+            var i = _builder.BuildLoad2(ctx.Int64Type, iAlloca, "i");
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, i, arrayLen, "cond");
+            _builder.BuildCondBr(cond, loopBodyBlock, loopEndBlock);
+
+            _builder.PositionAtEnd(loopBodyBlock);
+            var offsetIdx = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 2), "offset_idx");
+            var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { offsetIdx }, "elem_ptr");
+            var val = _builder.BuildLoad2(ctx.Int64Type, elemPtr, "val");
+
+            var currentMax = _builder.BuildLoad2(ctx.Int64Type, maxAlloca, "current_max");
+            var newMax = _builder.BuildSelect(_builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, val, currentMax), val, currentMax, "max_select");
+            _builder.BuildStore(newMax, maxAlloca);
+
+            var newI = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 1), "i_plus1");
+            _builder.BuildStore(newI, iAlloca);
+            _builder.BuildBr(loopCondBlock);
+
+            _builder.PositionAtEnd(loopEndBlock);
+            var finalMax = _builder.BuildLoad2(ctx.Int64Type, maxAlloca, "final_max");
+            _builder.BuildBr(endBlock);
+
+            _builder.PositionAtEnd(endBlock);
+            var phi = _builder.BuildPhi(ctx.Int64Type, "max_result");
+
+            phi.AddIncoming(new[] { zero64, finalMax }, new[] { emptyBlock, loopEndBlock }, 2);
+
+            return phi;
+        }
+
+        public LLVMValueRef VisitMeanExpr(MeanNodeExpr expr)
+        {
+            var arrayVar = "__mean_array";
+            var indexVar = "__mean_i";
+            var sumVar = "__mean_sum";
+            var meanVar = "__mean_val";
+
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+            var sumAssign = new AssignNodeExpr(sumVar, new FloatNodeExpr(0));
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(0));
+
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            var loopStep = new IncrementNodeExpr(indexVar);
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // sum += currentElement
+            var addAssign = new AssignNodeExpr(sumVar,
+                new BinaryOpNodeExpr(new IdNodeExpr(sumVar), "+", currentElement)
+            );
+
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(addAssign);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            // mean = sum / array.length
+            var meanAssign = new AssignNodeExpr(meanVar,
+                new BinaryOpNodeExpr(new IdNodeExpr(sumVar), "/", new LengthNodeExpr(new IdNodeExpr(arrayVar)))
+            );
+
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(sumAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(meanAssign);
+            program.Statements.Add(new IdNodeExpr(meanVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitMeanExprRaw(MeanNodeExpr expr)
+        {
+            var ctx = _module.Context;
+            var func = _builder.InsertBlock.Parent;
+
+            var arrayPtr = Visit(expr.ArrayExpression);
+
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) }, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+
+            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
+            var isEmpty = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, arrayLen, zero64, "is_empty");
+
+            var nonEmptyBlock = func.AppendBasicBlock("mean.nonempty");
+            var emptyBlock = func.AppendBasicBlock("mean.empty");
+            var endBlock = func.AppendBasicBlock("mean.end");
+
+            _builder.BuildCondBr(isEmpty, emptyBlock, nonEmptyBlock);
+
+            _builder.PositionAtEnd(emptyBlock);
+            _builder.BuildBr(endBlock);
+
+            // Non-empty block: compute sum
+            _builder.PositionAtEnd(nonEmptyBlock);
+
+            var sumAlloca = _builder.BuildAlloca(ctx.Int64Type, "sum_val");
+            _builder.BuildStore(zero64, sumAlloca);
+
+            var iAlloca = _builder.BuildAlloca(ctx.Int64Type, "i");
+            _builder.BuildStore(zero64, iAlloca);
+
+            var loopCondBlock = func.AppendBasicBlock("mean.loop.cond");
+            var loopBodyBlock = func.AppendBasicBlock("mean.loop.body");
+            var loopEndBlock = func.AppendBasicBlock("mean.loop.end");
+
+            _builder.BuildBr(loopCondBlock);
+
+            _builder.PositionAtEnd(loopCondBlock);
+            var i = _builder.BuildLoad2(ctx.Int64Type, iAlloca, "i");
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, i, arrayLen, "cond");
+            _builder.BuildCondBr(cond, loopBodyBlock, loopEndBlock);
+
+            _builder.PositionAtEnd(loopBodyBlock);
+            var offsetIdx = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 2), "offset_idx");
+            var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { offsetIdx }, "elem_ptr");
+            var val = _builder.BuildLoad2(ctx.Int64Type, elemPtr, "val");
+
+            var currentSum = _builder.BuildLoad2(ctx.Int64Type, sumAlloca, "current_sum");
+            var newSum = _builder.BuildAdd(currentSum, val, "sum_add");
+            _builder.BuildStore(newSum, sumAlloca);
+
+            var newI = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 1), "i_plus1");
+            _builder.BuildStore(newI, iAlloca);
+            _builder.BuildBr(loopCondBlock);
+
+            _builder.PositionAtEnd(loopEndBlock);
+            var finalSum = _builder.BuildLoad2(ctx.Int64Type, sumAlloca, "final_sum");
+
+            // Compute mean = sum / length
+            var mean = _builder.BuildSDiv(finalSum, arrayLen, "mean");
+            _builder.BuildBr(endBlock);
+
+            _builder.PositionAtEnd(endBlock);
+            var phi = _builder.BuildPhi(ctx.Int64Type, "mean_result");
+
+            phi.AddIncoming(new[] { zero64, mean }, new[] { emptyBlock, loopEndBlock }, 2);
+
+            return phi;
+        }
+
+        public LLVMValueRef VisitSumExpr(SumNodeExpr expr)
+        {
+            var arrayVar = "__sum_array";
+            var indexVar = "__sum_i";
+            var sumVar = "__sum_val";
+
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+            var sumAssign = new AssignNodeExpr(sumVar, new NumberNodeExpr(0));
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(0));
+
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            var loopStep = new IncrementNodeExpr(indexVar);
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // sum += currentElement
+            var addAssign = new AssignNodeExpr(sumVar,
+                new BinaryOpNodeExpr(new IdNodeExpr(sumVar), "+", currentElement)
+            );
+
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(addAssign);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(sumAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNodeExpr(sumVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitSumExprRaw(SumNodeExpr expr)
+        {
+            var ctx = _module.Context;
+            var func = _builder.InsertBlock.Parent;
+
+            var arrayPtr = Visit(expr.ArrayExpression);
+
+            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) }, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+
+            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
+            var sumAlloca = _builder.BuildAlloca(ctx.Int64Type, "sum_val");
+            _builder.BuildStore(zero64, sumAlloca);
+
+            var iAlloca = _builder.BuildAlloca(ctx.Int64Type, "i");
+            _builder.BuildStore(zero64, iAlloca);
+
+            var loopCondBlock = func.AppendBasicBlock("sum.loop.cond");
+            var loopBodyBlock = func.AppendBasicBlock("sum.loop.body");
+            var loopEndBlock = func.AppendBasicBlock("sum.loop.end");
+
+            _builder.BuildBr(loopCondBlock);
+
+            _builder.PositionAtEnd(loopCondBlock);
+            var i = _builder.BuildLoad2(ctx.Int64Type, iAlloca, "i");
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, i, arrayLen, "cond");
+            _builder.BuildCondBr(cond, loopBodyBlock, loopEndBlock);
+
+            _builder.PositionAtEnd(loopBodyBlock);
+            var offsetIdx = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 2), "offset_idx");
+            var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { offsetIdx }, "elem_ptr");
+            var val = _builder.BuildLoad2(ctx.Int64Type, elemPtr, "val");
+
+            var currentSum = _builder.BuildLoad2(ctx.Int64Type, sumAlloca, "current_sum");
+            var newSum = _builder.BuildAdd(currentSum, val, "sum_add");
+            _builder.BuildStore(newSum, sumAlloca);
+
+            var newI = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(ctx.Int64Type, 1), "i_plus1");
+            _builder.BuildStore(newI, iAlloca);
+            _builder.BuildBr(loopCondBlock);
+
+            _builder.PositionAtEnd(loopEndBlock);
+            var finalSum = _builder.BuildLoad2(ctx.Int64Type, sumAlloca, "final_sum");
+
+            return finalSum;
+        }
+
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
@@ -1770,7 +2232,6 @@ namespace MyCompiler
         {
             LLVMValueRef last = default;
 
-            Console.WriteLine("Before foreach...");
             foreach (var stmt in expr.Statements)
             {
                 last = Visit(stmt);
@@ -1779,11 +2240,9 @@ namespace MyCompiler
             // Use the semantic type from the AST rather than inferring from LLVM types.
             // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
             // MapLLVMTypeToMyType from throwing for pointer types.
-            Console.WriteLine("Before lastExpr...");
             var lastExpr = GetLastExpression(expr) as ExpressionNodeExpr;
             if (lastExpr != null && lastExpr.Type is not BoolType)
             {
-                Console.WriteLine("Inside if...");
                 AddImplicitPrint(last, lastExpr.Type);
             }
 

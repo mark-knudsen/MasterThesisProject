@@ -48,6 +48,10 @@ namespace MyCompiler
                 RemoveNodeExpr remo => VisitRemove(remo),
                 RemoveRangeNodeExpr remor => VisitRemoveRange(remor),
                 LengthNodeExpr len => VisitLength(len),
+                MinNodeExpr min => VisitMin(min),
+                MaxNodeExpr max => VisitMax(max),
+                MeanNodeExpr mean => VisitMean(mean),
+                SumNodeExpr sum => VisitSum(sum),
 
                 FunctionDefNode fdef => VisitFunctionDef(fdef),
                 FunctionCallNode fcall => VisitFunctionCall(fcall),
@@ -492,7 +496,7 @@ namespace MyCompiler
             expr.SetType(expr.ArrayExpression.Type);
             return expr.ArrayExpression.Type;
         }
-        
+
         public Type VisitAddRange(AddRangeNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
@@ -521,6 +525,29 @@ namespace MyCompiler
         {
             expr.SetType(new IntType());
             return new IntType();
+        }
+        public Type VisitMin(MinNodeExpr expr)
+        {
+            expr.SetType(new FloatType());
+            return new FloatType();
+        }
+
+        public Type VisitMax(MaxNodeExpr expr)
+        {
+            expr.SetType(new FloatType());
+            return new FloatType();
+        }
+
+        public Type VisitMean(MeanNodeExpr expr)
+        {
+            expr.SetType(new FloatType());
+            return new FloatType();
+        }
+
+        public Type VisitSum(SumNodeExpr expr)
+        {
+            expr.SetType(new FloatType());
+            return new FloatType();
         }
 
         public Type VisitUnaryOp(UnaryOpNodeExpr expr)
