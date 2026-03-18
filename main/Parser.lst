@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 18/03/2026 10:12:40>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 18/03/2026 14:42:00>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 18/03/2026 10:38:57
+//  DateTime: 18/03/2026 16:14:12
 // ==========================================================================
 
 
@@ -26,7 +26,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH
 %token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
@@ -39,6 +39,7 @@
 %left MULT DIV
 %left LOGICAL_AND
 %left LOGICAL_OR
+%left DOT
 %left LBRACKET /* Add this to give indexing high priority */
 
 %type <node> Prog Statement StatementList Assignment
@@ -165,9 +166,14 @@ expr
         
         $$ = new IndexNodeExpr(idExpr, $3 as ExpressionNodeExpr); 
     }
+    | ID LBRACKET expr RBRACKET ASSIGN expr    
+    {
+        string idName = (string)$1;
+        var idExpr = new IdNodeExpr(idName);
+        
+        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
+    }
     | LPAREN expr RPAREN  { $$ = $2; }
-    //| expr DOT WHERE LPAREN ID LAMBDA expr RPAREN   {$$ = new WhereNodeExpr($5 as IdNodeExpr, $1 as ArrayNodeExpr, $7 as ComparisonNodeExpr); }
-    | LPAREN expr RPAREN
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
@@ -177,6 +183,14 @@ expr
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {
         $$ = new WhereNodeExpr(
+            new IdNodeExpr((string)$5),
+            $1 as ExpressionNodeExpr,
+            $7 as ExpressionNodeExpr
+        );
+    }
+    | expr DOT MAP LPAREN ID LAMBDA expr RPAREN
+    {
+        $$ = new MapNodeExpr(
             new IdNodeExpr((string)$5),
             $1 as ExpressionNodeExpr,
             $7 as ExpressionNodeExpr

@@ -1,16 +1,12 @@
 namespace MyCompiler
 {
-
     public abstract class Type
     {
         public abstract override string ToString();
-
     }
-
 
     public class IntType : Type
     {
-
         public override string ToString() { return "int"; }
     }
     public class FloatType : Type
@@ -48,7 +44,4 @@ namespace MyCompiler
             return "array" + "(" + ElementType.ToString() + ")";
         }
     }
-
-
-
 }
