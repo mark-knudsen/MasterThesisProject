@@ -39,7 +39,7 @@ namespace MyCompiler
             //bool Debug = args.Length > 0 && args[0] == "True";
             bool Debug = true;
             KeepRunning = true;
-            bool multipleLines = false;
+            bool multipleLines = true;
 
             StringBuilder userInput = new StringBuilder();
 
@@ -121,6 +121,13 @@ namespace MyCompiler
                             currentLine.Insert(cursorPosition, key.KeyChar);
                             cursorPosition++;
                         }
+
+                        // Redraw line
+                        Console.SetCursorPosition(0, Console.CursorTop);
+                        Console.Write("> " + currentLine.ToString() + " ");
+
+                        // Move cursor to correct position
+                        Console.SetCursorPosition(2 + cursorPosition, Console.CursorTop);
                     }
                 }
                 else
