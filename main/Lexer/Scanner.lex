@@ -31,6 +31,7 @@
 "bool"          { return (int)Tokens.BOOL; }
 "array"         { return (int)Tokens.ARRAY; }
 "where"         { return (int)Tokens.WHERE; }
+"map"           { return (int)Tokens.MAP; }
 "=>"            { return (int)Tokens.LAMBDA; }
 "add"           { return (int)Tokens.ADD; }
 "addRange"      { return (int)Tokens.ADDRANGE; }

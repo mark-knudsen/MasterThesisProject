@@ -41,8 +41,11 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
+                CloneArrayNodeExpr clo => VisitCloneArray(clo),
                 IndexNodeExpr idx => VisitIndex(idx),
+                IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
+                MapNodeExpr map => VisitMap(map),
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
@@ -57,11 +60,10 @@ namespace MyCompiler
             };
         }
 
-
         public Type VisitForEachLoop(ForEachLoopNodeExpr expr)
         {
             // 1. Check the array expression to ensure it's actually an array
-            Type arrayType = Check(expr.Array);
+            Type arrayType = Visit(expr.Array);
             if (arrayType is not ArrayType)
             {
                 throw new Exception("Foreach target must be an array.");
@@ -89,11 +91,10 @@ namespace MyCompiler
             _context = _context.Add(expr.Iterator.Name, default, elementType);
 
             // 4. Check the body
-            Check(expr.Body);
+            Visit(expr.Body);
 
             return new VoidType(); // Loops don't return a value
         }
-
 
         public Type VisitNumber(NumberNodeExpr expr)
         {
@@ -252,10 +253,9 @@ namespace MyCompiler
             return type;
         }
 
-
         public Type VisitAssign(AssignNodeExpr expr)
         {
-            Type valType = Check(expr.Expression);
+            Type valType = Visit(expr.Expression);
 
             // Obtain element type from either literal array or array type expression
             Type elemType = null;
@@ -269,8 +269,6 @@ namespace MyCompiler
             return valType;
         }
 
-
-
         public Type VisitRandom(RandomNodeExpr expr)
         {
             // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
@@ -279,13 +277,14 @@ namespace MyCompiler
             expr.SetType(new IntType());
             return new IntType();
         }
+
         public Type VisitIf(IfNodeExpr expr)
         {
             var condType = Visit(expr.Condition);
 
             // 1. Condition Check
             if (condType is not BoolType)
-                throw new Exception("If condition must be Bool");
+                throw new Exception("If condition must be Bool: " + condType.ToString());
 
             // Use .Then and .Else to match your Node definition
             Type thenType = Visit(expr.ThenPart);
@@ -363,13 +362,23 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNodeExpr expr)
         {
-            Type elementType = new FloatType();
+            Type elementType = new IntType();
 
             if (expr.Elements.Count > 0)
             {
-                elementType = Check(expr.Elements[0]);
+                elementType = Visit(expr.Elements[0]);
                 expr.ElementType = elementType;
             }
+
+            var arrayType = new ArrayType(elementType);
+            expr.SetType(arrayType);
+            return arrayType;
+        }
+
+        public Type VisitCloneArray(CloneArrayNodeExpr expr)
+        {
+            Type elementType = new IntType();
+            Visit(expr.SourceArray);
 
             var arrayType = new ArrayType(elementType);
             expr.SetType(arrayType);
@@ -380,9 +389,10 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNodeExpr expr)
         {
-            Check(expr.ArrayExpression); // Ensure target is valid
+            Visit(expr.ArrayExpression); // Ensure target is valid
+            Visit(expr.IndexExpression);
 
-            Type inferred = new FloatType();
+            Type inferred = new IntType();
             if (expr.ArrayExpression is IdNodeExpr idNode)
             {
                 var entry = _context.Get(idNode.Name);
@@ -402,7 +412,31 @@ namespace MyCompiler
             return inferred;
         }
 
+        public Type VisitIndexAssign(IndexAssignNodeExpr expr)
+        {
+            Visit(expr.ArrayExpression); // Ensure target is valid
+            Visit(expr.IndexExpression);
+            Visit(expr.AssignExpression);
 
+            Type inferred = new IntType();
+            if (expr.ArrayExpression is IdNodeExpr idNode)
+            {
+                var entry = _context.Get(idNode.Name);
+                if (entry?.Type is ArrayType arrType)
+                    inferred = entry.ElementType ?? arrType.ElementType ?? new FloatType();
+            }
+            else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
+            {
+                inferred = arrayLiteral.ElementType ?? new FloatType();
+            }
+            else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
+            {
+                inferred = arrayExprType.ElementType;
+            }
+
+            expr.SetType(inferred);
+            return inferred;
+        }
 
         public Type VisitFunctionDef(FunctionDefNode node)
         {
@@ -414,7 +448,6 @@ namespace MyCompiler
 
             // 3. Create Local Scope: Add parameters so the body can see them
             // We assume parameters are Floats/Numbers in your current setup
-
 
             foreach (var paramName in node.Parameters)
             {
@@ -468,27 +501,40 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            Console.WriteLine("yo the array node in where: " + expr.ArrayNodeExpr);
+            // if(debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
             VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
-            Visit(expr.ArrayNodeExpr);
-            Visit(expr.Condition);
-            var arrayType = Visit(expr.ArrayNodeExpr);
+            var condType = Visit(expr.Condition);
+            var arrayType = Visit(expr.ArrayExpr);
 
             if (arrayType is not ArrayType)
                 throw new Exception("where can only be used on arrays");
 
-            // 2. Determine element type (adjust depending on your language)
-
             // 5. Check condition
-            var condType = Visit(expr.Condition);
-
             if (condType is not BoolType)
                 throw new Exception("where condition must return bool");
 
-            expr.SetType(expr.ArrayNodeExpr.Type);
-            return expr.ArrayNodeExpr.Type;
+            // 2. Determine element type (adjust depending on your language)
+            expr.SetType(expr.ArrayExpr.Type);
+            return expr.ArrayExpr.Type;
+        }
+
+        public Type VisitMap(MapNodeExpr expr)
+        {
+            // if(debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+
+            Visit(expr.IteratorId);
+            Visit(expr.Assignment);
+            var arrayType = Visit(expr.ArrayExpr);
+
+            if (arrayType is not ArrayType)
+                throw new Exception("map can only be used on arrays");
+
+            // 2. Determine element type (adjust depending on your language)
+            expr.SetType(expr.ArrayExpr.Type);
+            return expr.ArrayExpr.Type;
         }
 
         public Type VisitAdd(AddNodeExpr expr)
@@ -498,6 +544,7 @@ namespace MyCompiler
             expr.SetType(expr.ArrayExpression.Type);
             return expr.ArrayExpression.Type;
         }
+
         public Type VisitAddRange(AddRangeNodeExpr expr)
         {
             Visit(expr.ArrayExpression);
