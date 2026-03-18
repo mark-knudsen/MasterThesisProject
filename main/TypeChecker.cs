@@ -218,7 +218,7 @@ namespace MyCompiler
             // Equality comparisons
             if (expr.Operator is "==" or "!=")
             {
-                if (leftType != rightType)
+                if (leftType.GetType() != rightType.GetType())
                     throw new Exception($"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
 
                 expr.SetType(new BoolType());
@@ -297,7 +297,7 @@ namespace MyCompiler
             Type finalType;
 
             // 2. Promotion Logic (Bool <-> Number)
-            if (thenType != elseType)
+            if (thenType.GetType() != elseType.GetType())
             {
                 // Allow mixing any Numeric type (Int/Float) with Booleans
                 bool isThenNumeric = (thenType is FloatType || thenType is IntType || thenType is BoolType);
