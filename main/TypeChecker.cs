@@ -288,6 +288,7 @@ namespace MyCompiler
 
             // Use .Then and .Else to match your Node definition
             Type thenType = Visit(expr.ThenPart);
+            Console.WriteLine("Type: ", thenType.GetType());
 
             Type elseType = new VoidType();
             if (expr.ElsePart != null)
@@ -327,10 +328,8 @@ namespace MyCompiler
 
         public Type VisitPrint(PrintNodeExpr expr)
         {
-            var innerType = Visit(expr.Expression);
-
-            expr.SetType(innerType);   // print returns same type
-            return innerType;
+            Visit(expr.Expression);
+            return new VoidType();
         }
 
         public Type VisitForLoop(ForLoopNodeExpr expr)

@@ -38,7 +38,7 @@ namespace MyCompiler
     //-----Built-in-function-nodes-----//
 
     // Represents print function
-    public class PrintNodeExpr : ExpressionNodeExpr
+    public class PrintNodeExpr : StatementNodeExpr
     {
         public ExpressionNodeExpr Expression { get; set; }
         public PrintNodeExpr(ExpressionNodeExpr expr)
