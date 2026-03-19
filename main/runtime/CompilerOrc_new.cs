@@ -1355,13 +1355,151 @@ namespace MyCompiler
 
         public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
         {
+            // 1. Generate unique names to prevent collision in the symbol table
+            string id = Guid.NewGuid().ToString("N").Substring(0, 4);
+            var srcVarName = $"__where_src_{id}";
+            var resultVarName = $"__where_result_{id}";
+            var indexVarName = $"__where_i_{id}";
+
+            // 2. Evaluate the source array using the CURRENT context
+            // This is the array we are filtering (e.g., the result of a previous .map)
+            var sourceArrayValue = Visit(expr.ArrayExpr);
+
+            // 3. UPDATE THE CONTEXT
+            // Since your Context is immutable, we create a new one containing our temp variable.
+            // Note: I'm passing 'null' for the 'object' param since it's a JIT-time LLVM value.
+            var updatedContext = _context.Add(srcVarName, sourceArrayValue, null!);
+
+            // 4. Update the Visitor's state
+            // You MUST swap the visitor's current context so that when we visit 
+            // the generated Sequence, it can find 'srcVarName'.
+            var oldContext = _context;
+            _context = updatedContext;
+
+            try
+            {
+                // 5. Build the "Sugar" AST
+                // We use the unique names we generated above.
+                var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
+                var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
+
+                var loopCond = new ComparisonNodeExpr(
+                    new IdNodeExpr(indexVarName), "<",
+                    new LengthNodeExpr(new IdNodeExpr(srcVarName))
+                );
+
+                var loopStep = new IncrementNodeExpr(indexVarName);
+                var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
+
+                // Rewrite 'd' to 'srcVarName[i]'
+                ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+                var ifBody = new SequenceNodeExpr();
+                ifBody.Statements.Add(new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement));
+
+                var loopBody = new SequenceNodeExpr();
+                loopBody.Statements.Add(new IfNodeExpr(ifCond, ifBody));
+
+                var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+                var program = new SequenceNodeExpr();
+                program.Statements.Add(resultAssign);
+                program.Statements.Add(forLoop);
+                program.Statements.Add(new IdNodeExpr(resultVarName));
+                PerformSemanticAnalysis(program);
+
+                // 6. Visit the sequence with the updated context
+                return VisitSequenceExpr(program);
+            }
+            finally
+            {
+                // 7. Restore the old context (Scope cleanup)
+                // This ensures the temp variables don't leak out of the 'where' call
+                _context = oldContext;
+            }
+        }
+
+        public LLVMValueRef VisitWhereExpr_computer(WhereNodeExpr expr)
+        {
+            // 1. Generate a unique suffix for this specific 'where' instance
+            // This prevents "indexVarName" from colliding in nested .where().where() calls
+            string suffix = Guid.NewGuid().ToString("N").Substring(0, 6);
+            var srcVarName = $"__where_src_{suffix}";
+            var resultVarName = $"__where_result_{suffix}";
+            var indexVarName = $"__where_i_{suffix}";
+
+            // 2. Evaluate the source expression (could be an Id, or another Map/Where call)
+            var sourceArrayValue = Visit(expr.ArrayExpr);
+            var stuf = new SequenceNodeExpr();
+
+            // 3. Manually register the source value in your symbol table 
+            // This solves the "Undefined variable" error because the ID node will now find it.
+            _context.Add(srcVarName, sourceArrayValue, null);
+
+            // 4. Prepare the AST transformation
+            // Initialize result array: var result = []
+            var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
+            stuf.Statements.Add(resultAssign);
+
+            PerformSemanticAnalysis(stuf);
+
+            // Initialize loop index: var i = 0
+            var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
+
+            // Loop condition: i < src.length
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVarName),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(srcVarName))
+            );
+
+            // Loop step: i++
+            var loopStep = new IncrementNodeExpr(indexVarName);
+
+            // Current element: src[i]
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
+
+            // Rewrite the iterator (e.g., 'd') to be 'src[i]'
+            ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+            // Add element to result: result.add(src[i])
+            var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
+
+            var ifBody = new SequenceNodeExpr();
+            ifBody.Statements.Add(addNode);
+            var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+            // Loop body: { if(cond) { result.add(src[i]) } }
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(ifNode);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            // 5. Build the final sequence for this Where block
+            var program = new SequenceNodeExpr();
+            // Note: We don't need a srcAssign Node anymore because we manually injected it into _variables
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNodeExpr(resultVarName));
+
+            PerformSemanticAnalysis(program);
+
+            // 6. Execute the generated sequence
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitWhereExpr2(WhereNodeExpr expr)
+        {
             // 1 Allocate local variables for source and result
             var srcVarName = "__where_src";
             var resultVarName = "__where_result";
             var indexVarName = "__where_i";
 
             // Save source array into a temp variable
-            var srcAssign = new AssignNodeExpr(srcVarName, new IdNodeExpr(expr.ArrayExpr is IdNodeExpr id ? id.Name : "__tmp_array"));
+            //  var srcAssign = new AssignNodeExpr(srcVarName, new IdNodeExpr(expr.ArrayExpr is IdNodeExpr id ? id.Name : "__tmp_array"));
+
+
+            var srcAssign = new AssignNodeExpr(srcVarName, new CloneArrayNodeExpr(expr.ArrayExpr)); // works
 
             // Allocate result array
             var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
@@ -1737,7 +1875,7 @@ namespace MyCompiler
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
                 BoolType => ctx.Int1Type,
-                _ => throw new Exception($"Unsupported type: {type}")
+                _ => throw new Exception($"Unsupported type: {type}") // it doesn't have a type? how?
             };
         }
 
@@ -2160,7 +2298,7 @@ namespace MyCompiler
 
             // should in actuality return a dataframe, but we are far away from that
             // a start could be to just return the text from a file
-            
+
             return Visit(expr.FileNameExpr);
         }
     }

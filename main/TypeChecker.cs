@@ -414,10 +414,8 @@ namespace MyCompiler
 
         public Type VisitPrint(PrintNodeExpr expr)
         {
-            var innerType = Visit(expr.Expression);
-
-            expr.SetType(innerType);   // print returns same type
-            return innerType;
+            Visit(expr.Expression);
+            return new VoidType();
         }
 
         public Type VisitForLoop(ForLoopNodeExpr expr)
@@ -628,7 +626,7 @@ namespace MyCompiler
         {
             Visit(expr.Expression);
             Visit(expr.FileNameExpr);
-            
+
             expr.SetType(new StringType());
             return new StringType();
         }
