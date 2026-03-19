@@ -39,7 +39,7 @@ namespace MyCompiler
             //bool Debug = args.Length > 0 && args[0] == "True";
             bool Debug = true;
             KeepRunning = true;
-            bool multipleLines = false;
+            bool multipleLines = true;
 
             StringBuilder userInput = new StringBuilder();
 
@@ -54,9 +54,6 @@ namespace MyCompiler
                 int cursorPosition = 0;
                 bool isComplete = false;
 
-
-
-
                 if (multipleLines)
                 {
                     // Reading input line by line with arrow/edit support
@@ -70,7 +67,7 @@ namespace MyCompiler
                             {
                                 // If Alt + Enter is pressed, submit the command
                                 isComplete = true;
-                                Console.WriteLine();
+                                //Console.WriteLine();
                             }
                             else
                             {
@@ -124,6 +121,13 @@ namespace MyCompiler
                             currentLine.Insert(cursorPosition, key.KeyChar);
                             cursorPosition++;
                         }
+
+                        // Redraw line
+                        Console.SetCursorPosition(0, Console.CursorTop);
+                        Console.Write("> " + currentLine.ToString() + " ");
+
+                        // Move cursor to correct position
+                        Console.SetCursorPosition(2 + cursorPosition, Console.CursorTop);
                     }
                 }
                 else
@@ -137,7 +141,6 @@ namespace MyCompiler
                 {
                     if (currentLine.Length > 0)
                         lines.Add(currentLine.ToString());
-
                     userInput.Append(string.Join(Environment.NewLine, lines).Trim());
                     lines.Clear();
                 }
@@ -352,7 +355,7 @@ namespace MyCompiler
                 case WhereNodeExpr whe:
                     Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
                     Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
-                    PrintNode(whe.ArrayNodeExpr, indent + 1);
+                    PrintNode(whe.ArrayExpr, indent + 1);
                     PrintNode(whe.Condition, indent + 1);
                     break;
 
