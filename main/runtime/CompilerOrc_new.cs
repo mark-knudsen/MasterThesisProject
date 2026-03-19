@@ -14,12 +14,12 @@ using System.Xml.Schema;
 
 namespace MyCompiler
 {
-    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     public struct RuntimeValue
     {
         public short tag;      // Index 0 (i16)
         public short pad1;     // Index 1 (i16)
-        public int pad2;       // Index 2 (i32)
+        public long pad2;       // Index 2 (i64)
         public IntPtr data;    // Index 3 (ptr)
 
         public RuntimeValue(short tag, IntPtr data)
@@ -105,7 +105,7 @@ namespace MyCompiler
             {
                 ctx.Int16Type,   // tag
                 ctx.Int16Type,   // padding (alignment)
-                ctx.Int32Type,   // padding (alignment)
+                ctx.Int64Type,   // padding (alignment)
                 LLVMTypeRef.CreatePointer(ctx.Int8Type, 0) // data (generic pointer)
             }, false);
         }
@@ -467,11 +467,16 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i32 = ctx.Int32Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var boxType = LLVMTypeRef.CreatePointer(_runtimeObjType, 0);
 
             // 2. Local type definitions tied to THIS context (replaces stale class fields)
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            // Option A: Literal/Anonymous struct (most common for temporary boxing)
 
+            // GUARD: If it's already a pointer to a RuntimeObject, DO NOT box it again.
+            if (value.TypeOf == boxType)
+            {
+                return value;
+            }
 
             int tag = type switch
             {
@@ -528,17 +533,16 @@ namespace MyCompiler
             }
             else if (type is ArrayType)
             {
-                // Arrays are represented as an i8* pointer (with a length header at index 0).
-                // We can box it the same way as strings.
-                dataPtr = value;
+                dataPtr = _builder.BuildBitCast(value, i8Ptr, "arr_data_cast"); // Correct: value is ptr
             }
+
             else
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
 
 
             // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
             var mallocReturn = GetOrDeclareMalloc();
-            var sizeReturn = LLVMValueRef.CreateConstInt(i64, 16);
+            var sizeReturn = LLVMValueRef.CreateConstInt(i64, 24);
             var obj = _builder.BuildCall2(mallocType, mallocReturn, new[] { sizeReturn }, "runtime_obj");
 
             // 5. Store tag and data using the local runtimeValueType
@@ -626,8 +630,11 @@ namespace MyCompiler
 
             // Convert condition to i1 if needed
             if (condition.TypeOf == ctx.DoubleType)
+            {
                 condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
                     condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
+                condition.SetAlignment(8);
+            }
             else if (condition.TypeOf != ctx.Int1Type)
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
                     condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
@@ -1217,50 +1224,46 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
-            if (_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
-
             var value = Visit(expr.Expression);
-            var storageType = value.TypeOf;
-            var module = _module;
+            var boxType = LLVMTypeRef.CreatePointer(_runtimeObjType, 0);
 
-            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
-
-            if (global.Handle == IntPtr.Zero)
+            // 1. Ensure the value is boxed (BoxValue handles the guard)
+            if (value.TypeOf != boxType)
             {
-                if (!_definedGlobals.Contains(expr.Id))
-                {
-                    // FIRST DEFINITION
-                    global = module.AddGlobal(storageType, expr.Id);
-
-                    // Set initial dummy value so it's not "undef"
-                    if (storageType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
-                        global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
-                    else if (storageType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                        global.Initializer = LLVMValueRef.CreateConstInt(storageType, 0);
-                    else
-                        global.Initializer = LLVMValueRef.CreateConstNull(storageType);
-
-                    // Use ExternalLinkage so it's visible to the JIT symbol table
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                    _definedGlobals.Add(expr.Id);
-                }
-                else
-                {
-                    // RE-DECLARATION (in a new module)
-                    global = module.AddGlobal(storageType, expr.Id);
-
-                    // IMPORTANT: Setting Linkage to External WITHOUT an Initializer 
-                    // makes this an 'extern' declaration.
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                }
+                value = BoxValue(value, expr.Expression.Type);
             }
 
-            var store = _builder.BuildStore(value, global);
-            store.SetAlignment(8);
+            LLVMValueRef global = _module.GetNamedGlobal(expr.Id);
+
+            // 2. Check if we've already defined this in a previous REPL entry
+            if (_definedGlobals.Contains(expr.Id))
+            {
+                // It's already in the JIT. We must declare it as EXTERN in this module.
+                if (global.Handle == IntPtr.Zero)
+                {
+                    global = _module.AddGlobal(boxType, expr.Id);
+                }
+                // External linkage + NO initializer = "extern ptr @arr"
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                global.Initializer = new LLVMValueRef(IntPtr.Zero);
+            }
+            else
+            {
+                // FIRST TIME seeing this variable. Define it.
+                if (global.Handle == IntPtr.Zero)
+                {
+                    global = _module.AddGlobal(boxType, expr.Id);
+                }
+                global.Initializer = LLVMValueRef.CreateConstNull(boxType);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage; // Visible to JIT
+                _definedGlobals.Add(expr.Id);
+            }
+
+            // 3. Store the new box pointer into the global address
+            _builder.BuildStore(value, global).SetAlignment(8);
 
             return value;
         }
-
 
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
@@ -1588,56 +1591,68 @@ namespace MyCompiler
 
         public LLVMValueRef VisitCloneArrayExpr(CloneArrayNodeExpr expr)
         {
-            var srcArray = Visit(expr.SourceArray); // Evaluate the array
-            var lengthPtr = _builder.BuildGEP2(_module.Context.Int64Type, srcArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0) }, "len_ptr");
-            var length = _builder.BuildLoad2(_module.Context.Int64Type, lengthPtr, "length");
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
 
-            // Allocate new array with length + 2 slots
-            var elementSize = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 8);
-            var totalSlots = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 2));
-            var totalBytes = _builder.BuildMul(totalSlots, elementSize);
+            // 1. Visit source. It's likely a boxed RuntimeValue*.
+            var boxedSrc = Visit(expr.SourceArray);
+
+            // 2. Unbox it to get the raw array pointer (the one with the length header)
+            // We reuse the unboxing logic: go to field index 3 of the RuntimeObject
+            var srcDataPtrPtr = _builder.BuildStructGEP2(_runtimeObjType, boxedSrc, 3, "src_data_ptr_ptr");
+            var srcRawPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(i64, 0), srcDataPtrPtr, "src_raw_ptr");
+            
+
+            // 3. Load length from the header (index 0)
+            var lengthPtr = _builder.BuildGEP2(i64, srcRawPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) }, "len_ptr");
+            var length = _builder.BuildLoad2(i64, lengthPtr, "length");
+
+            // 4. Allocate new array memory (length + 2 slots)
+            var totalSlots = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(i64, 2));
+            var totalBytes = _builder.BuildMul(totalSlots, LLVMValueRef.CreateConstInt(i64, 8));
             var mallocFunc = GetOrDeclareMalloc();
-            var newArray = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "arr_ptr");
+            var newArrayRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "new_arr_raw");
 
-            // Store length and capacity
-            var lenPtrNew = _builder.BuildGEP2(_module.Context.Int64Type, newArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0) }, "len_ptr");
-            var capPtrNew = _builder.BuildGEP2(_module.Context.Int64Type, newArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1) }, "cap_ptr");
-            _builder.BuildStore(length, lenPtrNew).SetAlignment(8);
-            _builder.BuildStore(length, capPtrNew).SetAlignment(8);
+            // Ensure it's treated as an i64 pointer for GEP operations
+            var newArrayPtr = _builder.BuildBitCast(newArrayRaw, LLVMTypeRef.CreatePointer(i64, 0), "new_arr_ptr");
 
-            // Loop to copy elements
-            var index = _builder.BuildAlloca(_module.Context.Int64Type, "i");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0), index);
+            // 5. Copy header (Length and Capacity)
+            _builder.BuildStore(length, _builder.BuildGEP2(i64, newArrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) })).SetAlignment(8);
+            _builder.BuildStore(length, _builder.BuildGEP2(i64, newArrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 1) })).SetAlignment(8);
+
+            // 6. Loop to copy elements (they are pointers to RuntimeObjects stored as i64)
+            var indexAlloc = _builder.BuildAlloca(i64, "idx_var");
+            indexAlloc.SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), indexAlloc).SetAlignment(8);
 
             var func = _builder.InsertBlock.Parent;
-            var loopCond = func.AppendBasicBlock("loop.cond");
-            var loopBody = func.AppendBasicBlock("loop.body");
-            var loopEnd = func.AppendBasicBlock("loop.end");
+            var loopCond = func.AppendBasicBlock("clone.cond");
+            var loopBody = func.AppendBasicBlock("clone.body");
+            var loopEnd = func.AppendBasicBlock("clone.end");
 
             _builder.BuildBr(loopCond);
             _builder.PositionAtEnd(loopCond);
 
-            var iVal = _builder.BuildLoad2(_module.Context.Int64Type, index, "i_val");
-            var cmp = _builder.BuildICmp(LLVMSharp.Interop.LLVMIntPredicate.LLVMIntSLT, iVal, length, "cmp");
+            var i = _builder.BuildLoad2(i64, indexAlloc, "i");
+            var cmp = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, i, length, "cmp");
             _builder.BuildCondBr(cmp, loopBody, loopEnd);
 
             _builder.PositionAtEnd(loopBody);
 
-            // Copy element (assume ptr/boxed value)
-            var offset = _builder.BuildAdd(iVal, LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 2));
-            var srcElemPtr = _builder.BuildGEP2(_module.Context.Int64Type, srcArray, new[] { offset }, "src_elem");
-            var val = _builder.BuildLoad2(_module.Context.Int64Type, srcElemPtr, "val");
+            var offset = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(i64, 2));
+            var srcElem = _builder.BuildLoad2(i64, _builder.BuildGEP2(i64, srcRawPtr, new[] { offset }), "tmp_val");
+            srcElem.SetAlignment(8);
+            _builder.BuildStore(srcElem, _builder.BuildGEP2(i64, newArrayPtr, new[] { offset })).SetAlignment(8);
 
-            var dstElemPtr = _builder.BuildGEP2(_module.Context.Int64Type, newArray, new[] { offset }, "dst_elem");
-            _builder.BuildStore(val, dstElemPtr);
-
-            var iNext = _builder.BuildAdd(iVal, LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1));
-            _builder.BuildStore(iNext, index);
+            _builder.BuildStore(_builder.BuildAdd(i, LLVMValueRef.CreateConstInt(i64, 1)), indexAlloc).SetAlignment(8);
             _builder.BuildBr(loopCond);
 
             _builder.PositionAtEnd(loopEnd);
-            return newArray;
+
+            // 7. IMPORTANT: Wrap the raw cloned pointer back into a RuntimeValue box
+            return BoxArray(newArrayRaw);
         }
+
 
         public LLVMValueRef VisitMapExprMutating(MapNodeExpr expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
         {
@@ -1796,11 +1811,11 @@ namespace MyCompiler
                 var boxedIntValue = _builder.BuildPtrToInt(boxed, ctx.Int64Type, "boxed_to_i64");
                 _builder.BuildStore(boxedIntValue,
                     _builder.BuildGEP2(ctx.Int64Type, arrayPtr,
-                        new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, (ulong)(i + 2)) },
+                        new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)(i + 2)) },
                         $"idx_{i}"))
                     .SetAlignment(8);
             }
-      
+
             expr.SetType(new ArrayType(expr.ElementType));
             if (_debug) Console.WriteLine("array pointer: " + arrayPtr);
 
@@ -1815,7 +1830,7 @@ namespace MyCompiler
             var mallocFunc = GetOrDeclareMalloc();
 
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 16) }, "malloc_obj");
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "malloc_obj");
 
             var obj = _builder.BuildBitCast(objRaw,
                 LLVMTypeRef.CreatePointer(_runtimeObjType, 0), "obj");
@@ -1824,15 +1839,15 @@ namespace MyCompiler
             _builder.BuildStore(
                 LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)ValueTag.Array),
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 0) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) },
                     "tag_ptr"));
 
             // data = pointer to array
             _builder.BuildStore(arrPtr,
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 3) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 3) },
                     "data_ptr"));
 
             return obj;
@@ -1867,21 +1882,21 @@ namespace MyCompiler
 
             // Allocate RuntimeObject
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 16) }, "float_obj");
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "float_obj");
             var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeObjType, 0), "typed_obj");
 
             // Tag
             _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)ValueTag.Float),
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 0) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) },
                     "tag_ptr"));
 
             // Data = pointer to double
             _builder.BuildStore(doubleMem,
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 3) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 3) },
                     "data_ptr"));
 
             return obj;
@@ -1898,19 +1913,19 @@ namespace MyCompiler
                 LLVMTypeRef.CreatePointer(ctx.Int1Type, 0), "cast_ptr"));
 
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 16) }, "bool_obj");
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "bool_obj");
             var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeObjType, 0), "typed_obj");
 
             _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)ValueTag.Bool),
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 0) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) },
                     "tag_ptr"));
 
             _builder.BuildStore(boolMem,
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 3) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 3) },
                     "data_ptr"));
 
             return obj;
@@ -1923,7 +1938,7 @@ namespace MyCompiler
 
             // Allocate RuntimeObject
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 16) }, "str_obj");
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "str_obj");
             var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeObjType, 0), "typed_obj");
 
             // Tag = String
@@ -1955,19 +1970,19 @@ namespace MyCompiler
                 LLVMTypeRef.CreatePointer(ctx.Int64Type, 0), "cast_ptr"));
 
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 16) }, "int_obj");
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "int_obj");
             var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeObjType, 0), "typed_obj");
 
             _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)ValueTag.Int),
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 0) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 0) },
                     "tag_ptr"));
 
             _builder.BuildStore(intMem,
                 _builder.BuildGEP2(_runtimeObjType, obj,
-                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0),
-                    LLVMValueRef.CreateConstInt(ctx.Int32Type, 3) },
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
+                    LLVMValueRef.CreateConstInt(ctx.Int64Type, 3) },
                     "data_ptr"));
 
             return obj;
@@ -2116,7 +2131,7 @@ namespace MyCompiler
 
             // 3. Prepare constants
             var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
-     
+
             var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
             var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
             var eight64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 8);
@@ -2184,9 +2199,9 @@ namespace MyCompiler
             var boxedIntValue = _builder.BuildPtrToInt(boxed, ctx.Int64Type, "boxed_to_i64");
             _builder.BuildStore(boxedIntValue, elemPtr).SetAlignment(8);
 
-             // 7. Increment length
+            // 7. Increment length
             var newLength = _builder.BuildAdd(length2, one64, "new_length");
-   
+
             _builder.BuildStore(newLength, lenPtr2).SetAlignment(8);
 
             // 8. Update boxed array RuntimeObject if needed
