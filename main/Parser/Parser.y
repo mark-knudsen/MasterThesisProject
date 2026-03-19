@@ -17,7 +17,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH READCSV
 %token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
@@ -25,11 +25,12 @@
 %nonassoc IF
 %nonassoc ELSE
 
-%left GE LE EQ NE GT LT
+%left LOGICAL_OR
+%left LOGICAL_AND
+%left EQ NE
+%left GT LT GE LE
 %left PLUS MINUS
 %left MULT DIV
-%left LOGICAL_AND
-%left LOGICAL_OR
 %left DOT
 %left LBRACKET /* Add this to give indexing high priority */
 
@@ -71,9 +72,7 @@ Statement
       { $$ = new ForLoopNodeExpr($3 as StatementNodeExpr, $5 as ExpressionNodeExpr, $7 as StatementNodeExpr, $10); }
     
     | FOREACH LPAREN ID IN expr RPAREN LBRACE StatementList RBRACE
-
-      { $$ = new ForEachLoopNodeExpr(new IdNodeExpr((string)$3), $5 as ExpressionNodeExpr, $8 ); }
-   
+        { $$ = new ForEachLoopNodeExpr(new IdNodeExpr((string)$3), $5 as ExpressionNodeExpr, $8 ); }
     ;
 
 Type
@@ -136,8 +135,9 @@ expr
     | expr MINUS expr     { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "-", $3 as ExpressionNodeExpr); }
     | expr MULT expr      { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "*", $3 as ExpressionNodeExpr); }
     | expr DIV expr       { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "/", $3 as ExpressionNodeExpr); }
-    | expr LOGICAL_AND expr { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "&&", $3 as ExpressionNodeExpr); }  
-    | expr LOGICAL_OR expr  { $$ = new BinaryOpNodeExpr($1 as ExpressionNodeExpr, "||", $3 as ExpressionNodeExpr); }  
+
+    | expr LOGICAL_AND expr { $$ = new LogicalOpNodeExpr($1 as ExpressionNodeExpr, "&&", $3 as ExpressionNodeExpr); }  
+    | expr LOGICAL_OR expr  { $$ = new LogicalOpNodeExpr($1 as ExpressionNodeExpr, "||", $3 as ExpressionNodeExpr); }  
 
     | expr GE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, ">=", $3 as ExpressionNodeExpr); }    
     | expr LE expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<=", $3 as ExpressionNodeExpr); }
@@ -185,6 +185,7 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
+    | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     ;
 
 params

@@ -8,6 +8,7 @@ namespace MyCompiler
         Type VisitString(StringNodeExpr expr);
         Type VisitBoolean(BooleanNodeExpr expr);
         Type VisitBinary(BinaryOpNodeExpr expr);
+        Type VisitLogical(LogicalOpNodeExpr expr);
         Type VisitComparison(ComparisonNodeExpr expr);
         Type VisitIncrement(IncrementNodeExpr expr);
         Type VisitDecrement(DecrementNodeExpr expr);
@@ -29,6 +30,7 @@ namespace MyCompiler
         Type VisitLength(LengthNodeExpr expr);
         Type VisitWhere(WhereNodeExpr expr);
         Type VisitMap(MapNodeExpr expr);
+        Type VisitReadCsv(ReadCsvNodeExpr expr);
         Type VisitRound(RoundNodeExpr expr);
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);

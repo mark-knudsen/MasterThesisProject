@@ -38,6 +38,7 @@
 "remove"        { return (int)Tokens.REMOVE; }
 "removeRange"   { return (int)Tokens.REMOVERANGE; }
 "length"        { return (int)Tokens.LENGTH; }
+"read_csv"      { return (int)Tokens.READCSV; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }

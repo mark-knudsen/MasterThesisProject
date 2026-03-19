@@ -212,7 +212,8 @@ namespace MyCompiler
 
         // TODO: fix the problems
 
-        // BROKEN FUNCTIONALITY                        
+        // BROKEN FUNCTIONALITY  
+        // We cannot compare strings                      
         // doing this in the same command fails: x.add(1); x.length 
 
         // UNIT TESTING
@@ -707,14 +708,19 @@ namespace MyCompiler
 
         public LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr)
         {
-            var left = Visit(expr.Left);
-            var right = Visit(expr.Right);
+            var leftPtr = Visit(expr.Left);
+            var rightPtr = Visit(expr.Right);
 
             // Determine the types of the operands
-            bool lhsIsInt = left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth > 1;
-            bool rhsIsInt = right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth > 1;
-            bool lhsIsBool = left.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && left.TypeOf.IntWidth == 1;
-            bool rhsIsBool = right.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && right.TypeOf.IntWidth == 1;
+            var leftType = expr.Left.Type;
+            var rightType = expr.Right.Type;
+
+            bool lhsIsInt = leftType is IntType;
+            bool rhsIsInt = rightType is IntType;
+            bool lhsIsBool = leftType is BoolType;
+            bool rhsIsBool = rightType is BoolType;
+            bool lhsIsString = leftType is StringType;
+            bool rhsIsString = rightType is StringType;
 
             // Case 1: logical AND (&&) or logical OR (||) - only valid if both operands are boolean
             if (expr.Operator == "&&" || expr.Operator == "||")
@@ -727,14 +733,14 @@ namespace MyCompiler
                 // Handle logical AND (&&)
                 if (expr.Operator == "&&")
                 {
-                    var and = _builder.BuildAnd(left, right, "and_tmp");
+                    var and = _builder.BuildAnd(leftPtr, rightPtr, "and_tmp");
                     return and;
                 }
 
                 // Handle logical OR (||)
                 if (expr.Operator == "||")
                 {
-                    var or = _builder.BuildOr(left, right, "or_tmp");
+                    var or = _builder.BuildOr(leftPtr, rightPtr, "or_tmp");
                     return or;
                 }
             }
@@ -744,42 +750,73 @@ namespace MyCompiler
             {
                 return expr.Operator switch
                 {
-                    "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, left, right, "icmp_tmp"),
-                    ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, left, right, "icmp_tmp"),
-                    "<=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, left, right, "icmp_tmp"),
-                    ">=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, left, right, "icmp_tmp"),
-                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "icmp_tmp"),
-                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "icmp_tmp"),
+                    "<" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, leftPtr, rightPtr, "icmp_tmp"),
+                    ">" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, leftPtr, rightPtr, "icmp_tmp"),
+                    "<=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, leftPtr, rightPtr, "icmp_tmp"),
+                    ">=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, leftPtr, rightPtr, "icmp_tmp"),
+                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, leftPtr, rightPtr, "icmp_tmp"),
+                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, leftPtr, rightPtr, "icmp_tmp"),
                     _ => throw new Exception("Unknown operator")
                 };
             }
 
             // Case 3: at least one is float/double → promote integers (not booleans) to double
             if (lhsIsInt)
-                left = _builder.BuildSIToFP(left, _module.Context.DoubleType, "int2double");
+                leftPtr = _builder.BuildSIToFP(leftPtr, _module.Context.DoubleType, "int2double");
             if (rhsIsInt)
-                right = _builder.BuildSIToFP(right, _module.Context.DoubleType, "int2double");
+                rightPtr = _builder.BuildSIToFP(rightPtr, _module.Context.DoubleType, "int2double");
 
             // Case 4: boolean comparison? Only allow equality/inequality
             if (lhsIsBool && rhsIsBool)
             {
                 return expr.Operator switch
                 {
-                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, left, right, "bool_eq"),
-                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, left, right, "bool_ne"),
+                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, leftPtr, rightPtr, "bool_eq"),
+                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, leftPtr, rightPtr, "bool_ne"),
                     _ => throw new Exception("Cannot compare booleans with < > <= >=")
+                };
+            }
+
+            // --- 5. STRING COMPARISONS (only equality) ---
+            if (lhsIsString && rhsIsString)
+            {
+                // 1. Get or Create the function signature
+                var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+                var strcmpType = LLVMTypeRef.CreateFunction(_module.Context.Int32Type, new[] { i8Ptr, i8Ptr }, false);
+
+                var strcmpFunc = _module.GetNamedFunction("strcmp");
+                if (strcmpFunc.Handle == IntPtr.Zero)
+                {
+                    strcmpFunc = _module.AddFunction("strcmp", strcmpType);
+                }
+
+                // 2. Ensure we are passing the data, not the address of the variable
+                // If 'left' is a local variable from BuildAlloca, you MUST load it:
+                // var leftPtr = _builder.BuildLoad2(i8Ptr, left, "left_val");
+
+                // 3. Call strcmp - Note the use of strcmpType (the Function Type)
+                var strcmpResult = _builder.BuildCall2(strcmpType, strcmpFunc, new[] { leftPtr, rightPtr }, "strcmp_res");
+
+                // 4. Compare against 0
+                var zero = LLVMValueRef.CreateConstInt(_module.Context.Int32Type, 0);
+
+                return expr.Operator switch
+                {
+                    "==" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, strcmpResult, zero, "str_eq"),
+                    "!=" => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, strcmpResult, zero, "str_ne"),
+                    _ => throw new Exception($"Unsupported string operator: {expr.Operator}")
                 };
             }
 
             // Case 5: both are doubles → FCmp
             return expr.Operator switch
             {
-                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, left, right, "fcmp_tmp"),
-                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, left, right, "fcmp_tmp"),
-                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, left, right, "fcmp_tmp"),
-                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, left, right, "fcmp_tmp"),
-                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, left, right, "fcmp_tmp"),
-                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, left, right, "fcmp_tmp"),
+                "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, leftPtr, rightPtr, "fcmp_tmp"),
+                ">" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGT, leftPtr, rightPtr, "fcmp_tmp"),
+                "<=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLE, leftPtr, rightPtr, "fcmp_tmp"),
+                ">=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOGE, leftPtr, rightPtr, "fcmp_tmp"),
+                "==" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOEQ, leftPtr, rightPtr, "fcmp_tmp"),
+                "!=" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE, leftPtr, rightPtr, "fcmp_tmp"),
                 _ => throw new Exception("Unknown operator")
             };
         }
@@ -953,6 +990,19 @@ namespace MyCompiler
             }
 
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
+        }
+
+        public LLVMValueRef VisitLogicalOpExpr(LogicalOpNodeExpr expr)
+        {
+            var lhs = Visit(expr.Left);
+            var rhs = Visit(expr.Right);
+
+            return expr.Operator switch
+            {
+                "&&" => _builder.BuildAnd(lhs, rhs, "andtmp"),
+                "||" => _builder.BuildOr(lhs, rhs, "ortmp"),
+                _ => throw new Exception($"Unknown logical operator {expr.Operator}")
+            };
         }
 
         private (LLVMTypeRef Type, LLVMValueRef Func) GetMalloc()
@@ -1925,7 +1975,6 @@ namespace MyCompiler
                 var item = elements[i];
                 var removeElement = new RemoveNodeExpr(expr.ArrayExpression, item);
                 fullSequence.Statements.Add(removeElement);
-
             }
 
             return Visit(fullSequence);
@@ -2103,6 +2152,16 @@ namespace MyCompiler
 
             // 7. Return assigned value (common convention)
             return value;
+        }
+
+        public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
+        {
+            Console.WriteLine("we visit read csv");
+
+            // should in actuality return a dataframe, but we are far away from that
+            // a start could be to just return the text from a file
+            
+            return Visit(expr.FileNameExpr);
         }
     }
 }
