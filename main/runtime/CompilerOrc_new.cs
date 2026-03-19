@@ -1749,7 +1749,7 @@ namespace MyCompiler
                 {
                     // Allocate global in this module (not external)
                     global = _module.AddGlobal(llvmType, expr.Name);
-                    global.Linkage = LLVMLinkage.LLVMInternalLinkage;
+                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
 
                     // Optional: initialize
                     //_builder.BuildStore(LLVMValueRef.CreateConstInt(llvmType, 0), global);
