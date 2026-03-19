@@ -141,7 +141,6 @@ namespace MyCompiler
                 {
                     if (currentLine.Length > 0)
                         lines.Add(currentLine.ToString());
-
                     userInput.Append(string.Join(Environment.NewLine, lines).Trim());
                     lines.Clear();
                 }

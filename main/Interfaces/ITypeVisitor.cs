@@ -19,6 +19,9 @@ namespace MyCompiler
         Type VisitForLoop(ForLoopNodeExpr expr);
         Type VisitForEachLoop(ForEachLoopNodeExpr expr);
         Type VisitArray(ArrayNodeExpr expr);
+        Type VisitCloneArray(CloneArrayNodeExpr expr);
+        Type VisitIndex(IndexNodeExpr expr);
+        Type VisitIndexAssign(IndexAssignNodeExpr expr);
         Type VisitAdd(AddNodeExpr expr);
         Type VisitAddRange(AddRangeNodeExpr expr);
         Type VisitRemove(RemoveNodeExpr expr);
@@ -29,7 +32,7 @@ namespace MyCompiler
         Type VisitMean(MeanNodeExpr expr);
         Type VisitSum(SumNodeExpr expr);
         Type VisitWhere(WhereNodeExpr expr);
-        Type VisitIndex(IndexNodeExpr expr);
+        Type VisitMap(MapNodeExpr expr);
         Type VisitRound(RoundNodeExpr expr);
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);

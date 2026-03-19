@@ -38,7 +38,7 @@ namespace MyCompiler
     //-----Built-in-function-nodes-----//
 
     // Represents print function
-    public class PrintNodeExpr : ExpressionNodeExpr
+    public class PrintNodeExpr : StatementNodeExpr
     {
         public ExpressionNodeExpr Expression { get; set; }
         public PrintNodeExpr(ExpressionNodeExpr expr)
@@ -236,7 +236,7 @@ namespace MyCompiler
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
-            this.Type = new VoidType();
+            Type = new VoidType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIfExpr(this);
     }
@@ -309,16 +309,33 @@ namespace MyCompiler
     public class ArrayNodeExpr : ExpressionNodeExpr
     {
         public List<ExpressionNodeExpr> Elements { get; }
-        // Add this to store what's inside the array
         public Type ElementType { get; set; }
 
         public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
         {
             Elements = elements;
+
+            if (elements.Count > 0)
+                ElementType = elements[0].Type; // infer type from first element
+            else
+                ElementType = new IntType(); 
+
             Type = new ArrayType(ElementType);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
+    }
+
+    public class CloneArrayNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr SourceArray { get; }
+
+        public CloneArrayNodeExpr(ExpressionNodeExpr sourceArray)
+        {
+            SourceArray = sourceArray;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCloneArrayExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -335,6 +352,24 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexExpr(this);
     }
+
+    public class IndexAssignNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr IndexExpression { get; }
+        public ExpressionNodeExpr AssignExpression { get; }
+
+        public IndexAssignNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr indexExpr, ExpressionNodeExpr assignExpression)
+        {
+            ArrayExpression = arrayExpr;
+            IndexExpression = indexExpr;
+            AssignExpression = assignExpression;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexAssignExpr(this);
+    }
+
     public class WhereNodeExpr : ExpressionNodeExpr
     {
         public IdNodeExpr IteratorId;
@@ -350,6 +385,23 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhereExpr(this);
+    }
+
+    public class MapNodeExpr : ExpressionNodeExpr
+    {
+        public IdNodeExpr IteratorId;
+
+        public ExpressionNodeExpr ArrayExpr;
+        public ExpressionNodeExpr Assignment;
+
+        public MapNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr assignment)
+        {
+            IteratorId = iteratorId;
+            ArrayExpr = arrayExpr;
+            Assignment = assignment;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMapExpr(this);
     }
 
     public class AddNodeExpr : ExpressionNodeExpr
