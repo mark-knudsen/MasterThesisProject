@@ -17,7 +17,8 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM
+
 %token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
@@ -168,6 +169,10 @@ expr
     | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT REMOVERANGE LPAREN expr RPAREN    { $$ = new RemoveRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT LENGTH                       { $$ = new LengthNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT MIN                          { $$ = new MinNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT MAX                          { $$ = new MaxNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT MEAN                         { $$ = new MeanNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT SUM                          { $$ = new SumNodeExpr($1 as ExpressionNodeExpr); }
 
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {

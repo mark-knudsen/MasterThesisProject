@@ -476,6 +476,58 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLengthExpr(this);
     }
 
+    public class MinNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+
+        public MinNodeExpr(ExpressionNodeExpr arrayExpr)
+        {
+            ArrayExpression = arrayExpr;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMinExpr(this);
+    }
+
+    public class MaxNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+
+        public MaxNodeExpr(ExpressionNodeExpr arrayExpr)
+        {
+            ArrayExpression = arrayExpr;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMaxExpr(this);
+    }
+
+    public class MeanNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+
+        public MeanNodeExpr(ExpressionNodeExpr arrayExpr)
+        {
+            ArrayExpression = arrayExpr;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMeanExpr(this);
+    }
+
+    public class SumNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr ArrayExpression { get; }
+
+        public SumNodeExpr(ExpressionNodeExpr arrayExpr)
+        {
+            ArrayExpression = arrayExpr;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSumExpr(this);
+    }
+
     public class UnaryOpNodeExpr : ExpressionNodeExpr
     {
         public string Operator { get; }

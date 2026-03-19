@@ -38,6 +38,10 @@
 "remove"        { return (int)Tokens.REMOVE; }
 "removeRange"   { return (int)Tokens.REMOVERANGE; }
 "length"        { return (int)Tokens.LENGTH; }
+"min"           { return (int)Tokens.MIN; }
+"max"           { return (int)Tokens.MAX; }
+"mean"          { return (int)Tokens.MEAN; }
+"sum"           { return (int)Tokens.SUM; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }

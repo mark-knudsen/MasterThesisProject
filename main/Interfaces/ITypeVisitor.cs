@@ -27,6 +27,10 @@ namespace MyCompiler
         Type VisitRemove(RemoveNodeExpr expr);
         Type VisitRemoveRange(RemoveRangeNodeExpr expr);
         Type VisitLength(LengthNodeExpr expr);
+        Type VisitMin(MinNodeExpr expr);
+        Type VisitMax(MaxNodeExpr expr);
+        Type VisitMean(MeanNodeExpr expr);
+        Type VisitSum(SumNodeExpr expr);
         Type VisitWhere(WhereNodeExpr expr);
         Type VisitMap(MapNodeExpr expr);
         Type VisitRound(RoundNodeExpr expr);

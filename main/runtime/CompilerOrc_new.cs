@@ -1944,6 +1944,193 @@ namespace MyCompiler
             return length;
         }
 
+        public LLVMValueRef VisitMinExpr(MinNodeExpr expr)
+        {
+            var arrayVar = "__min_array";
+            var indexVar = "__min_i";
+            var minVar = "__min_val";
+
+            // Save array to temp variable
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+
+            // Initialize loop index i = 1
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(1));
+
+            // Initialize min value = array[0]
+            var firstElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new NumberNodeExpr(0));
+            var minAssign = new AssignNodeExpr(minVar, firstElement);
+
+            // Loop condition: i < array.length
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            // Loop step: i++
+            var loopStep = new IncrementNodeExpr(indexVar);
+
+            // Current element: array[i]
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // Update min if current element < min
+            var ifCond = new ComparisonNodeExpr(currentElement, "<", new IdNodeExpr(minVar));
+            var ifBody = new SequenceNodeExpr();
+            ifBody.Statements.Add(new AssignNodeExpr(minVar, currentElement));
+            var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+            // Loop body
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(ifNode);
+
+            // Build for loop
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            // Sequence: array assign, min assign, loop
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(minAssign);
+            program.Statements.Add(forLoop);
+
+            // Return min value
+            program.Statements.Add(new IdNodeExpr(minVar));
+
+            // Semantic analysis (optional)
+            PerformSemanticAnalysis(program);
+
+            // Visit the AST to generate LLVM IR
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitMaxExpr(MaxNodeExpr expr)
+        {
+            var arrayVar = "__max_array";
+            var indexVar = "__max_i";
+            var maxVar = "__max_val";
+
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+            var firstElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new NumberNodeExpr(0));
+            var maxAssign = new AssignNodeExpr(maxVar, firstElement);
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(1));
+
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            var loopStep = new IncrementNodeExpr(indexVar);
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // Update max if current element > max
+            var ifCond = new ComparisonNodeExpr(currentElement, ">", new IdNodeExpr(maxVar));
+            var ifBody = new SequenceNodeExpr();
+            ifBody.Statements.Add(new AssignNodeExpr(maxVar, currentElement));
+            var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(ifNode);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(maxAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNodeExpr(maxVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitMeanExpr(MeanNodeExpr expr)
+        {
+            var arrayVar = "__mean_array";
+            var indexVar = "__mean_i";
+            var sumVar = "__mean_sum";
+            var meanVar = "__mean_val";
+
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+            var sumAssign = new AssignNodeExpr(sumVar, new FloatNodeExpr(0));
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(0));
+
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            var loopStep = new IncrementNodeExpr(indexVar);
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // sum += currentElement
+            var addAssign = new AssignNodeExpr(sumVar,
+                new BinaryOpNodeExpr(new IdNodeExpr(sumVar), "+", currentElement)
+            );
+
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(addAssign);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            // mean = sum / array.length
+            var meanAssign = new AssignNodeExpr(meanVar,
+                new BinaryOpNodeExpr(new IdNodeExpr(sumVar), "/", new LengthNodeExpr(new IdNodeExpr(arrayVar)))
+            );
+
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(sumAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(meanAssign);
+            program.Statements.Add(new IdNodeExpr(meanVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequenceExpr(program);
+        }
+
+        public LLVMValueRef VisitSumExpr(SumNodeExpr expr)
+        {
+            var arrayVar = "__sum_array";
+            var indexVar = "__sum_i";
+            var sumVar = "__sum_val";
+
+            var arrayAssign = new AssignNodeExpr(arrayVar, expr.ArrayExpression);
+            var sumAssign = new AssignNodeExpr(sumVar, new NumberNodeExpr(0));
+            var indexAssign = new AssignNodeExpr(indexVar, new NumberNodeExpr(0));
+
+            var loopCond = new ComparisonNodeExpr(
+                new IdNodeExpr(indexVar),
+                "<",
+                new LengthNodeExpr(new IdNodeExpr(arrayVar))
+            );
+
+            var loopStep = new IncrementNodeExpr(indexVar);
+            var currentElement = new IndexNodeExpr(new IdNodeExpr(arrayVar), new IdNodeExpr(indexVar));
+
+            // sum += currentElement
+            var addAssign = new AssignNodeExpr(sumVar,
+                new BinaryOpNodeExpr(new IdNodeExpr(sumVar), "+", currentElement)
+            );
+
+            var loopBody = new SequenceNodeExpr();
+            loopBody.Statements.Add(addAssign);
+
+            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+            var program = new SequenceNodeExpr();
+            program.Statements.Add(arrayAssign);
+            program.Statements.Add(sumAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNodeExpr(sumVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequenceExpr(program);
+        }
+
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);

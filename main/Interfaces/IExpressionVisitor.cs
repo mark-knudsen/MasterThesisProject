@@ -31,6 +31,10 @@ namespace MyCompiler
         LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr);
         LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr);
         LLVMValueRef VisitLengthExpr(LengthNodeExpr expr);
+        LLVMValueRef VisitMinExpr(MinNodeExpr expr);
+        LLVMValueRef VisitMaxExpr(MaxNodeExpr expr);
+        LLVMValueRef VisitMeanExpr(MeanNodeExpr expr);
+        LLVMValueRef VisitSumExpr(SumNodeExpr expr);
         LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
         LLVMValueRef VisitMapExpr(MapNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
