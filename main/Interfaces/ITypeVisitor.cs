@@ -20,7 +20,7 @@ namespace MyCompiler
         Type VisitForLoop(ForLoopNodeExpr expr);
         Type VisitForEachLoop(ForEachLoopNodeExpr expr);
         Type VisitArray(ArrayNodeExpr expr);
-        Type VisitCloneArray(CloneArrayNodeExpr expr);
+        Type VisitCopyArray(CopyArrayNodeExpr expr);
         Type VisitIndex(IndexNodeExpr expr);
         Type VisitIndexAssign(IndexAssignNodeExpr expr);
         Type VisitAdd(AddNodeExpr expr);

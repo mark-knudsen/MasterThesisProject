@@ -339,16 +339,16 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
     }
 
-    public class CloneArrayNodeExpr : ExpressionNodeExpr
+    public class CopyArrayNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr SourceArray { get; }
 
-        public CloneArrayNodeExpr(ExpressionNodeExpr sourceArray)
+        public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
         {
             SourceArray = sourceArray;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCloneArrayExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -386,7 +386,6 @@ namespace MyCompiler
     public class WhereNodeExpr : ExpressionNodeExpr
     {
         public IdNodeExpr IteratorId;
-
         public ExpressionNodeExpr ArrayExpr;
         public ExpressionNodeExpr Condition;
 

@@ -39,7 +39,7 @@ namespace MyCompiler
             //bool Debug = args.Length > 0 && args[0] == "True";
             bool Debug = true;
             KeepRunning = true;
-            bool multipleLines = false;
+            bool multipleLines = true;
 
             StringBuilder userInput = new StringBuilder();
 

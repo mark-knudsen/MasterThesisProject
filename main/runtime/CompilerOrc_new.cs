@@ -51,8 +51,6 @@ namespace MyCompiler
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
-
-
         public Context GetContext() => _context;
         public void ClearContext() => _context = Context.Empty;
 
@@ -167,7 +165,6 @@ namespace MyCompiler
             var checker = new TypeChecker(_context, _debug);
             _lastType = checker.Check(expr);
             _context = checker.UpdatedContext;
-            RewriteArrayAssignments(expr);
 
             //_lastNode = GetLastExpression(expr);
 
@@ -177,35 +174,6 @@ namespace MyCompiler
             if (programedResult is ExpressionNodeExpr exp) return exp.Type;
 
             return new VoidType();
-        }
-
-        void RewriteArrayAssignments(NodeExpr node)
-        {
-            switch (node)
-            {
-                case AssignNodeExpr assign:
-                    if (assign.Expression.Type is ArrayType)
-                    {
-                        // if (_debug) Console.WriteLine("we cloning array"); // here and only here do we change the node
-                        assign.Expression = new CloneArrayNodeExpr(assign.Expression);
-                    }
-                    break;
-
-                case BinaryOpNodeExpr binOp:
-                    RewriteArrayAssignments(binOp.Left);
-                    RewriteArrayAssignments(binOp.Right);
-                    break;
-
-                case MapNodeExpr map:
-                    RewriteArrayAssignments(map.ArrayExpr);
-                    RewriteArrayAssignments(map.Assignment);
-                    break;
-
-                case SequenceNodeExpr seq:
-                    foreach (var expr in seq.Statements)
-                        RewriteArrayAssignments(expr);
-                    break;
-            }
         }
 
         // Problems
@@ -399,13 +367,13 @@ namespace MyCompiler
             // 1. Get the current context and define types locally for THIS run
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i32 = ctx.Int32Type;
+            var i16 = ctx.Int16Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // 2. Local type definitions tied to THIS context (replaces stale class fields)
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
             // Option A: Literal/Anonymous struct (most common for temporary boxing)
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i32, i8Ptr }, false);
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false); // it ABSOLUTELY have to match the struct
 
             int tag = type switch
             {
@@ -1353,142 +1321,7 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
-        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
-        {
-            // 1. Generate unique names to prevent collision in the symbol table
-            string id = Guid.NewGuid().ToString("N").Substring(0, 4);
-            var srcVarName = $"__where_src_{id}";
-            var resultVarName = $"__where_result_{id}";
-            var indexVarName = $"__where_i_{id}";
-
-            // 2. Evaluate the source array using the CURRENT context
-            // This is the array we are filtering (e.g., the result of a previous .map)
-            var sourceArrayValue = Visit(expr.ArrayExpr);
-
-            // 3. UPDATE THE CONTEXT
-            // Since your Context is immutable, we create a new one containing our temp variable.
-            // Note: I'm passing 'null' for the 'object' param since it's a JIT-time LLVM value.
-            var updatedContext = _context.Add(srcVarName, sourceArrayValue, null!);
-
-            // 4. Update the Visitor's state
-            // You MUST swap the visitor's current context so that when we visit 
-            // the generated Sequence, it can find 'srcVarName'.
-            var oldContext = _context;
-            _context = updatedContext;
-
-            try
-            {
-                // 5. Build the "Sugar" AST
-                // We use the unique names we generated above.
-                var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
-                var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
-
-                var loopCond = new ComparisonNodeExpr(
-                    new IdNodeExpr(indexVarName), "<",
-                    new LengthNodeExpr(new IdNodeExpr(srcVarName))
-                );
-
-                var loopStep = new IncrementNodeExpr(indexVarName);
-                var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
-
-                // Rewrite 'd' to 'srcVarName[i]'
-                ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
-
-                var ifBody = new SequenceNodeExpr();
-                ifBody.Statements.Add(new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement));
-
-                var loopBody = new SequenceNodeExpr();
-                loopBody.Statements.Add(new IfNodeExpr(ifCond, ifBody));
-
-                var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
-
-                var program = new SequenceNodeExpr();
-                program.Statements.Add(resultAssign);
-                program.Statements.Add(forLoop);
-                program.Statements.Add(new IdNodeExpr(resultVarName));
-                PerformSemanticAnalysis(program);
-
-                // 6. Visit the sequence with the updated context
-                return VisitSequenceExpr(program);
-            }
-            finally
-            {
-                // 7. Restore the old context (Scope cleanup)
-                // This ensures the temp variables don't leak out of the 'where' call
-                _context = oldContext;
-            }
-        }
-
-        public LLVMValueRef VisitWhereExpr_computer(WhereNodeExpr expr)
-        {
-            // 1. Generate a unique suffix for this specific 'where' instance
-            // This prevents "indexVarName" from colliding in nested .where().where() calls
-            string suffix = Guid.NewGuid().ToString("N").Substring(0, 6);
-            var srcVarName = $"__where_src_{suffix}";
-            var resultVarName = $"__where_result_{suffix}";
-            var indexVarName = $"__where_i_{suffix}";
-
-            // 2. Evaluate the source expression (could be an Id, or another Map/Where call)
-            var sourceArrayValue = Visit(expr.ArrayExpr);
-            var stuf = new SequenceNodeExpr();
-
-            // 3. Manually register the source value in your symbol table 
-            // This solves the "Undefined variable" error because the ID node will now find it.
-            _context.Add(srcVarName, sourceArrayValue, null);
-
-            // 4. Prepare the AST transformation
-            // Initialize result array: var result = []
-            var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
-            stuf.Statements.Add(resultAssign);
-
-            PerformSemanticAnalysis(stuf);
-
-            // Initialize loop index: var i = 0
-            var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
-
-            // Loop condition: i < src.length
-            var loopCond = new ComparisonNodeExpr(
-                new IdNodeExpr(indexVarName),
-                "<",
-                new LengthNodeExpr(new IdNodeExpr(srcVarName))
-            );
-
-            // Loop step: i++
-            var loopStep = new IncrementNodeExpr(indexVarName);
-
-            // Current element: src[i]
-            var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
-
-            // Rewrite the iterator (e.g., 'd') to be 'src[i]'
-            ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
-
-            // Add element to result: result.add(src[i])
-            var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
-
-            var ifBody = new SequenceNodeExpr();
-            ifBody.Statements.Add(addNode);
-            var ifNode = new IfNodeExpr(ifCond, ifBody);
-
-            // Loop body: { if(cond) { result.add(src[i]) } }
-            var loopBody = new SequenceNodeExpr();
-            loopBody.Statements.Add(ifNode);
-
-            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
-
-            // 5. Build the final sequence for this Where block
-            var program = new SequenceNodeExpr();
-            // Note: We don't need a srcAssign Node anymore because we manually injected it into _variables
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(new IdNodeExpr(resultVarName));
-
-            PerformSemanticAnalysis(program);
-
-            // 6. Execute the generated sequence
-            return VisitSequenceExpr(program);
-        }
-
-        public LLVMValueRef VisitWhereExpr2(WhereNodeExpr expr)
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) 
         {
             // 1 Allocate local variables for source and result
             var srcVarName = "__where_src";
@@ -1496,10 +1329,7 @@ namespace MyCompiler
             var indexVarName = "__where_i";
 
             // Save source array into a temp variable
-            //  var srcAssign = new AssignNodeExpr(srcVarName, new IdNodeExpr(expr.ArrayExpr is IdNodeExpr id ? id.Name : "__tmp_array"));
-
-
-            var srcAssign = new AssignNodeExpr(srcVarName, new CloneArrayNodeExpr(expr.ArrayExpr)); // works
+            var srcAssign = new AssignNodeExpr(srcVarName, expr.ArrayExpr); // instead of creating a new id, we simply use the expr.Array which itself is an id
 
             // Allocate result array
             var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
@@ -1557,10 +1387,10 @@ namespace MyCompiler
             var resultVarName = "__map_result";
             var indexVarName = "__map_i";
             // 1 Clone source array
-            var srcAssign = new AssignNodeExpr(srcVarName, new CloneArrayNodeExpr(expr.ArrayExpr));
+            var srcAssign = new AssignNodeExpr(srcVarName, new CopyArrayNodeExpr(expr.ArrayExpr));
 
             // 2 Allocate new array for result (length = src.length)
-            var resultAssign = new AssignNodeExpr(resultVarName, new CloneArrayNodeExpr(new IdNodeExpr(srcVarName)));
+            var resultAssign = new AssignNodeExpr(resultVarName, new CopyArrayNodeExpr(new IdNodeExpr(srcVarName)));
 
             // 3 Loop index
             var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
@@ -1602,7 +1432,7 @@ namespace MyCompiler
             return VisitSequenceExpr(program);
         }
 
-        public LLVMValueRef VisitCloneArrayExpr(CloneArrayNodeExpr expr)
+        public LLVMValueRef VisitCopyArrayExpr(CopyArrayNodeExpr expr)
         {
             var srcArray = Visit(expr.SourceArray); // Evaluate the array
             var lengthPtr = _builder.BuildGEP2(_module.Context.Int64Type, srcArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0) }, "len_ptr");
@@ -2198,7 +2028,7 @@ namespace MyCompiler
             {
                 //Console.WriteLine("visiting: " + expr);
                 var name = expr.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
+                Console.WriteLine("code gen visiting: " + name.Substring(0, name.Length - 8));
             }
             return expr.Accept(this);
         }

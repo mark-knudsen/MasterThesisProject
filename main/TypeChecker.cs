@@ -21,7 +21,7 @@ namespace MyCompiler
         private Type Visit(NodeExpr node)
         {
             var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
+            if (_debug) Console.WriteLine("type check visiting: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
@@ -42,7 +42,7 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
-                CloneArrayNodeExpr clo => VisitCloneArray(clo),
+                CopyArrayNodeExpr clo => VisitCopyArray(clo),
                 IndexNodeExpr idx => VisitIndex(idx),
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
@@ -203,7 +203,7 @@ namespace MyCompiler
             var rightType = Visit(expr.Right);
 
             // Helper to check if a type is numeric (Int or Float)
-            if(leftType is not BoolType || rightType is not BoolType)
+            if (leftType is not BoolType || rightType is not BoolType)
                 throw new Exception($"Invalid operands type {leftType} and {rightType}");
 
 
@@ -460,7 +460,7 @@ namespace MyCompiler
             return arrayType;
         }
 
-        public Type VisitCloneArray(CloneArrayNodeExpr expr)
+        public Type VisitCopyArray(CopyArrayNodeExpr expr)
         {
             Type elementType = new IntType();
             Visit(expr.SourceArray);
@@ -586,8 +586,8 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            // if(debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
-            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+            if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
             var condType = Visit(expr.Condition);
@@ -607,8 +607,8 @@ namespace MyCompiler
 
         public Type VisitMap(MapNodeExpr expr)
         {
-            // if(debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
-            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+            // if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
             Visit(expr.Assignment);
