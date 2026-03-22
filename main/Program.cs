@@ -39,7 +39,13 @@ namespace MyCompiler
             //bool Debug = args.Length > 0 && args[0] == "True";
             bool Debug = true;
             KeepRunning = true;
+
+
+#if LINUX
+            bool multipleLines = true;
+#else
             bool multipleLines = false;
+#endif
 
             StringBuilder userInput = new StringBuilder();
 
@@ -222,7 +228,7 @@ namespace MyCompiler
                                 Console.ForegroundColor = ConsoleColor.Cyan;
                                 Console.WriteLine("\nAST Structure:");
                                 PrintNode(parser.RootNode, 0);
-                                Console.ResetColor(); // Fix: Reset immediately after printing AST
+
                             }
 
                             try
