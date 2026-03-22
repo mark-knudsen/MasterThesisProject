@@ -17,7 +17,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
@@ -75,6 +75,7 @@ Statement
     | FOREACH LPAREN ID IN expr RPAREN LBRACE StatementList RBRACE
         { $$ = new ForEachLoopNodeExpr(new IdNodeExpr((string)$3), $5 as ExpressionNodeExpr, $8 ); }
     ;
+
 
 Type
     : INT                 { $$ = new IntType(); }
@@ -191,6 +192,8 @@ expr
         );
     }
     | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT TOCSV LPAREN expr RPAREN { $$ = new ToCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+
     | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
     ;
 

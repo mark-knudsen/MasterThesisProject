@@ -39,6 +39,10 @@ namespace MyCompiler
         LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
         LLVMValueRef VisitMapExpr(MapNodeExpr expr);
         LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr);
+        
+        LLVMValueRef VisitToCsvExpr(ToCsvNodeExpr expr);
+
+        
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 
         // // Visit for define and usage of created functions

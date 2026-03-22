@@ -47,7 +47,8 @@ namespace MyCompiler
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
                 MapNodeExpr map => VisitMap(map),
-                ReadCsvNodeExpr read => VisitReadCsv(read),
+                ReadCsvNodeExpr read_csv => VisitReadCsv(read_csv),                
+                ToCsvNodeExpr to_csv => VisitToCsv(to_csv),
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
@@ -627,6 +628,15 @@ namespace MyCompiler
         }
 
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
+        {
+            Visit(expr.Expression);
+            Visit(expr.FileNameExpr);
+
+            expr.SetType(new StringType());
+            return new StringType();
+        }
+
+           public Type VisitToCsv(ToCsvNodeExpr expr)
         {
             Visit(expr.Expression);
             Visit(expr.FileNameExpr);
