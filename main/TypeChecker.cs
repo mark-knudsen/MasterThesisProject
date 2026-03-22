@@ -590,9 +590,9 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            if (_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
-            
+
             Visit(expr.IteratorId);
             var condType = Visit(expr.Condition);
             var arrayType = Visit(expr.ArrayExpr);
@@ -674,26 +674,30 @@ namespace MyCompiler
         }
         public Type VisitMin(MinNodeExpr expr)
         {
-            expr.SetType(new FloatType());
-            return new FloatType();
+            var arr = Visit(expr.ArrayExpression);
+            expr.SetType(((ArrayType)arr).ElementType);
+            return arr;
         }
 
         public Type VisitMax(MaxNodeExpr expr)
         {
-            expr.SetType(new FloatType());
-            return new FloatType();
+            var arr = Visit(expr.ArrayExpression);
+            expr.SetType(((ArrayType)arr).ElementType);
+            return arr;
         }
 
         public Type VisitMean(MeanNodeExpr expr)
         {
+            Visit(expr.ArrayExpression);
             expr.SetType(new FloatType());
             return new FloatType();
         }
 
         public Type VisitSum(SumNodeExpr expr)
         {
-            expr.SetType(new FloatType());
-            return new FloatType();
+            var arr = Visit(expr.ArrayExpression);
+            expr.SetType(((ArrayType)arr).ElementType);
+            return arr;
         }
 
         public Type VisitUnaryOp(UnaryOpNodeExpr expr)
