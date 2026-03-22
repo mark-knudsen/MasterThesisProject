@@ -24,6 +24,7 @@
 "foreach"       { return (int)Tokens.FOREACH; }
 "in"            { return (int)Tokens.IN; }
 
+
 "int"           { return (int)Tokens.INT; }
 "float"         { return (int)Tokens.FLOAT; }
 "string"        { return (int)Tokens.STRING; }
@@ -40,6 +41,8 @@
 "remove"        { return (int)Tokens.REMOVE; }
 "removeRange"   { return (int)Tokens.REMOVERANGE; }
 "length"        { return (int)Tokens.LENGTH; }
+"read_csv"      { return (int)Tokens.READCSV; }
+"to_csv"        { return (int)Tokens.TOCSV; }
 "min"           { return (int)Tokens.MIN; }
 "max"           { return (int)Tokens.MAX; }
 "mean"          { return (int)Tokens.MEAN; }

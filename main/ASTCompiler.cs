@@ -430,6 +430,20 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitReadCsvExpr(this);
     }
 
+    public class ToCsvNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Expression { get; set; }   // e.g., variable or object
+        public ExpressionNodeExpr FileNameExpr { get; set; } // expression producing string
+
+        public ToCsvNodeExpr(ExpressionNodeExpr expr, ExpressionNodeExpr fileNameExpr)
+        {
+            Expression = expr;
+            FileNameExpr = fileNameExpr;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitToCsvExpr(this);
+    }
+
     public class AddNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr ArrayExpression { get; }
