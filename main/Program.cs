@@ -216,50 +216,44 @@ namespace MyCompiler
 
                         if (parser.Parse() && parser.RootNode != null)
                         {
-                            Console.ForegroundColor = ConsoleColor.Cyan;
-                            if (Debug) Console.WriteLine("\nAST Structure:");
-                            if (Debug) PrintNode(parser.RootNode, 0); // Print AST
+                            // Use a specific color for AST, then RESET immediately
+                            if (Debug)
+                            {
+                                Console.ForegroundColor = ConsoleColor.Cyan;
+                                Console.WriteLine("\nAST Structure:");
+                                PrintNode(parser.RootNode, 0);
+                                Console.ResetColor(); // Fix: Reset immediately after printing AST
+                            }
 
                             try
                             {
-                                // Run the IR and print the result
                                 object result = compiler.Run(parser.RootNode, Debug);
 
-                                if (result is int[])
-                                {
-                                    foreach (var item in result as int[])
-                                    {
-                                        Console.ForegroundColor = ConsoleColor.Green;
-                                        Console.WriteLine(item);
-                                    }
-                                }
-                                else if (result == null)
+                                // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
+                                if (result == null)
                                 {
                                     Console.ForegroundColor = ConsoleColor.Yellow;
                                     Console.WriteLine("Result: null");
                                 }
                                 else
                                 {
-                                    // Use InvariantCulture to ensure dots instead of commas
-                                    string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
-                                    string suffix = (result is string s) ? $" (Length: {s.Length})" : "";
-
                                     Console.ForegroundColor = ConsoleColor.Green;
-                                    Console.WriteLine($"Result: {formatted}{suffix}");
+                                    // HandleArray2 already formats the string, so we just print it
+                                    string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
+                                    Console.WriteLine($"Result: {formatted}");
                                 }
                             }
                             catch (Exception ex)
                             {
-                                Console.ForegroundColor = ConsoleColor.DarkRed;
+                                Console.ForegroundColor = ConsoleColor.Red; // Brighter red for visibility
                                 Console.WriteLine($"Compiler Error: {ex.Message}");
-                                Console.ForegroundColor = ConsoleColor.Gray;
+                            }
+                            finally
+                            {
+                                Console.ResetColor(); // Final safety reset
                             }
                         }
-                        else
-                        {
-                            Console.ForegroundColor = ConsoleColor.DarkRed;
-                            Console.WriteLine("Syntax Error: The input could not be parsed into an AST.");
-                        }
+
                     }
                 }
                 catch (Exception ex)

@@ -17,6 +17,10 @@
     <GppgVersion>1.5.3.1</GppgVersion>
   </PropertyGroup>
 
+  <PropertyGroup Condition="$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))">
+    <DefineConstants>LINUX</DefineConstants>
+  </PropertyGroup>
+
   <Target Name="GenerateParser" BeforeTargets="BeforeBuild">
     <Exec Command="dotnet &quot;$(NuGetPackageRoot)yacclextools.gplex/$(GplexVersion)/tools/net8.0/Gplex.dll&quot; /out:Generated/Scanner.cs Lexer/Scanner.lex" />
     <Exec Command="dotnet &quot;$(NuGetPackageRoot)yacclextools.gppg/$(GppgVersion)/tools/net8.0/Gppg.dll&quot; /gplex /internal /out:Generated/Parser.cs Parser/Parser.y" />

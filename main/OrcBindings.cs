@@ -5,7 +5,14 @@ namespace MyCompiler
     internal static class OrcBindings
     {
         //private const string LibLLVM = "libLLVM-20.so"; // linux
-        private const string LibLLVM = "libLLVM.dll"; // windows
+        //private const string LibLLVM = "libLLVM.dll"; // windows
+
+#if LINUX
+        private const string LibLLVM = "libLLVM-20.so";
+#else
+        private const string LibLLVM = "libLLVM.dll";
+#endif
+
 
         //   const string LibLLVM = File.ReadAllText(".env")
         //     .Split('=')[1]
