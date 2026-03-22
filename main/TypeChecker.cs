@@ -30,6 +30,7 @@ namespace MyCompiler
                 IdNodeExpr id => VisitId(id),
                 UnaryOpNodeExpr un => VisitUnaryOp(un),
                 BinaryOpNodeExpr bin => VisitBinary(bin),
+                LogicalOpNodeExpr log => VisitLogical(log),
                 ComparisonNodeExpr cmp => VisitComparison(cmp),
                 IncrementNodeExpr inc => VisitIncrement(inc),
                 DecrementNodeExpr dec => VisitDecrement(dec),
@@ -41,11 +42,12 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
-                CloneArrayNodeExpr clo => VisitCloneArray(clo),
+                CopyArrayNodeExpr clo => VisitCopyArray(clo),
                 IndexNodeExpr idx => VisitIndex(idx),
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
                 MapNodeExpr map => VisitMap(map),
+                ReadCsvNodeExpr read => VisitReadCsv(read),
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
@@ -179,7 +181,7 @@ namespace MyCompiler
             }
 
             // Handle Comparisons (==, !=, <, >)
-            if (expr.Operator is "==" or "!=" or "<" or ">" or "&&" or "||")
+            if (expr.Operator is "==" or "!=" or "<" or ">")
             {
                 // For comparisons, we just need the types to be compatible 
                 // (e.g., comparing a Float and an Int is fine)
@@ -199,7 +201,77 @@ namespace MyCompiler
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
         }
 
+        public Type VisitLogical(LogicalOpNodeExpr expr)
+        {
+            var leftType = Visit(expr.Left);
+            var rightType = Visit(expr.Right);
+
+            // Helper to check if a type is numeric (Int or Float)
+            if (leftType is not BoolType || rightType is not BoolType)
+                throw new Exception($"Invalid operands type {leftType} and {rightType}");
+
+
+            if (expr.Operator is "&&" or "||")
+            {
+                expr.SetType(new BoolType());
+                return new BoolType();
+            }
+
+            throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
+        }
+
         public Type VisitComparison(ComparisonNodeExpr expr)
+        {
+            var leftType = Visit(expr.Left);
+            var rightType = Visit(expr.Right);
+
+            bool isLeftNum = leftType is IntType || leftType is FloatType;
+            bool isRightNum = rightType is IntType || rightType is FloatType;
+
+            // === LOGICAL OPERATORS ===
+            if (expr.Operator is "&&" or "||")
+            {
+                if (leftType is not BoolType || rightType is not BoolType)
+                    throw new Exception(
+                        $"Logical operator {expr.Operator} requires bool operands, got {leftType} and {rightType}");
+
+                expr.SetType(new BoolType());
+                return new BoolType();
+            }
+
+            // === ORDERING (< > <= >=) ===
+            if (expr.Operator is "<" or ">" or "<=" or ">=")
+            {
+                if (!(isLeftNum && isRightNum))
+                    throw new Exception(
+                        $"Operator {expr.Operator} requires numeric operands, got {leftType} and {rightType}");
+
+                expr.SetType(new BoolType());
+                return new BoolType();
+            }
+
+            // === EQUALITY (== !=) ===
+            if (expr.Operator is "==" or "!=")
+            {
+                // allow numeric mixing (int == float)
+                if (isLeftNum && isRightNum)
+                {
+                    expr.SetType(new BoolType());
+                    return new BoolType();
+                }
+
+                if (leftType.GetType() != rightType.GetType())
+                    throw new Exception(
+                        $"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
+
+                expr.SetType(new BoolType());
+                return new BoolType();
+            }
+
+            throw new Exception($"Unknown operator {expr.Operator}");
+        }
+
+        public Type VisitComparison2(ComparisonNodeExpr expr)
         {
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
@@ -208,13 +280,25 @@ namespace MyCompiler
             // return MyType.Bool;
 
             // Numeric comparisons
-            if (expr.Operator is ">" or "<" or ">=" or "<=" or "&&" or "||")
+            if (expr.Operator is ">" or "<" or ">=" or "<=")
             {
                 if (leftType is not IntType && leftType is not IntType)
                     throw new Exception("Ordering operators require number");
 
-                if (rightType is not IntType && rightType is not FloatType)
+                if (rightType is not FloatType && rightType is not FloatType)
                     throw new Exception("Ordering operators require number");
+
+                expr.SetType(new BoolType());
+                return new BoolType();
+            }
+
+            if (expr.Operator is "&&" or "||")
+            {
+                if (leftType is not BoolType)
+                    throw new Exception("Left operand must be bool");
+
+                if (rightType is not BoolType)
+                    throw new Exception("Right operand must be bool");
 
                 expr.SetType(new BoolType());
                 return new BoolType();
@@ -294,6 +378,8 @@ namespace MyCompiler
             Type thenType = Visit(expr.ThenPart);
             Console.WriteLine("Type: ", thenType.GetType());
 
+            System.Console.WriteLine("then typee:" + thenType);
+
             Type elseType = new VoidType();
             if (expr.ElsePart != null)
                 elseType = Visit(expr.ElsePart);
@@ -301,7 +387,7 @@ namespace MyCompiler
             Type finalType;
 
             // 2. Promotion Logic (Bool <-> Number)
-            if (thenType != elseType)
+            if (thenType.GetType() != elseType.GetType())
             {
                 // Allow mixing any Numeric type (Int/Float) with Booleans
                 bool isThenNumeric = (thenType is FloatType || thenType is IntType || thenType is BoolType);
@@ -378,7 +464,7 @@ namespace MyCompiler
             return arrayType;
         }
 
-        public Type VisitCloneArray(CloneArrayNodeExpr expr)
+        public Type VisitCopyArray(CopyArrayNodeExpr expr)
         {
             Type elementType = new IntType();
             Visit(expr.SourceArray);
@@ -504,9 +590,9 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            // if(debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
-            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
-
+            if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+            
             Visit(expr.IteratorId);
             var condType = Visit(expr.Condition);
             var arrayType = Visit(expr.ArrayExpr);
@@ -525,8 +611,8 @@ namespace MyCompiler
 
         public Type VisitMap(MapNodeExpr expr)
         {
-            // if(debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
-            VisitAssign(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+            // if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
             Visit(expr.Assignment);
@@ -538,6 +624,15 @@ namespace MyCompiler
             // 2. Determine element type (adjust depending on your language)
             expr.SetType(expr.ArrayExpr.Type);
             return expr.ArrayExpr.Type;
+        }
+
+        public Type VisitReadCsv(ReadCsvNodeExpr expr)
+        {
+            Visit(expr.Expression);
+            Visit(expr.FileNameExpr);
+
+            expr.SetType(new StringType());
+            return new StringType();
         }
 
         public Type VisitAdd(AddNodeExpr expr)

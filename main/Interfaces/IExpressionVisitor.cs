@@ -12,6 +12,7 @@ namespace MyCompiler
         LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
         LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr);
         LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
+        LLVMValueRef VisitLogicalOpExpr(LogicalOpNodeExpr expr);
         LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
         LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
         LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
@@ -23,7 +24,7 @@ namespace MyCompiler
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
         LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr);
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
-        LLVMValueRef VisitCloneArrayExpr(CloneArrayNodeExpr expr);
+        LLVMValueRef VisitCopyArrayExpr(CopyArrayNodeExpr expr);
         LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitIndexAssignExpr(IndexAssignNodeExpr expr);
         LLVMValueRef VisitAddExpr(AddNodeExpr expr);
@@ -37,6 +38,7 @@ namespace MyCompiler
         LLVMValueRef VisitSumExpr(SumNodeExpr expr);
         LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
         LLVMValueRef VisitMapExpr(MapNodeExpr expr);
+        LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
 
         // // Visit for define and usage of created functions

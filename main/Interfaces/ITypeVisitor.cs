@@ -8,6 +8,7 @@ namespace MyCompiler
         Type VisitString(StringNodeExpr expr);
         Type VisitBoolean(BooleanNodeExpr expr);
         Type VisitBinary(BinaryOpNodeExpr expr);
+        Type VisitLogical(LogicalOpNodeExpr expr);
         Type VisitComparison(ComparisonNodeExpr expr);
         Type VisitIncrement(IncrementNodeExpr expr);
         Type VisitDecrement(DecrementNodeExpr expr);
@@ -19,7 +20,7 @@ namespace MyCompiler
         Type VisitForLoop(ForLoopNodeExpr expr);
         Type VisitForEachLoop(ForEachLoopNodeExpr expr);
         Type VisitArray(ArrayNodeExpr expr);
-        Type VisitCloneArray(CloneArrayNodeExpr expr);
+        Type VisitCopyArray(CopyArrayNodeExpr expr);
         Type VisitIndex(IndexNodeExpr expr);
         Type VisitIndexAssign(IndexAssignNodeExpr expr);
         Type VisitAdd(AddNodeExpr expr);
@@ -33,6 +34,7 @@ namespace MyCompiler
         Type VisitSum(SumNodeExpr expr);
         Type VisitWhere(WhereNodeExpr expr);
         Type VisitMap(MapNodeExpr expr);
+        Type VisitReadCsv(ReadCsvNodeExpr expr);
         Type VisitRound(RoundNodeExpr expr);
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);

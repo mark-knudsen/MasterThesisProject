@@ -14,10 +14,6 @@ namespace MyCompiler
 #endif
 
 
-        //   const string LibLLVM = File.ReadAllText(".env")
-        //     .Split('=')[1]
-        //     .Trim();
-
         [DllImport(LibLLVM)]
         public static extern IntPtr LLVMOrcCreateLLJIT(
             out IntPtr Result,
