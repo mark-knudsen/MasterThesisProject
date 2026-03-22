@@ -1321,7 +1321,7 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
-        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) 
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
         {
             // 1 Allocate local variables for source and result
             var srcVarName = "__where_src";
@@ -1557,44 +1557,40 @@ namespace MyCompiler
             return VisitSequenceExpr(program);
         }
 
-        // Helper: recursively replace iterator variable with current element
-        private ExpressionNodeExpr ReplaceIterator(ExpressionNodeExpr expr, string iteratorName, ExpressionNodeExpr replacement)
+        public ExpressionNodeExpr ReplaceIterator(ExpressionNodeExpr node, string iteratorName, ExpressionNodeExpr replacement)
         {
-            switch (expr)
+            if (node is IdNodeExpr id && id.Name == iteratorName)
             {
-                case IdNodeExpr id when id.Name == iteratorName:
-                    return replacement;
-
-                case ComparisonNodeExpr cmp:
-                    return new ComparisonNodeExpr(
-                        ReplaceIterator(cmp.Left, iteratorName, replacement),
-                        cmp.Operator,
-                        ReplaceIterator(cmp.Right, iteratorName, replacement)
-                    );
-
-                case BinaryOpNodeExpr bin:
-                    return new BinaryOpNodeExpr(
-                        ReplaceIterator(bin.Left, iteratorName, replacement),
-                        bin.Operator,
-                        ReplaceIterator(bin.Right, iteratorName, replacement)
-                    );
-
-                case UnaryOpNodeExpr un:
-                    return new UnaryOpNodeExpr(
-                        un.Operator,
-                        ReplaceIterator(un.Operand, iteratorName, replacement)
-                    );
-
-                case IndexNodeExpr idx:
-                    return new IndexNodeExpr(
-                        ReplaceIterator(idx.ArrayExpression, iteratorName, replacement),
-                        ReplaceIterator(idx.IndexExpression, iteratorName, replacement)
-                    );
-
-
-                default:
-                    return expr;
+                return replacement;
             }
+
+            if (node is ComparisonNodeExpr comp)
+            {
+                comp.Left = ReplaceIterator(comp.Left, iteratorName, replacement);
+                comp.Right = ReplaceIterator(comp.Right, iteratorName, replacement);
+            }
+            else if (node is LogicalOpNodeExpr logical)
+            {
+                // Added Logical op
+                logical.Left = ReplaceIterator(logical.Left, iteratorName, replacement);
+                logical.Right = ReplaceIterator(logical.Right, iteratorName, replacement);
+            }
+            else if (node is BinaryOpNodeExpr bin)
+            {
+                bin.Left = ReplaceIterator(bin.Left, iteratorName, replacement);
+                bin.Right = ReplaceIterator(bin.Right, iteratorName, replacement);
+            }
+            else if (node is UnaryOpNodeExpr un)
+            {
+                ReplaceIterator(un.Operand, iteratorName, replacement);
+            }
+            else if (node is IndexNodeExpr idx)
+            {
+                ReplaceIterator(idx.ArrayExpression, iteratorName, replacement);
+                ReplaceIterator(idx.IndexExpression, iteratorName, replacement);
+            }
+
+            return node;
         }
 
         public LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr)

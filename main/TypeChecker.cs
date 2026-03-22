@@ -592,7 +592,7 @@ namespace MyCompiler
         {
             if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
-
+            
             Visit(expr.IteratorId);
             var condType = Visit(expr.Condition);
             var arrayType = Visit(expr.ArrayExpr);
