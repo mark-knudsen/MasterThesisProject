@@ -30,6 +30,8 @@
 "void"          { return (int)Tokens.VOID; }
 "bool"          { return (int)Tokens.BOOL; }
 "array"         { return (int)Tokens.ARRAY; }
+"copy"          { return (int)Tokens.COPY; }
+
 "where"         { return (int)Tokens.WHERE; }
 "map"           { return (int)Tokens.MAP; }
 "=>"            { return (int)Tokens.LAMBDA; }

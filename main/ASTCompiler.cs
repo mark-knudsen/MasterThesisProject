@@ -185,6 +185,20 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBinaryExpr(this);
     }
 
+    public class LogicalOpNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Left { get; set; }
+        public string Operator { get; set; }
+        public ExpressionNodeExpr Right { get; set; }
+        public LogicalOpNodeExpr(ExpressionNodeExpr left, string op, ExpressionNodeExpr right)
+        {
+            Left = left;
+            Operator = op;
+            Right = right;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLogicalOpExpr(this);
+    }
+
     // Represents an assignment (e.g., x = 10)
     public class AssignNodeExpr : StatementNodeExpr
     {
@@ -265,7 +279,6 @@ namespace MyCompiler
         public ExpressionNodeExpr Array { get; } // e.g., "arr"
         public NodeExpr Body { get; }
 
-
         public ForEachLoopNodeExpr(IdNodeExpr iterator, ExpressionNodeExpr array, NodeExpr body)
         {
             Iterator = iterator;
@@ -318,7 +331,7 @@ namespace MyCompiler
             if (elements.Count > 0)
                 ElementType = elements[0].Type; // infer type from first element
             else
-                ElementType = new IntType(); 
+                ElementType = new IntType();
 
             Type = new ArrayType(ElementType);
         }
@@ -326,16 +339,16 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
     }
 
-    public class CloneArrayNodeExpr : ExpressionNodeExpr
+    public class CopyArrayNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr SourceArray { get; }
 
-        public CloneArrayNodeExpr(ExpressionNodeExpr sourceArray)
+        public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
         {
             SourceArray = sourceArray;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCloneArrayExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -373,7 +386,6 @@ namespace MyCompiler
     public class WhereNodeExpr : ExpressionNodeExpr
     {
         public IdNodeExpr IteratorId;
-
         public ExpressionNodeExpr ArrayExpr;
         public ExpressionNodeExpr Condition;
 
@@ -402,6 +414,20 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMapExpr(this);
+    }
+
+    public class ReadCsvNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Expression { get; set; }   // e.g., variable or object
+        public ExpressionNodeExpr FileNameExpr { get; set; } // expression producing string
+
+        public ReadCsvNodeExpr(ExpressionNodeExpr expr, ExpressionNodeExpr fileNameExpr)
+        {
+            Expression = expr;
+            FileNameExpr = fileNameExpr;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitReadCsvExpr(this);
     }
 
     public class AddNodeExpr : ExpressionNodeExpr
