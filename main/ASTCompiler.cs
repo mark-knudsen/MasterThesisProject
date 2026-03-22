@@ -567,4 +567,50 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
     }
+
+    public class RecordField
+    {
+        public string Label { get; set; }
+        public ExpressionNodeExpr Value { get; set; }
+    }
+
+    public class RecordNodeExpr : ExpressionNodeExpr
+    {
+        public List<RecordField> Fields { get; } = new List<RecordField>();
+        public List<Type> ElementTypes {get; } = new List<Type>();
+
+        public RecordNodeExpr(ExpressionNodeExpr labelsArray, ExpressionNodeExpr valuesArray)
+        {
+            // 1. Cast the inputs to ArrayNodeExpr to get into their internal lists
+            var labelNodes = (labelsArray as ArrayNodeExpr)?.Elements;
+            var valueNodes = (valuesArray as ArrayNodeExpr)?.Elements;
+
+            if (labelNodes == null || valueNodes == null)
+                throw new Exception("Record requires two arrays: labels and values.");
+
+            if (labelNodes.Count != valueNodes.Count)
+                throw new Exception("Record labels and values count mismatch.");
+
+            // 2. Zip them together into the Fields list
+            for (int i = 0; i < labelNodes.Count; i++)
+            {
+                // Ensure the label is actually a StringNodeExpr
+                if (labelNodes[i] is StringNodeExpr strNode)
+                {
+                    Fields.Add(new RecordField
+                    {
+                        Label = strNode.Value,
+                        Value = valueNodes[i]
+                    });
+                    ElementTypes.Add(valueNodes[i].Type);
+                }
+                else
+                {
+                    throw new Exception("Record labels must be string literals.");
+                }
+            }
+            Type = new RecordType(ElementTypes);
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordExpr(this);
+    }
 }

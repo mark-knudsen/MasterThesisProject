@@ -17,7 +17,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY RECORD
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
@@ -192,6 +192,7 @@ expr
     }
     | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
+    | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     ;
 
 params

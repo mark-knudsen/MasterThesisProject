@@ -27,6 +27,7 @@ namespace MyCompiler
         Bool = 3,
         String = 4,
         Array = 5,
+        Record = 6,
         None = 0
     }
 
@@ -103,7 +104,7 @@ namespace MyCompiler
 
             return _builder.BuildZExt(value, _module.Context.Int64Type, "zext");
         }
-        
+
         private void DeclareValueStruct()
         {
             var ctx = _module.Context;
@@ -286,6 +287,15 @@ namespace MyCompiler
                     if (_debug) Console.WriteLine("return array");
                     return HandleArray2(result.data);
 
+                case ValueTag.Record:
+                    if (_debug) Console.WriteLine("return Record");
+
+                    if (prediction is RecordType recType) // record(["name", "age"],["dan", 100]) 
+                    {
+                        return HandleRecord(result.data, recType);
+                    }
+                    return "Record Failure";
+
                 case ValueTag.None:
                     if (_debug) Console.WriteLine("return none");
 
@@ -323,6 +333,7 @@ namespace MyCompiler
                     (Int16)ValueTag.Bool => (Marshal.ReadByte(element.data) != 0).ToString(),
                     (Int16)ValueTag.String => Marshal.PtrToStringAnsi(element.data),
                     (Int16)ValueTag.Array => HandleArray(element.data).ToString(),
+                    (Int16)ValueTag.Record => HandleArray(element.data).ToString(),
                     _ => "none"
                 };
 
@@ -363,6 +374,38 @@ namespace MyCompiler
             return arrtext;
         }
 
+        private object HandleRecord(IntPtr dataPtr, RecordType recordType)
+        {
+            if (dataPtr == IntPtr.Zero) return "{ empty }";
+
+            var result = new Dictionary<string, object>();
+
+            System.Console.WriteLine("Record type: " + recordType);
+            System.Console.WriteLine("Record type count: " + recordType.ElementLabels?.Count);
+
+            // In your LLVM Visit, you stored fields in order: 0, 1, 2...
+            // We need to loop through the labels and read the memory at those offsets.
+            for (int i = 0; i < recordType.ElementLabels.Count; i++)
+            {
+                string label = recordType.ElementLabels[i];
+                System.Console.WriteLine("the label in the record: " + label);
+
+                // Calculate offset: each field is a pointer or i64 (8 bytes)
+                IntPtr fieldPtr = IntPtr.Add(dataPtr, i * 8);
+
+                // Read the raw pointer/value from the struct
+                IntPtr valueAddr = Marshal.ReadIntPtr(fieldPtr);
+
+                // Note: If you want to support nested records/arrays here, 
+                // you would need to know the TYPE of each field.
+                // For now, let's assume simple values or pointers.
+                result[label] = valueAddr;
+            }
+
+            System.Console.WriteLine("We trying to handle record4");
+            return "{ " + string.Join(", ", result.Select(kv => $"{kv.Key}: {kv.Value}")) + " }";
+        }
+
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
             // 1. Get the current context and define types locally for THIS run
@@ -383,6 +426,7 @@ namespace MyCompiler
                 BoolType => (Int16)ValueTag.Bool,
                 StringType => (Int16)ValueTag.String,
                 ArrayType => (Int16)ValueTag.Array,
+                RecordType => (Int16)ValueTag.Record,
                 _ => (Int16)ValueTag.None
             };
 
@@ -435,8 +479,16 @@ namespace MyCompiler
                 // We can box it the same way as strings.
                 dataPtr = value;
             }
+            else if (type is RecordType)
+            {
+                Console.WriteLine("very nice");
+                dataPtr = value;
+            }
             else
+            {
+                Console.WriteLine("the tag type: " + type);
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
+            }
 
             // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
             var mallocReturn = GetOrDeclareMalloc();
@@ -2313,6 +2365,108 @@ namespace MyCompiler
             // a start could be to just return the text from a file
 
             return Visit(expr.FileNameExpr);
+        }
+
+        public LLVMValueRef VisitRecordExpr(RecordNodeExpr node)
+        {
+            // record(["name", "age"],["dan", 100]) 
+            // 1. Collect LLVM Types from the fields to define the Struct
+            var fieldTypes = new List<LLVMTypeRef>();
+            var fieldValues = new List<LLVMValueRef>();
+
+            foreach (var field in node.Fields)
+            {
+                // This returns your ContextEntry
+                var entry = field.Value.Accept(this);
+                fieldValues.Add(entry);
+                fieldTypes.Add(entry.TypeOf);
+            }
+
+            // 2. Define the STRUCT TYPE (The Blueprint)
+            string structName = "struct_" + string.Join("_", node.Fields.Select(f => f.Label));
+
+            // Look in LLVM's internal type registry
+            LLVMTypeRef structType = _module.GetTypeByName(structName);
+
+            // If LLVM doesn't know this struct yet, define it
+            if (structType.Handle == IntPtr.Zero)
+            {
+                // USE THE LLVM CONTEXT, NOT YOUR CLASS
+                structType = _module.Context.CreateNamedStruct(structName);
+                structType.StructSetBody(fieldTypes.ToArray(), Packed: false);
+            }
+
+            // 3. Allocate Memory (Heap allocation via malloc)
+            // For a REPL/JIT, malloc is safer for persistence
+            //var sizeOf = structType.SizeOf;
+            var instancePtr = _builder.BuildMalloc(structType, "record_mem");
+            Console.WriteLine("visiting record code gen3.5");
+            //var instancePtr = _builder.BuildBitCast(rawPtr, LLVMTypeRef.CreatePointer(structType, 0), "record_ptr");
+            Console.WriteLine("visiting record code gen4"); // we fail between 3 and 4
+
+            // 4. Store each field value into the Struct
+            for (int i = 0; i < node.Fields.Count; i++)
+            {
+                var fieldValue = node.Fields[i].Value.Accept(this);
+
+                // BuildStructGEP2 gets the pointer to the specific field index
+                var elementPtr = _builder.BuildStructGEP2(structType, instancePtr, (uint)i, $"ptr_{node.Fields[i].Label}");
+
+                _builder.BuildStore(fieldValue, elementPtr);
+            }
+
+            return instancePtr;
+        }
+
+        private Dictionary<string, MyCompiler.Type> _labelRegistry = new();
+
+        private void ValidateRecordTypes(RecordNodeExpr node)
+        {
+            foreach (var field in node.Fields)
+            {
+                var currentType = field.Value.Type; // Your logic to get Node type
+
+                if (_labelRegistry.TryGetValue(field.Label, out var existingType))
+                {
+                    if (!currentType.Equals(existingType))
+                    {
+                        throw new Exception($"Type mismatch: Label '{field.Label}' is registered as {existingType}, but found {currentType}.");
+                    }
+                }
+                else
+                {
+                    // First time seeing this label? Register it!
+                    _labelRegistry[field.Label] = currentType;
+                }
+            }
+        }
+
+        // public LLVMValueRef VisitRecordField(RecordFieldNodeExpr node)
+        // {
+        //     // 1. Get the pointer to the record instance
+        //     var recordPtr = node.Left.Accept(this);
+
+        //     // 2. Determine the Struct Type and the index of the Label
+        //     // (You'll need to store the Record definition metadata in your symbol table)
+        //     var structMetadata = GetRecordMetadata(node.Left);
+        //     uint fieldIndex = structMetadata.GetIndex(node.MemberName);
+
+        //     // 3. Load the value
+        //     var elementPtr = _builder.BuildStructGEP2(structMetadata.LLVMType, recordPtr, fieldIndex, "member_ptr");
+        //     return _builder.BuildLoad2(structMetadata.FieldTypes[fieldIndex], elementPtr, node.MemberName);
+        // }
+
+        public LLVMValueRef VisitRecordExpr2(RecordNodeExpr expr)
+        {
+            // record(["name", "age"],["dan", 100]) 
+            Console.WriteLine("visiting record code gen");
+
+            foreach (var item in expr.Fields)
+            {
+                Visit(item.Value);
+            }
+
+            return default;
         }
     }
 }

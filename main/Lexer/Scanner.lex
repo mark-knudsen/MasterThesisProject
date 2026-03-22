@@ -45,6 +45,8 @@
 "mean"          { return (int)Tokens.MEAN; }
 "sum"           { return (int)Tokens.SUM; }
 
+"record"        { return (int)Tokens.RECORD; }
+
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
 "=="            { return (int)Tokens.EQ; }

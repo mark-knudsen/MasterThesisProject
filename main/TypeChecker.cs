@@ -62,6 +62,7 @@ namespace MyCompiler
                 FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNodeExpr rnd => VisitRound(rnd),
                 FloatNodeExpr flt => VisitFloat(flt),
+                RecordNodeExpr rec => VisitRecord(rec),
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
         }
@@ -590,9 +591,9 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            if (_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
-            
+
             Visit(expr.IteratorId);
             var condType = Visit(expr.Condition);
             var arrayType = Visit(expr.ArrayExpr);
@@ -719,6 +720,26 @@ namespace MyCompiler
                 // If it's neither an integer nor a float, raise a type error
                 throw new Exception("Unary minus operator can only be applied to integers or floats.");
             }
+        }
+
+        public Type VisitRecord(RecordNodeExpr expr)
+        {
+            List<Type> types = new List<Type>();
+
+            System.Console.WriteLine("the records type: " + expr.Type);
+
+            foreach (var item in expr.Fields)
+            {
+                var d = Visit(item.Value);
+                System.Console.WriteLine(d); // it returns int and string even tough it visits number and string which does create and should return stringType
+                //types.Add(item.Value.Type);
+                types.Add(d);
+                System.Console.WriteLine("item value in expr fields" + item.Value);
+                System.Console.WriteLine("item type in expr fields" + item.Value.Type);
+            }
+
+            expr.SetType(new RecordType(types));
+            return new RecordType(types);
         }
     }
 }
