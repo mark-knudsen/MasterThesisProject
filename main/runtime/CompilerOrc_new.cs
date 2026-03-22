@@ -2215,7 +2215,7 @@ namespace MyCompiler
             {
                 //Console.WriteLine("visiting: " + expr);
                 var name = expr.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-                Console.WriteLine("code gen visiting: " + name.Substring(0, name.Length - 8));
+                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             }
             return expr.Accept(this);
         }

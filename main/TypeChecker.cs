@@ -21,7 +21,7 @@ namespace MyCompiler
         private Type Visit(NodeExpr node)
         {
             var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
-            if (_debug) Console.WriteLine("type check visiting: " + name.Substring(0, name.Length - 8));
+            if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
                 NumberNodeExpr n => VisitNumber(n),
@@ -219,7 +219,6 @@ namespace MyCompiler
 
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
         }
-
 
         public Type VisitComparison(ComparisonNodeExpr expr)
         {
