@@ -103,6 +103,7 @@ namespace MyCompiler
 
             return _builder.BuildZExt(value, _module.Context.Int64Type, "zext");
         }
+        
         private void DeclareValueStruct()
         {
             var ctx = _module.Context;
@@ -437,7 +438,6 @@ namespace MyCompiler
             else
                 throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
 
-
             // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
             var mallocReturn = GetOrDeclareMalloc();
             var sizeReturn = LLVMValueRef.CreateConstInt(i64, 16);
@@ -445,7 +445,7 @@ namespace MyCompiler
 
             // 5. Store tag and data using the local runtimeValueType
             var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, (ulong)tag), tagPtr);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr);
 
             var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr);
