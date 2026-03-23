@@ -609,7 +609,7 @@ namespace MyCompiler
                     throw new Exception("Record labels must be string literals.");
                 }
             }
-            Type = new RecordType(ElementTypes);
+            Type = new RecordType(Fields);
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordExpr(this);
     }

@@ -39,19 +39,25 @@ namespace MyCompiler
             return "array" + "(" + ElementType.ToString() + ")";
         }
     }
+    
     public class RecordType : Type
     {
-        public List<Type> ElementTypes { get; }
-        public List<string> ElementLabels { get; }
+        public List<RecordField> RecordFields { get; }
 
-        public RecordType(List<Type> elementTypes)
+        public RecordType(List<RecordField> recordFields)
         {
-            ElementTypes = elementTypes;
+            RecordFields = recordFields;
         }
 
         public override string ToString()
         {
-            return "array" + "(" + ElementTypes.ToString() + ")";
+            string returnVal = "record(";
+            foreach (var item in RecordFields)
+            {
+                returnVal += item.Label + ", ";
+            }
+            returnVal = returnVal[..^2];
+            return returnVal + ")";
         }
     }
 }

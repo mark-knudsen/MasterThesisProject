@@ -284,8 +284,12 @@ namespace MyCompiler
                     return b != 0;
 
                 case ValueTag.Array:
-                    if (_debug) Console.WriteLine("return array");
-                    return HandleArray2(result.data);
+                    // 1. Get the element type from the prediction
+                    // Assuming prediction is of type 'ArrayType', we get its 'ElementType' property
+                    Type innerType = (prediction as ArrayType)?.ElementType;
+
+                    // 2. Pass both the pointer and the type to the handler
+                    return HandleArray(result.data, innerType);
 
                 case ValueTag.Record:
                     if (_debug) Console.WriteLine("return Record");
@@ -305,104 +309,134 @@ namespace MyCompiler
             return result;
         }
 
-        private object HandleArray(IntPtr dataPtr)
+        // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+        // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
+
+        private object HandleArray(IntPtr boxPtr, Type elementType)
         {
-            if (dataPtr == IntPtr.Zero)
-                return "[]";
+            // If the box pointer itself is null, the array variable was never initialized
+            if (boxPtr == IntPtr.Zero) return "[]";
 
-            // First 8 bytes = length
-            long length = Marshal.ReadInt64(dataPtr);
-            var elements = new List<string>((int)length);
-
-            if (_debug) Console.WriteLine("we about to iterate and print array");
-
-            for (long i = 0; i < length; i++)
+            try
             {
-                // Each element pointer offset
-                var elementPtr = IntPtr.Add(dataPtr, (int)((i + 1) * 8));
+                // 1. DEREFERENCE THE BOX: 
+                // Read the actual memory address stored INSIDE the 8-byte box.
+                // This address (dataPtr) is what realloc() updates.
+                IntPtr dataPtr = Marshal.ReadIntPtr(boxPtr);
 
-                if (_debug) Console.WriteLine("we about to iterate and print array1"); // we fail right here
-                // Read as a RuntimeValue struct
-                RuntimeValue element = Marshal.PtrToStructure<RuntimeValue>(Marshal.ReadIntPtr(elementPtr));
-                if (_debug) Console.WriteLine("we about to iterate and print array2");
+                // If the box is empty (null pointer inside), return empty brackets
+                if (dataPtr == IntPtr.Zero) return "[]";
 
-                string elStr = element.tag switch
+                // 2. Read the length from the header (index 0 of the buffer)
+                long length = Marshal.ReadInt64(dataPtr);
+                var resultElements = new List<string>();
+
+                // 3. Iterate through elements
+                for (long i = 0; i < length; i++)
                 {
-                    (Int16)ValueTag.Int => Marshal.ReadInt64(element.data).ToString(),
-                    (Int16)ValueTag.Float => Marshal.PtrToStructure<double>(element.data).ToString(),
-                    (Int16)ValueTag.Bool => (Marshal.ReadByte(element.data) != 0).ToString(),
-                    (Int16)ValueTag.String => Marshal.PtrToStringAnsi(element.data),
-                    (Int16)ValueTag.Array => HandleArray(element.data).ToString(),
-                    (Int16)ValueTag.Record => HandleArray(element.data).ToString(),
-                    _ => "none"
-                };
+                    // Data starts at index 2 (skipping len and cap)
+                    // BufferLayout: [Length (8b), Capacity (8b), Element0 (8b), Element1 (8b)...]
+                    IntPtr elementPtr = IntPtr.Add(dataPtr, (int)((i + 2) * 8));
+                    long rawValue = Marshal.ReadInt64(elementPtr);
 
-                if (_debug) Console.WriteLine("we about to iterate and print array3");
-                elements.Add(elStr);
+                    if (elementType is FloatType)
+                    {
+                        double dblValue = BitConverter.Int64BitsToDouble(rawValue);
+                        resultElements.Add(dblValue.ToString(CultureInfo.InvariantCulture));
+                    }
+                    else if (elementType is BoolType)
+                    {
+                        resultElements.Add((rawValue & 1) == 1 ? "true" : "false");
+                    }
+                    else if (elementType is IntType)
+                    {
+                        resultElements.Add(rawValue.ToString());
+                    }
+                    else if (elementType is StringType)
+                    {
+                        string str = Marshal.PtrToStringAnsi((IntPtr)rawValue);
+                        resultElements.Add($"\"{str}\"");
+                    }
+                    else if (elementType is ArrayType innerArrayType)
+                    {
+                        // Recursive call for nested arrays. 
+                        // Note: Inner arrays are also boxed, so rawValue is a BoxPtr.
+                        string innerResult = HandleArray((IntPtr)rawValue, innerArrayType.ElementType).ToString();
+                        resultElements.Add(innerResult);
+                    }
+                }
+
+                return "[" + string.Join(", ", resultElements) + "]";
             }
-
-            if (_debug) Console.WriteLine("we about to iterate and print array4");
-            return "[" + string.Join(", ", elements) + "]";
+            catch (Exception ex)
+            {
+                // Helpful for debugging if the pointer math is off
+                return $"[Error reading array: {ex.Message}]";
+            }
         }
 
-        private object HandleArray2(IntPtr dataPtr)
-        {
-            // The array is stored as:
-            // [0] = length (i64)
-            // [1..length] = element values (boxed as i64)
-            if (dataPtr == IntPtr.Zero)
-                return Array.Empty<long>();
-
-            long length = Marshal.ReadInt64(dataPtr);
-            var elements = new List<long>((int)length);
-
-            for (long i = 0; i < length; i++)
-            {
-                // Element offset = (i + 1) * 8 bytes (skip the length header)
-                var elementPtr = IntPtr.Add(dataPtr, (int)((i + 2) * 8));
-                long rawValue = Marshal.ReadInt64(elementPtr);   // HERE we need to do something else for the different type like float!
-                elements.Add(rawValue);
-            }
-            // Need to fix for strings and float! Currently it gains pointer to the string...
-
-            string arrtext = "[";
-            foreach (var el in elements)
-            {
-                arrtext += el + ", ";
-            }
-            arrtext = arrtext.TrimEnd(',', ' ') + "]";
-            return arrtext;
-        }
-
-        private object HandleRecord(IntPtr dataPtr, RecordType recordType)
+        private object HandleRecord(IntPtr dataPtr, RecordType record)
         {
             if (dataPtr == IntPtr.Zero) return "{ empty }";
 
             var result = new Dictionary<string, object>();
+            int fieldSize = 8; // Assuming 64-bit alignment for all fields
 
-            System.Console.WriteLine("Record type: " + recordType);
-            System.Console.WriteLine("Record type count: " + recordType.ElementLabels?.Count);
+            if (_debug) Console.WriteLine("Record type: " + record);
+            if (_debug) Console.WriteLine("Record type count: " + record.RecordFields?.Count);
 
-            // In your LLVM Visit, you stored fields in order: 0, 1, 2...
-            // We need to loop through the labels and read the memory at those offsets.
-            for (int i = 0; i < recordType.ElementLabels.Count; i++)
+            for (int i = 0; i < record.RecordFields?.Count; i++)
             {
-                string label = recordType.ElementLabels[i];
-                System.Console.WriteLine("the label in the record: " + label);
+                var rec = record.RecordFields[i];
+                string label = rec.Label;
+                Type recType = rec.Value.Type;
 
-                // Calculate offset: each field is a pointer or i64 (8 bytes)
-                IntPtr fieldPtr = IntPtr.Add(dataPtr, i * 8);
+                if (_debug) Console.WriteLine($"Record {i} - label: {label}, type: {recType}");
 
-                // Read the raw pointer/value from the struct
-                IntPtr valueAddr = Marshal.ReadIntPtr(fieldPtr);
+                // Calculate the address where this specific field is stored inside the record
+                IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
 
-                // Note: If you want to support nested records/arrays here, 
-                // you would need to know the TYPE of each field.
-                // For now, let's assume simple values or pointers.
-                result[label] = valueAddr;
+                switch (recType)
+                {
+                    case IntType:
+                        // Read 8 bytes directly as a long/int64
+                        result[label] = Marshal.ReadInt64(fieldLocation);
+                        break;
+
+                    case FloatType:
+                        // Read the 8 bytes as a long, then convert the bits to a double
+                        long doubleBits = Marshal.ReadInt64(fieldLocation);
+                        result[label] = BitConverter.Int64BitsToDouble(doubleBits);
+                        break;
+
+                    case BoolType:
+                        // LLVM i1 is usually stored as a single byte (0 or 1) 
+                        // but padded to the field size in a struct.
+                        byte boolVal = Marshal.ReadByte(fieldLocation);
+                        result[label] = boolVal != 0;
+                        break;
+
+                    case StringType:
+                        // The record contains a pointer (address) to the string data
+                        IntPtr stringPtr = Marshal.ReadIntPtr(fieldLocation);
+
+                        if (stringPtr == IntPtr.Zero)
+                        {
+                            result[label] = "null";
+                        }
+                        else
+                        {
+                            // Use PtrToStringAnsi for C-style strings (null-terminated)
+                            result[label] = Marshal.PtrToStringAnsi(stringPtr);
+                        }
+                        break;
+
+                    default:
+                        result[label] = "Unknown Type";
+                        break;
+                }
             }
 
-            System.Console.WriteLine("We trying to handle record4");
             return "{ " + string.Join(", ", result.Select(kv => $"{kv.Key}: {kv.Value}")) + " }";
         }
 
@@ -1352,6 +1386,20 @@ namespace MyCompiler
                         finalArg = arrLen;
                         formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
                         break;
+                        
+                    case RecordType:
+                        // Cast to i64* to read header
+                        var recPtr = _builder.BuildBitCast(
+                            valueToPrint,
+                            LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0),
+                            "arr_len_ptr");
+
+                        var recLen = _builder.BuildLoad2(llvmCtx.Int64Type, recPtr, "arr_len");
+                        recLen.SetAlignment(8);
+
+                        finalArg = recLen;
+                        formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
+                        break;
 
                     default:
                         throw new Exception($"Unsupported type for printing: {type}");
@@ -1369,7 +1417,6 @@ namespace MyCompiler
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
-
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
@@ -1750,8 +1797,9 @@ namespace MyCompiler
             {
                 FloatType => ctx.DoubleType,
                 IntType => ctx.Int64Type,
-                StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
+                StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
+                ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
+                RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Record  are pointers
                 BoolType => ctx.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}") // it doesn't have a type? how?
             };
@@ -2455,18 +2503,5 @@ namespace MyCompiler
         //     var elementPtr = _builder.BuildStructGEP2(structMetadata.LLVMType, recordPtr, fieldIndex, "member_ptr");
         //     return _builder.BuildLoad2(structMetadata.FieldTypes[fieldIndex], elementPtr, node.MemberName);
         // }
-
-        public LLVMValueRef VisitRecordExpr2(RecordNodeExpr expr)
-        {
-            // record(["name", "age"],["dan", 100]) 
-            Console.WriteLine("visiting record code gen");
-
-            foreach (var item in expr.Fields)
-            {
-                Visit(item.Value);
-            }
-
-            return default;
-        }
     }
 }

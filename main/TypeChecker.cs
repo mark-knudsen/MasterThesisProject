@@ -20,7 +20,7 @@ namespace MyCompiler
 
         private Type Visit(NodeExpr node)
         {
-            var name = node.GetType().Name; // it fails here for if visits, but not the others. Why would it not be able to get the if nodes type and name?
+            var name = node.GetType().Name; 
             if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
@@ -738,8 +738,8 @@ namespace MyCompiler
                 System.Console.WriteLine("item type in expr fields" + item.Value.Type);
             }
 
-            expr.SetType(new RecordType(types));
-            return new RecordType(types);
+            expr.SetType(new RecordType(expr.Fields));
+            return new RecordType(expr.Fields);
         }
     }
 }
