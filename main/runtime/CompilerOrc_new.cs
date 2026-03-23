@@ -286,10 +286,10 @@ namespace MyCompiler
                 case ValueTag.Array:
                     // 1. Get the element type from the prediction
                     // Assuming prediction is of type 'ArrayType', we get its 'ElementType' property
-                    Type innerType = (prediction as ArrayType)?.ElementType;
+                    //Type innerType = (prediction as ArrayType)?.ElementType;
 
                     // 2. Pass both the pointer and the type to the handler
-                    return HandleArray(result.data, innerType);
+                    return HandleArray(result.data);
 
                 case ValueTag.Record:
                     if (_debug) Console.WriteLine("return Record");
@@ -312,67 +312,34 @@ namespace MyCompiler
         // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
 
-        private object HandleArray(IntPtr boxPtr, Type elementType)
+
+        private object HandleArray(IntPtr dataPtr)
         {
-            // If the box pointer itself is null, the array variable was never initialized
-            if (boxPtr == IntPtr.Zero) return "[]";
+            // The array is stored as:
+            // [0] = length (i64)
+            // [1..length] = element values (boxed as i64)
+            if (dataPtr == IntPtr.Zero)
+                return Array.Empty<long>();
 
-            try
+            long length = Marshal.ReadInt64(dataPtr);
+            var elements = new List<long>((int)length);
+
+            for (long i = 0; i < length; i++)
             {
-                // 1. DEREFERENCE THE BOX: 
-                // Read the actual memory address stored INSIDE the 8-byte box.
-                // This address (dataPtr) is what realloc() updates.
-                IntPtr dataPtr = Marshal.ReadIntPtr(boxPtr);
-
-                // If the box is empty (null pointer inside), return empty brackets
-                if (dataPtr == IntPtr.Zero) return "[]";
-
-                // 2. Read the length from the header (index 0 of the buffer)
-                long length = Marshal.ReadInt64(dataPtr);
-                var resultElements = new List<string>();
-
-                // 3. Iterate through elements
-                for (long i = 0; i < length; i++)
-                {
-                    // Data starts at index 2 (skipping len and cap)
-                    // BufferLayout: [Length (8b), Capacity (8b), Element0 (8b), Element1 (8b)...]
-                    IntPtr elementPtr = IntPtr.Add(dataPtr, (int)((i + 2) * 8));
-                    long rawValue = Marshal.ReadInt64(elementPtr);
-
-                    if (elementType is FloatType)
-                    {
-                        double dblValue = BitConverter.Int64BitsToDouble(rawValue);
-                        resultElements.Add(dblValue.ToString(CultureInfo.InvariantCulture));
-                    }
-                    else if (elementType is BoolType)
-                    {
-                        resultElements.Add((rawValue & 1) == 1 ? "true" : "false");
-                    }
-                    else if (elementType is IntType)
-                    {
-                        resultElements.Add(rawValue.ToString());
-                    }
-                    else if (elementType is StringType)
-                    {
-                        string str = Marshal.PtrToStringAnsi((IntPtr)rawValue);
-                        resultElements.Add($"\"{str}\"");
-                    }
-                    else if (elementType is ArrayType innerArrayType)
-                    {
-                        // Recursive call for nested arrays. 
-                        // Note: Inner arrays are also boxed, so rawValue is a BoxPtr.
-                        string innerResult = HandleArray((IntPtr)rawValue, innerArrayType.ElementType).ToString();
-                        resultElements.Add(innerResult);
-                    }
-                }
-
-                return "[" + string.Join(", ", resultElements) + "]";
+                // Element offset = (i + 1) * 8 bytes (skip the length header)
+                var elementPtr = IntPtr.Add(dataPtr, (int)((i + 2) * 8));
+                long rawValue = Marshal.ReadInt64(elementPtr);   // HERE we need to do something else for the different type like float!
+                elements.Add(rawValue);
             }
-            catch (Exception ex)
+            // Need to fix for strings and float! Currently it gains pointer to the string...
+
+            string arrtext = "[";
+            foreach (var el in elements)
             {
-                // Helpful for debugging if the pointer math is off
-                return $"[Error reading array: {ex.Message}]";
+                arrtext += el + ", ";
             }
+            arrtext = arrtext.TrimEnd(',', ' ') + "]";
+            return arrtext;
         }
 
         private object HandleRecord(IntPtr dataPtr, RecordType record)
@@ -1386,7 +1353,7 @@ namespace MyCompiler
                         finalArg = arrLen;
                         formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
                         break;
-                        
+
                     case RecordType:
                         // Cast to i64* to read header
                         var recPtr = _builder.BuildBitCast(
@@ -1913,7 +1880,7 @@ namespace MyCompiler
             var global = _module.GetNamedGlobal(arrayName);
 
             if (global.Handle == IntPtr.Zero)
-                throw new Exception($"Undefined variable {arrayName}");
+                throw new Exception($"code gen - Undefined variable {arrayName}");
 
             _builder.BuildStore(arrayPtrPhi, global);
 
@@ -2466,7 +2433,7 @@ namespace MyCompiler
             return instancePtr;
         }
 
-        private Dictionary<string, MyCompiler.Type> _labelRegistry = new();
+        private Dictionary<string, Type> _labelRegistry = new();
 
         private void ValidateRecordTypes(RecordNodeExpr node)
         {
@@ -2489,19 +2456,54 @@ namespace MyCompiler
             }
         }
 
-        // public LLVMValueRef VisitRecordField(RecordFieldNodeExpr node)
-        // {
-        //     // 1. Get the pointer to the record instance
-        //     var recordPtr = node.Left.Accept(this);
+        public LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr)
+        {
+            Console.WriteLine("Visiting record field assign");
+            throw new NotImplementedException();
+        }
 
-        //     // 2. Determine the Struct Type and the index of the Label
-        //     // (You'll need to store the Record definition metadata in your symbol table)
-        //     var structMetadata = GetRecordMetadata(node.Left);
-        //     uint fieldIndex = structMetadata.GetIndex(node.MemberName);
+        public int GetFieldIndex(string name, List<RecordField> Fields)
+        {
+            for (int i = 0; i < Fields.Count; i++)
+            {
+                if (Fields[i].Label == name)
+                    return i;
+            }
+            throw new Exception($"Field '{name}' not found.");
+        }
 
-        //     // 3. Load the value
-        //     var elementPtr = _builder.BuildStructGEP2(structMetadata.LLVMType, recordPtr, fieldIndex, "member_ptr");
-        //     return _builder.BuildLoad2(structMetadata.FieldTypes[fieldIndex], elementPtr, node.MemberName);
-        // }
+        public LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr)
+        {
+            // 1. Get struct pointer (record instance)
+            var recordPtr = expr.IdRecord.Accept(this); // x=record(["name", "age"],["dan", 100])       x.name
+
+            // 2. Get the record type (important!)
+            var recordType = expr.IdRecord.Type as RecordType;
+            if (recordType == null)
+                throw new Exception("Trying to access field of non-record type.");
+
+            // 3. Resolve field index
+            int fieldIndex = GetFieldIndex(expr.IdField, ((RecordNodeExpr)expr.IdRecord).Fields);
+
+            // 4. Get the LLVM struct type
+            var structType = recordPtr.TypeOf.ElementType;
+
+            // 5. Get pointer to the field
+            var fieldPtr = _builder.BuildStructGEP2(
+                structType,
+                recordPtr,
+                (uint)fieldIndex,
+                $"field_{expr.IdField}"
+            );
+
+            // 6. Load the value
+            var value = _builder.BuildLoad2(
+                structType.StructGetTypeAtIndex((uint)fieldIndex),
+                fieldPtr,
+                $"load_{expr.IdField}"
+            );
+
+            return value;
+        }
     }
 }

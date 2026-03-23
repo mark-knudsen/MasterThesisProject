@@ -37,6 +37,8 @@ namespace MyCompiler
         Type VisitReadCsv(ReadCsvNodeExpr expr);
         Type VisitRound(RoundNodeExpr expr);
         Type VisitRecord(RecordNodeExpr expr);
+        Type VisitRecordField(RecordFieldNodeExpr expr);
+        Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr);
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);
     }

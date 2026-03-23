@@ -55,9 +55,8 @@ Prog
 
 StatementList
     : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
-    | StatementList Statement { ((SequenceNodeExpr)$1).Statements.Add($2); $$ = $1; }
     | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
-    | StatementList SEMICOLON { $$ = $1; }
+
     ;
 
 Statement
@@ -101,6 +100,22 @@ Assignment
     }
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
+    
+    | ID LBRACKET expr RBRACKET ASSIGN expr    
+    {
+        string idName = (string)$1;
+        var idExpr = new IdNodeExpr(idName);
+        
+        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
+    }
+    | ID DOT ID ASSIGN expr  // if this is commented out, we can call x.name
+    { 
+        string idName = (string)$1;
+        string idFieldName = (string)$3;
+        var idExpr = new IdNodeExpr(idName);
+
+        $$ = new RecordFieldAssignNodeExpr(idExpr, idFieldName, $5 as ExpressionNodeExpr);  
+    }
     ;
 
 expr_list
@@ -156,13 +171,6 @@ expr
         
         $$ = new IndexNodeExpr(idExpr, $3 as ExpressionNodeExpr); 
     }
-    | ID LBRACKET expr RBRACKET ASSIGN expr    
-    {
-        string idName = (string)$1;
-        var idExpr = new IdNodeExpr(idName);
-        
-        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
-    }
     | LPAREN expr RPAREN  { $$ = $2; }
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
@@ -190,9 +198,20 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
-    | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
+
+    | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+
     | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+
+    | ID DOT ID                            
+    {
+        Console.WriteLine("Parsed field access: " + (string)$3);
+        $$ = new RecordFieldNodeExpr(
+          $1 as ExpressionNodeExpr,
+          (string)$3
+        ); 
+    }
     ;
 
 params

@@ -1,7 +1,22 @@
+
+// ==========================================================================
+//  GPLEX error listing for lex source file <Scanner.lex>
+// ==========================================================================
+//  Version:  1.2.3
+//  DateTime: 23/03/2026 22:35:58
+// ==========================================================================
+
+
 %namespace MyCompiler
 %scannertype Scanner
 %visibility internal
 %tokentype Tokens
+
+Console.WriteLine("TOKEN: ID -> " + yytext);
+//-----^^^^^^^^^^^^^^^^^^----^^^^^^^^^^^^^^^
+// Error: Expected space here
+// Error: Expected end-of-line here
+// --------------------------------
 
 %%
 
@@ -80,6 +95,7 @@
 "."             { Console.WriteLine("TOKEN: ID -> " + yytext); return (int)Tokens.DOT; }
 
 [ \t\r\n]       { /* skip */ }
-.               { return (int)Tokens.error; }
+.               { Console.WriteLine("UNKNOWN: " + yytext); return (int)Tokens.error; }
 
-%%
+%%// ==========================================================================
+

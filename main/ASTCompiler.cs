@@ -577,7 +577,7 @@ namespace MyCompiler
     public class RecordNodeExpr : ExpressionNodeExpr
     {
         public List<RecordField> Fields { get; } = new List<RecordField>();
-        public List<Type> ElementTypes {get; } = new List<Type>();
+        public List<Type> ElementTypes { get; } = new List<Type>();
 
         public RecordNodeExpr(ExpressionNodeExpr labelsArray, ExpressionNodeExpr valuesArray)
         {
@@ -612,5 +612,38 @@ namespace MyCompiler
             Type = new RecordType(Fields);
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordExpr(this);
+    }
+
+    public class RecordFieldNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr IdRecord { get; }
+        public string IdField { get; }
+
+        public RecordFieldNodeExpr(ExpressionNodeExpr idRecord, string idField)
+        {
+            System.Console.WriteLine("hi");
+            IdRecord = idRecord;
+            IdField = idField;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldExpr(this);
+    }
+    
+    public class RecordFieldAssignNodeExpr : StatementNodeExpr
+    {
+        public ExpressionNodeExpr IdRecord { get; }
+        public string IdField { get; }
+        public ExpressionNodeExpr AssignExpression { get; }
+
+        public RecordFieldAssignNodeExpr(ExpressionNodeExpr idRecord, string idField, ExpressionNodeExpr assignExpression)
+        {
+            IdRecord = idRecord;
+            IdField = idField;
+            AssignExpression = assignExpression;
+            Type = new VoidType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldAssignExpr(this);
     }
 }

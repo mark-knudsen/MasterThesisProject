@@ -63,6 +63,8 @@ namespace MyCompiler
                 RoundNodeExpr rnd => VisitRound(rnd),
                 FloatNodeExpr flt => VisitFloat(flt),
                 RecordNodeExpr rec => VisitRecord(rec),
+                RecordFieldNodeExpr recf => VisitRecordField(recf),
+                RecordFieldAssignNodeExpr reca => VisitRecordFieldAssign(reca),
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
         }
@@ -126,7 +128,7 @@ namespace MyCompiler
             if (entry == null)
             {
                 // Remove .Line if it's causing an error
-                throw new Exception($"Undefined variable '{expr.Name}'");
+                throw new Exception($"type check - Undefined variable '{expr.Name}'"); // here it fails
             }
 
             expr.SetType(entry.Type);
@@ -726,20 +728,41 @@ namespace MyCompiler
         {
             List<Type> types = new List<Type>();
 
-            System.Console.WriteLine("the records type: " + expr.Type);
+            Console.WriteLine("the records type: " + expr.Type);
 
             foreach (var item in expr.Fields)
             {
                 var d = Visit(item.Value);
-                System.Console.WriteLine(d); // it returns int and string even tough it visits number and string which does create and should return stringType
+                Console.WriteLine(d); // it returns int and string even tough it visits number and string which does create and should return stringType
                 //types.Add(item.Value.Type);
                 types.Add(d);
-                System.Console.WriteLine("item value in expr fields" + item.Value);
-                System.Console.WriteLine("item type in expr fields" + item.Value.Type);
+                Console.WriteLine("item value in expr fields" + item.Value);
+                Console.WriteLine("item type in expr fields" + item.Value.Type);
             }
 
             expr.SetType(new RecordType(expr.Fields));
             return new RecordType(expr.Fields);
+        }
+
+        public Type VisitRecordField(RecordFieldNodeExpr expr)
+        {
+            RecordType record = (RecordType)VisitRecord((RecordNodeExpr)expr.IdRecord);
+            Type recordFieldType = new VoidType();
+            foreach (var item in record.RecordFields)
+            {
+                if(item.Label == expr.IdField) recordFieldType = item.Value.Type;
+            }
+            expr.SetType(recordFieldType);
+            return recordFieldType;
+        }
+
+        public Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr)
+        {
+            Visit(expr.AssignExpression);
+            Visit(expr.IdRecord);
+
+            expr.SetType(new VoidType()); // it is a statement, we don't need to return anything
+            return new VoidType();
         }
     }
 }

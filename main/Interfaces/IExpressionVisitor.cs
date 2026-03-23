@@ -41,6 +41,8 @@ namespace MyCompiler
         LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr);
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
         LLVMValueRef VisitRecordExpr(RecordNodeExpr expr);
+        LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr);
+        LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr);
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);
