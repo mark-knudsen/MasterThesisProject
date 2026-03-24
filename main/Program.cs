@@ -158,7 +158,7 @@ namespace MyCompiler
                 }
 
                 // Check for special command before accepting the input (e.g., "exit")
-                if (userInput.ToString() == "exit")
+                if (userInput.ToString() == "e")
                 {
                     Console.ForegroundColor = ConsoleColor.Red;
                     Console.WriteLine("Exiting...");

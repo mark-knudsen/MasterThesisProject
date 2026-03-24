@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 23/03/2026 23:09:49>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 24/03/2026 10:43:49>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 23/03/2026 23:09:53
+//  DateTime: 24/03/2026 13:02:50
 // ==========================================================================
 
 
@@ -218,9 +218,13 @@ expr
     | ID DOT ID                            
     {
         Console.WriteLine("Parsed field access: " + (string)$3);
+        string idName = (string)$1;
+        string idFieldName = (string)$3;
+        var idExpr = new IdNodeExpr(idName);
+
         $$ = new RecordFieldNodeExpr(
-          $1 as ExpressionNodeExpr,
-          (string)$3
+          idExpr,
+          idFieldName
         ); 
     }
     ;

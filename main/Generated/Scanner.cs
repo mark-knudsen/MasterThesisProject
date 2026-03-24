@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 23/03/2026 23:09:53
-//  GPLEX input file <Lexer/Scanner.lex - 23/03/2026 22:37:21>
+//  DateTime: 24/03/2026 13:02:50
+//  GPLEX input file <Lexer/Scanner.lex - 24/03/2026 11:30:03>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -1362,13 +1362,13 @@ return (int)Tokens.COMMA;
 return (int)Tokens.MINUS;
             break;
         case 13:
-Console.WriteLine("TOKEN: ID -> " + yytext); return (int)Tokens.DOT;
+return (int)Tokens.DOT;
             break;
         case 14:
 return (int)Tokens.DIV;
             break;
         case 15:
-Console.WriteLine("TOKEN: ID -> " + yytext); yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER;
+yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER;
             break;
         case 16:
 return (int)Tokens.COLON;
@@ -1469,7 +1469,7 @@ return (int)Tokens.GT;
         case 138:
         case 139:
         case 140:
-Console.WriteLine("TOKEN: ID -> " + yytext); yylval.obj = yytext; return (int)Tokens.ID;
+yylval.obj = yytext; return (int)Tokens.ID;
             break;
         case 22:
 return (int)Tokens.LBRACKET;

@@ -20,7 +20,7 @@ namespace MyCompiler
 
         private Type Visit(NodeExpr node)
         {
-            var name = node.GetType().Name; 
+            var name = node.GetType().Name;
             if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 8));
             return node switch // it says the last numbers node is null
             {
@@ -128,7 +128,7 @@ namespace MyCompiler
             if (entry == null)
             {
                 // Remove .Line if it's causing an error
-                throw new Exception($"type check - Undefined variable '{expr.Name}'"); // here it fails
+                throw new Exception($"type check - Undefined variable '{expr.Name}'");
             }
 
             expr.SetType(entry.Type);
@@ -485,20 +485,20 @@ namespace MyCompiler
             Visit(expr.IndexExpression);
 
             Type inferred = new IntType();
-            if (expr.ArrayExpression is IdNodeExpr idNode)
+            if (expr.ArrayExpression is IdNodeExpr idNode) // In the parser whe instantiate the index with an IdNode, the rest of the code should never be true
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
-                    inferred = entry.ElementType ?? arrType.ElementType ?? new FloatType();
+                    inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
             }
-            else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
-            {
-                inferred = arrayLiteral.ElementType ?? new FloatType();
-            }
-            else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
-            {
-                inferred = arrayExprType.ElementType;
-            }
+            // else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
+            // {
+            //     inferred = arrayLiteral.ElementType ?? new FloatType();
+            // }
+            // else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
+            // {
+            //     inferred = arrayExprType.ElementType;
+            // }
 
             expr.SetType(inferred);
             return inferred;
@@ -746,12 +746,26 @@ namespace MyCompiler
 
         public Type VisitRecordField(RecordFieldNodeExpr expr)
         {
-            RecordType record = (RecordType)VisitRecord((RecordNodeExpr)expr.IdRecord);
-            Type recordFieldType = new VoidType();
-            foreach (var item in record.RecordFields)
+            Visit(expr.IdRecord);
+            Type recordFieldType = new IntType();
+
+            if (expr.IdRecord is IdNodeExpr idNode) 
             {
-                if(item.Label == expr.IdField) recordFieldType = item.Value.Type;
+                var entry = _context.Get(idNode.Name);
+                Console.WriteLine("entry type: " + entry?.Type);
+                if(entry?.Type is RecordType recType)
+                {
+                    Console.WriteLine("we have the record: " + recType);
+                    foreach (var item in recType.RecordFields)
+                    {
+                        if(expr.IdField == item.Label) recordFieldType = item.Value.Type;
+                        Console.WriteLine("rec field label: " + item.Label);
+                        Console.WriteLine("rec field value: " + item.Value);
+                    }
+                }
             }
+
+            Console.WriteLine("rec field: " + recordFieldType);
             expr.SetType(recordFieldType);
             return recordFieldType;
         }

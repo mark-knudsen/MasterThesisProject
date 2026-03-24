@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 23/03/2026 23:09:53
-// Input file <Parser/Parser.y - 23/03/2026 23:09:49>
+// DateTime: 24/03/2026 13:02:50
+// Input file <Parser/Parser.y - 24/03/2026 10:43:49>
 
 // options: lines gplex
 
@@ -62,11 +62,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 23/03/2026 23:09:49
+  // Verbatim content from Parser/Parser.y - 24/03/2026 10:43:49
 #line 47 "Parser/Parser.y"
     public MyCompiler.NodeExpr RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 23/03/2026 23:09:49
+  // End verbatim content from Parser/Parser.y - 24/03/2026 10:43:49
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -738,40 +738,44 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line 208 "Parser/Parser.y"
     {
         Console.WriteLine("Parsed field access: " + (string)ValueStack[ValueStack.Depth-1].obj);
+        string idName = (string)ValueStack[ValueStack.Depth-3].obj;
+        string idFieldName = (string)ValueStack[ValueStack.Depth-1].obj;
+        var idExpr = new IdNodeExpr(idName);
+
         CurrentSemanticValue.node = new RecordFieldNodeExpr(
-          ValueStack[ValueStack.Depth-3].obj as ExpressionNodeExpr,
-          (string)ValueStack[ValueStack.Depth-1].obj
+          idExpr,
+          idFieldName
         ); 
     }
 #line default
         break;
       case 69: // params -> /* empty */
-#line 218 "Parser/Parser.y"
+#line 222 "Parser/Parser.y"
                   { CurrentSemanticValue.obj = new List<string>(); }
 #line default
         break;
       case 70: // params -> ID
-#line 219 "Parser/Parser.y"
+#line 223 "Parser/Parser.y"
          { var list = new List<string>(); list.Add((string)ValueStack[ValueStack.Depth-1].obj); CurrentSemanticValue.obj = list; }
 #line default
         break;
       case 71: // params -> params, COMMA, ID
-#line 220 "Parser/Parser.y"
+#line 224 "Parser/Parser.y"
                       { var list = (List<string>)ValueStack[ValueStack.Depth-3].obj; list.Add((string)ValueStack[ValueStack.Depth-1].obj); CurrentSemanticValue.obj = list; }
 #line default
         break;
       case 72: // args -> /* empty */
-#line 224 "Parser/Parser.y"
+#line 228 "Parser/Parser.y"
                   { CurrentSemanticValue.obj = new List<ExpressionNodeExpr>(); }
 #line default
         break;
       case 73: // args -> expr
-#line 225 "Parser/Parser.y"
+#line 229 "Parser/Parser.y"
            { var list = new List<ExpressionNodeExpr>(); list.Add(ValueStack[ValueStack.Depth-1].node as ExpressionNodeExpr); CurrentSemanticValue.obj = list; }
 #line default
         break;
       case 74: // args -> args, COMMA, expr
-#line 226 "Parser/Parser.y"
+#line 230 "Parser/Parser.y"
                       { var list = (List<ExpressionNodeExpr>)ValueStack[ValueStack.Depth-3].obj; list.Add(ValueStack[ValueStack.Depth-1].node as ExpressionNodeExpr); CurrentSemanticValue.obj = list; }
 #line default
         break;
@@ -789,7 +793,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         return CharToString((char)terminal);
   }
 
-#line 230 "Parser/Parser.y"
+#line 234 "Parser/Parser.y"
 internal Parser(Scanner s) : base(s) { }
 #line default
 }

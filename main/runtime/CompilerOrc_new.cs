@@ -44,7 +44,6 @@ namespace MyCompiler
         private string _funcName;
         private int _replCounter = 0;
         private bool _debug = true;
-        //private ArrayHelpers _arrayHelper;
         LLVMTypeRef _memmoveType;
         LLVMTypeRef _reallocType;
         private Type _lastType; // Store the type of the last expression for auto-printing
@@ -284,11 +283,6 @@ namespace MyCompiler
                     return b != 0;
 
                 case ValueTag.Array:
-                    // 1. Get the element type from the prediction
-                    // Assuming prediction is of type 'ArrayType', we get its 'ElementType' property
-                    //Type innerType = (prediction as ArrayType)?.ElementType;
-
-                    // 2. Pass both the pointer and the type to the handler
                     return HandleArray(result.data);
 
                 case ValueTag.Record:
@@ -311,7 +305,6 @@ namespace MyCompiler
 
         // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
-
 
         private object HandleArray(IntPtr dataPtr)
         {
@@ -1757,6 +1750,25 @@ namespace MyCompiler
             };
         }
 
+        private LLVMTypeRef GetOrCreateStructType(RecordType recordType)
+        {
+            string structName = "struct_" + string.Join("_", recordType.RecordFields.Select(f => f.Label));
+
+            var structType = _module.GetTypeByName(structName);
+
+            if (structType.Handle == IntPtr.Zero)
+            {
+                var fieldTypes = recordType.RecordFields
+                    .Select(f => GetLLVMType(f.Value.Type))
+                    .ToArray();
+
+                structType = _module.Context.CreateNamedStruct(structName);
+                structType.StructSetBody(fieldTypes, false);
+            }
+
+            return structType;
+        }
+
         private LLVMTypeRef GetLLVMType(Type type)
         {
             var ctx = _module.Context;
@@ -1766,7 +1778,9 @@ namespace MyCompiler
                 IntType => ctx.Int64Type,
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
-                RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Record  are pointers
+                //RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Record  are pointers
+               // RecordType recType => GetOrCreateStructType(recType),
+                RecordType recType => LLVMTypeRef.CreatePointer(GetOrCreateStructType(recType), 0),
                 BoolType => ctx.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}") // it doesn't have a type? how?
             };
@@ -2248,6 +2262,7 @@ namespace MyCompiler
             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
 
             // Load the value from the pointer
+            //return ptrToLoad;
             return _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
         }
 
@@ -2382,19 +2397,28 @@ namespace MyCompiler
             return Visit(expr.FileNameExpr);
         }
 
+        LLVMValueRef EnsureValue(LLVMValueRef val, Type type)
+        {
+            if (type is IntType || type is FloatType || type is BoolType)
+            {
+                if (val.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                    return _builder.BuildLoad2(GetLLVMType(type), val, "load_tmp");
+            }
+            return val;
+        }
+
         public LLVMValueRef VisitRecordExpr(RecordNodeExpr node)
         {
             // record(["name", "age"],["dan", 100]) 
             // 1. Collect LLVM Types from the fields to define the Struct
             var fieldTypes = new List<LLVMTypeRef>();
-            var fieldValues = new List<LLVMValueRef>();
 
             foreach (var field in node.Fields)
             {
                 // This returns your ContextEntry
                 var entry = field.Value.Accept(this);
-                fieldValues.Add(entry);
-                fieldTypes.Add(entry.TypeOf);
+                //fieldTypes.Add(entry.TypeOf);
+                fieldTypes.Add(GetLLVMType(field.Value.Type));
             }
 
             // 2. Define the STRUCT TYPE (The Blueprint)
@@ -2415,9 +2439,7 @@ namespace MyCompiler
             // For a REPL/JIT, malloc is safer for persistence
             //var sizeOf = structType.SizeOf;
             var instancePtr = _builder.BuildMalloc(structType, "record_mem");
-            Console.WriteLine("visiting record code gen3.5");
             //var instancePtr = _builder.BuildBitCast(rawPtr, LLVMTypeRef.CreatePointer(structType, 0), "record_ptr");
-            Console.WriteLine("visiting record code gen4"); // we fail between 3 and 4
 
             // 4. Store each field value into the Struct
             for (int i = 0; i < node.Fields.Count; i++)
@@ -2433,28 +2455,28 @@ namespace MyCompiler
             return instancePtr;
         }
 
-        private Dictionary<string, Type> _labelRegistry = new();
+        // private Dictionary<string, Type> _labelRegistry = new();
 
-        private void ValidateRecordTypes(RecordNodeExpr node)
-        {
-            foreach (var field in node.Fields)
-            {
-                var currentType = field.Value.Type; // Your logic to get Node type
+        // private void ValidateRecordTypes(RecordNodeExpr node)
+        // {
+        //     foreach (var field in node.Fields)
+        //     {
+        //         var currentType = field.Value.Type; // Your logic to get Node type
 
-                if (_labelRegistry.TryGetValue(field.Label, out var existingType))
-                {
-                    if (!currentType.Equals(existingType))
-                    {
-                        throw new Exception($"Type mismatch: Label '{field.Label}' is registered as {existingType}, but found {currentType}.");
-                    }
-                }
-                else
-                {
-                    // First time seeing this label? Register it!
-                    _labelRegistry[field.Label] = currentType;
-                }
-            }
-        }
+        //         if (_labelRegistry.TryGetValue(field.Label, out var existingType))
+        //         {
+        //             if (!currentType.Equals(existingType))
+        //             {
+        //                 throw new Exception($"Type mismatch: Label '{field.Label}' is registered as {existingType}, but found {currentType}.");
+        //             }
+        //         }
+        //         else
+        //         {
+        //             // First time seeing this label? Register it!
+        //             _labelRegistry[field.Label] = currentType;
+        //         }
+        //     }
+        // }
 
         public LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr)
         {
@@ -2475,7 +2497,7 @@ namespace MyCompiler
         public LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr)
         {
             // 1. Get struct pointer (record instance)
-            var recordPtr = expr.IdRecord.Accept(this); // x=record(["name", "age"],["dan", 100])       x.name
+            var recordPtr = Visit(expr.IdRecord); // x=record(["name", "age"],["dan", 100])       x.name     y=record(["name", "age","iscool", "score"],["dan", 100, true, 10.435345])   
 
             // 2. Get the record type (important!)
             var recordType = expr.IdRecord.Type as RecordType;
@@ -2483,18 +2505,27 @@ namespace MyCompiler
                 throw new Exception("Trying to access field of non-record type.");
 
             // 3. Resolve field index
-            int fieldIndex = GetFieldIndex(expr.IdField, ((RecordNodeExpr)expr.IdRecord).Fields);
+            int fieldIndex = GetFieldIndex(expr.IdField, recordType.RecordFields);
+            Console.WriteLine("index: " + fieldIndex);
 
-            // 4. Get the LLVM struct type
-            var structType = recordPtr.TypeOf.ElementType;
+            // 1. Load the value of x (because it's a global)
+            var structType = GetOrCreateStructType(recordType);
+
+            if (recordPtr.TypeOf.Kind != LLVMTypeKind.LLVMPointerTypeKind)
+                throw new Exception("recordPtr must be a pointer to struct");
+
+            Console.WriteLine("the record field type: " + expr.Type);
+            Console.WriteLine("struct type: " + structType);
+            Console.WriteLine("recordPtr type: " + recordPtr.TypeOf);
 
             // 5. Get pointer to the field
             var fieldPtr = _builder.BuildStructGEP2(
                 structType,
                 recordPtr,
                 (uint)fieldIndex,
-                $"field_{expr.IdField}"
+                $"{expr.IdField}"
             );
+            Console.WriteLine("2");
 
             // 6. Load the value
             var value = _builder.BuildLoad2(

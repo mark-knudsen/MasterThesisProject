@@ -621,7 +621,7 @@ namespace MyCompiler
 
         public RecordFieldNodeExpr(ExpressionNodeExpr idRecord, string idField)
         {
-            System.Console.WriteLine("hi");
+            Console.WriteLine("hi: " + idRecord);
             IdRecord = idRecord;
             IdField = idField;
             Type = new IntType();

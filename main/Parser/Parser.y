@@ -207,9 +207,13 @@ expr
     | ID DOT ID                            
     {
         Console.WriteLine("Parsed field access: " + (string)$3);
+        string idName = (string)$1;
+        string idFieldName = (string)$3;
+        var idExpr = new IdNodeExpr(idName);
+
         $$ = new RecordFieldNodeExpr(
-          $1 as ExpressionNodeExpr,
-          (string)$3
+          idExpr,
+          idFieldName
         ); 
     }
     ;
