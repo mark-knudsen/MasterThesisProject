@@ -46,6 +46,8 @@
 "sum"           { return (int)Tokens.SUM; }
 
 "record"        { return (int)Tokens.RECORD; }
+"addField"      { return (int)Tokens.ADDFIELD; }
+"removeField"   { return (int)Tokens.REMOVEFIELD; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }

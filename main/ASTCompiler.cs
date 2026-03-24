@@ -339,16 +339,25 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
     }
 
-    public class CopyArrayNodeExpr : ExpressionNodeExpr
-    {
-        public ExpressionNodeExpr SourceArray { get; }
+    // public class CopyArrayNodeExpr : ExpressionNodeExpr
+    // {
+    //     public ExpressionNodeExpr SourceArray { get; }
 
-        public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
+    //     public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
+    //     {
+    //         SourceArray = sourceArray;
+    //     }
+
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
+    // }
+
+    public class CopyArrayNodeExpr : CopyNodeExpr
+    {
+        public CopyArrayNodeExpr(ExpressionNodeExpr expr) : base(expr)
         {
-            SourceArray = sourceArray;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -629,7 +638,7 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldExpr(this);
     }
-    
+
     public class RecordFieldAssignNodeExpr : StatementNodeExpr
     {
         public ExpressionNodeExpr IdRecord { get; }
@@ -645,5 +654,54 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldAssignExpr(this);
+    }
+
+    public class CopyRecordNodeExpr : CopyNodeExpr
+    {
+        public CopyRecordNodeExpr(ExpressionNodeExpr expr) : base(expr)
+        {
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
+    }
+
+    public class CopyNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Expression { get; }
+
+        public CopyNodeExpr(ExpressionNodeExpr expr)
+        {
+            Expression = expr;
+            Type = expr.Type; // copy keeps the type of the original
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
+    }
+
+    public class AddFieldNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Record { get; }
+        public string FieldName { get; }
+        public ExpressionNodeExpr Value { get; }
+
+        public AddFieldNodeExpr(ExpressionNodeExpr record, string fieldName, ExpressionNodeExpr value)
+        {
+            Record = record;
+            FieldName = fieldName;
+            Value = value;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddFieldExpr(this);
+    }
+
+    public class RemoveFieldNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Record { get; }
+        public string FieldName { get; }
+
+        public RemoveFieldNodeExpr(ExpressionNodeExpr record, string fieldName)
+        {
+            Record = record;
+            FieldName = fieldName;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveFieldExpr(this);
     }
 }

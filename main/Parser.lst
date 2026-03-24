@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 24/03/2026 10:43:49>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 24/03/2026 21:55:09>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 24/03/2026 13:02:50
+//  DateTime: 24/03/2026 22:18:15
 // ==========================================================================
 
 
@@ -26,12 +26,13 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY RECORD
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY RECORD ADDFIELD REMOVEFIELD
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
+%nonassoc LOWER_THAN_LPAREN
 %nonassoc IF
 %nonassoc ELSE
 
@@ -112,20 +113,13 @@ Assignment
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
     
-    | ID LBRACKET expr RBRACKET ASSIGN expr    
+    | expr DOT ID ASSIGN expr
     {
-        string idName = (string)$1;
-        var idExpr = new IdNodeExpr(idName);
-        
-        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
-    }
-    | ID DOT ID ASSIGN expr  // if this is commented out, we can call x.name
-    { 
-        string idName = (string)$1;
-        string idFieldName = (string)$3;
-        var idExpr = new IdNodeExpr(idName);
-
-        $$ = new RecordFieldAssignNodeExpr(idExpr, idFieldName, $5 as ExpressionNodeExpr);  
+        $$ = new RecordFieldAssignNodeExpr(
+            $1 as ExpressionNodeExpr,
+            (string)$3,
+            $5 as ExpressionNodeExpr
+        );
     }
     ;
 
@@ -209,24 +203,22 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
-    | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
+   // | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
 
     | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
     | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
-    | ID DOT ID                            
+    | expr DOT ID %prec LOWER_THAN_LPAREN
     {
-        Console.WriteLine("Parsed field access: " + (string)$3);
-        string idName = (string)$1;
-        string idFieldName = (string)$3;
-        var idExpr = new IdNodeExpr(idName);
-
-        $$ = new RecordFieldNodeExpr(
-          idExpr,
-          idFieldName
-        ); 
+        $$ = new RecordFieldNodeExpr($1 as ExpressionNodeExpr, (string)$3);
     }
+
+   // | expr DOT COPY                           { $$ = new CopyRecordNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT COPY                           { $$ = new CopyNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
+                                              { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
+    | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
     ;
 
 params

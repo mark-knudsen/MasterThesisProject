@@ -20,7 +20,7 @@ namespace MyCompiler
         Type VisitForLoop(ForLoopNodeExpr expr);
         Type VisitForEachLoop(ForEachLoopNodeExpr expr);
         Type VisitArray(ArrayNodeExpr expr);
-        Type VisitCopyArray(CopyArrayNodeExpr expr);
+        //Type VisitCopyArray(CopyArrayNodeExpr expr);
         Type VisitIndex(IndexNodeExpr expr);
         Type VisitIndexAssign(IndexAssignNodeExpr expr);
         Type VisitAdd(AddNodeExpr expr);
@@ -39,6 +39,9 @@ namespace MyCompiler
         Type VisitRecord(RecordNodeExpr expr);
         Type VisitRecordField(RecordFieldNodeExpr expr);
         Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr);
+        Type VisitCopy(CopyNodeExpr expr);
+        Type VisitAddField(AddFieldNodeExpr expr);
+        Type VisitRemoveField(RemoveFieldNodeExpr expr);
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);
     }

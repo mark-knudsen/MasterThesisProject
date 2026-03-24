@@ -42,7 +42,7 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
-                CopyArrayNodeExpr clo => VisitCopyArray(clo),
+                //CopyArrayNodeExpr clo => VisitCopyArray(clo),
                 IndexNodeExpr idx => VisitIndex(idx),
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
@@ -65,6 +65,9 @@ namespace MyCompiler
                 RecordNodeExpr rec => VisitRecord(rec),
                 RecordFieldNodeExpr recf => VisitRecordField(recf),
                 RecordFieldAssignNodeExpr reca => VisitRecordFieldAssign(reca),
+                CopyNodeExpr copr => VisitCopy(copr),
+                AddFieldNodeExpr radd => VisitAddField(radd),
+                RemoveFieldNodeExpr rrem => VisitRemoveField(rrem),
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
         }
@@ -467,15 +470,15 @@ namespace MyCompiler
             return arrayType;
         }
 
-        public Type VisitCopyArray(CopyArrayNodeExpr expr)
-        {
-            Type elementType = new IntType();
-            Visit(expr.SourceArray);
+        // public Type VisitCopyArray(CopyArrayNodeExpr expr)
+        // {
+        //     Type elementType = new IntType();
+        //     Visit(expr.SourceArray);
 
-            var arrayType = new ArrayType(elementType);
-            expr.SetType(arrayType);
-            return arrayType;
-        }
+        //     var arrayType = new ArrayType(elementType);
+        //     expr.SetType(arrayType);
+        //     return arrayType;
+        // }
 
         // Handle arr[0]
         // Inside TypeChecker.cs
@@ -749,16 +752,16 @@ namespace MyCompiler
             Visit(expr.IdRecord);
             Type recordFieldType = new IntType();
 
-            if (expr.IdRecord is IdNodeExpr idNode) 
+            if (expr.IdRecord is IdNodeExpr idNode)
             {
                 var entry = _context.Get(idNode.Name);
                 Console.WriteLine("entry type: " + entry?.Type);
-                if(entry?.Type is RecordType recType)
+                if (entry?.Type is RecordType recType)
                 {
                     Console.WriteLine("we have the record: " + recType);
                     foreach (var item in recType.RecordFields)
                     {
-                        if(expr.IdField == item.Label) recordFieldType = item.Value.Type;
+                        if (expr.IdField == item.Label) recordFieldType = item.Value.Type;
                         Console.WriteLine("rec field label: " + item.Label);
                         Console.WriteLine("rec field value: " + item.Value);
                     }
@@ -776,7 +779,35 @@ namespace MyCompiler
             Visit(expr.IdRecord);
 
             expr.SetType(new VoidType()); // it is a statement, we don't need to return anything
-            return new VoidType();
+            return expr.Type;
+        }
+
+        // public Type VisitCopyRecord(CopyRecordNodeExpr expr)
+        // {
+        //     Visit(expr.Record);
+        //     expr.SetType(expr.Record.Type);
+        //     return expr.Type;
+        // }
+        public Type VisitCopy(CopyNodeExpr expr)
+        {
+            Visit(expr.Expression);
+            expr.SetType(expr.Expression.Type);
+            return expr.Type;
+        }
+
+        public Type VisitAddField(AddFieldNodeExpr expr)
+        {
+            Visit(expr.Record);
+            Visit(expr.Value);
+            expr.SetType(expr.Value.Type);
+            return expr.Type;
+        }
+
+        public Type VisitRemoveField(RemoveFieldNodeExpr expr)
+        {
+            Visit(expr.Record);
+            expr.SetType(new VoidType());
+            return expr.Type;
         }
     }
 }
