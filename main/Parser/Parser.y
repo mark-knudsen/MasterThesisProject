@@ -17,12 +17,13 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY RECORD ADDFIELD REMOVEFIELD
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
+%nonassoc LOWER_THAN_LPAREN
 %nonassoc IF
 %nonassoc ELSE
 
@@ -55,9 +56,8 @@ Prog
 
 StatementList
     : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
-    | StatementList Statement { ((SequenceNodeExpr)$1).Statements.Add($2); $$ = $1; }
     | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
-    | StatementList SEMICOLON { $$ = $1; }
+
     ;
 
 Statement
@@ -102,6 +102,15 @@ Assignment
     }
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
+    
+    | expr DOT ID ASSIGN expr
+    {
+        $$ = new RecordFieldAssignNodeExpr(
+            $1 as ExpressionNodeExpr,
+            (string)$3,
+            $5 as ExpressionNodeExpr
+        );
+    }
     ;
 
 expr_list
@@ -157,13 +166,6 @@ expr
         
         $$ = new IndexNodeExpr(idExpr, $3 as ExpressionNodeExpr); 
     }
-    | ID LBRACKET expr RBRACKET ASSIGN expr    
-    {
-        string idName = (string)$1;
-        var idExpr = new IdNodeExpr(idName);
-        
-        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
-    }
     | LPAREN expr RPAREN  { $$ = $2; }
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
@@ -191,10 +193,23 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
+   // | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
+
     | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
     | expr DOT TOCSV LPAREN expr RPAREN { $$ = new ToCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
-    | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
+    | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+
+    | expr DOT ID %prec LOWER_THAN_LPAREN
+    {
+        $$ = new RecordFieldNodeExpr($1 as ExpressionNodeExpr, (string)$3);
+    }
+
+    // | expr DOT COPY                           { $$ = new CopyRecordNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT COPY                           { $$ = new CopyNodeExpr($1 as ExpressionNodeExpr); }
+    | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
+                                              { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
+    | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
     ;
 
 params

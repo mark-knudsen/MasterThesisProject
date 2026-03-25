@@ -339,16 +339,25 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
     }
 
-    public class CopyArrayNodeExpr : ExpressionNodeExpr
-    {
-        public ExpressionNodeExpr SourceArray { get; }
+    // public class CopyArrayNodeExpr : ExpressionNodeExpr
+    // {
+    //     public ExpressionNodeExpr SourceArray { get; }
 
-        public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
+    //     public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
+    //     {
+    //         SourceArray = sourceArray;
+    //     }
+
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
+    // }
+
+    public class CopyArrayNodeExpr : CopyNodeExpr
+    {
+        public CopyArrayNodeExpr(ExpressionNodeExpr expr) : base(expr)
         {
-            SourceArray = sourceArray;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -580,5 +589,133 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
+    }
+
+    public class RecordField
+    {
+        public string Label { get; set; }
+        public ExpressionNodeExpr Value { get; set; }
+    }
+
+    public class RecordNodeExpr : ExpressionNodeExpr
+    {
+        public List<RecordField> Fields { get; } = new List<RecordField>();
+        public List<Type> ElementTypes { get; } = new List<Type>();
+
+        public RecordNodeExpr(ExpressionNodeExpr labelsArray, ExpressionNodeExpr valuesArray)
+        {
+            // 1. Cast the inputs to ArrayNodeExpr to get into their internal lists
+            var labelNodes = (labelsArray as ArrayNodeExpr)?.Elements;
+            var valueNodes = (valuesArray as ArrayNodeExpr)?.Elements;
+
+            if (labelNodes == null || valueNodes == null)
+                throw new Exception("Record requires two arrays: labels and values.");
+
+            if (labelNodes.Count != valueNodes.Count)
+                throw new Exception("Record labels and values count mismatch.");
+
+            // 2. Zip them together into the Fields list
+            for (int i = 0; i < labelNodes.Count; i++)
+            {
+                // Ensure the label is actually a StringNodeExpr
+                if (labelNodes[i] is StringNodeExpr strNode)
+                {
+                    Fields.Add(new RecordField
+                    {
+                        Label = strNode.Value,
+                        Value = valueNodes[i]
+                    });
+                    ElementTypes.Add(valueNodes[i].Type);
+                }
+                else
+                {
+                    throw new Exception("Record labels must be string literals.");
+                }
+            }
+            Type = new RecordType(Fields);
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordExpr(this);
+    }
+
+    public class RecordFieldNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr IdRecord { get; }
+        public string IdField { get; }
+
+        public RecordFieldNodeExpr(ExpressionNodeExpr idRecord, string idField)
+        {
+            Console.WriteLine("hi: " + idRecord);
+            IdRecord = idRecord;
+            IdField = idField;
+            Type = new IntType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldExpr(this);
+    }
+
+    public class RecordFieldAssignNodeExpr : StatementNodeExpr
+    {
+        public ExpressionNodeExpr IdRecord { get; }
+        public string IdField { get; }
+        public ExpressionNodeExpr AssignExpression { get; }
+
+        public RecordFieldAssignNodeExpr(ExpressionNodeExpr idRecord, string idField, ExpressionNodeExpr assignExpression)
+        {
+            IdRecord = idRecord;
+            IdField = idField;
+            AssignExpression = assignExpression;
+            Type = new VoidType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldAssignExpr(this);
+    }
+
+    public class CopyRecordNodeExpr : CopyNodeExpr
+    {
+        public CopyRecordNodeExpr(ExpressionNodeExpr expr) : base(expr)
+        {
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
+    }
+
+    public class CopyNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Expression { get; }
+
+        public CopyNodeExpr(ExpressionNodeExpr expr)
+        {
+            Expression = expr;
+            Type = expr.Type; // copy keeps the type of the original
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
+    }
+
+    public class AddFieldNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Record { get; }
+        public string FieldName { get; }
+        public ExpressionNodeExpr Value { get; }
+
+        public AddFieldNodeExpr(ExpressionNodeExpr record, string fieldName, ExpressionNodeExpr value)
+        {
+            Record = record;
+            FieldName = fieldName;
+            Value = value;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddFieldExpr(this);
+    }
+
+    public class RemoveFieldNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Record { get; }
+        public string FieldName { get; }
+
+        public RemoveFieldNodeExpr(ExpressionNodeExpr record, string fieldName)
+        {
+            Record = record;
+            FieldName = fieldName;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveFieldExpr(this);
     }
 }

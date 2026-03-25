@@ -27,6 +27,7 @@ namespace MyCompiler
         Bool = 3,
         String = 4,
         Array = 5,
+        Record = 6,
         None = 0
     }
 
@@ -244,8 +245,8 @@ namespace MyCompiler
 
         // TODO: fix the problems
 
-        // BROKEN FUNCTIONALITY  
-        // We cannot compare strings                      
+        // BROKEN FUNCTIONALITY        
+        // assigning a vairable to another variable that is an array is broke  x=[7,8,9]; z=x; x.add(0); z;    z is now some broken data, we have seen this before               
         // doing this in the same command fails: x.add(1); x.length 
 
         // UNIT TESTING
@@ -256,7 +257,6 @@ namespace MyCompiler
 
         // OTHER
         // currently it also prints out the lenght when calling print, not sure where it happends
-        // AddImplicitPrint and visitprint are very similar, can be refactored
         // int is sometimes set to i64, but int is standard i32 in many langauges, it should be consistent and don't think we need int64 as standard for our language
         // FIX: having int be i64 is a massive number, we do not need that kind of precision, it would be better to use i32
 
@@ -295,8 +295,6 @@ namespace MyCompiler
             DeclarePrintf();
 
             LLVMValueRef resultValue = Visit(expr);
-
-            //PrintArray(resultValue);
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
@@ -354,7 +352,14 @@ namespace MyCompiler
 
                     // 2. Pass both the pointer and the type to the handler
                     return HandleArray2(result.data, innerType);
+                case ValueTag.Record:
+                    if (_debug) Console.WriteLine("return Record");
 
+                    if (prediction is RecordType recType) // record(["name", "age"],["dan", 100]) 
+                    {
+                        return HandleRecord(result.data, recType);
+                    }
+                    return "Record Failure";
 
                 case ValueTag.None:
                     if (_debug) Console.WriteLine("return none");
@@ -364,6 +369,9 @@ namespace MyCompiler
 
             return result;
         }
+
+        // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+        // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
 
         private object HandleArray(IntPtr dataPtr)
         {
@@ -467,7 +475,70 @@ namespace MyCompiler
             }
         }
 
+        private object HandleRecord(IntPtr dataPtr, RecordType record)
+        {
+            if (dataPtr == IntPtr.Zero) return "{ empty }";
 
+            var result = new Dictionary<string, object>();
+            int fieldSize = 8; // Assuming 64-bit alignment for all fields
+
+            if (_debug) Console.WriteLine("Record type: " + record);
+            if (_debug) Console.WriteLine("Record type count: " + record.RecordFields?.Count);
+
+            for (int i = 0; i < record.RecordFields?.Count; i++)
+            {
+                var rec = record.RecordFields[i];
+                string label = rec.Label;
+                Type recType = rec.Value.Type;
+
+                if (_debug) Console.WriteLine($"Record {i} - label: {label}, type: {recType}");
+
+                // Calculate the address where this specific field is stored inside the record
+                IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
+
+                switch (recType)
+                {
+                    case IntType:
+                        // Read 8 bytes directly as a long/int64
+                        result[label] = Marshal.ReadInt64(fieldLocation);
+                        break;
+
+                    case FloatType:
+                        // Read the 8 bytes as a long, then convert the bits to a double
+                        long doubleBits = Marshal.ReadInt64(fieldLocation);
+                        result[label] = BitConverter.Int64BitsToDouble(doubleBits);
+                        break;
+
+                    case BoolType:
+                        // LLVM i1 is usually stored as a single byte (0 or 1) 
+                        // but padded to the field size in a struct.
+                        byte boolVal = Marshal.ReadByte(fieldLocation);
+                        result[label] = boolVal != 0;
+                        break;
+
+                    case StringType:
+                        // The record contains a pointer (address) to the string data
+                        IntPtr stringPtr = Marshal.ReadIntPtr(fieldLocation);
+
+                        if (stringPtr == IntPtr.Zero)
+                        {
+                            result[label] = "null";
+                        }
+                        else
+                        {
+                            // Use PtrToStringAnsi for C-style strings (null-terminated)
+                            result[label] = Marshal.PtrToStringAnsi(stringPtr);
+                        }
+                        break;
+
+                    default:
+                        result[label] = "Unknown Type";
+                        break;
+                }
+            }
+
+            return "{ " + string.Join(", ", result.Select(kv => $"{kv.Key}: {kv.Value}")) + " }";
+        }
 
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
@@ -491,13 +562,13 @@ namespace MyCompiler
             // Determine the tag
             int tag = type switch
             {
-                IntType => (int)ValueTag.Int,
-                FloatType => (int)ValueTag.Float,
-                BoolType => (int)ValueTag.Bool,
-                StringType => (int)ValueTag.String,
-                ArrayType => (int)ValueTag.Array,
-                VoidType => (int)ValueTag.None, // Handle Void/None
-                _ => (int)ValueTag.None
+                IntType => (Int16)ValueTag.Int,
+                FloatType => (Int16)ValueTag.Float,
+                BoolType => (Int16)ValueTag.Bool,
+                StringType => (Int16)ValueTag.String,
+                ArrayType => (Int16)ValueTag.Array,
+                RecordType => (Int16)ValueTag.Record,
+                _ => (Int16)ValueTag.None
             };
 
             // If it's already None/Void, just create an empty box
@@ -509,7 +580,8 @@ namespace MyCompiler
             LLVMValueRef dataPtr;
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
 
-            if (type is StringType || type is ArrayType)
+            // 3. Handle data allocation and storage
+            if (type is StringType || type is RecordType || type is ArrayType)
             {
                 if (!value.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
                     dataPtr = _builder.BuildLoad2(i8Ptr, value, "actual_ptr");
@@ -1441,6 +1513,20 @@ namespace MyCompiler
                         formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
                         break;
 
+                    case RecordType:
+                        // Cast to i64* to read header
+                        var recPtr = _builder.BuildBitCast(
+                            valueToPrint,
+                            LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0),
+                            "arr_len_ptr");
+
+                        var recLen = _builder.BuildLoad2(llvmCtx.Int64Type, recPtr, "arr_len");
+                        recLen.SetAlignment(8);
+
+                        finalArg = recLen;
+                        formatStr = _builder.BuildGlobalStringPtr("Array(len=%ld)\n", "fmt_array");
+                        break;
+
                     default:
                         throw new Exception($"Unsupported type for printing: {type}");
                 }
@@ -1457,7 +1543,6 @@ namespace MyCompiler
         public LLVMValueRef VisitPrintExpr(PrintNodeExpr expr)
         {
             var valueToPrint = Visit(expr.Expression);
-
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
@@ -1577,19 +1662,14 @@ namespace MyCompiler
             return VisitSequenceExpr(program);
         }
 
-        public LLVMValueRef VisitCopyArrayExpr(CopyArrayNodeExpr expr)
+        private LLVMValueRef CopyArray(LLVMValueRef srcRef, ArrayType type)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var func = _builder.InsertBlock.Parent;
 
-            // 1. Visit the source (This returns a BOX pointer)
-            var srcRef = Visit(expr.SourceArray);
+            // Resolve actual buffer from box
             LLVMValueRef srcBuffer;
-
-            // 2. Resolve the Buffer from the Box
-            // If it's a global (@arr), we load once to get the box address, then once for the buffer.
             if (!srcRef.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
             {
                 var boxPtr = _builder.BuildLoad2(i8Ptr, srcRef, "load_box_from_global");
@@ -1597,48 +1677,52 @@ namespace MyCompiler
             }
             else
             {
-                // If it's already a pointer (like a result from another Map), it's the Box address.
                 srcBuffer = _builder.BuildLoad2(i8Ptr, srcRef, "actual_src_buffer");
             }
 
-            // 3. Load length from the source buffer header (index 0)
-            var zero64 = LLVMValueRef.CreateConstInt(i64, 0);
-            var lengthPtr = _builder.BuildGEP2(i64, srcBuffer, new[] { zero64 }, "len_ptr");
-            var length = _builder.BuildLoad2(i64, lengthPtr, "length");
+            var zero = LLVMValueRef.CreateConstInt(i64, 0);
+            var one = LLVMValueRef.CreateConstInt(i64, 1);
+            var two = LLVMValueRef.CreateConstInt(i64, 2);
+            var eight = LLVMValueRef.CreateConstInt(i64, 8);
 
-            // 4. Allocate new Buffer [Length, Capacity, Data...]
-            var eight64 = LLVMValueRef.CreateConstInt(i64, 8);
-            var two64 = LLVMValueRef.CreateConstInt(i64, 2);
-            var totalSlots = _builder.BuildAdd(length, two64, "total_slots");
-            var totalBytes = _builder.BuildMul(totalSlots, eight64, "total_bytes");
+            // Load length
+            var lenPtr = _builder.BuildGEP2(i64, srcBuffer, new[] { zero }, "len_ptr");
+            var length = _builder.BuildLoad2(i64, lenPtr, "length");
+
+            // Allocate new buffer
+            var totalSlots = _builder.BuildAdd(length, two, "total_slots");
+            var totalBytes = _builder.BuildMul(totalSlots, eight, "total_bytes");
 
             var mallocFunc = GetOrDeclareMalloc();
-            var newBuffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "new_buffer_ptr");
+            var newBuffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "new_buffer");
 
-            // 5. Initialize new Buffer Header
-            var lenPtrNew = _builder.BuildGEP2(i64, newBuffer, new[] { zero64 }, "len_ptr_new");
-            var capPtrNew = _builder.BuildGEP2(i64, newBuffer, new[] { LLVMValueRef.CreateConstInt(i64, 1) }, "cap_ptr_new");
+            // Initialize header
+            var lenPtrNew = _builder.BuildGEP2(i64, newBuffer, new[] { zero }, "len_ptr_new");
+            var capPtrNew = _builder.BuildGEP2(i64, newBuffer, new[] { one }, "cap_ptr_new");
+
             _builder.BuildStore(length, lenPtrNew);
             _builder.BuildStore(length, capPtrNew);
 
-            // 6. Loop setup to copy elements from srcBuffer to newBuffer
-            var indexAlloc = _builder.BuildAlloca(i64, "clone_i");
-            _builder.BuildStore(zero64, indexAlloc);
+            // Loop setup
+            var indexAlloc = _builder.BuildAlloca(i64, "i");
+            _builder.BuildStore(zero, indexAlloc);
 
+            var func = _builder.InsertBlock.Parent;
             var loopCond = func.AppendBasicBlock("clone.cond");
             var loopBody = func.AppendBasicBlock("clone.body");
             var loopEnd = func.AppendBasicBlock("clone.end");
 
             _builder.BuildBr(loopCond);
-            _builder.PositionAtEnd(loopCond);
 
+            // Condition
+            _builder.PositionAtEnd(loopCond);
             var iVal = _builder.BuildLoad2(i64, indexAlloc, "i_val");
             var cmp = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, iVal, length, "cmp");
             _builder.BuildCondBr(cmp, loopBody, loopEnd);
 
-            // 7. Loop Body: Perform the actual copy
+            // Body
             _builder.PositionAtEnd(loopBody);
-            var offset = _builder.BuildAdd(iVal, two64, "offset");
+            var offset = _builder.BuildAdd(iVal, two, "offset");
 
             var srcElemPtr = _builder.BuildGEP2(i64, srcBuffer, new[] { offset }, "src_elem_ptr");
             var val = _builder.BuildLoad2(i64, srcElemPtr, "val");
@@ -1646,19 +1730,22 @@ namespace MyCompiler
             var dstElemPtr = _builder.BuildGEP2(i64, newBuffer, new[] { offset }, "dst_elem_ptr");
             _builder.BuildStore(val, dstElemPtr);
 
-            var iNext = _builder.BuildAdd(iVal, LLVMValueRef.CreateConstInt(i64, 1), "i_next");
-            _builder.BuildStore(iNext, indexAlloc);
+            var next = _builder.BuildAdd(iVal, one, "next");
+            _builder.BuildStore(next, indexAlloc);
+
             _builder.BuildBr(loopCond);
 
-            // 8. Exit and Wrap Buffer in a New Box
+            // End
             _builder.PositionAtEnd(loopEnd);
 
-            var boxSize = LLVMValueRef.CreateConstInt(i64, 8);
-            var newBox = _builder.BuildCall2(_mallocType, mallocFunc, new[] { boxSize }, "new_array_box");
+            // Wrap in box
+            var boxSize = eight;
+            var newBox = _builder.BuildCall2(_mallocType, mallocFunc, new[] { boxSize }, "new_box");
             _builder.BuildStore(newBuffer, newBox);
 
-            return newBox; // Always return the BOX
+            return newBox;
         }
+
 
 
 
@@ -1881,7 +1968,24 @@ namespace MyCompiler
             return rawValue; // Default for Int
         }
 
+        private LLVMTypeRef GetOrCreateStructType(RecordType recordType)
+        {
+            string structName = "struct_" + string.Join("_", recordType.RecordFields.Select(f => f.Label));
 
+            var structType = _module.GetTypeByName(structName);
+
+            if (structType.Handle == IntPtr.Zero)
+            {
+                var fieldTypes = recordType.RecordFields
+                    .Select(f => GetLLVMType(f.Value.Type))
+                    .ToArray();
+
+                structType = _module.Context.CreateNamedStruct(structName);
+                structType.StructSetBody(fieldTypes, false);
+            }
+
+            return structType;
+        }
 
         private LLVMTypeRef GetLLVMType(Type type)
         {
@@ -1890,8 +1994,11 @@ namespace MyCompiler
             {
                 FloatType => ctx.DoubleType,
                 IntType => ctx.Int64Type,
-                StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Arrays are pointers
+                StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
+                ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
+                                                                          //RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Record  are pointers
+                                                                          // RecordType recType => GetOrCreateStructType(recType),
+                RecordType recType => LLVMTypeRef.CreatePointer(GetOrCreateStructType(recType), 0),
                 BoolType => ctx.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}") // it doesn't have a type? how?
             };
@@ -2395,13 +2502,9 @@ namespace MyCompiler
 
             // Negate the value, depending on whether it's a float or an integer
             if (value.TypeOf == ctx.DoubleType)
-            {
                 return _builder.BuildFNeg(value, "fneg");
-            }
             else
-            {
                 return _builder.BuildNeg(value, "neg");
-            }
         }
         public LLVMValueRef VisitIndexAssignExpr(IndexAssignNodeExpr expr)
         {
@@ -2604,12 +2707,212 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstPointerNull(_i8Ptr);
         }
 
-
-        private LLVMValueRef GetStringPtr(string val, string name)
+        public LLVMValueRef VisitCopyExpr(CopyNodeExpr expr)
         {
-            return _builder.BuildGlobalStringPtr(val, name);
+            var value = Visit(expr.Expression); // LLVM value
+            var type = expr.Expression.Type;    // language type
+
+            if (type is ArrayType tt)
+                return CopyArray(value, tt);
+
+            if (type is RecordType t)
+                return CopyRecord(value, t);
+
+            throw new Exception($"Cannot call copy on type {type}");
         }
 
+        public LLVMValueRef VisitRecordExpr(RecordNodeExpr expr)
+        {
+            // 1. Collect LLVM Types from the fields to define the Struct
+            var fieldTypes = new List<LLVMTypeRef>();
 
+            foreach (var field in expr.Fields) // x=record(["name", "age"],["dan", 100])    x.name   z=record(["name", "age","iscool", "score"],["dan", 100, true, 10.435345]) 
+            {
+                // This returns your ContextEntry
+                var entry = Visit(field.Value);
+                fieldTypes.Add(GetLLVMType(field.Value.Type));
+            }
+
+            // 2. Define the STRUCT TYPE (The Blueprint)
+            string structName = "struct_" + string.Join("_", expr.Fields.Select(f => f.Label));
+
+            // Look in LLVM's internal type registry
+            LLVMTypeRef structType = _module.GetTypeByName(structName);
+
+            // If LLVM doesn't know this struct yet, define it
+            if (structType.Handle == IntPtr.Zero)
+            {
+                // USE THE LLVM CONTEXT, NOT YOUR CLASS
+                structType = _module.Context.CreateNamedStruct(structName);
+                structType.StructSetBody(fieldTypes.ToArray(), Packed: false);
+            }
+
+            // 3. Allocate Memory (Heap allocation via malloc)
+            // For a REPL/JIT, malloc is safer for persistence
+            //var sizeOf = structType.SizeOf;
+            var instancePtr = _builder.BuildMalloc(structType, "record_mem");
+
+            // 4. Store each field value into the Struct
+            for (int i = 0; i < expr.Fields.Count; i++)
+            {
+                var fieldValue = expr.Fields[i].Value.Accept(this);
+
+                // BuildStructGEP2 gets the pointer to the specific field index
+                var elementPtr = _builder.BuildStructGEP2(structType, instancePtr, (uint)i, $"ptr_{expr.Fields[i].Label}");
+
+                _builder.BuildStore(fieldValue, elementPtr);
+            }
+
+            return instancePtr;
+        }
+
+        public LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr)
+        {
+            Console.WriteLine("Visiting record field assign");
+
+            var (fieldPtr, fieldType) = GetFieldPointer(expr.IdRecord, expr.IdField);
+
+            var value = Visit(expr.AssignExpression);
+
+            // Optional: type check (recommended)
+            if (value.TypeOf != fieldType)
+                throw new Exception($"Cannot assign to record field '{expr.IdField}': type mismatch");
+
+            _builder.BuildStore(value, fieldPtr);
+
+            return value;
+        }
+
+        private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNodeExpr recordExpr, string fieldName)
+        {
+            // 1. Get record pointer
+            var recordPtr = Visit(recordExpr);
+
+            // 2. Get record type
+            var recordType = recordExpr.Type as RecordType;
+            if (recordType == null)
+                throw new Exception("Trying to access field on non-record type");
+
+            // 3. Resolve field index
+            int fieldIndex = GetFieldIndex(fieldName, recordType.RecordFields);
+
+            // 4. Get struct type
+            var structType = GetOrCreateStructType(recordType);
+
+            if (recordPtr.TypeOf.Kind != LLVMTypeKind.LLVMPointerTypeKind)
+                throw new Exception("Record must be a pointer to struct");
+
+            // 5. Get pointer to field
+            var fieldPtr = _builder.BuildStructGEP2(
+                structType,
+                recordPtr,
+                (uint)fieldIndex,
+                $"ptr_{fieldName}"
+            );
+
+            // 6. Get field type
+            var fieldType = structType.StructGetTypeAtIndex((uint)fieldIndex);
+
+            return (fieldPtr, fieldType);
+        }
+
+        private int GetFieldIndex(string name, List<RecordField> Fields)
+        {
+            for (int i = 0; i < Fields.Count; i++)
+            {
+                if (Fields[i].Label == name)
+                    return i;
+            }
+            throw new Exception($"Field '{name}' not found.");
+        }
+
+        public LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr)
+        {
+            var (fieldPtr, fieldType) = GetFieldPointer(expr.IdRecord, expr.IdField);
+
+            var value = _builder.BuildLoad2(
+                fieldType,
+                fieldPtr,
+                $"load_{expr.IdField}"
+            );
+
+            return value;
+        }
+
+        private LLVMValueRef CopyRecord(LLVMValueRef recordPtr, RecordType recordType)
+        {
+            Console.WriteLine("copying record!");
+            var structType = GetOrCreateStructType(recordType);
+
+            var newPtr = _builder.BuildMalloc(structType, "record_copy");
+
+            // Copy each field
+            for (int i = 0; i < recordType.RecordFields.Count; i++)
+            {
+                var oldFieldPtr = _builder.BuildStructGEP2(structType, recordPtr, (uint)i, "old_ptr");
+                var val = _builder.BuildLoad2(structType.StructGetTypeAtIndex((uint)i), oldFieldPtr, "val");
+                var newFieldPtr = _builder.BuildStructGEP2(structType, newPtr, (uint)i, "new_ptr");
+                _builder.BuildStore(val, newFieldPtr);
+            }
+
+            return newPtr;
+        }
+
+        public LLVMValueRef VisitAddFieldExpr(AddFieldNodeExpr expr)
+        {
+            var oldPtr = Visit(expr.Record);
+            var oldType = (RecordType)expr.Record.Type;
+
+            // Build new RecordType + Struct with extra field
+            var newFields = oldType.RecordFields.Concat(new[]
+                { new RecordField { Label = expr.FieldName, Value = expr.Value } }).ToList();
+
+            var newRecordType = new RecordType(newFields);
+            var newStructType = GetOrCreateStructType(newRecordType);
+            var newPtr = _builder.BuildMalloc(newStructType, "record_add");
+
+            // Copy old values
+            for (int i = 0; i < oldType.RecordFields.Count; i++)
+            {
+                var oldValPtr = _builder.BuildStructGEP2(GetOrCreateStructType(oldType), oldPtr, (uint)i, "old_ptr");
+                var val = _builder.BuildLoad2(GetOrCreateStructType(oldType).StructGetTypeAtIndex((uint)i), oldValPtr, "val");
+                var newValPtr = _builder.BuildStructGEP2(newStructType, newPtr, (uint)i, "new_ptr");
+                _builder.BuildStore(val, newValPtr);
+            }
+
+            // Store new field
+            var newFieldPtr = _builder.BuildStructGEP2(newStructType, newPtr, (uint)oldType.RecordFields.Count, expr.FieldName);
+            var newValue = Visit(expr.Value);
+            _builder.BuildStore(newValue, newFieldPtr);
+
+            return newPtr;
+        }
+
+        public LLVMValueRef VisitRemoveFieldExpr(RemoveFieldNodeExpr expr)
+        {
+            var oldPtr = Visit(expr.Record);
+            var oldType = expr.Record.Type as RecordType;
+
+            var newFields = oldType.RecordFields.Where(f => f.Label != expr.FieldName).ToList();
+            var newRecordType = new RecordType(newFields);
+            var newStructType = GetOrCreateStructType(newRecordType);
+            var newPtr = _builder.BuildMalloc(newStructType, "record_remove");
+
+            // Copy remaining fields
+            int newIndex = 0;
+            for (int i = 0; i < oldType.RecordFields.Count; i++)
+            {
+                if (oldType.RecordFields[i].Label == expr.FieldName)
+                    continue;
+
+                var oldValPtr = _builder.BuildStructGEP2(GetOrCreateStructType(oldType), oldPtr, (uint)i, "old_ptr");
+                var val = _builder.BuildLoad2(GetOrCreateStructType(oldType).StructGetTypeAtIndex((uint)i), oldValPtr, "val");
+                var newValPtr = _builder.BuildStructGEP2(newStructType, newPtr, (uint)newIndex, "new_ptr");
+                _builder.BuildStore(val, newValPtr);
+                newIndex++;
+            }
+
+            return newPtr;
+        }
     }
 }
