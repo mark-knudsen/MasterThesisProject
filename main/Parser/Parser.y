@@ -191,8 +191,16 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
-    | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
-    | expr DOT TOCSV LPAREN expr RPAREN { $$ = new ToCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+
+    /* Global Function Style */
+    | READCSV LPAREN expr RPAREN 
+        { 
+            // $3 is the 'expr' (the filename string)
+            $$ = new ReadCsvNodeExpr($3 as ExpressionNodeExpr); 
+        }
+
+    | TOCSV LPAREN expr COMMA expr RPAREN 
+        { $$ = new ToCsvNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
     | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
     ;

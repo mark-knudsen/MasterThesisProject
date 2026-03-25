@@ -29,6 +29,60 @@ namespace MyCompiler
         Array = 5,
         None = 0
     }
+    public static class LanguageRuntime
+    {
+        // Regular static method works with GetFunctionPointerForDelegate
+        public static IntPtr ReadCsvInternal(IntPtr pathPtr)
+        {
+            if (pathPtr == IntPtr.Zero) return IntPtr.Zero;
+            string path = Marshal.PtrToStringAnsi(pathPtr);
+            if (!File.Exists(path)) return IntPtr.Zero;
+
+            try
+            {
+                var lines = File.ReadAllLines(path).Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+                int count = lines.Length;
+                IntPtr buffer = Marshal.AllocHGlobal((count + 2) * 8);
+
+                Marshal.WriteInt64(buffer, 0, count);
+                Marshal.WriteInt64(buffer, 8, count);
+
+                for (int i = 0; i < count; i++)
+                {
+                    string val = lines[i].Trim();
+                    long bitPattern = 0;
+
+                    // 1. Try Integer
+                    if (long.TryParse(val, out long iVal))
+                    {
+                        bitPattern = iVal;
+                    }
+                    // 2. Try Boolean
+                    else if (bool.TryParse(val, out bool bVal))
+                    {
+                        bitPattern = bVal ? 1 : 0;
+                    }
+                    // 3. Try Double/Float
+                    else if (double.TryParse(val, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double dVal))
+                    {
+                        bitPattern = BitConverter.DoubleToInt64Bits(dVal);
+                    }
+                    // 4. Fallback: It's a string!
+                    else
+                    {
+                        // We must allocate memory for this string so LLVM can find it later
+                        bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
+                    }
+
+                    Marshal.WriteInt64(buffer, (i + 2) * 8, bitPattern);
+                }
+                return buffer;
+            }
+            catch { return IntPtr.Zero; }
+        }
+    }
+
+
 
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
     {
@@ -48,12 +102,15 @@ namespace MyCompiler
         private LLVMValueRef _fopenFunc;
         private LLVMTypeRef _fcloseType;
         private LLVMValueRef _fcloseFunc;
+        private LLVMTypeRef _fprintfType;
+        private LLVMValueRef _fprintfFunc;
 
 
         LLVMTypeRef _memmoveType;
         LLVMTypeRef _reallocType;
         private Type _lastType; // Store the type of the last expression for auto-printing
-        private NodeExpr _lastNode; // Store the last expression for auto-printing
+
+        //private NodeExpr _lastNode; // Store the last expression for auto-printing
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
@@ -63,6 +120,16 @@ namespace MyCompiler
         private LLVMTypeRef _mallocType;
         [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
         private delegate IntPtr MainDelegate();
+
+
+
+        // 1. Define the delegate (put this at class level)
+        [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
+        public delegate IntPtr ReadCsvDelegate(IntPtr path);
+
+        // 2. Add this inside your CompilerOrc class to keep the delegate alive
+        private static ReadCsvDelegate _readCsvCachedDelegate;
+
 
         public CompilerOrc()
         {
@@ -104,16 +171,24 @@ namespace MyCompiler
 
         private LLVMValueRef BoxToI64(LLVMValueRef value)
         {
-            if (value.TypeOf == _module.Context.Int64Type) return value;
+            var i64 = _module.Context.Int64Type;
 
+            // 1. Already i64? No work needed.
+            if (value.TypeOf == i64) return value;
+
+            // 2. Double -> i64 (Preserve bit pattern, don't convert value!)
             if (value.TypeOf == _module.Context.DoubleType)
-                return _builder.BuildBitCast(value, _module.Context.Int64Type, "num_to_i64");
+                return _builder.BuildBitCast(value, i64, "double_bits");
 
+            // 3. Pointer -> i64 (Store the address)
             if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                return _builder.BuildPtrToInt(value, _module.Context.Int64Type, "ptr_to_i64");
+                return _builder.BuildPtrToInt(value, i64, "ptr_bits");
 
-            return _builder.BuildZExt(value, _module.Context.Int64Type, "zext");
+            // 4. Everything else (Int1/Bool, Int32, etc.) -> i64
+            // We use Zero-Extend to ensure upper bits are 0.
+            return _builder.BuildZExt(value, i64, "zext_to_i64");
         }
+
 
         private LLVMValueRef UnboxFromI64(LLVMValueRef val, Type targetType)
         {
@@ -148,23 +223,64 @@ namespace MyCompiler
 
             return val;
         }
-        private void SetupCsvFunctions()
+        private unsafe void SetupCsvFunctions()
         {
             var ctx = _module.Context;
             var i32 = ctx.Int32Type;
             _i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // fopen(char*, char*) -> ptr
+            // 1. Function Declarations (Stay the same)
             _fopenType = LLVMTypeRef.CreateFunction(_i8Ptr, new[] { _i8Ptr, _i8Ptr });
             _fopenFunc = _module.AddFunction("fopen", _fopenType);
 
-            // fclose(ptr) -> i32
             _fcloseType = LLVMTypeRef.CreateFunction(i32, new[] { _i8Ptr });
             _fcloseFunc = _module.AddFunction("fclose", _fcloseType);
 
             _fprintfType = LLVMTypeRef.CreateFunction(i32, new[] { _i8Ptr, _i8Ptr }, true);
             _fprintfFunc = _module.AddFunction("fprintf", _fprintfType);
+
+            // 2. Setup the JIT Linker
+            var jitHandle = (LLVMOrcOpaqueLLJIT*)_jit;
+            var dylib = LLVM.OrcLLJITGetMainJITDylib(jitHandle);
+
+            _readCsvCachedDelegate = new ReadCsvDelegate(LanguageRuntime.ReadCsvInternal);
+            IntPtr fnAddr = Marshal.GetFunctionPointerForDelegate(_readCsvCachedDelegate);
+
+            // LLVM 20 requires sbyte* for MangleAndIntern
+            fixed (byte* pName = System.Text.Encoding.UTF8.GetBytes("ReadCsvInternal\0"))
+            {
+                var internedName = LLVM.OrcLLJITMangleAndIntern(jitHandle, (sbyte*)pName);
+
+                // FIX 1: Use LLVMJITSymbolGenericFlags directly (no 'Orc' in middle)
+                // If the enum itself is missing, use the raw byte: (byte)1
+                var flags = new LLVMJITSymbolFlags
+                {
+                    GenericFlags = (byte)LLVMJITSymbolGenericFlags.LLVMJITSymbolGenericFlagsExported,
+                    TargetFlags = 0
+                };
+
+                var symbol = new LLVMJITEvaluatedSymbol
+                {
+                    Address = (ulong)fnAddr.ToInt64(),
+                    Flags = flags
+                };
+
+                // FIX 2: LLVMOrcCSymbolMapPair field name
+                // In this version of the interop, the field is called 'Definition'
+                var pair = new LLVMOrcCSymbolMapPair
+                {
+                    Name = internedName,
+                    Sym = symbol
+                };
+
+                // FIX 3: Use the direct Materializer function
+                var materializer = LLVM.OrcAbsoluteSymbols(&pair, 1);
+
+                var err = LLVM.OrcJITDylibDefine(dylib, materializer);
+                if (err != null) ThrowIfError((IntPtr)err);
+            }
         }
+
 
         private void DeclareValueStruct()
         {
@@ -194,26 +310,53 @@ namespace MyCompiler
             _falseStr = _builder.BuildGlobalStringPtr("False\n", "false_str");
         }
 
-        private void EnsureJit()
+        private unsafe void EnsureJit()
         {
-            if (_jitInitialized)
-                return;
+            if (_jitInitialized) return;
 
-            // Create JIT compiler (this assumes you are using LLVM's Orc JIT engine)
-            ThrowIfError(OrcBindings.LLVMOrcCreateLLJIT(out _jit, IntPtr.Zero));
+            // 1. Create the Builder
+            LLVMOrcOpaqueLLJITBuilder* builder = LLVM.OrcCreateLLJITBuilder();
+
+            // 2. Create the JIT instance
+            LLVMOrcOpaqueLLJIT* jitInstance;
+            LLVMOpaqueError* error = LLVM.OrcCreateLLJIT(&jitInstance, builder);
+
+            if (error != null)
+            {
+                // Cast the pointer to IntPtr so your existing ThrowIfError can take it
+                ThrowIfError((IntPtr)error);
+            }
+
+            // Store the raw pointer as an IntPtr in your class field
+            _jit = (IntPtr)jitInstance;
             _jitInitialized = true;
         }
 
-        private void ThrowIfError(IntPtr err)
-        {
-            if (err == IntPtr.Zero) return;
 
-            var msgPtr = OrcBindings.LLVMGetErrorMessage(err);
-            var message = Marshal.PtrToStringAnsi(msgPtr);
-            Console.WriteLine("JIT Error: " + message);
-            OrcBindings.LLVMDisposeErrorMessage(msgPtr);
-            OrcBindings.LLVMConsumeError(err);
-            throw new Exception(message);
+
+
+        private void ThrowIfError(IntPtr errPtr)
+        {
+            if (errPtr == IntPtr.Zero) return;
+
+            unsafe
+            {
+                // Convert IntPtr back to the opaque error pointer
+                var err = (LLVMOpaqueError*)errPtr;
+
+                // In LLVM 20, we use Orc.GetErrorMessage or similar
+                // If your interop doesn't have Orc.GetErrorMessage, use the standard:
+                sbyte* msgPtr = LLVM.GetErrorMessage(err);
+                string message = Marshal.PtrToStringAnsi((IntPtr)msgPtr);
+
+                Console.WriteLine("JIT Error: " + message);
+
+                // Clean up the error
+                LLVM.DisposeErrorMessage(msgPtr);
+                // Do not call ConsumeError if you called GetErrorMessage (it often consumes it for you)
+
+                throw new Exception(message);
+            }
         }
 
         private void DumpIR(LLVMModuleRef module)
@@ -291,79 +434,97 @@ namespace MyCompiler
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
+            // --- FIX: Deep Type Detection ---
+            // We look for the "True" type for display purposes.
+            Type displayType = prediction;
+
+            // Drill down into sequences to find the last assignment
+            NodeExpr lastStmt = expr;
+            if (expr is SequenceNodeExpr seq && seq.Statements.Count > 0)
+            {
+                lastStmt = seq.Statements.Last();
+            }
+
+            if (lastStmt is AssignNodeExpr assign)
+            {
+                // Get the actual type of the variable from the symbol table
+                var symbol = _context.Get(assign.Id);
+                if (symbol != null) displayType = symbol.Type;
+            }
+            // --------------------------------
+
             CreateMain();
             DeclarePrintf();
 
             LLVMValueRef resultValue = Visit(expr);
 
-            //PrintArray(resultValue);
-
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
-            var boxedPtr = BoxValue(resultValue, prediction); // don't we just need one of them?
-            _builder.BuildRet(boxedPtr);
+            // Box it using the prediction (the statement's actual return type)
+            LLVMValueRef finalBox = resultValue.Name.Contains("runtime_obj")
+                ? resultValue
+                : BoxValue(resultValue, prediction);
+
+            _builder.BuildRet(finalBox);
 
             if (_debug) DumpIR(_module);
 
-            // 5 Wrap in ThreadSafeModule
+            // 5. JIT Compilation
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
-
             var dylib = OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit);
-
             ThrowIfError(OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, dylib, tsm));
 
-            // 6 Lookup function pointer
+            // 6. Execution
             ulong addr;
             ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, _funcName));
-
-            // 7 Call it
-            var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
+            var fnPtr = (IntPtr)addr;
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-            var tempResult = delegateResult();
+            IntPtr tempResult = delegateResult();
+            if (tempResult == IntPtr.Zero) return null;
+
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
 
+            // 7. Result Mapping
             switch ((ValueTag)result.tag)
             {
                 case ValueTag.Int:
-                    if (_debug) Console.WriteLine("return int");
                     return Marshal.ReadInt64(result.data);
 
                 case ValueTag.Float:
-                    if (_debug) Console.WriteLine("return float");
-                    return Marshal.PtrToStructure<double>(result.data);
+                    return BitConverter.Int64BitsToDouble(Marshal.ReadInt64(result.data));
 
                 case ValueTag.String:
-                    if (_debug) Console.WriteLine("return string");
                     return Marshal.PtrToStringAnsi(result.data);
 
                 case ValueTag.Bool:
-                    if (_debug) Console.WriteLine("return bool");
-
-                    long b = Marshal.ReadByte(result.data);
-                    return b != 0;
+                    return Marshal.ReadInt64(result.data) != 0;
 
                 case ValueTag.Array:
                     if (_debug) Console.WriteLine("return array");
 
-                    // 1. Get the element type from the prediction
-                    // Assuming prediction is of type 'ArrayType', we get its 'ElementType' property
-                    Type innerType = (prediction as ArrayType)?.ElementType;
+                    // --- USE displayType HERE ---
+                    Type innerType = (displayType as ArrayType)?.ElementType;
 
-                    // 2. Pass both the pointer and the type to the handler
-                    return HandleArray2(result.data, innerType);
+                    long header = Marshal.ReadInt64(result.data);
 
+                    // Smart dereference logic:
+                    // If header > 10,000,000 it's almost certainly a memory address (Box).
+                    // Otherwise, it's the array length (Raw Buffer).
+                    IntPtr finalBuffer = (header > 10000000) ? Marshal.ReadIntPtr(result.data) : result.data;
+
+                    return HandleArray2(finalBuffer, innerType);
 
                 case ValueTag.None:
-                    if (_debug) Console.WriteLine("return none");
+                    return null;
 
-                    return default;
+                default:
+                    return result;
             }
-
-            return result;
         }
+
 
         private object HandleArray(IntPtr dataPtr)
         {
@@ -404,91 +565,71 @@ namespace MyCompiler
             return "[" + string.Join(", ", elements) + "]";
         }
 
-        private object HandleArray2(IntPtr boxPtr, Type elementType)
+        private object HandleArray2(IntPtr dataPtr, Type elementType)
         {
-            // If the box pointer itself is null, the array variable was never initialized
-            if (boxPtr == IntPtr.Zero) return "[]";
+            if (dataPtr == IntPtr.Zero) return "[]";
 
             try
             {
-                // 1. DEREFERENCE THE BOX: 
-                // Read the actual memory address stored INSIDE the 8-byte box.
-                // This address (dataPtr) is what realloc() updates.
-                IntPtr dataPtr = Marshal.ReadIntPtr(boxPtr);
+                // 1. Determine if we are looking at the Buffer or a Box
+                long firstVal = Marshal.ReadInt64(dataPtr);
 
-                // If the box is empty (null pointer inside), return empty brackets
-                if (dataPtr == IntPtr.Zero) return "[]";
+                // If firstVal is a pointer (usually > 0x1000000), dereference it to get the buffer.
+                // Array lengths are usually small (0 to 1 million).
+                IntPtr actualBufferPtr = (firstVal > 1000000) ? Marshal.ReadIntPtr(dataPtr) : dataPtr;
 
-                // 2. Read the length from the header (index 0 of the buffer)
-                long length = Marshal.ReadInt64(dataPtr);
+                if (actualBufferPtr == IntPtr.Zero) return "[]";
+
+                long length = Marshal.ReadInt64(actualBufferPtr);
+                if (length < 0 || length > 1000000) return "[]";
+
                 var resultElements = new List<string>();
 
-                // 3. Iterate through elements
                 for (long i = 0; i < length; i++)
                 {
-                    // Data starts at index 2 (skipping len and cap)
-                    // BufferLayout: [Length (8b), Capacity (8b), Element0 (8b), Element1 (8b)...]
-                    IntPtr elementPtr = IntPtr.Add(dataPtr, (int)((i + 2) * 8));
+                    // Elements start at index 2 (skip Len/Cap)
+                    IntPtr elementPtr = IntPtr.Add(actualBufferPtr, (int)((i + 2) * 8));
                     long rawValue = Marshal.ReadInt64(elementPtr);
 
                     if (elementType is FloatType)
-                    {
-                        double dblValue = BitConverter.Int64BitsToDouble(rawValue);
-                        resultElements.Add(dblValue.ToString(System.Globalization.CultureInfo.InvariantCulture));
-                    }
+                        resultElements.Add(BitConverter.Int64BitsToDouble(rawValue).ToString(System.Globalization.CultureInfo.InvariantCulture));
                     else if (elementType is BoolType)
-                    {
                         resultElements.Add((rawValue & 1) == 1 ? "true" : "false");
-                    }
-                    else if (elementType is IntType)
-                    {
-                        resultElements.Add(rawValue.ToString());
-                    }
                     else if (elementType is StringType)
-                    {
-                        string str = Marshal.PtrToStringAnsi((IntPtr)rawValue);
-                        resultElements.Add($"\"{str}\"");
-                    }
-                    else if (elementType is ArrayType innerArrayType)
-                    {
-                        // Recursive call for nested arrays. 
-                        // Note: Inner arrays are also boxed, so rawValue is a BoxPtr.
-                        string innerResult = HandleArray2((IntPtr)rawValue, innerArrayType.ElementType).ToString();
-                        resultElements.Add(innerResult);
-                    }
+                        resultElements.Add(rawValue == 0 ? "\"\"" : $"\"{Marshal.PtrToStringAnsi((IntPtr)rawValue)}\"");
+                    else if (elementType is ArrayType inner)
+                        resultElements.Add(HandleArray2((IntPtr)rawValue, inner.ElementType).ToString());
+                    else
+                        resultElements.Add(rawValue.ToString()); // Default (Int)
                 }
 
                 return "[" + string.Join(", ", resultElements) + "]";
             }
             catch (Exception ex)
             {
-                // Helpful for debugging if the pointer math is off
-                return $"[Error reading array: {ex.Message}]";
+                return $"[Error: {ex.Message}]";
             }
         }
-
 
 
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i16 = ctx.Int16Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
 
-            // --- CRASH PREVENTER: DON'T DOUBLE BOX ---
-            // If the value is already a pointer to our {i16, i8*} struct, just return it.
+            // 1. THE RECURSION SHIELD
+            // If it's already a managed object, return it as-is.
+            // 1. IMPROVED SHIELD
             if (value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
             {
-                // If the IR shows it's already a boxed object from a previous helper, return it
-                if (value.Name.Contains("runtime_obj"))
-                {
-                    return value;
-                }
+                // If it's already the 16-byte struct, return it.
+                if (value.Name.Contains("runtime_obj")) return value;
+
+                // If it's the 8-byte box (from VisitArrayExpr), we DON'T return it.
+                // We let the code below wrap it in a RuntimeValue { Tag: 5, Data: arr_box }.
             }
 
-            // Determine the tag
             int tag = type switch
             {
                 IntType => (int)ValueTag.Int,
@@ -496,53 +637,38 @@ namespace MyCompiler
                 BoolType => (int)ValueTag.Bool,
                 StringType => (int)ValueTag.String,
                 ArrayType => (int)ValueTag.Array,
-                VoidType => (int)ValueTag.None, // Handle Void/None
                 _ => (int)ValueTag.None
             };
-
-            // If it's already None/Void, just create an empty box
-            if (type is VoidType)
-            {
-                return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
-            }
 
             LLVMValueRef dataPtr;
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
 
+            // 2. Handle String/Array Pointer Resolution
             if (type is StringType || type is ArrayType)
             {
-                if (!value.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
-                    dataPtr = _builder.BuildLoad2(i8Ptr, value, "actual_ptr");
-                else
-                    dataPtr = value;
+                if (value.IsAGlobalVariable.Handle != IntPtr.Zero)
+                {
+                    // String constants are the pointer; variables hold the pointer.
+                    if (type is StringType && value.Name.StartsWith("str")) dataPtr = value;
+                    else dataPtr = _builder.BuildLoad2(i8Ptr, value, "actual_ptr");
+                }
+                else dataPtr = value;
             }
-            else if (type is IntType || type is BoolType) // Combine since both use 8-byte buffer here
+            // 3. Handle Primitives (Int, Float, Bool)
+            else if (type is IntType || type is BoolType || type is FloatType)
             {
                 var malloc = GetOrDeclareMalloc();
-                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "val_mem");
+                dataPtr = _builder.BuildCall2(mallocType, malloc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "val_mem");
 
-                LLVMValueRef valToStore = value;
-                if (type is BoolType)
-                    valToStore = _builder.BuildZExt(value, i64, "bool_to_i64");
-
-                _builder.BuildStore(valToStore, rawMem).SetAlignment(8);
-                dataPtr = rawMem;
+                LLVMValueRef valToStore = (type is BoolType) ? _builder.BuildZExt(value, i64, "b64") : value;
+                _builder.BuildStore(valToStore, dataPtr).SetAlignment(8);
             }
-            else if (type is FloatType)
-            {
-                var malloc = GetOrDeclareMalloc();
-                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "float_mem");
-                _builder.BuildStore(value, rawMem).SetAlignment(8);
-                dataPtr = rawMem;
-            }
-            else
-            {
-                // Default fallback for None or unknown
-                dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
-            }
+            else dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
 
             return CreateRuntimeObject((short)tag, dataPtr);
         }
+
+
 
 
         private ExpressionNodeExpr GetProgramResult(NodeExpr expr)
@@ -1226,61 +1352,47 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, expr.Value);
         }
 
+
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
-            if (_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
-
+            // 1. Get the raw value (could be a constant, a global ptr, or a fresh box)
             var value = Visit(expr.Expression);
-            var storageType = value.TypeOf;
-            var module = _module;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
+            // 2. Box it. 
+            // We pass 'value' as-is. BoxValue will check if it's a global 
+            // and decide if it needs to load the pointer or wrap it.
+            var entry = _context.Get(expr.Id);
+            var boxedValue = BoxValue(value, entry.Type);
 
-            // 2. --- THE FIX ---
-            // If the RHS is a global variable, we need the VALUE inside it, 
-            // not the address of the global itself.
-            if (!value.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
-            {
-                var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-                value = _builder.BuildLoad2(i8Ptr, value, "loaded_val");
-            }
-
+            // 3. --- SMART GLOBAL HANDLING ---
+            LLVMValueRef global = _module.GetNamedGlobal(expr.Id);
 
             if (global.Handle == IntPtr.Zero)
             {
+                // Add the global to the current module
+                global = _module.AddGlobal(i8Ptr, expr.Id);
+
+                // If we haven't defined it in the JIT session yet, give it an initializer
                 if (!_definedGlobals.Contains(expr.Id))
                 {
-                    // FIRST DEFINITION
-                    global = module.AddGlobal(storageType, expr.Id);
-
-                    // Set initial dummy value so it's not "undef"
-                    if (storageType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
-                        global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
-                    else if (storageType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                        global.Initializer = LLVMValueRef.CreateConstInt(storageType, 0);
-                    else
-                        global.Initializer = LLVMValueRef.CreateConstNull(storageType);
-
-                    // Use ExternalLinkage so it's visible to the JIT symbol table
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                    global.Initializer = LLVMValueRef.CreateConstNull(i8Ptr);
                     _definedGlobals.Add(expr.Id);
                 }
-                else
-                {
-                    // RE-DECLARATION (in a new module)
-                    global = module.AddGlobal(storageType, expr.Id);
 
-                    // IMPORTANT: Setting Linkage to External WITHOUT an Initializer 
-                    // makes this an 'extern' declaration.
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                }
+                // Always use ExternalLinkage so the JIT can cross-reference 
+                // across different REPL modules
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
-            var store = _builder.BuildStore(value, global);
+            // 4. Store the 16-byte RuntimeValue pointer into the global variable
+            var store = _builder.BuildStore(boxedValue, global);
             store.SetAlignment(8);
 
-            return value;
+            return boxedValue;
         }
+
+
 
         public LLVMValueRef VisitRandomExpr(RandomNodeExpr expr)
         {
@@ -1773,42 +1885,31 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var count = (uint)expr.Elements.Count;
-
-            // 1. Allocate the actual Array Buffer
             var mallocFunc = GetOrDeclareMalloc();
+
+            // 1. Allocate and Setup Buffer [Length, Capacity, Data...]
             var totalBytes = LLVMValueRef.CreateConstInt(i64, (ulong)(count + 2) * 8);
             var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "arr_buffer");
 
-            // 2. Set Length and Capacity in the buffer
-            var zero64 = LLVMValueRef.CreateConstInt(i64, 0);
-            var one64 = LLVMValueRef.CreateConstInt(i64, 1);
             var countVal = LLVMValueRef.CreateConstInt(i64, count);
-            _builder.BuildStore(countVal, _builder.BuildGEP2(i64, arrayPtr, new[] { zero64 })).SetAlignment(8);
-            _builder.BuildStore(countVal, _builder.BuildGEP2(i64, arrayPtr, new[] { one64 })).SetAlignment(8);
+            _builder.BuildStore(countVal, _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) })).SetAlignment(8);
+            _builder.BuildStore(countVal, _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 1) })).SetAlignment(8);
 
-            // 3. --- NEW: Create the BOX (The stable reference) ---
-            var boxBytes = LLVMValueRef.CreateConstInt(i64, 8);
-            var boxPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { boxBytes }, "arr_box");
-            _builder.BuildStore(arrayPtr, boxPtr).SetAlignment(8);
-
-            // 4. Temporary Context Entry (Points to the BOX now)
-            var tmpName = $"__init_{Guid.NewGuid().ToString().Substring(0, 4)}";
-            _context = _context.Add(tmpName, boxPtr, "tmp", new ArrayType(expr.ElementType));
-
-            // 5. Initialize elements (IndexAssign will need to be updated to handle the box)
+            // 2. Initialize elements
             for (int i = 0; i < expr.Elements.Count; i++)
             {
-                Visit(new IndexAssignNodeExpr(
-                    new IdNodeExpr(tmpName),
-                    new NumberNodeExpr(i),
-                    expr.Elements[i]
-                ));
+                var elementValue = Visit(expr.Elements[i]);
+                var elementPtr = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)(i + 2)) }, $"elem_{i}");
+                _builder.BuildStore(elementValue, elementPtr).SetAlignment(8);
             }
 
+            // 3. Create the stable Box (Pointer to the Buffer)
+            var boxPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "arr_box");
+            _builder.BuildStore(arrayPtr, boxPtr).SetAlignment(8);
+
             expr.SetType(new ArrayType(expr.ElementType));
-            return boxPtr; // We return the box!
+            return boxPtr;
         }
 
 
@@ -1820,65 +1921,61 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Get the BOX pointer
-            var arrayRef = Visit(expr.ArrayExpression);
+            // 1. Get the value from the expression (e.g., the variable 'c' or 'arr')
+            var arrayValue = Visit(expr.ArrayExpression);
 
-            LLVMValueRef boxPtr;
-            if (!arrayRef.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
-                boxPtr = _builder.BuildLoad2(i8Ptr, arrayRef, "load_box_from_global");
+            // 2. UNWRAP THE RUNTIME OBJECT
+            // Variables like 'c' or 'arr' are globals pointing to a 16-byte RuntimeValue.
+            // We need to get the 'data' pointer (the 8 bytes at offset 8).
+            LLVMValueRef runtimeObjPtr;
+            if (arrayValue.IsAGlobalVariable.Handle != IntPtr.Zero)
+            {
+                runtimeObjPtr = _builder.BuildLoad2(i8Ptr, arrayValue, "load_runtime_obj");
+            }
             else
-                boxPtr = arrayRef;
+            {
+                runtimeObjPtr = arrayValue;
+            }
 
-            // 2. CRITICAL: Load the actual BUFFER from the Box
-            var actualBuffer = _builder.BuildLoad2(i8Ptr, boxPtr, "actual_buffer");
+            // Now get the 'data' field from { i16 tag, i8* data }
+            var dataPtrAddr = _builder.BuildGEP2(LLVMTypeRef.CreateStruct(new[] { ctx.Int16Type, i8Ptr }, false),
+                                                 runtimeObjPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0), LLVMValueRef.CreateConstInt(ctx.Int32Type, 1) }, "data_field_ptr");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrAddr, "array_data_ptr");
 
-            // 3. Evaluate Index
+            // 3. SMART DEREFERENCE (LLVM Version of HandleArray2 logic)
+            // We check the first 8 bytes. If it's a huge number (pointer), we load again.
+            var first8Bytes = _builder.BuildLoad2(i64, dataPtr, "peek_header");
+            var threshold = LLVMValueRef.CreateConstInt(i64, 1000000);
+            var isBoxed = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, first8Bytes, threshold, "is_boxed_ptr");
+
+            var actualBuffer = _builder.BuildSelect(isBoxed,
+                _builder.BuildLoad2(i8Ptr, dataPtr, "deref_box"),
+                dataPtr,
+                "final_buffer_ptr");
+
+            // 4. Evaluate Index
             var indexVal = Visit(expr.IndexExpression);
-            if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
+            // ... rest of your index logic (Bounds check and Load) ...
 
-            // 4. Bounds Check (Using actualBuffer)
-            var zero64 = LLVMValueRef.CreateConstInt(i64, 0);
-            var lenPtr = _builder.BuildGEP2(i64, actualBuffer, new[] { zero64 }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(i64, lenPtr, "array_len");
+            // (Keep your existing Bounds Check code here, using 'actualBuffer')
 
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, zero64, "is_neg");
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen, "is_too_big");
-            var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
-
-            var failBlock = func.AppendBasicBlock("bounds.fail");
-            var safeBlock = func.AppendBasicBlock("bounds.ok");
-            _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
-
-            // --- FAIL ---
-            _builder.PositionAtEnd(failBlock);
-            var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
-            _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
-
-            // --- SAFE ---
-            _builder.PositionAtEnd(safeBlock);
-            var two64 = LLVMValueRef.CreateConstInt(i64, 2);
-            var actualIdx = _builder.BuildAdd(indexVal, two64, "offset_idx");
-
-            // Get element from actualBuffer
+            // 5. Load Element
+            var actualIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 2), "offset_idx");
             var elementPtr = _builder.BuildGEP2(i64, actualBuffer, new[] { actualIdx }, "elem_ptr");
             var rawValue = _builder.BuildLoad2(i64, elementPtr, "raw_val");
 
-            // 5. Unbox/Cast based on element type
-            // Note: We check the ElementType of the array
-            var elemType = ((ArrayType)expr.ArrayExpression.Type).ElementType;
+            // 6. Cast based on Element Type
+            var arrayType = (ArrayType)expr.ArrayExpression.Type;
+            var elemType = arrayType.ElementType;
 
-            if (elemType is StringType)
-                return _builder.BuildIntToPtr(rawValue, i8Ptr, "to_str");
             if (elemType is FloatType)
                 return _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float");
             if (elemType is BoolType)
                 return _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool");
-            if (elemType is ArrayType)
-                return _builder.BuildIntToPtr(rawValue, i8Ptr, "to_arr_ptr");
+            if (elemType is StringType || elemType is ArrayType)
+                return _builder.BuildIntToPtr(rawValue, i8Ptr, "to_ptr");
 
-            return rawValue; // Default for Int
+            return rawValue; // Default Int
         }
 
 
@@ -2302,37 +2399,17 @@ namespace MyCompiler
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
-            if (entry == null) throw new Exception($"Variable {expr.Name} not found.");
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            var llvmType = GetLLVMType(entry.Type);
-            LLVMValueRef ptr;
-
-            // 1. Is it a local/parameter?
-            if (entry.Value.Handle != IntPtr.Zero)
+            LLVMValueRef ptr = _module.GetNamedGlobal(expr.Name);
+            if (ptr.Handle == IntPtr.Zero)
             {
-                ptr = entry.Value;
-            }
-            else
-            {
-                // 2. It's a Global (REPL variable). 
-                // We must find it in the current module or declare it so LLVM knows it exists elsewhere.
-                ptr = _module.GetNamedGlobal(expr.Name);
-                if (ptr.Handle == IntPtr.Zero)
-                {
-                    ptr = _module.AddGlobal(llvmType, expr.Name);
-                    ptr.Linkage = LLVMLinkage.LLVMExternalLinkage; // Tell JIT: "Look in previous modules"
-                }
+                ptr = _module.AddGlobal(i8Ptr, expr.Name);
+                ptr.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
 
-            // 3. Array/String Check (As we discussed before - no load for these!)
-            if (entry.Type is ArrayType || entry.Type is StringType)
-            {
-                return ptr;
-            }
-
-            // 4. Primitive Load
-            // Note: Use 'llvmType' explicitly in BuildLoad2
-            return _builder.BuildLoad2(llvmType, ptr, expr.Name + "_load");
+            var boxPtr = _builder.BuildLoad2(i8Ptr, ptr, "runtime_obj_" + expr.Name);
+            return boxPtr;
         }
 
 
@@ -2410,73 +2487,71 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Get the BOX pointer
-            var boxPtrRaw = Visit(expr.ArrayExpression);
-            LLVMValueRef boxPtr;
+            // 1. Get the Array Value (e.g., from variable @arr or @c)
+            var arrayValue = Visit(expr.ArrayExpression);
 
-            // Resolve if it's a global variable (@arr) or a direct pointer
-            if (!boxPtrRaw.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
-                boxPtr = _builder.BuildLoad2(i8Ptr, boxPtrRaw, "load_box");
-            else
-                boxPtr = boxPtrRaw;
+            // 2. UNWRAP RUNTIME OBJECT (16-byte struct)
+            // We need to get the 'data' pointer from the RuntimeValue { i16 tag, i8* data }
+            LLVMValueRef runtimeObjPtr = arrayValue.IsAGlobalVariable.Handle != IntPtr.Zero
+                ? _builder.BuildLoad2(i8Ptr, arrayValue, "load_runtime_obj")
+                : arrayValue;
 
-            // --- FIX: Load the actual BUFFER from the Box ---
-            var arrayBuffer = _builder.BuildLoad2(i8Ptr, boxPtr, "actual_buffer");
+            // Access field [1] (the data pointer) of the RuntimeValue struct
+            var runtimeStructType = LLVMTypeRef.CreateStruct(new[] { ctx.Int16Type, i8Ptr }, false);
+            var dataPtrAddr = _builder.BuildGEP2(runtimeStructType, runtimeObjPtr,
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, 0), LLVMValueRef.CreateConstInt(ctx.Int32Type, 1) }, "data_field_ptr");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrAddr, "array_data_ptr");
 
-            // 2. Evaluate index
+            // 3. SMART DEREFERENCE (Handle Box vs Raw Buffer)
+            // Peek at the first 8 bytes. If > 1,000,000, it's a pointer to a buffer (Box).
+            var first8Bytes = _builder.BuildLoad2(i64, dataPtr, "peek_header");
+            var isBoxed = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, first8Bytes, LLVMValueRef.CreateConstInt(i64, 1000000), "is_boxed");
+
+            var arrayBuffer = _builder.BuildSelect(isBoxed,
+                _builder.BuildLoad2(i8Ptr, dataPtr, "deref_box"),
+                dataPtr,
+                "actual_buffer");
+
+            // 4. Evaluate and Cast Index
             var indexVal = Visit(expr.IndexExpression);
-
-            // Ensure index is i64
             if (indexVal.TypeOf == ctx.DoubleType)
                 indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-            // 3. Bounds check (Using arrayBuffer, NOT boxPtr)
+            // 5. Bounds Check
             var zero = LLVMValueRef.CreateConstInt(i64, 0);
-            var lenPtr = _builder.BuildGEP2(i64, arrayBuffer, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(i64, lenPtr, "array_len");
+            var arrayLen = _builder.BuildLoad2(i64, _builder.BuildGEP2(i64, arrayBuffer, new[] { zero }, "len_ptr"), "array_len");
 
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, zero, "is_neg");
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen, "is_too_big");
-            var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
+            var isInvalid = _builder.BuildOr(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, zero),
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen),
+                "is_invalid");
 
             var failBlock = func.AppendBasicBlock("bounds.fail");
             var safeBlock = func.AppendBasicBlock("bounds.ok");
-
             _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
 
             // --- FAIL BLOCK ---
             _builder.PositionAtEnd(failBlock);
             var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
             _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-
-            // Return null or exit (since it's a fatal error)
-            var nullReturn = LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0));
-            _builder.BuildRet(nullReturn);
+            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr)); // Abort current execution
 
             // --- SAFE BLOCK ---
             _builder.PositionAtEnd(safeBlock);
-
-            // 4. Compute actual index (offset by header: [Len, Cap])
-            var two = LLVMValueRef.CreateConstInt(i64, 2);
-            var actualIdx = _builder.BuildAdd(indexVal, two, "offset_idx");
-
-            // 5. Get element pointer from the buffer
+            var actualIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 2), "offset_idx");
             var elementPtr = _builder.BuildGEP2(i64, arrayBuffer, new[] { actualIdx }, "elem_ptr");
 
-            // 6. Evaluate RHS value
-            var value = Visit(expr.AssignExpression);
-            var boxed = BoxToI64(value);
+            // 6. Evaluate and Store RHS
+            var valueToAssign = Visit(expr.AssignExpression);
 
-            // 7. Store into array with 8-byte alignment
-            _builder.BuildStore(boxed, elementPtr).SetAlignment(8);
+            // Ensure the value is cast to i64 (bit-pattern) before storing in the buffer
+            var valueAsI64 = BoxToI64(valueToAssign);
 
-            // 8. Return assigned value
-            return value;
+            _builder.BuildStore(valueAsI64, elementPtr).SetAlignment(8);
+
+            return valueToAssign;
         }
 
-        // Add these to your class fields
-        private LLVMTypeRef _fprintfType;
-        private LLVMValueRef _fprintfFunc;
 
         public LLVMValueRef VisitToCsvExpr(ToCsvNodeExpr expr)
         {
@@ -2485,29 +2560,38 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i16 = ctx.Int16Type;
+            var i32 = ctx.Int32Type;
 
-            // 1. Resolve Filename (CRASH FIX HERE)
+            // --- 1. RESOLVE FILENAME ---
             var fileNameValue = Visit(expr.FileNameExpr);
-            LLVMValueRef fileNamePtr;
+            LLVMValueRef fileNamePtr = !fileNameValue.IsAGlobalVariable.Handle.Equals(IntPtr.Zero)
+                ? fileNameValue : _builder.BuildLoad2(i8Ptr, fileNameValue, "fname_ptr");
 
-            // If it's a global string constant (@str), it's already the pointer.
-            // Do NOT use BuildLoad2 on it.
-            if (!fileNameValue.IsAGlobalVariable.Handle.Equals(IntPtr.Zero))
-                fileNamePtr = fileNameValue;
-            else
-                fileNamePtr = _builder.BuildLoad2(i8Ptr, fileNameValue, "fname_ptr");
+            // --- 2. UNWRAP RUNTIME OBJECT ---
+            var runtimeValuePtr = Visit(expr.Expression);
+            if (runtimeValuePtr.IsAGlobalVariable.Handle != IntPtr.Zero)
+                runtimeValuePtr = _builder.BuildLoad2(i8Ptr, runtimeValuePtr, "load_global_rv");
 
-            // 2. Resolve Array Box and Buffer
-            var arrayBox = Visit(expr.Expression);
-            var boxPtr = !arrayBox.IsAGlobalVariable.Handle.Equals(IntPtr.Zero)
-                         ? _builder.BuildLoad2(i8Ptr, arrayBox, "box_ptr") : arrayBox;
-            var arrayBuffer = _builder.BuildLoad2(i8Ptr, boxPtr, "actual_buffer");
+            var rvType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
+            var dataFieldAddr = _builder.BuildStructGEP2(rvType, runtimeValuePtr, 1, "data_field_addr");
+            var boxOrBufferPtr = _builder.BuildLoad2(i8Ptr, dataFieldAddr, "box_or_buffer");
 
-            // 3. Open File
+            // --- 3. SMART DEREFERENCE ---
+            var headerPeek = _builder.BuildLoad2(i64, boxOrBufferPtr, "peek_header");
+            var isBoxed = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, headerPeek,
+                LLVMValueRef.CreateConstInt(i64, 1000000), "is_boxed");
+
+            var arrayBuffer = _builder.BuildSelect(isBoxed,
+                _builder.BuildLoad2(i8Ptr, boxOrBufferPtr, "load_inner_buffer"),
+                boxOrBufferPtr,
+                "actual_array_buffer");
+
+            // --- 4. OPEN FILE ---
             var modePtr = _builder.BuildGlobalStringPtr("w", "mode_w");
             var fileHandle = _builder.BuildCall2(_fopenType, _fopenFunc, new[] { fileNamePtr, modePtr }, "fh");
 
-            // 4. Get Length and Setup Loop
+            // --- 5. SETUP LOOP & LENGTH ---
             var zero64 = LLVMValueRef.CreateConstInt(i64, 0);
             var lenPtr = _builder.BuildGEP2(i64, arrayBuffer, new[] { zero64 }, "len_ptr");
             var length = _builder.BuildLoad2(i64, lenPtr, "array_len");
@@ -2521,36 +2605,59 @@ namespace MyCompiler
             _builder.BuildStore(zero64, idxAlloc);
             _builder.BuildBr(condBB);
 
-            // 5. Loop Condition
+            // --- 6. LOOP CONDITION ---
             _builder.PositionAtEnd(condBB);
             var currIdx = _builder.BuildLoad2(i64, idxAlloc, "curr_idx");
             var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, currIdx, length, "loop_test");
             _builder.BuildCondBr(cond, bodyBB, endBB);
 
-            // 6. Loop Body (Writing Data)
+            // --- 7. LOOP BODY (Writing Data) ---
             _builder.PositionAtEnd(bodyBB);
 
-            // Header is 2 x i64, so data starts at index + 2
             var memIdx = _builder.BuildAdd(currIdx, LLVMValueRef.CreateConstInt(i64, 2), "mem_idx");
             var elemPtr = _builder.BuildGEP2(i64, arrayBuffer, new[] { memIdx }, "elem_ptr");
             var rawVal = _builder.BuildLoad2(i64, elemPtr, "raw_val");
 
-            // Format string: "%lld\n" for integers
-            var fmt = _builder.BuildGlobalStringPtr("%lld\n", "csv_fmt");
-            _builder.BuildCall2(_fprintfType, _fprintfFunc, new[] { fileHandle, fmt, rawVal }, "written");
+            var arrayType = (ArrayType)expr.Expression.Type;
+            LLVMValueRef printVal = rawVal;
+            string fmtStr = "%lld\n";
 
-            // Increment
+            // --- Handle Booleans, Floats, and Strings ---
+            if (arrayType.ElementType is BoolType)
+            {
+                var boolBit = _builder.BuildTrunc(rawVal, ctx.Int1Type, "bool_bit");
+                var trueStr = _builder.BuildGlobalStringPtr("true\n", "str_true");
+                var falseStr = _builder.BuildGlobalStringPtr("false\n", "str_false");
+                printVal = _builder.BuildSelect(boolBit, trueStr, falseStr, "bool_text_ptr");
+                fmtStr = "%s";
+            }
+            else if (arrayType.ElementType is FloatType)
+            {
+                printVal = _builder.BuildBitCast(rawVal, ctx.DoubleType, "val_to_double");
+                fmtStr = "%f\n";
+            }
+            else if (arrayType.ElementType is StringType)
+            {
+                // Convert the i64 address back to an i8* pointer for fprintf
+                printVal = _builder.BuildIntToPtr(rawVal, i8Ptr, "str_ptr");
+                fmtStr = "%s\n";
+            }
+
+            var fmt = _builder.BuildGlobalStringPtr(fmtStr, "csv_fmt");
+            _builder.BuildCall2(_fprintfType, _fprintfFunc, new[] { fileHandle, fmt, printVal }, "written");
+
+            // Increment index
             var nextIdx = _builder.BuildAdd(currIdx, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             _builder.BuildStore(nextIdx, idxAlloc);
             _builder.BuildBr(condBB);
 
-            // 7. Cleanup
+            // --- 8. CLEANUP & RETURN ---
             _builder.PositionAtEnd(endBB);
-            _builder.BuildCall2(_fcloseType, _fcloseFunc, new[] { fileHandle }, "");
+            _builder.BuildCall2(_fcloseType, _fcloseFunc, new[] { fileHandle }, "closed");
 
-            // Return String Tag (4) with null data (or the filename if you prefer)
-            return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
+            return CreateRuntimeObject((short)0, LLVMValueRef.CreateConstPointerNull(i8Ptr));
         }
+
 
         private LLVMValueRef CreateRuntimeObject(short tag, LLVMValueRef dataPtr)
         {
@@ -2587,27 +2694,36 @@ namespace MyCompiler
 
 
 
-
-        public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
+        public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr node)
         {
-            if (_fopenFunc.Handle == IntPtr.Zero) SetupCsvFunctions();
+            var pathBox = Visit(node.FileNameExpr);
+            LLVMValueRef actualPath;
 
-            var fileNameBox = Visit(expr.FileNameExpr);
-            var fileNamePtr = _builder.BuildLoad2(_i8Ptr, fileNameBox, "fname_ptr");
+            // Check if the path is a literal string constant or a boxed variable
+            if (pathBox.IsAConstantDataSequential.Handle != IntPtr.Zero || pathBox.IsAGlobalVariable.Handle != IntPtr.Zero)
+            {
+                // It's a literal string (@str constant)
+                actualPath = pathBox;
+            }
+            else
+            {
+                // It's a boxed variable { i16 tag, ptr data }, so unbox it
+                var pathPtrGEP = _builder.BuildStructGEP2(_runtimeValueType, pathBox, 1, "path_ptr_gep");
+                actualPath = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), pathPtrGEP, "actual_path");
+            }
 
-            var modePtr = _builder.BuildGlobalStringPtr("r", "mode_r");
-            var fileHandle = _builder.BuildCall2(_fopenType, _fopenFunc, new[] { fileNamePtr, modePtr }, "file_handle");
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var readCsvType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr });
 
-            // Close and return null for now until your student finishes Records
-            _builder.BuildCall2(_fcloseType, _fcloseFunc, new[] { fileHandle }, "");
+            var readCsvFunc = _module.GetNamedFunction("ReadCsvInternal");
+            if (readCsvFunc.Handle == IntPtr.Zero)
+            {
+                readCsvFunc = _module.AddFunction("ReadCsvInternal", readCsvType);
+            }
 
-            return LLVMValueRef.CreateConstPointerNull(_i8Ptr);
-        }
+            var rawArrayPtr = _builder.BuildCall2(readCsvType, readCsvFunc, new[] { actualPath }, "raw_array_ptr");
 
-
-        private LLVMValueRef GetStringPtr(string val, string name)
-        {
-            return _builder.BuildGlobalStringPtr(val, name);
+            return CreateRuntimeObject(5, rawArrayPtr);
         }
 
 

@@ -47,7 +47,7 @@ namespace MyCompiler
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
                 MapNodeExpr map => VisitMap(map),
-                ReadCsvNodeExpr read_csv => VisitReadCsv(read_csv),                
+                ReadCsvNodeExpr read_csv => VisitReadCsv(read_csv),
                 ToCsvNodeExpr to_csv => VisitToCsv(to_csv),
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
@@ -358,6 +358,7 @@ namespace MyCompiler
             return valType;
         }
 
+
         public Type VisitRandom(RandomNodeExpr expr)
         {
             // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
@@ -629,20 +630,21 @@ namespace MyCompiler
 
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
         {
-            Visit(expr.Expression);
             Visit(expr.FileNameExpr);
-
-            expr.SetType(new StringType());
-            return new StringType();
+            var type = new ArrayType(new IntType()); // It returns an array
+            expr.SetType(type);
+            return type;
         }
 
-           public Type VisitToCsv(ToCsvNodeExpr expr)
+        public Type VisitToCsv(ToCsvNodeExpr expr)
         {
             Visit(expr.Expression);
             Visit(expr.FileNameExpr);
 
-            expr.SetType(new StringType());
-            return new StringType();
+            // to_csv returns nothing (void/none)
+            var resultType = new VoidType();
+            expr.SetType(resultType);
+            return resultType;
         }
 
         public Type VisitAdd(AddNodeExpr expr)

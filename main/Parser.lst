@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 22-03-2026 19:11:18>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 25-03-2026 11:35:41>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 22-03-2026 19:45:32
+//  DateTime: 25-03-2026 14:16:16
 // ==========================================================================
 
 
@@ -202,8 +202,16 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
-    | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
-    | expr DOT TOCSV LPAREN expr RPAREN { $$ = new ToCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+
+    /* Global Function Style */
+    | READCSV LPAREN expr RPAREN 
+        { 
+            // $3 is the 'expr' (the filename string)
+            $$ = new ReadCsvNodeExpr($3 as ExpressionNodeExpr); 
+        }
+
+    | TOCSV LPAREN expr COMMA expr RPAREN 
+        { $$ = new ToCsvNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
     | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
     ;

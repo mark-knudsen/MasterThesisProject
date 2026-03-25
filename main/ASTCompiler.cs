@@ -418,17 +418,18 @@ namespace MyCompiler
 
     public class ReadCsvNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr Expression { get; set; }   // e.g., variable or object
-        public ExpressionNodeExpr FileNameExpr { get; set; } // expression producing string
+        public ExpressionNodeExpr FileNameExpr { get; set; }
 
-        public ReadCsvNodeExpr(ExpressionNodeExpr expr, ExpressionNodeExpr fileNameExpr)
+        // Change this to only take ONE parameter
+        public ReadCsvNodeExpr(ExpressionNodeExpr fileNameExpr)
         {
-            Expression = expr;
             FileNameExpr = fileNameExpr;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitReadCsvExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitReadCsvExpr(this);
     }
+
 
     public class ToCsvNodeExpr : ExpressionNodeExpr
     {
