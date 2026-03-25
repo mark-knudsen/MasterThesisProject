@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 24/03/2026 22:18:15
-//  GPLEX input file <Lexer/Scanner.lex - 24/03/2026 21:26:09>
+//  DateTime: 25/03/2026 17:35:27
+//  GPLEX input file <Lexer/Scanner.lex - 25/03/2026 12:31:18>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -164,7 +164,9 @@ namespace MyCompiler
     static Table[] NxS = new Table[166] {
 /* NxS[   0] */ new Table(0, 0, 0, null),
 /* NxS[   1] */ new Table(0, 0, -1, null),
-/* NxS[   2] */ new Table(0, 0, -1, null),
+/* NxS[   2] */ new Table(9, 24, -1, new short[] {2, 2, -1, -1, 2, -1, 
+          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
+          -1, 2}),
 /* NxS[   3] */ new Table(61, 1, -1, new short[] {162}),
 /* NxS[   4] */ new Table(34, 1, 165, new short[] {161}),
 /* NxS[   5] */ new Table(10, 1, 5, new short[] {-1}),

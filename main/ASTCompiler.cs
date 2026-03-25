@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LLVMSharp.Interop;
 using LLVMSharp;
+using System.Linq.Expressions;
 
 namespace MyCompiler
 {
@@ -339,25 +340,11 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArrayExpr(this);
     }
 
-    // public class CopyArrayNodeExpr : ExpressionNodeExpr
-    // {
-    //     public ExpressionNodeExpr SourceArray { get; }
-
-    //     public CopyArrayNodeExpr(ExpressionNodeExpr sourceArray)
-    //     {
-    //         SourceArray = sourceArray;
-    //     }
-
-    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
-    // }
-
     public class CopyArrayNodeExpr : CopyNodeExpr
     {
-        public CopyArrayNodeExpr(ExpressionNodeExpr expr) : base(expr)
-        {
-        }
+        public CopyArrayNodeExpr(ExpressionNodeExpr source) : base (source) {}
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
@@ -630,7 +617,7 @@ namespace MyCompiler
 
         public RecordFieldNodeExpr(ExpressionNodeExpr idRecord, string idField)
         {
-            Console.WriteLine("hi: " + idRecord);
+            Console.WriteLine("record constructor: " + idRecord);
             IdRecord = idRecord;
             IdField = idField;
             Type = new IntType();
@@ -658,21 +645,19 @@ namespace MyCompiler
 
     public class CopyRecordNodeExpr : CopyNodeExpr
     {
-        public CopyRecordNodeExpr(ExpressionNodeExpr expr) : base(expr)
-        {
-        }
+        public CopyRecordNodeExpr(ExpressionNodeExpr source) : base (source) {}
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyRecordExpr(this);
     }
 
     public class CopyNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr Expression { get; }
+        public ExpressionNodeExpr Source { get; }
 
-        public CopyNodeExpr(ExpressionNodeExpr expr)
+        public CopyNodeExpr(ExpressionNodeExpr source)
         {
-            Expression = expr;
-            Type = expr.Type; // copy keeps the type of the original
+            Source = source;
+            Type = source.Type; 
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }

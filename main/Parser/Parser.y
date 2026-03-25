@@ -101,6 +101,14 @@ Assignment
     }
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
+
+    | ID LBRACKET expr RBRACKET ASSIGN expr    
+    {
+        string idName = (string)$1;
+        var idExpr = new IdNodeExpr(idName);
+        
+        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
+    }
     
     | expr DOT ID ASSIGN expr
     {

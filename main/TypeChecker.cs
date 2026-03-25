@@ -42,7 +42,7 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
-                //CopyArrayNodeExpr clo => VisitCopyArray(clo),
+                CopyArrayNodeExpr clo => VisitCopyArray(clo),
                 IndexNodeExpr idx => VisitIndex(idx),
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
@@ -65,7 +65,8 @@ namespace MyCompiler
                 RecordNodeExpr rec => VisitRecord(rec),
                 RecordFieldNodeExpr recf => VisitRecordField(recf),
                 RecordFieldAssignNodeExpr reca => VisitRecordFieldAssign(reca),
-                CopyNodeExpr copr => VisitCopy(copr),
+                CopyRecordNodeExpr copr => VisitCopyRecord(copr),
+                CopyNodeExpr cop => VisitCopy(cop),
                 AddFieldNodeExpr radd => VisitAddField(radd),
                 RemoveFieldNodeExpr rrem => VisitRemoveField(rrem),
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
@@ -111,18 +112,18 @@ namespace MyCompiler
         public Type VisitNumber(NumberNodeExpr expr)
         {
             expr.SetType(new IntType());
-            return new IntType();
+            return expr.Type;
         }
         public Type VisitString(StringNodeExpr expr)
         {
             expr.SetType(new StringType());
-            return new StringType();
+            return expr.Type;
         }
 
         public Type VisitBoolean(BooleanNodeExpr expr)
         {
             expr.SetType(new BoolType());
-            return new BoolType();
+            return expr.Type;
         }
 
         public Type VisitId(IdNodeExpr expr)
@@ -156,7 +157,7 @@ namespace MyCompiler
                     Type resultType = (leftType is FloatType || rightType is FloatType)
                                         ? new FloatType() : new IntType();
                     expr.SetType(resultType);
-                    return resultType;
+                    return expr.Type;
                 }
                 // 2. Handle String Concatenation (Updated to allow Mixed Types)
                 if (expr.Operator == "+")
@@ -165,7 +166,7 @@ namespace MyCompiler
                     if (leftType is StringType || rightType is StringType)
                     {
                         expr.SetType(new StringType());
-                        return new StringType();
+                        return expr.Type;
                     }
                 }
 
@@ -180,7 +181,7 @@ namespace MyCompiler
                     Type resultType = (leftType is FloatType || rightType is FloatType)
                                         ? new FloatType() : new IntType();
                     expr.SetType(resultType);
-                    return resultType;
+                    return expr.Type;
                 }
 
                 throw new Exception($"Arithmetic operator {expr.Operator} requires numeric types, got {leftType} and {rightType}");
@@ -194,13 +195,13 @@ namespace MyCompiler
                 if (isLeftNum && isRightNum)
                 {
                     expr.SetType(new BoolType());
-                    return new BoolType();
+                    return expr.Type;
                 }
 
                 if (leftType == rightType)
                 {
                     expr.SetType(new BoolType());
-                    return new BoolType();
+                    return expr.Type;
                 }
             }
 
@@ -220,7 +221,7 @@ namespace MyCompiler
             if (expr.Operator is "&&" or "||")
             {
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
@@ -242,7 +243,7 @@ namespace MyCompiler
                         $"Logical operator {expr.Operator} requires bool operands, got {leftType} and {rightType}");
 
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             // === ORDERING (< > <= >=) ===
@@ -253,7 +254,7 @@ namespace MyCompiler
                         $"Operator {expr.Operator} requires numeric operands, got {leftType} and {rightType}");
 
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             // === EQUALITY (== !=) ===
@@ -263,7 +264,7 @@ namespace MyCompiler
                 if (isLeftNum && isRightNum)
                 {
                     expr.SetType(new BoolType());
-                    return new BoolType();
+                    return expr.Type;
                 }
 
                 if (leftType.GetType() != rightType.GetType())
@@ -271,7 +272,7 @@ namespace MyCompiler
                         $"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
 
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             throw new Exception($"Unknown operator {expr.Operator}");
@@ -295,7 +296,7 @@ namespace MyCompiler
                     throw new Exception("Ordering operators require number");
 
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             if (expr.Operator is "&&" or "||")
@@ -307,7 +308,7 @@ namespace MyCompiler
                     throw new Exception("Right operand must be bool");
 
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             // Equality comparisons
@@ -317,7 +318,7 @@ namespace MyCompiler
                     throw new Exception($"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
 
                 expr.SetType(new BoolType());
-                return new BoolType();
+                return expr.Type;
             }
 
             throw new Exception($"Unknown operator {expr.Operator}");
@@ -332,7 +333,7 @@ namespace MyCompiler
             var type = entry.Type;
 
             expr.SetType(type);
-            return type;
+            return expr.Type;
         }
 
         public Type VisitDecrement(DecrementNodeExpr expr)
@@ -344,7 +345,7 @@ namespace MyCompiler
             var type = entry.Type;
 
             expr.SetType(type);
-            return type;
+            return expr.Type;
         }
 
         public Type VisitAssign(AssignNodeExpr expr)
@@ -369,7 +370,7 @@ namespace MyCompiler
             // var valueTypeMax = Visit(expr.MaxValue);
 
             expr.SetType(new IntType());
-            return new IntType();
+            return expr.Type;
         }
 
         public Type VisitIf(IfNodeExpr expr)
@@ -419,7 +420,7 @@ namespace MyCompiler
 
             // 3. Set the type and return
             expr.SetType(finalType);
-            return finalType;
+            return expr.Type;
         }
 
         public Type VisitPrint(PrintNodeExpr expr)
@@ -467,49 +468,48 @@ namespace MyCompiler
 
             var arrayType = new ArrayType(elementType);
             expr.SetType(arrayType);
-            return arrayType;
+            return expr.Type;
         }
 
-        // public Type VisitCopyArray(CopyArrayNodeExpr expr)
-        // {
-        //     Type elementType = new IntType();
-        //     Visit(expr.SourceArray);
+        public Type VisitCopyArray(CopyArrayNodeExpr expr)
+        {
+            Type elementType = ((ArrayNodeExpr)expr.Source).ElementType;
+            Visit(expr.Source);
 
-        //     var arrayType = new ArrayType(elementType);
-        //     expr.SetType(arrayType);
-        //     return arrayType;
-        // }
+            var arrayType = new ArrayType(elementType);
+            expr.SetType(arrayType);
+            return expr.Type;
+        }
+
+        public Type VisitCopy(CopyNodeExpr expr)
+        {
+            Visit(expr.Source);
+            expr.SetType(expr.Source.Type);
+            return expr.Type;
+        }
 
         // Handle arr[0]
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNodeExpr expr)
         {
-            Visit(expr.ArrayExpression); // Ensure target is valid
+            Visit(expr.ArrayExpression);
             Visit(expr.IndexExpression);
 
             Type inferred = new IntType();
-            if (expr.ArrayExpression is IdNodeExpr idNode) // In the parser whe instantiate the index with an IdNode, the rest of the code should never be true
+            if (expr.ArrayExpression is IdNodeExpr idNode)
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
             }
-            // else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
-            // {
-            //     inferred = arrayLiteral.ElementType ?? new FloatType();
-            // }
-            // else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
-            // {
-            //     inferred = arrayExprType.ElementType;
-            // }
 
             expr.SetType(inferred);
-            return inferred;
+            return expr.Type;
         }
 
         public Type VisitIndexAssign(IndexAssignNodeExpr expr)
         {
-            Visit(expr.ArrayExpression); // Ensure target is valid
+            Visit(expr.ArrayExpression);
             Visit(expr.IndexExpression);
             Visit(expr.AssignExpression);
 
@@ -530,7 +530,7 @@ namespace MyCompiler
             }
 
             expr.SetType(inferred);
-            return inferred;
+            return expr.Type;
         }
 
         public Type VisitFunctionDef(FunctionDefNode node)
@@ -578,20 +578,20 @@ namespace MyCompiler
 
             // Use the actual return type of the function!
             expr.SetType(entry.Type);
-            return entry.Type;
+            return expr.Type;
         }
 
         public Type VisitRound(RoundNodeExpr expr)
         {
             Visit(expr.Value);
             expr.SetType(new FloatType());
-            return new FloatType();
+            return expr.Type;
         }
 
         public Type VisitFloat(FloatNodeExpr expr)
         {
             expr.SetType(new FloatType());
-            return new FloatType();
+            return expr.Type;
         }
 
         public Type VisitWhere(WhereNodeExpr expr)
@@ -612,7 +612,7 @@ namespace MyCompiler
 
             // 2. Determine element type (adjust depending on your language)
             expr.SetType(expr.ArrayExpr.Type);
-            return expr.ArrayExpr.Type;
+            return expr.Type;
         }
 
         public Type VisitMap(MapNodeExpr expr)
@@ -629,7 +629,7 @@ namespace MyCompiler
 
             // 2. Determine element type (adjust depending on your language)
             expr.SetType(expr.ArrayExpr.Type);
-            return expr.ArrayExpr.Type;
+            return expr.Type;
         }
 
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
@@ -638,7 +638,7 @@ namespace MyCompiler
             Visit(expr.FileNameExpr);
 
             expr.SetType(new StringType());
-            return new StringType();
+            return expr.Type;
         }
 
         public Type VisitAdd(AddNodeExpr expr)
@@ -646,7 +646,7 @@ namespace MyCompiler
             Visit(expr.ArrayExpression);
             Visit(expr.AddExpression);
             expr.SetType(expr.ArrayExpression.Type);
-            return expr.ArrayExpression.Type;
+            return expr.Type;
         }
 
         public Type VisitAddRange(AddRangeNodeExpr expr)
@@ -654,7 +654,7 @@ namespace MyCompiler
             Visit(expr.ArrayExpression);
             Visit(expr.AddRangeExpression);
             expr.SetType(expr.ArrayExpression.Type);
-            return expr.ArrayExpression.Type;
+            return expr.Type;
         }
 
         public Type VisitRemove(RemoveNodeExpr expr)
@@ -662,7 +662,7 @@ namespace MyCompiler
             Visit(expr.ArrayExpression);
             Visit(expr.RemoveExpression);
             expr.SetType(expr.ArrayExpression.Type);
-            return expr.ArrayExpression.Type;
+            return expr.Type;
         }
 
         public Type VisitRemoveRange(RemoveRangeNodeExpr expr)
@@ -670,36 +670,36 @@ namespace MyCompiler
             Visit(expr.ArrayExpression);
             Visit(expr.RemoveRangeExpression);
             expr.SetType(expr.ArrayExpression.Type);
-            return expr.ArrayExpression.Type;
+            return expr.Type;
         }
 
         public Type VisitLength(LengthNodeExpr expr)
         {
             expr.SetType(new IntType());
-            return new IntType();
+            return expr.Type;
         }
         public Type VisitMin(MinNodeExpr expr)
         {
             expr.SetType(new FloatType());
-            return new FloatType();
+            return expr.Type;
         }
 
         public Type VisitMax(MaxNodeExpr expr)
         {
             expr.SetType(new FloatType());
-            return new FloatType();
+            return expr.Type;
         }
 
         public Type VisitMean(MeanNodeExpr expr)
         {
             expr.SetType(new FloatType());
-            return new FloatType();
+            return expr.Type;
         }
 
         public Type VisitSum(SumNodeExpr expr)
         {
             expr.SetType(new FloatType());
-            return new FloatType();
+            return expr.Type;
         }
 
         public Type VisitUnaryOp(UnaryOpNodeExpr expr)
@@ -709,22 +709,13 @@ namespace MyCompiler
 
             // Check the type of the operand and apply the unary minus operation
             if (operandType is IntType)
-            {
-                // Unary minus on an integer, result is also an integer
-                expr.SetType(new IntType());
-                return new IntType();
-            }
+                expr.SetType(new IntType()); // Unary minus on an integer, result is also an integer
             else if (operandType is FloatType)
-            {
-                // Unary minus on a float, result is also a float
-                expr.SetType(new FloatType());
-                return new FloatType();
-            }
+                expr.SetType(new FloatType());  // Unary minus on a float, result is also a float
             else
-            {
-                // If it's neither an integer nor a float, raise a type error
                 throw new Exception("Unary minus operator can only be applied to integers or floats.");
-            }
+
+            return expr.Type;
         }
 
         public Type VisitRecord(RecordNodeExpr expr)
@@ -744,7 +735,7 @@ namespace MyCompiler
             }
 
             expr.SetType(new RecordType(expr.Fields));
-            return new RecordType(expr.Fields);
+            return expr.Type;
         }
 
         public Type VisitRecordField(RecordFieldNodeExpr expr)
@@ -770,7 +761,7 @@ namespace MyCompiler
 
             Console.WriteLine("rec field: " + recordFieldType);
             expr.SetType(recordFieldType);
-            return recordFieldType;
+            return expr.Type;
         }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr)
@@ -778,20 +769,14 @@ namespace MyCompiler
             Visit(expr.AssignExpression);
             Visit(expr.IdRecord);
 
-            expr.SetType(new VoidType()); // it is a statement, we don't need to return anything
+            expr.SetType(new VoidType());
             return expr.Type;
         }
 
-        // public Type VisitCopyRecord(CopyRecordNodeExpr expr)
-        // {
-        //     Visit(expr.Record);
-        //     expr.SetType(expr.Record.Type);
-        //     return expr.Type;
-        // }
-        public Type VisitCopy(CopyNodeExpr expr)
+        public Type VisitCopyRecord(CopyRecordNodeExpr expr)
         {
-            Visit(expr.Expression);
-            expr.SetType(expr.Expression.Type);
+            Visit(expr.Source);
+            expr.SetType(expr.Source.Type);
             return expr.Type;
         }
 

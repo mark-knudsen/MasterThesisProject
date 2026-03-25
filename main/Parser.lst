@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 24/03/2026 21:55:09>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 25/03/2026 14:16:06>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 24/03/2026 22:18:15
+//  DateTime: 25/03/2026 17:35:27
 // ==========================================================================
 
 
@@ -112,6 +112,14 @@ Assignment
     }
     | ID INC              { $$ = new IncrementNodeExpr((string)$1); }
     | ID DECR             { $$ = new DecrementNodeExpr((string)$1); }
+
+    | ID LBRACKET expr RBRACKET ASSIGN expr    
+    {
+        string idName = (string)$1;
+        var idExpr = new IdNodeExpr(idName);
+        
+        $$ = new IndexAssignNodeExpr(idExpr, $3 as ExpressionNodeExpr, $6 as ExpressionNodeExpr);    
+    }
     
     | expr DOT ID ASSIGN expr
     {
