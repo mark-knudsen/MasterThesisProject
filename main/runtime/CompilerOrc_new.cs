@@ -233,13 +233,13 @@ namespace MyCompiler
         {
             _debug = debug;
             // 1. Semantic analysis
-            var prediction = PerformSemanticAnalysis(expr); 
+            var prediction = PerformSemanticAnalysis(expr);
 
             CreateMain();
             DeclarePrintf();
 
             Console.WriteLine("we code gen");
-            LLVMValueRef resultValue = Visit(expr); 
+            LLVMValueRef resultValue = Visit(expr);
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
@@ -312,10 +312,8 @@ namespace MyCompiler
 
         // array functionality to fix
 
-        // assign index
-        // add
-        // remove
-        // copy
+        // assign index(test it with all the different types)
+        // map
 
         // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
@@ -1580,7 +1578,7 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
 
-        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)  
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr)
         {
             // 1 Allocate local variables for source and result
             var srcVarName = "__where_src";
@@ -1696,8 +1694,10 @@ namespace MyCompiler
             var value = Visit(expr.Source); // LLVM value
             var type = expr.Source.Type;    // language type
 
+            var elementType = ((ArrayType)expr.Source.Type).ElementType;
+
             if (type is ArrayType)
-                return CopyArray(value);
+                return CopyArray(value, elementType);
 
             if (type is RecordType t)
                 return CopyRecord(value, t);
@@ -1715,57 +1715,66 @@ namespace MyCompiler
             return VisitCopyExpr(expr);
         }
 
-        private LLVMValueRef CopyArray(LLVMValueRef arrayPtr)
+        private LLVMValueRef CopyArray(LLVMValueRef srcHeaderPtr, Type elementType)
         {
-            var srcArray = arrayPtr; // Evaluate the array
-            var lengthPtr = _builder.BuildGEP2(_module.Context.Int64Type, srcArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0) }, "len_ptr");
-            var length = _builder.BuildLoad2(_module.Context.Int64Type, lengthPtr, "length");
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            // Allocate new array with length + 2 slots
-            var elementSize = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 8);
-            var totalSlots = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 2));
-            var totalBytes = _builder.BuildMul(totalSlots, elementSize);
+            // Define the Header Layout: { i64 len, i64 cap, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
             var mallocFunc = GetOrDeclareMalloc();
-            var newArray = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "arr_ptr");
 
-            // Store length and capacity
-            var lenPtrNew = _builder.BuildGEP2(_module.Context.Int64Type, newArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0) }, "len_ptr");
-            var capPtrNew = _builder.BuildGEP2(_module.Context.Int64Type, newArray, new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1) }, "cap_ptr");
-            _builder.BuildStore(length, lenPtrNew).SetAlignment(8);
-            _builder.BuildStore(length, capPtrNew).SetAlignment(8);
+            // 1. Load Length and Data Pointer from Source Header
+            var srcLenPtr = _builder.BuildStructGEP2(arrayStructType, srcHeaderPtr, 0, "src_len_ptr");
+            var srcDataPtrField = _builder.BuildStructGEP2(arrayStructType, srcHeaderPtr, 2, "src_data_ptr_field");
 
-            // Loop to copy elements
-            var index = _builder.BuildAlloca(_module.Context.Int64Type, "i");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0), index);
+            var length = _builder.BuildLoad2(i64, srcLenPtr, "length");
+            var srcDataPtr = _builder.BuildLoad2(i8Ptr, srcDataPtrField, "src_data_ptr");
 
-            var func = _builder.InsertBlock.Parent;
-            var loopCond = func.AppendBasicBlock("loop.cond");
-            var loopBody = func.AppendBasicBlock("loop.body");
-            var loopEnd = func.AppendBasicBlock("loop.end");
+            // 2. Allocate NEW Header (24 bytes)
+            var newHeaderPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "new_header");
 
-            _builder.BuildBr(loopCond);
-            _builder.PositionAtEnd(loopCond);
+            // 3. Determine Stride (1 for bool, 8 for others)
+            bool isBool = elementType is BoolType;
+            var stride = isBool ? 1 : 8;
 
-            var iVal = _builder.BuildLoad2(_module.Context.Int64Type, index, "i_val");
-            var cmp = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, iVal, length, "cmp");
-            _builder.BuildCondBr(cmp, loopBody, loopEnd);
+            // 4. Allocate NEW Data Buffer
+            // We allocate exactly what is needed for the current length (or use length for capacity)
+            var byteCount = _builder.BuildMul(length, LLVMValueRef.CreateConstInt(i64, (ulong)stride), "byte_count");
 
-            _builder.PositionAtEnd(loopBody);
+            // Ensure we allocate at least something if length is 0
+            var isZero = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, length, LLVMValueRef.CreateConstInt(i64, 0));
+            var allocSize = _builder.BuildSelect(isZero, LLVMValueRef.CreateConstInt(i64, (ulong)(4 * stride)), byteCount);
 
-            // Copy element (assume ptr/boxed value)
-            var offset = _builder.BuildAdd(iVal, LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 2));
-            var srcElemPtr = _builder.BuildGEP2(_module.Context.Int64Type, srcArray, new[] { offset }, "src_elem");
-            var val = _builder.BuildLoad2(_module.Context.Int64Type, srcElemPtr, "val");
+            var newDataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { allocSize }, "new_data");
 
-            var dstElemPtr = _builder.BuildGEP2(_module.Context.Int64Type, newArray, new[] { offset }, "dst_elem");
-            _builder.BuildStore(val, dstElemPtr);
+            // 5. Initialize New Header Fields
+            var dstLenPtr = _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 0);
+            var dstCapPtr = _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 1);
+            var dstDataPtrField = _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 2);
 
-            var iNext = _builder.BuildAdd(iVal, LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 1));
-            _builder.BuildStore(iNext, index);
-            _builder.BuildBr(loopCond);
+            _builder.BuildStore(length, dstLenPtr);
+            _builder.BuildStore(length, dstCapPtr); // Capacity matches length on copy
+            _builder.BuildStore(newDataPtr, dstDataPtrField);
 
-            _builder.PositionAtEnd(loopEnd);
-            return newArray;
+            // 6. Bulk Copy Data using Memmove/Memcpy (Faster than a loop)
+            // memcpy(dest, src, length * stride)
+            var memcpyFunc = GetOrDeclareMemmove(); // You can use memmove for safety
+
+            // Only copy if length > 0
+            var hasElements = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, length, LLVMValueRef.CreateConstInt(i64, 0));
+            var copyBlock = ctx.AppendBasicBlock(_builder.InsertBlock.Parent, "copy.do");
+            var endBlock = ctx.AppendBasicBlock(_builder.InsertBlock.Parent, "copy.end");
+            _builder.BuildCondBr(hasElements, copyBlock, endBlock);
+
+            _builder.PositionAtEnd(copyBlock);
+            _builder.BuildCall2(_memmoveType, memcpyFunc, new[] { newDataPtr, srcDataPtr, byteCount }, "");
+            _builder.BuildBr(endBlock);
+
+            _builder.PositionAtEnd(endBlock);
+            return newHeaderPtr;
         }
 
         public LLVMValueRef VisitMapExprMutating(MapNodeExpr expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
@@ -1928,102 +1937,103 @@ namespace MyCompiler
             return headerRaw;
         }
 
-        public LLVMValueRef VisitArrayExpr_Mine(ArrayNodeExpr expr)
-        {
-            var ctx = _module.Context;
-            uint count = (uint)expr.Elements.Count;
-
-            var mallocFunc = GetOrDeclareMalloc();
-
-            // Allocate array slots: length + capacity + elements
-            var slots = count + 2;
-            var totalBytes = LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)slots * 8);
-            var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "arr_ptr");
-
-            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
-
-            // Store length
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero64 }, "len_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, count), lenPtr).SetAlignment(8);
-
-            // Store capacity
-            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 1) }, "cap_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, count), capPtr).SetAlignment(8);
-
-            // Store elements starting at index 2 as pointers
-            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // i8*
-            for (int i = 0; i < expr.Elements.Count; i++)
-            {
-                var val = Visit(expr.Elements[i]);
-                var idx = LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)(i + 2));
-                var elemPtr = _builder.BuildGEP2(ptrType, arrayPtr, new[] { idx }, $"elem_{i}");
-                _builder.BuildStore(val, elemPtr).SetAlignment(8);
-            }
-
-            expr.SetType(new ArrayType(expr.ElementType));
-
-            if (_debug) Console.WriteLine("array pointer: " + arrayPtr);
-            return arrayPtr;
-        }
-
         public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Visit the Array and the Index expressions
-            var arrayPtr = Visit(expr.ArrayExpression);
+            // 1. Visit Array (Header Pointer) and Index
+            var headerPtr = Visit(expr.ArrayExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            // 2. Ensure Index is i64 (convert from Double if necessary)
             if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, ctx.Int64Type, "idx_int");
+                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-            // 3. --- BOUNDS CHECK LOGIC ---
-            // Load the Length from the Header (Index 0)
-            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+            // Define the Struct Layout: { i64 len, i64 cap, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
 
-            // Check: (index < 0) OR (index >= arrayLen)
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), "is_neg");
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen, "is_too_big");
+            // 2. Load Metadata from Header
+            var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_field_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_field_ptr");
+
+            var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+            // 3. --- BOUNDS CHECK ---
+            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
+            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
             var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
 
-            var failBlock = func.AppendBasicBlock("bounds.fail");
-            var safeBlock = func.AppendBasicBlock("bounds.ok");
+            var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
+            var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
             _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
 
-            // --- FAIL BLOCK: Handle Error ---
+            // --- FAIL BLOCK ---
             _builder.PositionAtEnd(failBlock);
             var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
             _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
 
-            // Return a null runtime object to stop execution gracefully
-            var nullReturn = LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0));
-            _builder.BuildRet(nullReturn);
-
-            // --- SAFE BLOCK: Proceed with access ---
+            // --- SAFE BLOCK ---
             _builder.PositionAtEnd(safeBlock);
 
-            // 4. Adjust for Header: Actual index in memory is indexVal + 1
-            var one = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var actualIdx = _builder.BuildAdd(indexVal, one, "offset_idx");
+            // 4. STRIDE-AWARE ACCESS
+            // Check if the actual language type is boolean
+            bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
 
-            // 5. GEP2 and Load the data
-            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { actualIdx }, "elem_ptr");
-            var rawValue = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "raw_val");
-            rawValue.SetAlignment(8);
+            // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
+            var gepType = isBool ? i8 : i8Ptr;
 
-            // 6. Transform based on Type Inference
+            // We index into dataPtr starting at 0 (no +2 offset anymore!)
+            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
+            var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
+
+            // 5. Transform based on Type
+            // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
             return expr.Type switch
             {
-                StringType => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
-                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
-                IntType => rawValue,
-                BoolType => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, rawValue, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), "to_bool"),
+                StringType => _builder.BuildBitCast(rawValue, i8Ptr),
+                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
+                IntType => _builder.BuildPtrToInt(rawValue, i64),
+                BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
                 _ => rawValue
             };
+        }
+
+        public LLVMValueRef VisitIndexExpr2_workscompletely_fine(IndexNodeExpr expr)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+            // 1. Get the Header
+            var headerPtr = Visit(expr.ArrayExpression);
+            var index = Visit(expr.IndexExpression);
+
+            // 2. Identify Type (from Semantic Analysis)
+            var arrayType = (ArrayType)expr.ArrayExpression.Type;
+            bool isBool = arrayType.ElementType is BoolType;
+            var gepType = isBool ? i8 : i8Ptr;
+
+            // 3. Load the Data Pointer from the Header (Offset 2)
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_ptr_ptr");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+            // 4. Calculate element address and Load
+            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { index }, "elem_ptr");
+            var loadedVal = _builder.BuildLoad2(gepType, elementPtr, "val");
+
+            // 5. If it's a bool, it's stored as i8, but LLVM needs i1 for comparisons
+            if (isBool)
+                return _builder.BuildTrunc(loadedVal, ctx.Int1Type, "bool_val");
+
+            // If it's a pointer (String) or i64, it might need a BitCast back to its original type
+            return loadedVal;
         }
 
         private LLVMTypeRef GetOrCreateStructType(RecordType recordType)
@@ -2054,8 +2064,8 @@ namespace MyCompiler
                 IntType => ctx.Int64Type,
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
-                                                                          //RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Record  are pointers
-                                                                          // RecordType recType => GetOrCreateStructType(recType),
+                // RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Record  are pointers
+                // RecordType recType => GetOrCreateStructType(recType),
                 RecordType recType => LLVMTypeRef.CreatePointer(GetOrCreateStructType(recType), 0),
                 BoolType => ctx.Int1Type,
                 _ => throw new Exception($"Unsupported type: {type}") // it doesn't have a type? how?
@@ -2088,6 +2098,12 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAddExpr(AddNodeExpr expr)
         {
+            // check if the array and the node are of the same type
+            var arrayElementType = ((ArrayType)expr.ArrayExpression.Type).ElementType;
+
+            if (arrayElementType.GetType() != expr.AddExpression.Type.GetType())
+                throw new Exception($"Can't add {expr.AddExpression.Type} value to a {arrayElementType} array");
+
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
@@ -2107,7 +2123,7 @@ namespace MyCompiler
                 valueToStore = _builder.BuildZExt(valueToAdd, i8, "bool_to_i8");
             else
                 valueToStore = _builder.BuildBitCast(valueToAdd, i8Ptr, "val_to_ptr");
-            
+
             // 3. Load Header Metadata
             var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_ptr");
             var capFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 1, "cap_ptr");
@@ -2259,122 +2275,7 @@ namespace MyCompiler
             return _builder.BuildBitCast(arrayObj, i8Ptr, "ret_cast");
         }
 
-        public LLVMValueRef VisitAddExpr_worse(AddNodeExpr expr)
-        {
-            Console.WriteLine("calling add for array");
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // ArrayObject struct: { length, capacity, data_ptr }
-            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, ptrType }, false);
-
-            // Get the array object
-            var arrayObj = Visit(expr.ArrayExpression);
-            var arrayObjTyped = _builder.BuildBitCast(arrayObj, LLVMTypeRef.CreatePointer(arrayStructType, 0), "array_cast");
-
-            // Visit value to add (raw, not boxed)
-            var value = Visit(expr.AddExpression);
-            var elementType = ((ArrayType)((ArrayNodeExpr)expr.ArrayExpression).Type).ElementType; // here it fails
-
-            LLVMValueRef rawValue;
-            if (elementType is IntType)
-                rawValue = value;
-            else if (elementType is FloatType)
-                rawValue = _builder.BuildBitCast(value, LLVMTypeRef.CreatePointer(ctx.DoubleType, 0), "float_val");
-            else if (elementType is BoolType)
-                rawValue = value;
-            else if (elementType is StringType)
-                rawValue = _builder.BuildBitCast(value, ptrType, "string_val");
-            else
-                throw new Exception("Unsupported array element type in VisitAddExpr");
-
-            var zero = LLVMValueRef.CreateConstInt(i64, 0);
-            var one = LLVMValueRef.CreateConstInt(i64, 1);
-            var two = LLVMValueRef.CreateConstInt(i64, 2);
-            var eight = LLVMValueRef.CreateConstInt(i64, 8);
-
-            // --- Load fields ---
-            var lenPtr = _builder.BuildStructGEP2(arrayStructType, arrayObjTyped, 0, "len_ptr");
-            var length = _builder.BuildLoad2(i64, lenPtr, "length");
-
-            var capPtr = _builder.BuildStructGEP2(arrayStructType, arrayObjTyped, 1, "cap_ptr");
-            var capacity = _builder.BuildLoad2(i64, capPtr, "capacity");
-
-            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, arrayObjTyped, 2, "data_ptr_ptr");
-            var dataPtr = _builder.BuildLoad2(ptrType, dataPtrPtr, "data_ptr");
-
-            // --- Check if grow needed ---
-            var isFull = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, length, capacity, "is_full");
-            var function = _builder.InsertBlock.Parent;
-            var growBlock = ctx.AppendBasicBlock(function, "grow");
-            var contBlock = ctx.AppendBasicBlock(function, "cont");
-            _builder.BuildCondBr(isFull, growBlock, contBlock);
-
-            // --- Grow array ---
-            _builder.PositionAtEnd(growBlock);
-            var newCap = _builder.BuildMul(capacity, two, "new_cap");
-            var minCap = LLVMValueRef.CreateConstInt(i64, 4);
-            newCap = _builder.BuildSelect(
-                _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, zero),
-                minCap,
-                newCap,
-                "new_cap"
-            );
-
-            var elementSize = (elementType is StringType) ? 8 : 8; // 8 bytes for now; could vary per type if needed
-            var newBytes = _builder.BuildMul(newCap, LLVMValueRef.CreateConstInt(i64, (ulong)elementSize), "new_bytes");
-
-            var mallocFunc = GetOrDeclareMalloc();
-            var newDataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { newBytes }, "new_data");
-
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var boolType = ctx.Int1Type;
-            var voidType = ctx.VoidType;
-
-            // LLVM function type for memcpy: void(i8*, i8*, i64, i1)
-            var memcpyType = LLVMTypeRef.CreateFunction(voidType, new[] { i8Ptr, i8Ptr, i64, boolType }, false);
-
-            // get or declare memcpy function
-            var memcpyFunc = GetOrDeclareMemcpy();
-
-            // number of bytes to copy
-            var copyBytes = _builder.BuildMul(length, LLVMValueRef.CreateConstInt(i64, (ulong)elementSize), "copy_bytes");
-
-            // isVolatile = false
-            var isVolatile = LLVMValueRef.CreateConstInt(boolType, 0);
-
-            // call memcpy
-            _builder.BuildCall2(memcpyType, memcpyFunc, new[] { newDataPtr, dataPtr, copyBytes, isVolatile }, "memcpy_call");
-
-
-            // Update struct data_ptr
-            _builder.BuildStore(newDataPtr, dataPtrPtr);
-
-            _builder.BuildBr(contBlock);
-
-            // --- Continue ---
-            _builder.PositionAtEnd(contBlock);
-            var finalDataPtr = _builder.BuildLoad2(ptrType, dataPtrPtr, "final_data");
-
-            // Compute element pointer
-            var elemPtr = _builder.BuildGEP2(ptrType, finalDataPtr, new[] { length }, "elem_ptr");
-
-            // Store value
-            if (elementType is IntType || elementType is BoolType)
-                _builder.BuildStore(rawValue, elemPtr);
-            else
-                _builder.BuildStore(_builder.BuildBitCast(rawValue, ptrType, "casted_elem"), elemPtr);
-
-            // Increment length
-            var newLength = _builder.BuildAdd(length, one, "new_len");
-            _builder.BuildStore(newLength, lenPtr);
-
-            return arrayObj; // the array object never changes
-        }
-
         private LLVMValueRef _memcpyFunc;
-
 
         private LLVMValueRef GetOrDeclareMemcpy()
         {
@@ -2401,97 +2302,6 @@ namespace MyCompiler
             }
 
             return _memcpyFunc;
-        }
-
-        public LLVMValueRef VisitAddExpr2(AddNodeExpr expr)
-        {
-            var ctx = _module.Context;
-
-            // Visit array and value
-            var arrayPtr = Visit(expr.ArrayExpression); // i64* array
-            var arrayName = ((IdNodeExpr)expr.ArrayExpression).Name;
-            var value = Visit(expr.AddExpression);
-            var boxed = BoxToI64(value);
-
-            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
-            var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
-            var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var eight64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 8);
-
-            // Save entry block
-            var entryBlock = _builder.InsertBlock;
-
-            // Load length and capacity
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero64 }, "len_ptr");
-            var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "length");
-            length.SetAlignment(8);
-
-            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { one64 }, "cap_ptr");
-            var capacity = _builder.BuildLoad2(ctx.Int64Type, capPtr, "capacity");
-            capacity.SetAlignment(8);
-
-            // Check if grow needed
-            var isFull = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, length, capacity, "is_full");
-
-            var function = _builder.InsertBlock.Parent;
-            var growBlock = ctx.AppendBasicBlock(function, "grow");
-            var contBlock = ctx.AppendBasicBlock(function, "cont");
-            _builder.BuildCondBr(isFull, growBlock, contBlock);
-
-            // ---- grow ----
-            _builder.PositionAtEnd(growBlock);
-            var newCap = _builder.BuildMul(capacity, two64, "new_capacity");
-            var minCap = LLVMValueRef.CreateConstInt(ctx.Int64Type, 4);
-            newCap = _builder.BuildSelect(
-                _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, zero64),
-                minCap,
-                newCap,
-                "new_capacity"
-            );
-            var totalSlots = _builder.BuildAdd(newCap, two64, "slots"); // header
-            var totalBytes = _builder.BuildMul(totalSlots, eight64, "total_bytes");
-
-            var reallocFunc = GetOrDeclareRealloc();
-            var newArrayPtr = _builder.BuildCall2(_reallocType, reallocFunc, new[] { arrayPtr, totalBytes }, "realloc_array");
-
-            // store new capacity
-            var capPtr2 = _builder.BuildGEP2(ctx.Int64Type, newArrayPtr, new[] { one64 }, "cap_ptr2");
-            _builder.BuildStore(newCap, capPtr2).SetAlignment(8);
-
-            _builder.BuildBr(contBlock);
-
-            // ---- continue ----
-            _builder.PositionAtEnd(contBlock);
-
-            // PHI node for array pointer
-            var arrayPtrType = LLVMTypeRef.CreatePointer(ctx.Int64Type, 0);
-            var arrayPtrPhi = _builder.BuildPhi(arrayPtrType, "array_ptr_phi");
-            arrayPtrPhi.AddIncoming(
-                new[] { arrayPtr, newArrayPtr },   // values
-                new[] { entryBlock, growBlock },   // blocks
-                2
-            );
-
-            // store new element
-            var elemIndex = _builder.BuildAdd(length, two64, "elem_index"); // offset 2
-            var elemPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtrPhi, new[] { elemIndex }, "elem_ptr");
-            _builder.BuildStore(boxed, elemPtr).SetAlignment(8);
-
-            // increment length
-            var newLength = _builder.BuildAdd(length, one64, "new_length");
-            //_builder.BuildStore(newLength, lenPtr).SetAlignment(8);
-
-            var lenPtr2 = _builder.BuildGEP2(ctx.Int64Type, arrayPtrPhi, new[] { zero64 }, "len_ptr2");
-            _builder.BuildStore(newLength, lenPtr2).SetAlignment(8);
-
-            var global = _module.GetNamedGlobal(arrayName);
-
-            if (global.Handle == IntPtr.Zero)
-                throw new Exception($"code gen - Undefined variable {arrayName}");
-
-            _builder.BuildStore(arrayPtrPhi, global);
-
-            return arrayPtrPhi;
         }
 
         public LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr)
@@ -2531,10 +2341,8 @@ namespace MyCompiler
             // If not, we tell GEP the elements are 8-bytes (i8Ptr).
             var gepStrideType = isBool ? i8 : i8Ptr;
             var strideMultiplier = isBool ? 1 : 8;
-
             var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_ptr");
             var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_ptr_ptr");
-
             var length = _builder.BuildLoad2(i64, lenFieldPtr, "len");
             var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
 
@@ -2970,67 +2778,72 @@ namespace MyCompiler
         public LLVMValueRef VisitIndexAssignExpr(IndexAssignNodeExpr expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Get array and index
-            var arrayPtr = Visit(expr.ArrayExpression);
+            // 1. Get Header and Index
+            var headerPtr = Visit(expr.ArrayExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            // Ensure index is i64
             if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, ctx.Int64Type, "idx_int");
+                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-            // 2. Bounds check (same as your IndexExpr)
-            var zero = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+            // Define Struct Layout: { i64 len, i64 cap, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
 
-            var isNegative = _builder.BuildICmp(
-                LLVMIntPredicate.LLVMIntSLT,
-                indexVal,
-                LLVMValueRef.CreateConstInt(ctx.Int64Type, 0),
-                "is_neg");
+            // 2. Load Metadata for Bounds Check and Access
+            var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_ptr_ptr");
 
-            var isTooBig = _builder.BuildICmp(
-                LLVMIntPredicate.LLVMIntSGE,
-                indexVal,
-                arrayLen,
-                "is_too_big");
+            var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
 
+            // 3. --- BOUNDS CHECK ---
+            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
+            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
             var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
 
-            var failBlock = func.AppendBasicBlock("bounds.fail");
-            var safeBlock = func.AppendBasicBlock("bounds.ok");
-
+            var failBlock = ctx.AppendBasicBlock(func, "assign_bounds.fail");
+            var safeBlock = ctx.AppendBasicBlock(func, "assign_bounds.ok");
             _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
 
-            // FAIL
+            // --- FAIL ---
             _builder.PositionAtEnd(failBlock);
             var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
             _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
 
-            var nullReturn = LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0));
-            _builder.BuildRet(nullReturn);
-
-            // SAFE
+            // --- SAFE ---
             _builder.PositionAtEnd(safeBlock);
 
-            // 3. Compute actual index (offset by header)
-            var two = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var actualIdx = _builder.BuildAdd(indexVal, two, "offset_idx");
+            // 4. Stride-Aware Value Preparation
+            var valueToAssign = Visit(expr.AssignExpression);
 
-            // 4. Get element pointer
-            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { actualIdx }, "elem_ptr");
+            // Check if it's a bool array to determine stride and storage type
+            bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
+            var gepType = isBool ? i8 : i8Ptr;
 
-            // 5. Evaluate RHS value
-            var value = Visit(expr.AssignExpression);
-            var boxed = BoxToI64(value);
+            LLVMValueRef finalValueToStore;
+            if (isBool)
+            {
+                // Convert i1 to i8 (1 byte)
+                finalValueToStore = _builder.BuildZExt(valueToAssign, i8, "bool_to_i8");
+            }
+            else
+            {
+                // Bitcast/Box other types to i8Ptr (8 bytes)
+                finalValueToStore = _builder.BuildBitCast(valueToAssign, i8Ptr, "val_to_ptr");
+            }
 
-            // 6. Store into array
-            _builder.BuildStore(boxed, elementPtr).SetAlignment(8);
+            // 5. GEP into the separate Data Buffer (No +2 offset)
+            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
 
-            // 7. Return assigned value (common convention)
-            return value;
+            // 6. Store
+            _builder.BuildStore(finalValueToStore, elementPtr);
+
+            return valueToAssign;
         }
 
         public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
