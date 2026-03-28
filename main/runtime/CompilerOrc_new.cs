@@ -189,8 +189,8 @@ namespace MyCompiler
 
         // TODO: fix the problems
 
-        // BROKEN FUNCTIONALITY        
-        // assigning a vairable to another variable that is an array is broke  x=[7,8,9]; z=x; x.add(0); z;    z is now some broken data, we have seen this before               
+        // BROKEN FUNCTIONALITY  
+        // can't type multiple lines, not even x=2; x                   
         // doing this in the same command fails: x.add(1); x.length 
 
         // UNIT TESTING
@@ -238,7 +238,7 @@ namespace MyCompiler
             CreateMain();
             DeclarePrintf();
 
-            Console.WriteLine("we code gen");
+            if (_debug) Console.WriteLine("we code gen");
             LLVMValueRef resultValue = Visit(expr);
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
@@ -289,7 +289,7 @@ namespace MyCompiler
                     return b != 0;
 
                 case ValueTag.Array:
-                    Console.WriteLine("return array");
+                    if (_debug) Console.WriteLine("return array");
                     return HandleArray(result.data, prediction);
 
                 case ValueTag.Record:
@@ -310,14 +310,8 @@ namespace MyCompiler
             return result;
         }
 
-        // array functionality to fix
-
-        // assign index(test it with all the different types)
-        // map
-
         // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
-
 
         private object HandleArray(IntPtr arrayObjPtr, Type type)
         {
@@ -1643,6 +1637,7 @@ namespace MyCompiler
             var srcVarName = "__map_src";
             var resultVarName = "__map_result";
             var indexVarName = "__map_i";
+
             // 1 Clone source array
             var srcAssign = new AssignNodeExpr(srcVarName, new CopyArrayNodeExpr(expr.ArrayExpr));
 
@@ -2098,12 +2093,6 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAddExpr(AddNodeExpr expr)
         {
-            // check if the array and the node are of the same type
-            var arrayElementType = ((ArrayType)expr.ArrayExpression.Type).ElementType;
-
-            if (arrayElementType.GetType() != expr.AddExpression.Type.GetType())
-                throw new Exception($"Can't add {expr.AddExpression.Type} value to a {arrayElementType} array");
-
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
@@ -2478,14 +2467,40 @@ namespace MyCompiler
         public LLVMValueRef VisitLengthExpr(LengthNodeExpr expr)
         {
             var ctx = _module.Context;
-
             var arrayPtr = Visit(expr.ArrayExpression); // LLVMValueRef pointing to the array struct
-            var zero32 = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero32 }, "len_ptr");
+
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var arrayStructType = LLVMTypeRef.CreateStruct(
+                new[] { ctx.Int64Type, ctx.Int64Type, i8Ptr }, false
+            );
+
+            var lenPtr = _builder.BuildStructGEP2(arrayStructType, arrayPtr, 0);
             var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "length");  // why does this work, should we not go into the struct to retrieve the value?
             length.SetAlignment(8); // make sure alignment matches allocation
 
             return length;
+        }
+
+        private LLVMValueRef GetArrayDataPtr(LLVMValueRef arrayPtr)
+        {
+            var i64 = _module.Context.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var dataPtrGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 2) }, "data_ptr");
+            return _builder.BuildLoad2(i8Ptr, dataPtrGEP, "data_ptr");  // Pointer to array data
+        }
+
+        private LLVMValueRef GetArrayLength(LLVMValueRef arrayPtr)
+        {
+            var i64 = _module.Context.Int64Type;
+            var lengthGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) }, "length_ptr");
+            return _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
+        }
+
+        private LLVMValueRef GetArrayCapacity(LLVMValueRef arrayPtr)
+        {
+            var i64 = _module.Context.Int64Type;
+            var capacityGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 1) }, "capacity_ptr");
+            return _builder.BuildLoad2(i64, capacityGEP, "capacity");  // Load the array capacity
         }
 
         public LLVMValueRef VisitMinExpr(MinNodeExpr expr)
@@ -2826,16 +2841,10 @@ namespace MyCompiler
             var gepType = isBool ? i8 : i8Ptr;
 
             LLVMValueRef finalValueToStore;
-            if (isBool)
-            {
-                // Convert i1 to i8 (1 byte)
+            if (isBool) // Convert i1 to i8 (1 byte)
                 finalValueToStore = _builder.BuildZExt(valueToAssign, i8, "bool_to_i8");
-            }
             else
-            {
-                // Bitcast/Box other types to i8Ptr (8 bytes)
                 finalValueToStore = _builder.BuildBitCast(valueToAssign, i8Ptr, "val_to_ptr");
-            }
 
             // 5. GEP into the separate Data Buffer (No +2 offset)
             var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
