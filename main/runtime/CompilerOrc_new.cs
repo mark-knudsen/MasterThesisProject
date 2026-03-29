@@ -1508,42 +1508,48 @@ namespace MyCompiler
         {
             if (_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
 
-            // 1. Visit the expression to get the RAW value (e.g., the array header ptr)
-            var rawValue = Visit(expr.Expression);
+            var value = Visit(expr.Expression);
+            var storageType = value.TypeOf;
+            var module = _module;
 
-            // 2. BOX IT IMMEDIATELY
-            // Use your CreateRuntimeObject helper. 
-            // You need to know the tag. You can use expr.Expression.Type to decide.
-            short tag = GetTagForType(expr.Expression.Type);
-            var boxedValue = CreateRuntimeObject(tag, rawValue);
+            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
 
-            // 3. Ensure the Global is defined to hold a BOX (pointer to RuntimeValue)
-            // All globals in your language should now be type 'ptr' (pointing to our 16-byte struct)
-            var boxType = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
-
-            LLVMValueRef global = _module.GetNamedGlobal(expr.Id);
             if (global.Handle == IntPtr.Zero)
             {
-                global = _module.AddGlobal(boxType, expr.Id);
                 if (!_definedGlobals.Contains(expr.Id))
                 {
-                    global.Initializer = LLVMValueRef.CreateConstNull(boxType);
+                    // FIRST DEFINITION
+                    global = module.AddGlobal(storageType, expr.Id);
+
+                    // Set initial dummy value so it's not "undef"
+                    if (storageType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+                        global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
+                    else if (storageType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
+                        global.Initializer = LLVMValueRef.CreateConstInt(storageType, 0);
+                    else
+                        global.Initializer = LLVMValueRef.CreateConstNull(storageType);
+
+                    // Use ExternalLinkage so it's visible to the JIT symbol table
                     global.Linkage = LLVMLinkage.LLVMExternalLinkage;
                     _definedGlobals.Add(expr.Id);
                 }
                 else
                 {
+                    // RE-DECLARATION (in a new module)
+                    global = module.AddGlobal(storageType, expr.Id);
+
+                    // IMPORTANT: Setting Linkage to External WITHOUT an Initializer 
+                    // makes this an 'extern' declaration.
                     global.Linkage = LLVMLinkage.LLVMExternalLinkage;
                 }
             }
 
-            // 4. Store the BOX in the global
-            var store = _builder.BuildStore(boxedValue, global);
+            var store = _builder.BuildStore(value, global);
             store.SetAlignment(8);
 
-            // Return the boxed value so Run() doesn't box it again
-            return boxedValue;
+            return value;
         }
+
 
         // Simple helper to map your AST types to Tags
         private short GetTagForType(Type type)
@@ -2096,103 +2102,72 @@ namespace MyCompiler
             return headerRaw;
         }
 
-        public LLVMValueRef VisitArrayExpr_Mine(ArrayNodeExpr expr)
-        {
-            var ctx = _module.Context;
-            uint count = (uint)expr.Elements.Count;
-
-            var mallocFunc = GetOrDeclareMalloc();
-
-            // Allocate array slots: length + capacity + elements
-            var slots = count + 2;
-            var totalBytes = LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)slots * 8);
-            var arrayPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalBytes }, "arr_ptr");
-
-            var zero64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 0);
-
-            // Store length
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero64 }, "len_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, count), lenPtr).SetAlignment(8);
-
-            // Store capacity
-            var capPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 1) }, "cap_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, count), capPtr).SetAlignment(8);
-
-            // Store elements starting at index 2 as pointers
-            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // i8*
-            for (int i = 0; i < expr.Elements.Count; i++)
-            {
-                var val = Visit(expr.Elements[i]);
-                var idx = LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)(i + 2));
-                var elemPtr = _builder.BuildGEP2(ptrType, arrayPtr, new[] { idx }, $"elem_{i}");
-                _builder.BuildStore(val, elemPtr).SetAlignment(8);
-            }
-
-            expr.SetType(new ArrayType(expr.ElementType));
-
-            if (_debug) Console.WriteLine("array pointer: " + arrayPtr);
-            return arrayPtr;
-        }
-
         public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Visit the Array and the Index expressions
-            var arrayPtr = Visit(expr.ArrayExpression);
+            // 1. Visit Array (Header Pointer) and Index
+            var headerPtr = Visit(expr.ArrayExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            // 2. Ensure Index is i64 (convert from Double if necessary)
             if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, ctx.Int64Type, "idx_int");
+                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-            // 3. --- BOUNDS CHECK LOGIC ---
-            // Load the Length from the Header (Index 0)
-            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+            // Define the Struct Layout: { i64 len, i64 cap, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
 
-            // Check: (index < 0) OR (index >= arrayLen)
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), "is_neg");
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen, "is_too_big");
+            // 2. Load Metadata from Header
+            var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_field_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_field_ptr");
+
+            var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+            // 3. --- BOUNDS CHECK ---
+            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
+            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
             var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
 
-            var failBlock = func.AppendBasicBlock("bounds.fail");
-            var safeBlock = func.AppendBasicBlock("bounds.ok");
+            var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
+            var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
             _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
 
-            // --- FAIL BLOCK: Handle Error ---
+            // --- FAIL BLOCK ---
             _builder.PositionAtEnd(failBlock);
             var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
             _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
 
-            // Return a null runtime object to stop execution gracefully
-            var nullReturn = LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0));
-            _builder.BuildRet(nullReturn);
-
-            // --- SAFE BLOCK: Proceed with access ---
+            // --- SAFE BLOCK ---
             _builder.PositionAtEnd(safeBlock);
 
-            // 4. Adjust for Header: Actual index in memory is indexVal + 1
-            var one = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var actualIdx = _builder.BuildAdd(indexVal, one, "offset_idx");
+            // 4. STRIDE-AWARE ACCESS
+            // Check if the actual language type is boolean
+            bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
 
-            // 5. GEP2 and Load the data
-            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { actualIdx }, "elem_ptr");
-            var rawValue = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "raw_val");
-            rawValue.SetAlignment(8);
+            // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
+            var gepType = isBool ? i8 : i8Ptr;
 
-            // 6. Transform based on Type Inference
+            // We index into dataPtr starting at 0 (no +2 offset anymore!)
+            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
+            var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
+
+            // 5. Transform based on Type
+            // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
             return expr.Type switch
             {
-                StringType => _builder.BuildIntToPtr(rawValue, LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), "to_str"),
-                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType, "to_float"),
-                IntType => rawValue,
-                BoolType => _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, rawValue, LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), "to_bool"),
+                StringType => _builder.BuildBitCast(rawValue, i8Ptr),
+                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
+                IntType => _builder.BuildPtrToInt(rawValue, i64),
+                BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
                 _ => rawValue
             };
         }
+
 
         private LLVMTypeRef GetOrCreateStructType(RecordType recordType)
         {
@@ -2767,8 +2742,6 @@ namespace MyCompiler
             //return ptrToLoad;
             return _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
         }
-
-
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
         {
