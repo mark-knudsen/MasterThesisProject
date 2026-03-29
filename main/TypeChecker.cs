@@ -709,82 +709,7 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitRecord(RecordNodeExpr expr)
-        {
-            List<Type> types = new List<Type>();
 
-            Console.WriteLine("the records type: " + expr.Type);
-
-            foreach (var item in expr.Fields)
-            {
-                var d = Visit(item.Value);
-                Console.WriteLine(d); // it returns int and string even tough it visits number and string which does create and should return stringType
-                //types.Add(item.Value.Type);
-                types.Add(d);
-                Console.WriteLine("item value in expr fields" + item.Value);
-                Console.WriteLine("item type in expr fields" + item.Value.Type);
-            }
-
-            expr.SetType(new RecordType(expr.Fields));
-            return expr.Type;
-        }
-
-        public Type VisitRecordField(RecordFieldNodeExpr expr)
-        {
-            Visit(expr.IdRecord);
-            Type recordFieldType = new IntType();
-
-            if (expr.IdRecord is IdNodeExpr idNode)
-            {
-                var entry = _context.Get(idNode.Name);
-                Console.WriteLine("entry type: " + entry?.Type);
-                if (entry?.Type is RecordType recType)
-                {
-                    Console.WriteLine("we have the record: " + recType);
-                    foreach (var item in recType.RecordFields)
-                    {
-                        if (expr.IdField == item.Label) recordFieldType = item.Value.Type;
-                        Console.WriteLine("rec field label: " + item.Label);
-                        Console.WriteLine("rec field value: " + item.Value);
-                    }
-                }
-            }
-
-            Console.WriteLine("rec field: " + recordFieldType);
-            expr.SetType(recordFieldType);
-            return expr.Type;
-        }
-
-        public Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr)
-        {
-            Visit(expr.AssignExpression);
-            Visit(expr.IdRecord);
-
-            expr.SetType(new VoidType());
-            return expr.Type;
-        }
-
-        public Type VisitCopyRecord(CopyRecordNodeExpr expr)
-        {
-            Visit(expr.Source);
-            expr.SetType(expr.Source.Type);
-            return expr.Type;
-        }
-
-        public Type VisitAddField(AddFieldNodeExpr expr)
-        {
-            Visit(expr.Record);
-            Visit(expr.Value);
-            expr.SetType(expr.Value.Type);
-            return expr.Type;
-        }
-
-        public Type VisitRemoveField(RemoveFieldNodeExpr expr)
-        {
-            Visit(expr.Record);
-            expr.SetType(new VoidType());
-            return expr.Type;
-        }
 
         public Type VisitRecord(RecordNodeExpr expr)
         {
@@ -841,18 +766,13 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitCopy(CopyNodeExpr expr)
-        {
-            Visit(expr.Expression);
-            expr.SetType(expr.Expression.Type);
-            return expr.Type;
-        }
-        
+
+
         public Type VisitCopyRecord(CopyRecordNodeExpr expr)
         {
-             Visit(expr.Source);
-             expr.SetType(expr.Source.Type);
-             return expr.Type;
+            Visit(expr.Source);
+            expr.SetType(expr.Source.Type);
+            return expr.Type;
         }
 
         public Type VisitAddField(AddFieldNodeExpr expr)
