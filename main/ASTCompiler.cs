@@ -344,7 +344,7 @@ namespace MyCompiler
     {
         public CopyArrayNodeExpr(ExpressionNodeExpr source) : base (source) {}
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyArrayExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr

@@ -44,7 +44,7 @@ namespace MyCompiler
                 ForLoopNodeExpr _for => VisitForLoop(_for),
                 ForEachLoopNodeExpr _foreach => VisitForEachLoop(_foreach),
                 ArrayNodeExpr arr => VisitArray(arr),
-                CopyArrayNodeExpr clo => VisitCopyArray(clo),
+                //CopyArrayNodeExpr clo => VisitCopyArray(clo),
                 IndexNodeExpr idx => VisitIndex(idx),
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
@@ -451,12 +451,20 @@ namespace MyCompiler
             Visit(expr.IndexExpression);
 
             Type inferred = new IntType();
-            if (expr.ArrayExpression is IdNodeExpr idNode)
+            if (expr.ArrayExpression is IdNodeExpr idNode) // In the parser whe instantiate the index with an IdNode, the rest of the code should never be true
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
             }
+            // else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
+            // {
+            //     inferred = arrayLiteral.ElementType ?? new FloatType();
+            // }
+            // else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
+            // {
+            //     inferred = arrayExprType.ElementType;
+            // }
 
             expr.SetType(inferred);
             return expr.Type;
@@ -761,6 +769,90 @@ namespace MyCompiler
             Visit(expr.Source);
             expr.SetType(expr.Source.Type);
             return expr.Type;
+        }
+
+        public Type VisitAddField(AddFieldNodeExpr expr)
+        {
+            Visit(expr.Record);
+            Visit(expr.Value);
+            expr.SetType(expr.Value.Type);
+            return expr.Type;
+        }
+
+        public Type VisitRemoveField(RemoveFieldNodeExpr expr)
+        {
+            Visit(expr.Record);
+            expr.SetType(new VoidType());
+            return expr.Type;
+        }
+
+        public Type VisitRecord(RecordNodeExpr expr)
+        {
+            List<Type> types = new List<Type>();
+
+            Console.WriteLine("the records type: " + expr.Type);
+
+            foreach (var item in expr.Fields)
+            {
+                var d = Visit(item.Value);
+                Console.WriteLine(d); // it returns int and string even tough it visits number and string which does create and should return stringType
+                //types.Add(item.Value.Type);
+                types.Add(d);
+                Console.WriteLine("item value in expr fields" + item.Value);
+                Console.WriteLine("item type in expr fields" + item.Value.Type);
+            }
+
+            expr.SetType(new RecordType(expr.Fields));
+            return new RecordType(expr.Fields);
+        }
+
+        public Type VisitRecordField(RecordFieldNodeExpr expr)
+        {
+            Visit(expr.IdRecord);
+            Type recordFieldType = new IntType();
+
+            if (expr.IdRecord is IdNodeExpr idNode)
+            {
+                var entry = _context.Get(idNode.Name);
+                Console.WriteLine("entry type: " + entry?.Type);
+                if (entry?.Type is RecordType recType)
+                {
+                    Console.WriteLine("we have the record: " + recType);
+                    foreach (var item in recType.RecordFields)
+                    {
+                        if (expr.IdField == item.Label) recordFieldType = item.Value.Type;
+                        Console.WriteLine("rec field label: " + item.Label);
+                        Console.WriteLine("rec field value: " + item.Value);
+                    }
+                }
+            }
+
+            Console.WriteLine("rec field: " + recordFieldType);
+            expr.SetType(recordFieldType);
+            return recordFieldType;
+        }
+
+        public Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr)
+        {
+            Visit(expr.AssignExpression);
+            Visit(expr.IdRecord);
+
+            expr.SetType(new VoidType()); // it is a statement, we don't need to return anything
+            return expr.Type;
+        }
+
+        public Type VisitCopy(CopyNodeExpr expr)
+        {
+            Visit(expr.Expression);
+            expr.SetType(expr.Expression.Type);
+            return expr.Type;
+        }
+        
+        public Type VisitCopyRecord(CopyRecordNodeExpr expr)
+        {
+             Visit(expr.Source);
+             expr.SetType(expr.Source.Type);
+             return expr.Type;
         }
 
         public Type VisitAddField(AddFieldNodeExpr expr)
