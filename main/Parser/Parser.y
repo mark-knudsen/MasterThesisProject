@@ -14,7 +14,7 @@
 %token <obj> NUMBER STRING ID
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY RECORD ADDFIELD REMOVEFIELD
@@ -57,6 +57,8 @@ Prog
 StatementList
     : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
     | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
+    | StatementList NEWLINE Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
+    | StatementList NEWLINE
 
     ;
 

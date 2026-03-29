@@ -80,9 +80,8 @@ namespace MyCompiler
             // 1. Check the array expression to ensure it's actually an array
             Type arrayType = Visit(expr.Array);
             if (arrayType is not ArrayType)
-            {
                 throw new Exception("Foreach target must be an array.");
-            }
+            
 
             // 2. Determine the element type (e.g., MyType.Float for [12, 200])
             Type elementType = null; // Default
@@ -95,11 +94,6 @@ namespace MyCompiler
                 var entry = _context.Get(idNode.Name);
                 elementType = entry?.ElementType ?? new FloatType();
             }
-
-            // arr = ["a", "b", "c"];
-            // arr = [1, 2, 3];
-            // arr = [true, false, false];
-
 
             // 3. Register the iterator variable (e.g., 'item') in the context
             // This allows the Body to know 'item' is a Float/String
@@ -280,52 +274,6 @@ namespace MyCompiler
             throw new Exception($"Unknown operator {expr.Operator}");
         }
 
-        public Type VisitComparison2(ComparisonNodeExpr expr)
-        {
-            var leftType = Visit(expr.Left);
-            var rightType = Visit(expr.Right);
-
-            // expr.SetType(MyType.Bool);
-            // return MyType.Bool;
-
-            // Numeric comparisons
-            if (expr.Operator is ">" or "<" or ">=" or "<=")
-            {
-                if (leftType is not IntType && leftType is not IntType)
-                    throw new Exception("Ordering operators require number");
-
-                if (rightType is not FloatType && rightType is not FloatType)
-                    throw new Exception("Ordering operators require number");
-
-                expr.SetType(new BoolType());
-                return expr.Type;
-            }
-
-            if (expr.Operator is "&&" or "||")
-            {
-                if (leftType is not BoolType)
-                    throw new Exception("Left operand must be bool");
-
-                if (rightType is not BoolType)
-                    throw new Exception("Right operand must be bool");
-
-                expr.SetType(new BoolType());
-                return expr.Type;
-            }
-
-            // Equality comparisons
-            if (expr.Operator is "==" or "!=")
-            {
-                if (leftType.GetType() != rightType.GetType())
-                    throw new Exception($"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
-
-                expr.SetType(new BoolType());
-                return expr.Type;
-            }
-
-            throw new Exception($"Unknown operator {expr.Operator}");
-        }
-
         public Type VisitIncrement(IncrementNodeExpr expr)
         {
             var entry = _context.Get(expr.Id);
@@ -368,8 +316,8 @@ namespace MyCompiler
 
         public Type VisitRandom(RandomNodeExpr expr)
         {
-            // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
-            // var valueTypeMax = Visit(expr.MaxValue);
+            var valueTypeMin = Visit(expr.MinValue); 
+            var valueTypeMax = Visit(expr.MaxValue);
 
             expr.SetType(new IntType());
             return expr.Type;
