@@ -14,9 +14,11 @@ using System.Xml.Schema;
 
 namespace MyCompiler
 {
+    [StructLayout(LayoutKind.Sequential, Pack = 8)] // Pack 8 is standard for 64-bit pointers
     public struct RuntimeValue
     {
         public Int16 tag;
+        // The compiler adds 6 bytes of padding here automatically to align the pointer to 8
         public IntPtr data;
     }
 
@@ -39,7 +41,6 @@ namespace MyCompiler
         None = 0
     }
 
-
     public static class LanguageRuntime
     {
         public static IntPtr ReadCsvInternal(IntPtr pathPtr)
@@ -48,38 +49,36 @@ namespace MyCompiler
             string path = Marshal.PtrToStringAnsi(pathPtr);
             if (!System.IO.File.Exists(path)) return IntPtr.Zero;
 
-            try
+            var lines = System.IO.File.ReadAllLines(path)
+                .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
+            int count = lines.Length;
+
+            IntPtr header = Marshal.AllocHGlobal(24);
+            IntPtr dataBuffer = Marshal.AllocHGlobal(count * 8);
+
+            Marshal.WriteInt64(header, 0, count);
+            Marshal.WriteInt64(header, 8, count);
+            Marshal.WriteIntPtr(header, 16, dataBuffer);
+
+            for (int i = 0; i < count; i++)
             {
-                var lines = System.IO.File.ReadAllLines(path)
-                    .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-                int count = lines.Length;
+                string val = lines[i].Trim();
+                long bitPattern = 0;
+                if (long.TryParse(val, out long iVal)) bitPattern = iVal;
+                else if (double.TryParse(val, out double dVal)) bitPattern = BitConverter.DoubleToInt64Bits(dVal);
+                else bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
 
-                // Allocate: 8 bytes for length, 8 for capacity, and 8 per element
-                IntPtr buffer = Marshal.AllocHGlobal((count + 2) * 8);
-
-                Marshal.WriteInt64(buffer, 0, count);    // Length
-                Marshal.WriteInt64(buffer, 8, count);    // Capacity
-
-                for (int i = 0; i < count; i++)
-                {
-                    string val = lines[i].Trim();
-                    long bitPattern = 0;
-
-                    if (long.TryParse(val, out long iVal)) bitPattern = iVal;
-                    else if (double.TryParse(val, out double dVal)) bitPattern = BitConverter.DoubleToInt64Bits(dVal);
-                    else bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
-
-                    Marshal.WriteInt64(buffer, (i + 2) * 8, bitPattern);
-                }
-                return buffer;
+                Marshal.WriteInt64(dataBuffer, i * 8, bitPattern);
             }
-            catch { return IntPtr.Zero; }
+            return header;
         }
 
         public static void ToCsvInternal(IntPtr arrayHeaderPtr, IntPtr pathPtr)
         {
             if (arrayHeaderPtr == IntPtr.Zero || pathPtr == IntPtr.Zero) return;
             string path = Marshal.PtrToStringAnsi(pathPtr);
+
+            // Ensure ArrayObject is defined in your namespace
             var array = Marshal.PtrToStructure<ArrayObject>(arrayHeaderPtr);
 
             using var writer = new System.IO.StreamWriter(path);
@@ -88,35 +87,28 @@ namespace MyCompiler
                 IntPtr elemPtr = IntPtr.Add(array.data, i * 8);
                 long rawBits = Marshal.ReadInt64(elemPtr);
 
-                // 1. Is it a String? (Pointers in 64-bit apps are usually very large)
-                // We check if the address is likely valid and not a small number
                 if ((ulong)rawBits > 0x1000000)
                 {
                     try
                     {
-                        // Peek to see if it's a valid string pointer
                         string s = Marshal.PtrToStringAnsi((IntPtr)rawBits);
                         writer.WriteLine(s);
                     }
                     catch
                     {
-                        writer.WriteLine(rawBits); // Not a string, print as number
+                        writer.WriteLine(rawBits);
                     }
                 }
-                // 2. Is it a Double? (Your IR uses doubles)
-                else if (rawBits > 1000000) // Rough guess for double bit patterns
+                else if (rawBits > 1000000)
                 {
                     writer.WriteLine(BitConverter.Int64BitsToDouble(rawBits));
                 }
-                // 3. Is it a Bool/Small Int?
                 else
                 {
                     writer.WriteLine(rawBits);
                 }
             }
         }
-
-
     }
 
 
@@ -149,10 +141,6 @@ namespace MyCompiler
         private delegate IntPtr MainDelegate();
 
 
-        private LLVMTypeRef _i8Ptr;
-
-
-        // 1. Keep these at the class level to prevent Garbage Collection
         private ReadCsvDelegate _readCsvDelegate;
         private ToCsvDelegate _toCsvDelegate;
         public delegate IntPtr ReadCsvDelegate(IntPtr path);
@@ -173,6 +161,8 @@ namespace MyCompiler
             _builder = _module.Context.CreateBuilder();
 
             _context = Context.Empty; // stores variables/functions
+
+
 
             // Declare malloc and other required functions
             DeclareValueStruct();
@@ -198,6 +188,7 @@ namespace MyCompiler
             }
 
         }
+
         private unsafe void SetupCsvFunctions()
         {
             var jitHandle = (LLVMOrcOpaqueLLJIT*)_jit;
@@ -227,15 +218,15 @@ namespace MyCompiler
         }
 
 
-
         private void DeclareValueStruct()
         {
             var ctx = _module.Context;
-            var tagType = ctx.Int32Type; // Tag type
-            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // Pointer to data
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // Define the value struct: tag + pointer to the data (value)
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { tagType, ptrType }, false);
+            // Use a Named Struct so it's easy to see in IR
+            _runtimeValueType = ctx.CreateNamedStruct("RuntimeValue");
+            // Ensure this matches your C# 'public Int16 tag; public IntPtr data;'
+            _runtimeValueType.StructSetBody(new[] { ctx.Int64Type, i8Ptr }, false);
         }
 
         private void DeclarePrintf()
@@ -532,6 +523,7 @@ namespace MyCompiler
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
             var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
 
+
             // --- THE SHIELD ---
             // If the type is already a pointer to our RuntimeValue struct, DO NOT BOX AGAIN.
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
@@ -608,209 +600,6 @@ namespace MyCompiler
             _builder.BuildStore(dataPtr, dataFieldPtr);
 
             return objRaw;
-        }
-
-        private LLVMValueRef BoxValue_old(LLVMValueRef value, Type type)
-        {
-            var ctx = _module.Context;
-
-            var i64 = ctx.Int64Type;
-            var i16 = ctx.Int16Type;
-            var i1 = ctx.Int1Type;
-            var doubleTy = ctx.DoubleType;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            var mallocFunc = GetOrDeclareMalloc();
-            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-
-            // RuntimeValue = { i16 tag, i8* data }
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
-
-            int tag = type switch
-            {
-                IntType => (int)ValueTag.Int,
-                FloatType => (int)ValueTag.Float,
-                BoolType => (int)ValueTag.Bool,
-                StringType => (int)ValueTag.String,
-                ArrayType => (int)ValueTag.Array,
-                RecordType => (int)ValueTag.Record,
-                _ => (int)ValueTag.None
-            };
-
-            LLVMValueRef dataPtr;
-
-            // ---- Allocate / prepare data ----
-            if (type is IntType)
-            {
-                var mem = _builder.BuildCall2(mallocType, mallocFunc,
-                    new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "int_mem");
-
-                var cast = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(i64, 0), "int_cast");
-                _builder.BuildStore(value, cast).SetAlignment(8);
-
-                dataPtr = mem; // already i8*
-            }
-            else if (type is FloatType)
-            {
-                var mem = _builder.BuildCall2(mallocType, mallocFunc,
-                    new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "float_mem");
-
-                var cast = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(doubleTy, 0), "float_cast");
-                _builder.BuildStore(value, cast).SetAlignment(8);
-
-                dataPtr = mem;
-            }
-            else if (type is BoolType)
-            {
-                var mem = _builder.BuildCall2(mallocType, mallocFunc,
-                    new[] { LLVMValueRef.CreateConstInt(i64, 1) }, "bool_mem");
-
-                var cast = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(i1, 0), "bool_cast");
-                _builder.BuildStore(value, cast);
-
-                dataPtr = mem;
-            }
-            else if (type is StringType || type is RecordType || type is ArrayType)
-            {
-                // These are already pointers → normalize to i8*
-                dataPtr = _builder.BuildBitCast(value, i8Ptr, "boxed_ptr_cast");
-            }
-            else if (type is VoidType)
-            {
-                dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
-            }
-            else
-            {
-                throw new Exception($"Unsupported type in BoxValue: {type}");
-            }
-
-            // ---- Allocate RuntimeValue ----
-            var objRaw = _builder.BuildCall2(mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 16) },
-                "runtime_obj");
-
-            // 🔥 CRITICAL FIX: cast to struct*
-            var obj = _builder.BuildBitCast(
-                objRaw,
-                LLVMTypeRef.CreatePointer(runtimeValueType, 0),
-                "runtime_cast"
-            );
-
-            // ---- Store tag ----
-            var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(i16, (ulong)tag),
-                tagPtr
-            );
-
-            // ---- Store data ----
-            var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
-            _builder.BuildStore(dataPtr, dataFieldPtr);
-
-            return objRaw; // return as i8* (matches your runtime)
-        }
-
-        private LLVMValueRef BoxValue2(LLVMValueRef value, Type type)
-        {
-            // 1. Get the current context and define types locally for THIS run
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i16 = ctx.Int16Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // 2. Local type definitions tied to THIS context (replaces stale class fields)
-            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            // Option A: Literal/Anonymous struct (most common for temporary boxing)
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false); // it ABSOLUTELY have to match the struct
-
-            int tag = type switch
-            {
-                IntType => (Int16)ValueTag.Int,
-                FloatType => (Int16)ValueTag.Float,
-                BoolType => (Int16)ValueTag.Bool,
-                StringType => (Int16)ValueTag.String,
-                ArrayType => (Int16)ValueTag.Array,
-                RecordType => (Int16)ValueTag.Record,
-                _ => (Int16)ValueTag.None
-            };
-
-            LLVMValueRef dataPtr;
-
-            // 3. Handle data allocation and storage
-            if (type is StringType || type is RecordType)
-            {
-                dataPtr = value;
-            }
-            else if (type is ArrayType)
-            {
-                // value MUST be: ptr to %Array struct
-                dataPtr = _builder.BuildBitCast(value, i8Ptr, "boxed_ptr_cast");
-
-            }
-            else if (type is IntType)
-            {
-                var malloc = GetOrDeclareMalloc();
-                var size = LLVMValueRef.CreateConstInt(i64, 8);
-                // Use local mallocType instead of _mallocType
-                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { size }, "int_mem");
-                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(i64, 0), "int_cast");
-                _builder.BuildStore(value, cast).SetAlignment(8);
-                dataPtr = rawMem;
-            }
-            else if (type is FloatType)
-            {
-                var malloc = GetOrDeclareMalloc();
-                var size = LLVMValueRef.CreateConstInt(i64, 8);
-                // Use local mallocType instead of _mallocType
-                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { size }, "float_mem");
-                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(ctx.DoubleType, 0), "float_cast");
-                _builder.BuildStore(value, cast).SetAlignment(8);
-                dataPtr = rawMem;
-            }
-            else if (type is BoolType)
-            {
-                var malloc = GetOrDeclareMalloc();
-                var size = LLVMValueRef.CreateConstInt(i64, 1);
-                // Use local mallocType instead of _mallocType
-                var rawMem = _builder.BuildCall2(mallocType, malloc, new[] { size }, "bool_mem");
-                var cast = _builder.BuildBitCast(rawMem, LLVMTypeRef.CreatePointer(ctx.Int1Type, 0), "bool_cast");
-                _builder.BuildStore(value, cast).SetAlignment(8);
-                dataPtr = rawMem;
-            }
-            else if (type is VoidType)
-            {
-                dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
-            }
-            else
-            {
-                Console.WriteLine("the tag type: " + type);
-                throw new Exception($"Unsupported LLVM type in BoxValue: {value.TypeOf}");
-            }
-
-            // 4. Allocate the 'RuntimeValue' struct (using local mallocType)
-            var mallocReturn = GetOrDeclareMalloc();
-            var sizeReturn = LLVMValueRef.CreateConstInt(i64, 16);
-            var obj = _builder.BuildCall2(mallocType, mallocReturn, new[] { sizeReturn }, "runtime_obj");
-
-
-            var objTyped = _builder.BuildBitCast(
-    obj,
-    LLVMTypeRef.CreatePointer(runtimeValueType, 0),
-    "runtime_cast"
-);
-
-            var tagPtr = _builder.BuildStructGEP2(runtimeValueType, objTyped, 0, "tag_ptr");
-            var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, objTyped, 1, "data_ptr");
-
-
-            // 5. Store tag and data using the local runtimeValueType
-            // var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr);
-
-            //var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
-            _builder.BuildStore(dataPtr, dataFieldPtr);
-
-            return obj;
         }
 
         private ExpressionNodeExpr GetProgramResult(NodeExpr expr)
@@ -2204,12 +1993,12 @@ namespace MyCompiler
 
             // 1. UNBOXING: Get the actual array header from the box
             // Visit returns the RuntimeValue* (the box)
-            var boxedValue = Visit(expr.ArrayExpression);
+            var headerPtr = Visit(expr.ArrayExpression);
 
             // Access the 'data' field (index 1) of the RuntimeValue { i16, i8* }
             // Note: Use your actual _runtimeValueType here
-            var arrayPtrAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedValue, 1, "unbox_gep");
-            var headerPtr = _builder.BuildLoad2(i8Ptr, arrayPtrAddr, "array_header");
+            //var arrayPtrAddr = _builder.BuildStructGEP2(arrayStructType, boxedValue, 1, "unbox_gep");
+            //var headerPtr = _builder.BuildLoad2(i8Ptr, arrayPtrAddr, "array_header");
 
             var valueToAdd = Visit(expr.AddExpression);
 
@@ -3033,40 +2822,47 @@ namespace MyCompiler
 
             return newPtr;
         }
+
         public LLVMValueRef VisitToCsvExpr(ToCsvNodeExpr expr)
         {
-            // 1. Visit arguments
-            // boxedData is a pointer to the RuntimeValue struct (RuntimeValue*)
-            var boxedData = Visit(expr.Expression);
-            var fileName = Visit(expr.FileNameExpr); // This is an i8* (string)
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 2. UNBOX: Get the raw ArrayObject* from the RuntimeValue box
-            // RuntimeValue is { i32 tag, i8* data }
-            // We want index 1 (the data pointer)
-            var dataFieldAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedData, 1, "unbox_gep");
+            // 1. Visit the Array (This is a variable 'arr', so it IS boxed)
+            var boxedArray = Visit(expr.Expression);
 
-            // CRITICAL: We are loading an i8* from the address of the second field.
-            // The type passed to BuildLoad2 must be the type of the VALUE we want (i8*).
-            var rawArrayPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), dataFieldAddr, "raw_array_ptr");
+            // Extract the raw ArrayObject* from the box
+            var arrayDataAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedArray, 1, "array_unbox_gep");
+            var rawArrayPtr = _builder.BuildLoad2(i8Ptr, arrayDataAddr, "raw_array_ptr");
 
-            // 3. Setup the C# Function Call
-            // void ToCsvInternal(void* arrayData, char* path)
-            var voidPtr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var toCsvType = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { voidPtr, voidPtr });
+            // 2. Visit the Path ("test.csv")
+            var pathValue = Visit(expr.FileNameExpr);
+            LLVMValueRef rawPathPtr;
 
-            var toCsvFunc = _module.GetNamedFunction("ToCsvInternal");
-            if (toCsvFunc.Handle == IntPtr.Zero)
+            // Check: If pathValue is a literal string, it's already a ptr to i8.
+            // If it's a variable, it's a ptr to RuntimeValue.
+            if (pathValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
+                pathValue.TypeOf.ElementType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
             {
-                toCsvFunc = _module.AddFunction("ToCsvInternal", toCsvType);
+                // It's a raw string literal i8*
+                rawPathPtr = pathValue;
+            }
+            else
+            {
+                // It's a boxed variable (e.g. if you did 'p = "test.csv"' then 'to_csv(arr, p)')
+                var pathDataAddr = _builder.BuildStructGEP2(_runtimeValueType, pathValue, 1, "path_unbox_gep");
+                rawPathPtr = _builder.BuildLoad2(i8Ptr, pathDataAddr, "raw_path_ptr");
             }
 
-            // 4. Perform the call
-            _builder.BuildCall2(toCsvType, toCsvFunc, new[] { rawArrayPtr, fileName }, "");
+            // 3. Setup the Function
+            var toCsvFunc = GetOrDeclareToCsv();
+            var toCsvType = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { i8Ptr, i8Ptr }, false);
 
-            // 5. Return None (Tag 0, Null Ptr) to satisfy the expression requirement
-            return CreateRuntimeObject(0, LLVMValueRef.CreateConstPointerNull(voidPtr));
+            // 4. Call with raw pointers
+            _builder.BuildCall2(toCsvType, toCsvFunc, new[] { rawArrayPtr, rawPathPtr }, "");
+
+            // 5. Return None box
+            return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
         }
-
 
 
         public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
@@ -3088,48 +2884,31 @@ namespace MyCompiler
             return CreateRuntimeObject(tag, rawResultPtr);
         }
 
-        private LLVMValueRef UnboxToRawPointer(LLVMValueRef value)
-        {
-            // If it's a constant string (global), it's already a raw pointer
-            if (value.IsAGlobalVariable.Handle != IntPtr.Zero && value.TypeOf != LLVMTypeRef.CreatePointer(_runtimeValueType, 0))
-            {
-                return value;
-            }
 
-            // If it's our RuntimeValue box, extract field 1
-            if (value.TypeOf == LLVMTypeRef.CreatePointer(_runtimeValueType, 0))
-            {
-                var dataAddr = _builder.BuildStructGEP2(_runtimeValueType, value, 1, "unbox_data_gep");
-                return _builder.BuildLoad2(_i8Ptr, dataAddr, "raw_ptr");
-            }
 
-            return value; // Fallback
-        }
 
 
         private LLVMValueRef GetOrDeclareReadCsv()
         {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             var func = _module.GetNamedFunction("ReadCsvInternal");
             if (func.Handle != IntPtr.Zero) return func;
 
             // Returns a raw pointer (i8*) to an array/record buffer
-            var type = LLVMTypeRef.CreateFunction(_i8Ptr, new[] { _i8Ptr });
+            var type = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr });
             return _module.AddFunction("ReadCsvInternal", type);
         }
 
         private LLVMValueRef GetOrDeclareToCsv()
         {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             var func = _module.GetNamedFunction("ToCsvInternal");
             if (func.Handle != IntPtr.Zero) return func;
 
-            // IMPORTANT: It MUST be VoidType if your C# method returns void
-            var voidType = _module.Context.VoidType;
-            var argTypes = new[] { _i8Ptr, _i8Ptr }; // data, path
-            var funcType = LLVMTypeRef.CreateFunction(voidType, argTypes);
-
-            return _module.AddFunction("ToCsvInternal", funcType);
+            // Void return, two i8* (pointer) arguments
+            var type = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { i8Ptr, i8Ptr });
+            return _module.AddFunction("ToCsvInternal", type);
         }
-
 
 
 
@@ -3138,7 +2917,7 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i16 = ctx.Int16Type;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
             // 1. Define the struct type { i16, ptr } 
             // Make sure this matches your C# RuntimeValue struct exactly

@@ -50,6 +50,8 @@ namespace MyCompiler
                 WhereNodeExpr whe => VisitWhere(whe),
                 MapNodeExpr map => VisitMap(map),
                 ReadCsvNodeExpr read => VisitReadCsv(read),
+
+                ToCsvNodeExpr tocsv => VisitToCsv(tocsv),
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
@@ -272,52 +274,6 @@ namespace MyCompiler
                 if (leftType.GetType() != rightType.GetType())
                     throw new Exception(
                         $"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
-
-                expr.SetType(new BoolType());
-                return expr.Type;
-            }
-
-            throw new Exception($"Unknown operator {expr.Operator}");
-        }
-
-        public Type VisitComparison2(ComparisonNodeExpr expr)
-        {
-            var leftType = Visit(expr.Left);
-            var rightType = Visit(expr.Right);
-
-            // expr.SetType(MyType.Bool);
-            // return MyType.Bool;
-
-            // Numeric comparisons
-            if (expr.Operator is ">" or "<" or ">=" or "<=")
-            {
-                if (leftType is not IntType && leftType is not IntType)
-                    throw new Exception("Ordering operators require number");
-
-                if (rightType is not FloatType && rightType is not FloatType)
-                    throw new Exception("Ordering operators require number");
-
-                expr.SetType(new BoolType());
-                return expr.Type;
-            }
-
-            if (expr.Operator is "&&" or "||")
-            {
-                if (leftType is not BoolType)
-                    throw new Exception("Left operand must be bool");
-
-                if (rightType is not BoolType)
-                    throw new Exception("Right operand must be bool");
-
-                expr.SetType(new BoolType());
-                return expr.Type;
-            }
-
-            // Equality comparisons
-            if (expr.Operator is "==" or "!=")
-            {
-                if (leftType.GetType() != rightType.GetType())
-                    throw new Exception($"Type mismatch in equality comparison: {leftType} {expr.Operator} {rightType}");
 
                 expr.SetType(new BoolType());
                 return expr.Type;
@@ -626,12 +582,20 @@ namespace MyCompiler
 
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
         {
-            Visit(expr.Expression);
             Visit(expr.FileNameExpr);
 
             expr.SetType(new StringType());
             return expr.Type;
         }
+        public Type VisitToCsv(ToCsvNodeExpr expr)
+        {
+            Visit(expr.Expression);
+            Visit(expr.FileNameExpr);
+
+            expr.SetType(new StringType());
+            return expr.Type; // new VoidType()
+        }
+
 
         public Type VisitAdd(AddNodeExpr expr)
         {

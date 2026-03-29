@@ -230,14 +230,21 @@ namespace MyCompiler
                                 // Use a specific color for AST, then RESET immediately
                                 if (Debug)
                                 {
+                                    // 1. Set the color
                                     Console.ForegroundColor = ConsoleColor.Cyan;
                                     Console.WriteLine("\nAST Structure:");
+
+                                    // 2. Print the tree
                                     PrintNode(parser.RootNode, 0);
+
+                                    // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
+                                    Console.ResetColor();
 
                                 }
 
                                 try
                                 {
+                                    // Now if this crashes, the console is already back to Gray/Default
                                     object result = compiler.Run(parser.RootNode, Debug);
 
                                     // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
