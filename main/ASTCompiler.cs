@@ -342,7 +342,7 @@ namespace MyCompiler
 
     public class CopyArrayNodeExpr : CopyNodeExpr
     {
-        public CopyArrayNodeExpr(ExpressionNodeExpr source) : base (source) {}
+        public CopyArrayNodeExpr(ExpressionNodeExpr source) : base(source) { }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
@@ -660,7 +660,7 @@ namespace MyCompiler
 
     public class CopyRecordNodeExpr : CopyNodeExpr
     {
-        public CopyRecordNodeExpr(ExpressionNodeExpr source) : base (source) {}
+        public CopyRecordNodeExpr(ExpressionNodeExpr source) : base(source) { }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyRecordExpr(this);
     }
@@ -672,7 +672,7 @@ namespace MyCompiler
         public CopyNodeExpr(ExpressionNodeExpr source)
         {
             Source = source;
-            Type = source.Type; 
+            Type = source.Type;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
@@ -704,4 +704,120 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveFieldExpr(this);
     }
+
+
+    public class NamedArgumentNodeExpr : ExpressionNodeExpr
+    {
+        public string Name { get; }
+        public ExpressionNodeExpr Value { get; }
+
+        public NamedArgumentNodeExpr(string name, ExpressionNodeExpr value)
+        {
+            Name = name;
+            Value = value;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNamedArgumentExpr(this);
+
+    }
+
+    public class DataframeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Columns { get; private set; }
+        public ExpressionNodeExpr DataPointers { get; private set; }
+        public ExpressionNodeExpr DataTypes { get; private set; }
+
+
+        public DataframeNodeExpr(List<ExpressionNodeExpr> args)
+        {
+            foreach (var arg in args)
+            {
+                if (arg is NamedArgumentNodeExpr named)
+                {
+                    switch (named.Name)
+                    {
+                        case "columns":
+                            if (Columns != null) throw new Exception("columns assigned twice");
+                            Columns = named.Value;
+                            break;
+                        case "data":
+                            if (DataPointers != null) throw new Exception("data assigned twice");
+                            DataPointers = named.Value;
+                            break;
+                        default:
+                            throw new Exception($"Unknown argument {named.Name}");
+                    }
+                }
+                else
+                {
+                    if (Columns == null) Columns = arg;
+                    else if (DataPointers == null) DataPointers = arg;
+                    else throw new Exception("Too many positional arguments for dataframe");
+                }
+            }
+
+            if (Columns == null || DataPointers == null)
+                throw new Exception("Missing required dataframe arguments");
+
+            Type = CreateDataframe();
+        }
+
+
+        private DataframeType CreateDataframe()
+        {
+            var columns = (Columns as ArrayNodeExpr)?.Elements.OfType<StringNodeExpr>().Select(s => s.Value).ToList();
+            List<List<object>> dataPointers = (DataPointers as ArrayNodeExpr)?.Elements.OfType<ArrayNodeExpr>().Select(arr => arr.Elements.Select(value =>
+            {
+                if (value is NumberNodeExpr num) return (object)num.Value;
+                if (value is FloatNodeExpr flt) return (object)flt.Value;
+                if (value is StringNodeExpr str) return (object)str.Value;
+                if (value is BooleanNodeExpr boolean) return (object)boolean.Value;
+                throw new Exception("Unsupported dataframe data value type.");
+            }).ToList()).ToList();
+
+            var dataTypes = (DataTypes as ArrayNodeExpr)?.Elements.Select(dt =>
+            {
+                if (dt is StringNodeExpr) return new StringType() as Type;
+                if (dt is NumberNodeExpr) return new IntType() as Type;
+                if (dt is FloatNodeExpr) return new FloatType() as Type;
+                if (dt is BooleanNodeExpr) return new BoolType() as Type;
+                throw new Exception("Unsupported data type in dataframe.");
+            }).ToList();
+
+            if (dataTypes == null)
+            {
+                var firstRow = (DataPointers as ArrayNodeExpr)?.Elements.OfType<ArrayNodeExpr>().FirstOrDefault();
+                if (firstRow != null)
+                {
+                    var inferred = firstRow.Elements.Select(value =>
+                    {
+                        if (value is StringNodeExpr) return new StringType() as Type;
+                        if (value is NumberNodeExpr) return new IntType() as Type;
+                        if (value is FloatNodeExpr) return new FloatType() as Type;
+                        if (value is BooleanNodeExpr) return new BoolType() as Type;
+                        throw new Exception("Unsupported dataframe data value type.");
+                    }).ToList();
+
+                    dataTypes = inferred;
+                    DataTypes = new ArrayNodeExpr(
+                         inferred
+                             .Select(type => new StringNodeExpr(type.ToString()))
+                             .Cast<ExpressionNodeExpr>()
+                             .ToList()
+                     );
+                }
+            }
+
+            if (columns == null || dataPointers == null || dataTypes == null)
+                throw new Exception("Invalid dataframe definition.");
+
+            return new DataframeType(columns, dataPointers, dataTypes);
+        }
+
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+
+
+    }
 }
+

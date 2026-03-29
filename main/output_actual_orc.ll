@@ -3,7 +3,7 @@ source_filename = "repl_module"
 
 @x = external global i64
 
-define ptr @main_33() {
+define ptr @main_1() {
 entry:
   %x_load = load i64, ptr @x, align 4
   %value_mem = call ptr @malloc(i64 8)

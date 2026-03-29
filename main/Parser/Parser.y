@@ -8,6 +8,7 @@
     public double fval;
     public MyCompiler.Type type; 
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
+    public MyCompiler.ExpressionNodeExpr expr; // Single expression
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
 }
 
@@ -17,7 +18,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY RECORD ADDFIELD REMOVEFIELD
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY RECORD ADDFIELD REMOVEFIELD DATAFRAME
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
@@ -39,7 +40,8 @@
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
 %type <type> Type
-%type <obj> params args  /* Use <obj> for lists */
+%type <obj> params  /* Use <obj> for lists */
+%type <expr> arg
 %type <exprList> expr_list
 
 
@@ -122,8 +124,8 @@ Assignment
     ;
 
 expr_list
-    : expr                     { $$ = new List<ExpressionNodeExpr> { $1 as ExpressionNodeExpr }; }
-    | expr_list COMMA expr     { $1.Add($3 as ExpressionNodeExpr); $$ = $1; }
+    : expr                  { $$ = new List<ExpressionNodeExpr> { $1 as ExpressionNodeExpr }; }
+    | expr_list COMMA expr { ((List<ExpressionNodeExpr>)$1).Add($3 as ExpressionNodeExpr); $$ = $1; }
     ;
 
 expr
@@ -141,8 +143,8 @@ expr
     | FUNC COLON ID ID LPAREN params RPAREN LBRACE expr RBRACE 
                           { $$ = new FunctionDefNode((string)$4, (string)$3, (List<string>)$6, $9 as NodeExpr); }
 
-    | ID LPAREN args RPAREN 
-                          { $$ = new FunctionCallNode((string)$1, (List<ExpressionNodeExpr>)$3); }
+    | ID LPAREN arg RPAREN 
+                          { $$ = new FunctionCallNode((string)$1, new List<ExpressionNodeExpr> { $3 as ExpressionNodeExpr }); }
     | ID                  { $$ = new IdNodeExpr((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNodeExpr($3 as ExpressionNodeExpr); }
@@ -224,6 +226,13 @@ expr
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
                                               { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
+    
+    // DO DATAFRAMES!
+    | DATAFRAME LPAREN arg COMMA arg RPAREN
+    {
+        $$ = new DataframeNodeExpr(new List<ExpressionNodeExpr> { $3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr });
+    }
+
     ;
 
 params
@@ -232,10 +241,15 @@ params
     | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
     ;
 
-args
-    : /* empty */ { $$ = new List<ExpressionNodeExpr>(); }
-    | expr { var list = new List<ExpressionNodeExpr>(); list.Add($1 as ExpressionNodeExpr); $$ = list; }
-    | args COMMA expr { var list = (List<ExpressionNodeExpr>)$1; list.Add($3 as ExpressionNodeExpr); $$ = list; }
+arg
+    : ID ASSIGN expr
+      {
+          $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr);
+      }
+    | expr
+      {
+          $$ = $1 as ExpressionNodeExpr;
+      }
     ;
 %%
 

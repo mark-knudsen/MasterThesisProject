@@ -73,6 +73,9 @@ namespace MyCompiler
                 CopyNodeExpr cop => VisitCopy(cop),
                 AddFieldNodeExpr radd => VisitAddField(radd),
                 RemoveFieldNodeExpr rrem => VisitRemoveField(rrem),
+                DataframeNodeExpr df => VisitDataframe(df),
+                NamedArgumentNodeExpr namedArg => VisitNamedArgument(namedArg),
+
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
         }
@@ -789,5 +792,21 @@ namespace MyCompiler
             expr.SetType(new VoidType());
             return expr.Type;
         }
+        public Type VisitDataframe(DataframeNodeExpr expr)
+        {
+            Visit(expr.Columns);
+            Visit(expr.DataPointers);
+            Visit(expr.DataTypes);
+
+            expr.SetType(expr.Type);
+            return expr.Type;
+        }
+        public Type VisitNamedArgument(NamedArgumentNodeExpr expr)
+        {
+            Visit(expr.Value);
+            expr.SetType(expr.Value.Type);
+            return expr.Type;
+        }
+
     }
 }

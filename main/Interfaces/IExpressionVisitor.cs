@@ -24,7 +24,7 @@ namespace MyCompiler
         LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
         LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr);
         LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
-       // LLVMValueRef VisitCopyArrayExpr(CopyArrayNodeExpr expr);
+        // LLVMValueRef VisitCopyArrayExpr(CopyArrayNodeExpr expr);
         LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
         LLVMValueRef VisitIndexAssignExpr(IndexAssignNodeExpr expr);
         LLVMValueRef VisitAddExpr(AddNodeExpr expr);
@@ -39,10 +39,10 @@ namespace MyCompiler
         LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
         LLVMValueRef VisitMapExpr(MapNodeExpr expr);
         LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr);
-        
+
         LLVMValueRef VisitToCsvExpr(ToCsvNodeExpr expr);
 
-        
+
         LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
         LLVMValueRef VisitRecordExpr(RecordNodeExpr expr);
         LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr);
@@ -51,6 +51,9 @@ namespace MyCompiler
         LLVMValueRef VisitCopyExpr(CopyNodeExpr expr);
         LLVMValueRef VisitAddFieldExpr(AddFieldNodeExpr expr);
         LLVMValueRef VisitRemoveFieldExpr(RemoveFieldNodeExpr expr);
+        LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr);
+        LLVMValueRef VisitNamedArgumentExpr(NamedArgumentNodeExpr expr);
+
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);

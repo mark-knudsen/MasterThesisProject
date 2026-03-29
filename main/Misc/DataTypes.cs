@@ -39,7 +39,7 @@ namespace MyCompiler
             return "array" + "(" + ElementType.ToString() + ")";
         }
     }
-    
+
     public class RecordType : Type
     {
         public List<RecordField> RecordFields { get; }
@@ -55,6 +55,33 @@ namespace MyCompiler
             foreach (var item in RecordFields)
             {
                 returnVal += item.Label + ", ";
+            }
+            returnVal = returnVal[..^2];
+            return returnVal + ")";
+        }
+    }
+
+    public class DataframeType : Type
+    {
+        public List<string> Columns { get; }
+        public List<List<object>> DataPointers { get; }
+        public List<Type> DataTypes { get; }
+
+        public DataframeType(List<string> columns, List<List<object>> dataPointers, List<Type> dataTypes)
+        {
+
+            Columns = columns;
+            DataPointers = dataPointers;
+            DataTypes = dataTypes;
+        }
+
+
+        public override string ToString()
+        {
+            string returnVal = "dataframe(";
+            for (int i = 0; i < Columns.Count; i++)
+            {
+                returnVal += Columns[i] + ": " + DataTypes[i].ToString() + ", ";
             }
             returnVal = returnVal[..^2];
             return returnVal + ")";

@@ -30,6 +30,23 @@ namespace MyCompiler
         public IntPtr data;    // pointer
     }
 
+    [StructLayout(LayoutKind.Sequential)]
+    struct DataframeObject
+    {
+        public long columnsLength;    // i64
+        public long dataPointersLength;    // i64
+        public long datatypesLength;    // i64
+
+        public long columnsCapacity;  // i64
+        public long dataPointersCapacity;  // i64
+        public long datatypesCapacity;  // i64  
+
+        public IntPtr columnData;          // pointer
+        public IntPtr dataPointersData;    // pointer
+        public IntPtr datatypesData;       // pointer
+    }
+
+
     public enum ValueTag
     {
         Int = 1,
@@ -2954,9 +2971,86 @@ namespace MyCompiler
             return runtimeObj;
         }
 
+        public LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr)
+        {
+            Console.WriteLine("Visit dataframe");
+
+            var columnArray = expr.Columns as ArrayNodeExpr;
+            var dataPointerArray = expr.DataPointers as ArrayNodeExpr;
+            var datatypeArray = expr.DataTypes as ArrayNodeExpr;
+
+            var (columnsPtr, columnsType) = CreateLLVMStruct(columnArray, "columns");
+            var (dataPtr, dataType) = CreateLLVMStruct(dataPointerArray, "data");
+            var (typesPtr, typesType) = CreateLLVMStruct(datatypeArray, "types");
+
+            // 🔥 Define dataframe struct type
+            var dfType = _module.Context.CreateNamedStruct("dataframe");
+
+            dfType.StructSetBody(new[]
+            {
+                columnsType,
+                dataType,
+                typesType
+            }, false);
+
+            // 🔥 Allocate dataframe
+            var dfPtr = _builder.BuildMalloc(dfType, "df");
+
+            // 🔥 Store fields
+            var colPtr = _builder.BuildStructGEP2(dfType, dfPtr, 0, "col_ptr");
+            _builder.BuildStore(columnsPtr, colPtr);
+
+            var dataPtrGep = _builder.BuildStructGEP2(dfType, dfPtr, 1, "data_ptr");
+            _builder.BuildStore(dataPtr, dataPtrGep);
+
+            var typesPtrGep = _builder.BuildStructGEP2(dfType, dfPtr, 2, "types_ptr");
+            _builder.BuildStore(typesPtr, typesPtrGep);
+
+            return dfPtr;
+        }
 
 
 
 
+        private (LLVMValueRef ptr, LLVMTypeRef type) CreateLLVMStruct(ArrayNodeExpr arrayData, string memString)
+        {
+            var fieldTypes = new List<LLVMTypeRef>();
+            Console.WriteLine("visit CreateLLVMStruct");
+
+            foreach (var field in arrayData.Elements)
+            {
+                //Visit(field);
+                Console.WriteLine($"Field type: {field.Type}");
+                fieldTypes.Add(GetLLVMType(field.Type));
+            }
+
+            string structName = "struct_" + memString;
+
+            LLVMTypeRef structType = _module.GetTypeByName(structName);
+
+            if (structType.Handle == IntPtr.Zero)
+            {
+                structType = _module.Context.CreateNamedStruct(structName);
+                structType.StructSetBody(fieldTypes.ToArray(), false);
+            }
+
+            var instancePtr = _builder.BuildMalloc(structType, memString);
+
+            for (int i = 0; i < arrayData.Elements.Count; i++)
+            {
+                var fieldValue = Visit(arrayData.Elements[i]);
+                var elementPtr = _builder.BuildStructGEP2(structType, instancePtr, (uint)i, $"ptr_{i}");
+                _builder.BuildStore(fieldValue, elementPtr);
+            }
+
+            return (instancePtr, structType);
+        }
+
+        public LLVMValueRef VisitNamedArgumentExpr(NamedArgumentNodeExpr expr)
+        {
+            // This node is just a wrapper for a regular expression with a name.
+            // The name is used for semantic analysis and doesn't affect codegen directly.
+            return Visit(expr.Value);
+        }
     }
 }

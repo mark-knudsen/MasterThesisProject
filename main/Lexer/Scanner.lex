@@ -51,6 +51,7 @@
 "record"        { return (int)Tokens.RECORD; }
 "addField"      { return (int)Tokens.ADDFIELD; }
 "removeField"   { return (int)Tokens.REMOVEFIELD; }
+"dataframe"     { return (int)Tokens.DATAFRAME; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
