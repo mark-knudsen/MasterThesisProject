@@ -84,7 +84,7 @@
 ","             { return (int)Tokens.COMMA; }
 "."             { return (int)Tokens.DOT; }
 
-[ \t\r\n]       { /* skip */ }
+[ \t\r\n]+       { /* skip */ }
 .               { return (int)Tokens.error; }
 
 %%

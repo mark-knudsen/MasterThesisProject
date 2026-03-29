@@ -47,6 +47,7 @@ namespace MyCompiler
         LLVMValueRef VisitRecordExpr(RecordNodeExpr expr);
         LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr);
         LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr);
+        LLVMValueRef VisitCopyRecordExpr(CopyRecordNodeExpr expr);
         LLVMValueRef VisitCopyExpr(CopyNodeExpr expr);
         LLVMValueRef VisitAddFieldExpr(AddFieldNodeExpr expr);
         LLVMValueRef VisitRemoveFieldExpr(RemoveFieldNodeExpr expr);

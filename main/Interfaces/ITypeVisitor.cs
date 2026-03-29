@@ -39,6 +39,7 @@ namespace MyCompiler
         Type VisitRecord(RecordNodeExpr expr);
         Type VisitRecordField(RecordFieldNodeExpr expr);
         Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr);
+        Type VisitCopyRecord(CopyRecordNodeExpr expr);
         Type VisitCopy(CopyNodeExpr expr);
         Type VisitAddField(AddFieldNodeExpr expr);
         Type VisitRemoveField(RemoveFieldNodeExpr expr);

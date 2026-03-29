@@ -32,247 +32,266 @@ namespace MyCompiler
 
         public static void Main(string[] args)
         {
-            Console.WriteLine("--- AST Compiler Shell ---");
+            try
+            {
 
-            ICompiler compiler = new CompilerOrc();
-            bool KeepRunning;
-            //bool Debug = args.Length > 0 && args[0] == "True";
-            bool Debug = true;
-            KeepRunning = true;
+                Console.WriteLine("--- AST Compiler Shell ---");
+
+                ICompiler compiler = new CompilerOrc();
+                bool KeepRunning;
+                //bool Debug = args.Length > 0 && args[0] == "True";
+                bool Debug = true;
+                KeepRunning = true;
 
 
 #if LINUX
             bool multipleLines = true;
+            string exitText = "e";
 #else
-            bool multipleLines = false;
+                bool multipleLines = false;
+                string exitText = "exit";
 #endif
 
-            StringBuilder userInput = new StringBuilder();
+                StringBuilder userInput = new StringBuilder();
 
-            // Multi-line input loop with Shift + Enter detection
-            do
-            {
-                Console.ForegroundColor = ConsoleColor.Gray;
-                Console.Write("> "); // Prompt for input
-
-                var lines = new List<string>();
-                var currentLine = new StringBuilder();
-                int cursorPosition = 0;
-                bool isComplete = false;
-
-                if (multipleLines)
+                // Multi-line input loop with Shift + Enter detection
+                do
                 {
-                    // Reading input line by line with arrow/edit support
-                    while (!isComplete)
-                    {
-                        var key = Console.ReadKey(intercept: true); // intercept key press
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                    Console.Write("> "); // Prompt for input
 
-                        if (key.Key == ConsoleKey.Enter)
-                        {
-                            if ((key.Modifiers & ConsoleModifiers.Alt) == ConsoleModifiers.Alt)
-                            {
-                                // If Alt + Enter is pressed, submit the command
-                                isComplete = true;
-                                //Console.WriteLine();
-                            }
-                            else
-                            {
-                                // Otherwise, treat it as a new line inside multi-line input
-                                lines.Add(currentLine.ToString());
-                                currentLine.Clear();
-                                cursorPosition = 0;
-                                Console.WriteLine();
-                                continue;
-                            }
-                        }
-                        else if (key.Key == ConsoleKey.Backspace)
-                        {
-                            if (cursorPosition > 0)
-                            {
-                                cursorPosition--;
-                                currentLine.Remove(cursorPosition, 1);
-                            }
-                        }
-                        else if (key.Key == ConsoleKey.Delete)
-                        {
-                            if (cursorPosition < currentLine.Length)
-                            {
-                                currentLine.Remove(cursorPosition, 1);
-                            }
-                        }
-                        else if (key.Key == ConsoleKey.LeftArrow)
-                        {
-                            if (cursorPosition > 0)
-                            {
-                                cursorPosition--;
-                            }
-                        }
-                        else if (key.Key == ConsoleKey.RightArrow)
-                        {
-                            if (cursorPosition < currentLine.Length)
-                            {
-                                cursorPosition++;
-                            }
-                        }
-                        else if (key.Key == ConsoleKey.Home)
-                        {
-                            cursorPosition = 0;
-                        }
-                        else if (key.Key == ConsoleKey.End)
-                        {
-                            cursorPosition = currentLine.Length;
-                        }
-                        else if (!char.IsControl(key.KeyChar))
-                        {
-                            currentLine.Insert(cursorPosition, key.KeyChar);
-                            cursorPosition++;
-                        }
+                    var lines = new List<string>();
+                    var currentLine = new StringBuilder();
+                    int cursorPosition = 0;
+                    bool isComplete = false;
 
-                        // Redraw line
-                        Console.SetCursorPosition(0, Console.CursorTop);
-                        Console.Write("> " + currentLine.ToString() + " ");
-
-                        // Move cursor to correct position
-                        Console.SetCursorPosition(2 + cursorPosition, Console.CursorTop);
-                    }
-                }
-                else
-                {
-                    var input = Console.ReadLine();
-                    currentLine.Append(input);
-                }
-
-                // Add the current lines to user input
-                if (multipleLines)
-                {
-                    if (currentLine.Length > 0)
-                        lines.Add(currentLine.ToString());
-                    userInput.Append(string.Join(Environment.NewLine, lines).Trim());
-                    lines.Clear();
-                }
-                else
-                {
-                    userInput.Append(currentLine.ToString().Trim());
-                }
-
-                currentLine.Clear();
-
-                if (string.IsNullOrWhiteSpace(userInput.ToString()))
-                {
-                    userInput.Clear();
-                    continue;
-                }
-
-                // Check for special command before accepting the input (e.g., "exit")
-                if (userInput.ToString() == "exit")
-                {
-                    Console.ForegroundColor = ConsoleColor.Red;
-                    Console.WriteLine("Exiting...");
-                    Console.ResetColor();
-                    break;  // Exit the loop when "exit" command is entered
-                }
-
-                // Check for special table or clear commands
-                if (userInput.ToString() == "table")
-                {
-                    PrintVariableTable(compiler);
-                    userInput.Clear();
-                    continue;
-                }
-
-                if (userInput.ToString() == "clearTable")
-                {
-                    compiler.ClearContext();
-                    Console.WriteLine("\ntable is cleared");
-                    userInput.Clear();
-                    continue;
-                }
-
-                if (userInput.ToString() == "verbose")
-                {
-                    Debug = !Debug;
-                    if (Debug)
-                        Console.WriteLine("\n verbose on");
-                    else
-                        Console.WriteLine("\n verbose off");
-
-                    userInput.Clear();
-                    continue;
-                }
-
-                if (userInput.ToString() == "multi lines")
-                {
-                    multipleLines = !multipleLines;
                     if (multipleLines)
-                        Console.WriteLine("\n multi lines on");
-                    else
-                        Console.WriteLine("\n multi lines off");
-
-                    userInput.Clear();
-                    continue;
-                }
-
-                try
-                {
-                    // Process the input (parse and generate IR)
-                    using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(userInput.ToString())))
                     {
-                        Scanner scanner = new Scanner(stream);
-                        Parser parser = new Parser(scanner);
-
-                        if (parser.Parse() && parser.RootNode != null)
+                        // Reading input line by line with arrow/edit support
+                        while (!isComplete)
                         {
-                            // Use a specific color for AST, then RESET immediately
-                            if (Debug)
+                            var key = Console.ReadKey(intercept: true); // intercept key press
+
+                            if (key.Key == ConsoleKey.Enter)
                             {
-                                Console.ForegroundColor = ConsoleColor.Cyan;
-                                Console.WriteLine("\nAST Structure:");
-                                PrintNode(parser.RootNode, 0);
-
-                            }
-
-                            try
-                            {
-                                object result = compiler.Run(parser.RootNode, Debug);
-
-                                // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
-                                if (result == null)
+                                if ((key.Modifiers & ConsoleModifiers.Alt) == ConsoleModifiers.Alt)
                                 {
-                                    Console.ForegroundColor = ConsoleColor.Yellow;
-                                    Console.WriteLine("Result: null");
+                                    // If Alt + Enter is pressed, submit the command
+                                    isComplete = true;
+                                    //Console.WriteLine();
                                 }
                                 else
                                 {
-                                    Console.ForegroundColor = ConsoleColor.Green;
-                                    // HandleArray2 already formats the string, so we just print it
-                                    string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
-                                    Console.WriteLine($"Result: {formatted}");
+                                    // Otherwise, treat it as a new line inside multi-line input
+                                    lines.Add(currentLine.ToString());
+                                    currentLine.Clear();
+                                    cursorPosition = 0;
+                                    Console.WriteLine();
+                                    continue;
                                 }
                             }
-                            catch (Exception ex)
+                            else if (key.Key == ConsoleKey.Backspace)
                             {
-                                Console.ForegroundColor = ConsoleColor.Red; // Brighter red for visibility
-                                Console.WriteLine($"Compiler Error: {ex.Message}");
+                                if (cursorPosition > 0)
+                                {
+                                    cursorPosition--;
+                                    currentLine.Remove(cursorPosition, 1);
+                                }
                             }
-                            finally
+                            else if (key.Key == ConsoleKey.Delete)
                             {
-                                Console.ResetColor(); // Final safety reset
+                                if (cursorPosition < currentLine.Length)
+                                {
+                                    currentLine.Remove(cursorPosition, 1);
+                                }
                             }
+                            else if (key.Key == ConsoleKey.LeftArrow)
+                            {
+                                if (cursorPosition > 0)
+                                {
+                                    cursorPosition--;
+                                }
+                            }
+                            else if (key.Key == ConsoleKey.RightArrow)
+                            {
+                                if (cursorPosition < currentLine.Length)
+                                {
+                                    cursorPosition++;
+                                }
+                            }
+                            else if (key.Key == ConsoleKey.Home)
+                            {
+                                cursorPosition = 0;
+                            }
+                            else if (key.Key == ConsoleKey.End)
+                            {
+                                cursorPosition = currentLine.Length;
+                            }
+                            else if (!char.IsControl(key.KeyChar))
+                            {
+                                currentLine.Insert(cursorPosition, key.KeyChar);
+                                cursorPosition++;
+                            }
+
+                            // Redraw line
+                            Console.SetCursorPosition(0, Console.CursorTop);
+                            Console.Write("> " + currentLine.ToString() + " ");
+
+                            // Move cursor to correct position
+                            Console.SetCursorPosition(2 + cursorPosition, Console.CursorTop);
                         }
-
                     }
-                }
-                catch (Exception ex)
-                {
-                    Console.ForegroundColor = ConsoleColor.DarkRed;
-                    Console.WriteLine($"Critical Error: {ex.Message}");
-                    Console.ForegroundColor = ConsoleColor.Gray;
-                }
+                    else
+                    {
+                        var input = Console.ReadLine();
+                        currentLine.Append(input);
+                    }
 
-                // Clear input for the next round
-                userInput.Clear();
-                Console.ForegroundColor = ConsoleColor.Gray;
-            } while (KeepRunning);
+                    // Add the current lines to user input
+                    if (multipleLines)
+                    {
+                        if (currentLine.Length > 0)
+                            lines.Add(currentLine.ToString());
+                        userInput.Append(string.Join(Environment.NewLine, lines).Trim());
+                        lines.Clear();
+                    }
+                    else
+                    {
+                        userInput.Append(currentLine.ToString().Trim());
+                    }
+
+                    currentLine.Clear();
+
+                    if (string.IsNullOrWhiteSpace(userInput.ToString()))
+                    {
+                        userInput.Clear();
+                        continue;
+                    }
+
+                    // Check for special command before accepting the input (e.g., "exit")
+                    if (userInput.ToString() == exitText)
+                    {
+                        Console.ForegroundColor = ConsoleColor.Red;
+                        Console.WriteLine("Exiting...");
+                        Console.ResetColor();
+                        break;  // Exit the loop when "exit" command is entered
+                    }
+
+                    // Check for special table or clear commands
+                    if (userInput.ToString() == "table")
+                    {
+                        PrintVariableTable(compiler);
+                        userInput.Clear();
+                        continue;
+                    }
+
+                    if (userInput.ToString() == "clearTable")
+                    {
+                        compiler.ClearContext();
+                        Console.WriteLine("\ntable is cleared");
+                        userInput.Clear();
+                        continue;
+                    }
+
+                    if (userInput.ToString() == "verbose")
+                    {
+                        Debug = !Debug;
+                        if (Debug)
+                            Console.WriteLine("\n verbose on");
+                        else
+                            Console.WriteLine("\n verbose off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+
+                    if (userInput.ToString() == "multi lines")
+                    {
+                        multipleLines = !multipleLines;
+                        if (multipleLines)
+                            Console.WriteLine("\n multi lines on");
+                        else
+                            Console.WriteLine("\n multi lines off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+
+                    try
+                    {
+                        // Process the input (parse and generate IR)
+                        using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(userInput.ToString())))
+                        {
+                            Scanner scanner = new Scanner(stream);
+                            Parser parser = new Parser(scanner);
+
+                            if (parser.Parse() && parser.RootNode != null)
+                            {
+                                // Use a specific color for AST, then RESET immediately
+                                if (Debug)
+                                {
+                                    // 1. Set the color
+                                    Console.ForegroundColor = ConsoleColor.Cyan;
+                                    Console.WriteLine("\nAST Structure:");
+
+                                    // 2. Print the tree
+                                    PrintNode(parser.RootNode, 0);
+
+                                    // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
+                                    Console.ResetColor();
+
+                                }
+
+                                try
+                                {
+                                    // Now if this crashes, the console is already back to Gray/Default
+                                    object result = compiler.Run(parser.RootNode, Debug);
+
+                                    // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
+                                    if (result == null)
+                                    {
+                                        Console.ForegroundColor = ConsoleColor.Yellow;
+                                        Console.WriteLine("Result: null");
+                                    }
+                                    else
+                                    {
+                                        Console.ForegroundColor = ConsoleColor.Green;
+                                        // HandleArray2 already formats the string, so we just print it
+                                        string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
+                                        Console.WriteLine($"Result: {formatted}");
+                                    }
+                                }
+                                catch (Exception ex)
+                                {
+                                    Console.ForegroundColor = ConsoleColor.Red; // Brighter red for visibility
+                                    Console.WriteLine($"Compiler Error: {ex.Message}");
+                                }
+                                finally
+                                {
+                                    Console.ResetColor(); // Final safety reset
+                                }
+                            }
+
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.ForegroundColor = ConsoleColor.DarkRed;
+                        Console.WriteLine($"Critical Error: {ex.Message}");
+                        Console.ForegroundColor = ConsoleColor.Gray;
+                    }
+
+                    // Clear input for the next round
+                    userInput.Clear();
+                    Console.ForegroundColor = ConsoleColor.Gray;
+                } while (KeepRunning);
+
+            }
+            finally
+            {
+                // Absolute safety reset for when the app exits or hits a truly fatal error
+                Console.ResetColor();
+            }
         }
 
         static void PrintNode(NodeExpr node, int indent)
