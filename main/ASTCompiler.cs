@@ -520,7 +520,7 @@ namespace MyCompiler
         public MinNodeExpr(ExpressionNodeExpr arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = new IntType();
+            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMinExpr(this);

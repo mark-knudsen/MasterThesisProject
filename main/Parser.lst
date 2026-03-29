@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 29-03-2026 10:07:12>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 28/03/2026 16:43:42>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 29-03-2026 10:07:56
+//  DateTime: 28/03/2026 23:51:41
 // ==========================================================================
 
 
@@ -26,7 +26,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY RECORD ADDFIELD REMOVEFIELD
+%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV COPY RECORD ADDFIELD REMOVEFIELD
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
@@ -86,7 +86,6 @@ Statement
     | FOREACH LPAREN ID IN expr RPAREN LBRACE StatementList RBRACE
         { $$ = new ForEachLoopNodeExpr(new IdNodeExpr((string)$3), $5 as ExpressionNodeExpr, $8 ); }
     ;
-
 
 Type
     : INT                 { $$ = new IntType(); }
@@ -212,16 +211,9 @@ expr
             $7 as ExpressionNodeExpr
         );
     }
-  
-    /* Global Function Style */
-    | READCSV LPAREN expr RPAREN 
-        { 
-            // $3 is the 'expr' (the filename string)
-            $$ = new ReadCsvNodeExpr($3 as ExpressionNodeExpr); 
-        }
+   // | expr DOT COPY                          { $$ = new CopyArrayNodeExpr($1 as ExpressionNodeExpr); }
 
-    | TOCSV LPAREN expr COMMA expr RPAREN 
-        { $$ = new ToCsvNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | expr DOT READCSV LPAREN expr RPAREN    { $$ = new ReadCsvNodeExpr($1 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
     | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
@@ -230,7 +222,7 @@ expr
         $$ = new RecordFieldNodeExpr($1 as ExpressionNodeExpr, (string)$3);
     }
 
-    //| expr DOT COPY                           { $$ = new CopyRecordNodeExpr($1 as ExpressionNodeExpr); }
+   // | expr DOT COPY                           { $$ = new CopyRecordNodeExpr($1 as ExpressionNodeExpr); }
     | expr DOT COPY                           { $$ = new CopyNodeExpr($1 as ExpressionNodeExpr); }
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
                                               { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }

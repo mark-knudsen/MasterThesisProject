@@ -1,3 +1,5 @@
+using System.ComponentModel.Design;
+
 namespace MyCompiler
 {
     public class TypeChecker : ITypeVisitor
@@ -14,7 +16,7 @@ namespace MyCompiler
 
         public Type Check(NodeExpr node)
         {
-            if (_debug) Console.WriteLine("we checking");
+            if (_debug) Console.WriteLine("we type checking");
             return Visit(node);
         }
 
@@ -47,8 +49,7 @@ namespace MyCompiler
                 IndexAssignNodeExpr idxa => VisitIndexAssign(idxa),
                 WhereNodeExpr whe => VisitWhere(whe),
                 MapNodeExpr map => VisitMap(map),
-                ReadCsvNodeExpr read_csv => VisitReadCsv(read_csv),
-                ToCsvNodeExpr to_csv => VisitToCsv(to_csv),
+                ReadCsvNodeExpr read => VisitReadCsv(read),
                 AddNodeExpr add => VisitAdd(add),
                 AddRangeNodeExpr addr => VisitAddRange(addr),
                 RemoveNodeExpr remo => VisitRemove(remo),
@@ -365,7 +366,6 @@ namespace MyCompiler
             return valType;
         }
 
-
         public Type VisitRandom(RandomNodeExpr expr)
         {
             // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
@@ -475,11 +475,8 @@ namespace MyCompiler
 
         public Type VisitCopyArray(CopyArrayNodeExpr expr)
         {
-            Type elementType = ((ArrayNodeExpr)expr.Source).ElementType;
-            Visit(expr.Source);
-
-            var arrayType = new ArrayType(elementType);
-            expr.SetType(arrayType);
+            var sourceArray = Visit(expr.Source);
+            expr.SetType(sourceArray as ArrayType);
             return expr.Type;
         }
 
@@ -515,23 +512,16 @@ namespace MyCompiler
             Visit(expr.IndexExpression);
             Visit(expr.AssignExpression);
 
-            Type inferred = new IntType();
             if (expr.ArrayExpression is IdNodeExpr idNode)
             {
                 var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
-                    inferred = entry.ElementType ?? arrType.ElementType ?? new FloatType();
-            }
-            else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
-            {
-                inferred = arrayLiteral.ElementType ?? new FloatType();
-            }
-            else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
-            {
-                inferred = arrayExprType.ElementType;
+                var assignType = expr.AssignExpression.Type.GetType();
+                var arrayType = entry?.ElementType.GetType();
+                if (arrayType != assignType)
+                    throw new Exception($"Can't assign {arrayType.Name} to {assignType.Name} array");
             }
 
-            expr.SetType(inferred);
+            expr.SetType(new VoidType());
             return expr.Type;
         }
 
@@ -598,7 +588,7 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            if (_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            if (_debug) Console.WriteLine("The array node in where: " + expr.ArrayExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
@@ -619,7 +609,7 @@ namespace MyCompiler
 
         public Type VisitMap(MapNodeExpr expr)
         {
-            // if(_debug) Console.WriteLine("yo the array node in where: " + expr.ArrayExpr);
+            // if(_debug) Console.WriteLine("The array node in map: " + expr.ArrayExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
@@ -636,27 +626,24 @@ namespace MyCompiler
 
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
         {
-            Visit(expr.FileNameExpr);
-            var type = new ArrayType(new IntType()); // It returns an array
-            expr.SetType(type);
-            return type;
-        }
-
-        public Type VisitToCsv(ToCsvNodeExpr expr)
-        {
             Visit(expr.Expression);
             Visit(expr.FileNameExpr);
 
-            // to_csv returns nothing (void/none)
-            var resultType = new VoidType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new StringType());
+            return expr.Type;
         }
 
         public Type VisitAdd(AddNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
-            Visit(expr.AddExpression);
+            var arrayType = Visit(expr.ArrayExpression);
+            var addType = Visit(expr.AddExpression);
+
+            // check if the array and the node are of the same type
+            var arrayElementType = ((ArrayType)arrayType).ElementType;
+
+            if (arrayElementType.GetType() != addType.GetType())
+                throw new Exception($"Can't add {addType} value to a {arrayElementType} array");
+
             expr.SetType(expr.ArrayExpression.Type);
             return expr.Type;
         }
@@ -687,31 +674,50 @@ namespace MyCompiler
 
         public Type VisitLength(LengthNodeExpr expr)
         {
+            Visit(expr.ArrayExpression);
             expr.SetType(new IntType());
             return expr.Type;
         }
+
+        static void ValidType(Type arrayElementType)
+        {
+            if (arrayElementType is StringType or BoolType or ArrayType)
+                throw new Exception($"Can't find minimum value for {arrayElementType.GetType().Name}");
+        }
+
         public Type VisitMin(MinNodeExpr expr)
         {
-            expr.SetType(new FloatType());
+            var arrayElementType = (Visit(expr.ArrayExpression) as ArrayType).ElementType;
+            ValidType(arrayElementType);
+
+            expr.SetType(arrayElementType);
             return expr.Type;
         }
 
         public Type VisitMax(MaxNodeExpr expr)
         {
-            expr.SetType(new FloatType());
+            var arrayElementType = (Visit(expr.ArrayExpression) as ArrayType).ElementType;
+            ValidType(arrayElementType);
+
+            expr.SetType(arrayElementType);
             return expr.Type;
         }
 
         public Type VisitMean(MeanNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
+            var arrayElementType = (Visit(expr.ArrayExpression) as ArrayType).ElementType;
+            ValidType(arrayElementType);
+
             expr.SetType(new FloatType());
             return expr.Type;
         }
 
         public Type VisitSum(SumNodeExpr expr)
         {
-            expr.SetType(new FloatType());
+            var arrayElementType = (Visit(expr.ArrayExpression) as ArrayType).ElementType;
+            ValidType(arrayElementType);
+
+            expr.SetType(arrayElementType);
             return expr.Type;
         }
 
