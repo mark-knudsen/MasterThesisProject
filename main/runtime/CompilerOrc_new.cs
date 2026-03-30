@@ -388,8 +388,18 @@ namespace MyCompiler
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
+            // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
+            // Stopwatch sw = Stopwatch.StartNew();
+
             var tempResult = delegateResult();
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
+
+            // Print execution stats - uncomment if you want to see the stats for each command, but it can be a bit much
+            // sw.Stop();
+            // Console.WriteLine("\n--- Execution Stats ---");
+            // Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            // Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            // Console.WriteLine("------------------------\n");
 
             switch ((ValueTag)result.tag)
             {
