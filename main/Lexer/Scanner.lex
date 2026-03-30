@@ -85,7 +85,11 @@
 ","             { return (int)Tokens.COMMA; }
 "."             { return (int)Tokens.DOT; }
 
-[ \t\r\n]+       { /* skip */ }
+\r\n            { return (int)Tokens.NEWLINE; }   // Windows
+\n              { return (int)Tokens.NEWLINE; }   // Unix
+\r              { return (int)Tokens.NEWLINE; }   // Old Mac (rare)
+
+[ \t]+          { /* skip spaces/tabs only */ }
 .               { return (int)Tokens.error; }
 
 %%

@@ -718,7 +718,6 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNamedArgumentExpr(this);
-
     }
 
     public class DataframeNodeExpr : ExpressionNodeExpr
@@ -726,7 +725,6 @@ namespace MyCompiler
         public ExpressionNodeExpr Columns { get; private set; }
         public ExpressionNodeExpr DataPointers { get; private set; }
         public ExpressionNodeExpr DataTypes { get; private set; }
-
 
         public DataframeNodeExpr(List<ExpressionNodeExpr> args)
         {
@@ -761,7 +759,6 @@ namespace MyCompiler
 
             Type = CreateDataframe();
         }
-
 
         private DataframeType CreateDataframe()
         {

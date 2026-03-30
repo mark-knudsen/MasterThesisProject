@@ -69,12 +69,10 @@ namespace MyCompiler
 
         public DataframeType(List<string> columns, List<List<object>> dataPointers, List<Type> dataTypes)
         {
-
             Columns = columns;
             DataPointers = dataPointers;
             DataTypes = dataTypes;
         }
-
 
         public override string ToString()
         {
