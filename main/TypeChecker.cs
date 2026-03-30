@@ -74,6 +74,7 @@ namespace MyCompiler
                 AddFieldNodeExpr radd => VisitAddField(radd),
                 RemoveFieldNodeExpr rrem => VisitRemoveField(rrem),
                 DataframeNodeExpr df => VisitDataframe(df),
+                ShowDataframeNodeExpr showdf => VisitShowDataframe(showdf),
                 NamedArgumentNodeExpr namedArg => VisitNamedArgument(namedArg),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
@@ -712,8 +713,6 @@ namespace MyCompiler
             return expr.Type;
         }
 
-
-
         public Type VisitRecord(RecordNodeExpr expr)
         {
             List<Type> types = new List<Type>();
@@ -765,11 +764,9 @@ namespace MyCompiler
             Visit(expr.AssignExpression);
             Visit(expr.IdRecord);
 
-            expr.SetType(new VoidType()); // it is a statement, we don't need to return anything
+            expr.SetType(new VoidType());
             return expr.Type;
         }
-
-
 
         public Type VisitCopyRecord(CopyRecordNodeExpr expr)
         {
@@ -798,7 +795,6 @@ namespace MyCompiler
             Visit(expr.DataPointers);
             Visit(expr.DataTypes);
 
-            expr.SetType(expr.Type);
             return expr.Type;
         }
         public Type VisitNamedArgument(NamedArgumentNodeExpr expr)
@@ -808,5 +804,10 @@ namespace MyCompiler
             return expr.Type;
         }
 
+        public Type VisitShowDataframe(ShowDataframeNodeExpr expr)
+        {
+            Visit(expr.Source);
+            return expr.Type;
+        }
     }
 }

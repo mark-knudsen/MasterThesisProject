@@ -44,6 +44,7 @@ namespace MyCompiler
         Type VisitAddField(AddFieldNodeExpr expr);
         Type VisitRemoveField(RemoveFieldNodeExpr expr);
         Type VisitDataframe(DataframeNodeExpr expr);
+        Type VisitShowDataframe(ShowDataframeNodeExpr expr);
         Type VisitNamedArgument(NamedArgumentNodeExpr expr);
 
         // Type VisitFunctionDef(FunctionDefNode expr);

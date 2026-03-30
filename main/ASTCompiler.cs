@@ -810,11 +810,20 @@ namespace MyCompiler
 
             return new DataframeType(columns, dataPointers, dataTypes);
         }
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+    }
 
+    public class ShowDataframeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Source { get; private set; }
+        public List<ExpressionNodeExpr> Columns { get; private set; }
 
+        public ShowDataframeNodeExpr(ExpressionNodeExpr source, List<ExpressionNodeExpr> columns)
+        {
+            Source = source;
+            Columns = columns;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframeExpr(this);
     }
 }
 

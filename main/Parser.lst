@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 30/03/2026 11:45:57>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 30/03/2026 21:14:54>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 30/03/2026 17:01:21
+//  DateTime: 30/03/2026 22:41:01
 // ==========================================================================
 
 
@@ -27,7 +27,9 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY RECORD ADDFIELD REMOVEFIELD DATAFRAME
+%token PRINT RANDOM ROUND READCSV TOCSV 
+%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD ADDFIELD REMOVEFIELD WHERE MAP FUNC ADD ADDRANGE 
+%token DATAFRAME SHOW 
 
 %token INT FLOAT BOOL STRING VOID ARRAY
 
@@ -244,8 +246,9 @@ expr
     {
         $$ = new DataframeNodeExpr(new List<ExpressionNodeExpr> { $3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr });
     }
+    | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNodeExpr($1 as ExpressionNodeExpr, $6 as List<ExpressionNodeExpr>); }
 
-    ;
+    ; 
 
 params
     : /* empty */ { $$ = new List<string>(); }
