@@ -2852,12 +2852,12 @@ namespace MyCompiler
             return valueToAssign;
         }
 
-        public LLVMValueRef VisitRecordExpr(RecordNodeExpr expr)
+        public LLVMValueRef VisitRecordExpr(RecordNodeExpr expr) // x=record({name: "dan", age: 100}) 
         {
             // 1. Collect LLVM Types from the fields to define the Struct
             var fieldTypes = new List<LLVMTypeRef>();
 
-            foreach (var field in expr.Fields) // x=record(["name", "age"],["dan", 100])    x.name   z=record(["name", "age","iscool", "score"],["dan", 100, true, 10.435345]) 
+            foreach (var field in expr.Fields)
             {
                 // This returns your ContextEntry
                 var entry = Visit(field.Value);

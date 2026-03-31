@@ -185,7 +185,7 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNullExpr(this);
     }
-    
+
     // Represents a variable name (e.g., x)
     public class IdNodeExpr : ExpressionNodeExpr
     {
@@ -600,11 +600,11 @@ namespace MyCompiler
         public List<RecordField> Fields { get; } = new List<RecordField>();
         public List<Type> ElementTypes { get; } = new List<Type>();
 
-        public RecordNodeExpr(ExpressionNodeExpr labelsArray, ExpressionNodeExpr valuesArray)
+        public RecordNodeExpr(List<NamedArgumentNodeExpr> valuesArray)
         {
             // 1. Cast the inputs to ArrayNodeExpr to get into their internal lists
-            var labelNodes = (labelsArray as ArrayNodeExpr)?.Elements;
-            var valueNodes = (valuesArray as ArrayNodeExpr)?.Elements;
+            var labelNodes = valuesArray.Select(v => new StringNodeExpr(v.Name)).ToList();
+            var valueNodes = valuesArray;
 
             if (labelNodes == null || valueNodes == null)
                 throw new Exception("Record requires two arrays: labels and values.");

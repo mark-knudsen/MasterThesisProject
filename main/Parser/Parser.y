@@ -10,6 +10,7 @@
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
     public MyCompiler.ExpressionNodeExpr expr; // Single expression
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
+    public List<MyCompiler.NamedArgumentNodeExpr> arglist; // for arg_list
 }
 
 %token <obj> NUMBER STRING ID NULL_LITERAL
@@ -45,6 +46,7 @@
 %type <obj> params  /* Use <obj> for lists */
 %type <expr> arg
 %type <exprList> expr_list
+%type <arglist> arg_list
 
 
 /* This tells the parser which C# variable stores the final tree */
@@ -219,7 +221,7 @@ expr
     | TOCSV LPAREN expr COMMA expr RPAREN 
         { $$ = new ToCsvNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
-    | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | RECORD LPAREN LBRACE arg_list RBRACE RPAREN   { $$ = new RecordNodeExpr($4 as List<NamedArgumentNodeExpr>); }
 
     | expr DOT ID %prec LOWER_THAN_LPAREN
     {
@@ -247,11 +249,20 @@ params
     | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
     ;
 
+arg_list
+    : arg                  { $$ = new List<NamedArgumentNodeExpr> { $1 as NamedArgumentNodeExpr }; }
+    | arg_list COMMA arg   { ((List<NamedArgumentNodeExpr>)$1).Add($3 as NamedArgumentNodeExpr); $$ = $1; }
+    ;
+
 arg
     : ID ASSIGN expr
       {
           $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr);
       }
+    | ID COLON expr
+      {
+          $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr);
+      } 
     | expr
       {
           $$ = $1 as ExpressionNodeExpr;
