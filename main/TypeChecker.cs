@@ -144,6 +144,9 @@ namespace MyCompiler
         public Type VisitId(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
+
+            // if(_debug) Console.WriteLine("id type: " + entry.Type); // prof we can get records type at type check time
+            
             if (entry == null)
             {
                 // Remove .Line if it's causing an error
@@ -614,7 +617,6 @@ namespace MyCompiler
             expr.SetType(new StringType());
             return expr.Type; // new VoidType()
         }
-
 
         public Type VisitAdd(AddNodeExpr expr)
         {

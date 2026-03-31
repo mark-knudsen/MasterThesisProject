@@ -576,7 +576,6 @@ namespace MyCompiler
             return result;
         }
 
-
         private string HandleDataframe(IntPtr dfPtr, DataframeType type)
         {
             if (dfPtr == IntPtr.Zero)
@@ -711,6 +710,7 @@ namespace MyCompiler
         }
 
         // dataframe(["name", "age", "score", "isCool"], [["dan", 30, 1.1, true]])
+        // dataframe(["name", "age"], [["dan", 30], ["alice", 25]])
         // x = dataframe(["name", "title", "age", "score"], [["dan", "prince", 30, 1.1], ["alice", "princess", 25, 2.2], ["bob", "knight", 40, 0.5], ["charlie", "lord", 22, 958.1], ["harry", "wizard", 52, 924.8]])
         // x = dataframe(["name", "title", "age", "score"], [["dan", "prince", 30, 1.1], ["alice", "princess", 25, 2.2], ["bob", "knight", 40, 0.5], ["charlie", "lord", 22, 958.1]])
 
@@ -2089,6 +2089,17 @@ namespace MyCompiler
             var headerPtr = Visit(expr.ArrayExpression);
             var indexVal = Visit(expr.IndexExpression);
 
+            var name = (expr.ArrayExpression as IdNodeExpr).Name;
+            var sourceType = _context.Get(name).Type;
+
+            Console.WriteLine("semantic type of array being indexed: " + sourceType);
+
+            if (sourceType is ArrayType arrType)
+                Console.WriteLine("Indexing array");
+            else if (sourceType is DataframeType dfType)
+                Console.WriteLine("Indexing dataframe");
+
+
             if (indexVal.TypeOf == ctx.DoubleType)
                 indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
@@ -2710,14 +2721,14 @@ namespace MyCompiler
                 ptrToLoad = global;
             }
 
-            // if (entry.Type is ArrayType || entry.Type is StringType)
-            // {
-            //     return _builder.BuildLoad2(
-            //         LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
-            //         ptrToLoad,
-            //         expr.Name + "_load"
-            //     );
-            // }
+            if (entry.Type is ArrayType || entry.Type is StringType)
+            {
+                return _builder.BuildLoad2(
+                    LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
+                    ptrToLoad,
+                    expr.Name + "_load"
+                );
+            }
 
             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
 
