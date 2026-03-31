@@ -16,6 +16,7 @@
 "else"          { return (int)Tokens.ELSE; }
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }
 "false"         { yylval.boolVal = false; return (int)Tokens.BOOL_LITERAL; }
+"NULL"          { return (int)Tokens.NULL_LITERAL; }
 "print"         { return (int)Tokens.PRINT; }
 "random"        { return (int)Tokens.RANDOM; }
 "round"         { return (int)Tokens.ROUND; }
@@ -24,15 +25,15 @@
 "foreach"       { return (int)Tokens.FOREACH; }
 "in"            { return (int)Tokens.IN; }
 
-
 "int"           { return (int)Tokens.INT; }
 "float"         { return (int)Tokens.FLOAT; }
 "string"        { return (int)Tokens.STRING; }
 "void"          { return (int)Tokens.VOID; }
+"null"          { return (int)Tokens.NULL; }
 "bool"          { return (int)Tokens.BOOL; }
 "array"         { return (int)Tokens.ARRAY; }
-"copy"          { return (int)Tokens.COPY; }
 
+"copy"          { return (int)Tokens.COPY; }
 "where"         { return (int)Tokens.WHERE; }
 "map"           { return (int)Tokens.MAP; }
 "=>"            { return (int)Tokens.LAMBDA; }

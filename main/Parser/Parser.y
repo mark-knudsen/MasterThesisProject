@@ -12,7 +12,7 @@
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
 }
 
-%token <obj> NUMBER STRING ID
+%token <obj> NUMBER STRING ID NULL_LITERAL
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE
@@ -22,7 +22,7 @@
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD ADDFIELD REMOVEFIELD WHERE MAP FUNC ADD ADDRANGE 
 %token DATAFRAME SHOW 
 
-%token INT FLOAT BOOL STRING VOID ARRAY
+%token INT FLOAT BOOL STRING VOID NULL ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
@@ -88,6 +88,7 @@ Type
     | BOOL                { $$ = new BoolType(); }
     | STRING              { $$ = new StringType(); }    
     | VOID                { $$ = new VoidType(); }
+    | NULL                { $$ = new NullType(); }
     | ARRAY GT Type LT    { $$ = new ArrayType($3); }
     ;
 
@@ -137,6 +138,7 @@ expr
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
+    | NULL_LITERAL        { $$ = new NullNodeExpr(); }
     
     /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 

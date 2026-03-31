@@ -7,6 +7,7 @@ namespace MyCompiler
         Type VisitFloat(FloatNodeExpr expr);
         Type VisitString(StringNodeExpr expr);
         Type VisitBoolean(BooleanNodeExpr expr);
+        Type VisitNull(NullNodeExpr expr);
         Type VisitBinary(BinaryOpNodeExpr expr);
         Type VisitLogical(LogicalOpNodeExpr expr);
         Type VisitComparison(ComparisonNodeExpr expr);

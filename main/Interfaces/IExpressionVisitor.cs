@@ -10,6 +10,7 @@ namespace MyCompiler
         LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
         LLVMValueRef VisitStringExpr(StringNodeExpr expr);
         LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
+        LLVMValueRef VisitNullExpr(NullNodeExpr expr);
         LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr);
         LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
         LLVMValueRef VisitLogicalOpExpr(LogicalOpNodeExpr expr);

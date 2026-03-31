@@ -24,6 +24,10 @@ namespace MyCompiler
     {
         public override string ToString() { return "void"; }
     }
+    public class NullType : Type
+    {
+        public override string ToString() { return "null"; }
+    }
 
     public class ArrayType : Type
     {

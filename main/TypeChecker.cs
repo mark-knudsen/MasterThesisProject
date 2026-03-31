@@ -29,6 +29,7 @@ namespace MyCompiler
                 NumberNodeExpr n => VisitNumber(n),
                 StringNodeExpr str => VisitString(str),
                 BooleanNodeExpr b => VisitBoolean(b),
+                NullNodeExpr nul => VisitNull(nul),
                 IdNodeExpr id => VisitId(id),
                 UnaryOpNodeExpr un => VisitUnaryOp(un),
                 BinaryOpNodeExpr bin => VisitBinary(bin),
@@ -131,6 +132,12 @@ namespace MyCompiler
         public Type VisitBoolean(BooleanNodeExpr expr)
         {
             expr.SetType(new BoolType());
+            return expr.Type;
+        }
+
+        public Type VisitNull(NullNodeExpr expr)
+        {
+            expr.SetType(new NullType());
             return expr.Type;
         }
 

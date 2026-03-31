@@ -163,6 +163,29 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
     }
 
+    // Boolean
+    public class BooleanNodeExpr : ExpressionNodeExpr
+    {
+        public bool Value { get; }
+
+        public BooleanNodeExpr(bool value)
+        {
+            Value = value;
+            Type = new BoolType();
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
+    }
+
+    public class NullNodeExpr : ExpressionNodeExpr
+    {
+        public NullNodeExpr()
+        {
+            Type = new NullType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNullExpr(this);
+    }
+    
     // Represents a variable name (e.g., x)
     public class IdNodeExpr : ExpressionNodeExpr
     {
@@ -287,19 +310,6 @@ namespace MyCompiler
             Body = body;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForEachLoopExpr(this);
-    }
-
-    // Boolean
-    public class BooleanNodeExpr : ExpressionNodeExpr
-    {
-        public bool Value { get; }
-
-        public BooleanNodeExpr(bool value)
-        {
-            Value = value;
-            Type = new BoolType();
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
     }
 
     public class ComparisonNodeExpr : ExpressionNodeExpr
