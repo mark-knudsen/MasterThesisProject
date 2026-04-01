@@ -175,6 +175,7 @@ expr
     | expr LT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<", $3 as ExpressionNodeExpr); }
 
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); } /*[1,2,3] */
+    | LBRACE arg_list RBRACE { $$ = new RecordNodeExpr($2 as List<NamedArgumentNodeExpr>); } /*{ name: "Bob", age: 23 } */
     | ID LBRACKET expr RBRACKET 
     { 
         // Cast $1 to string so the IdNodeExpr constructor accepts it
@@ -234,10 +235,14 @@ expr
                                               { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
     
-    // DO DATAFRAMES!
-    | DATAFRAME LPAREN arg COMMA arg RPAREN
+    // DO DATAFRAMES!   -  dataframe([], [{ name: "Bob",  }])
+   | DATAFRAME LPAREN expr COMMA expr RPAREN
     {
-        $$ = new DataframeNodeExpr(new List<ExpressionNodeExpr> { $3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr });
+        $$ = new DataframeNodeExpr(new List<ExpressionNodeExpr> 
+        { 
+            $3 as ExpressionNodeExpr, 
+            $5 as ExpressionNodeExpr 
+        });
     }
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNodeExpr($1 as ExpressionNodeExpr, $6 as List<ExpressionNodeExpr>); }
 

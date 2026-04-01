@@ -146,7 +146,7 @@ namespace MyCompiler
             var entry = _context.Get(expr.Name);
 
             // if(_debug) Console.WriteLine("id type: " + entry.Type); // prof we can get records type at type check time
-            
+
             if (entry == null)
             {
                 // Remove .Line if it's causing an error
@@ -801,8 +801,7 @@ namespace MyCompiler
         public Type VisitDataframe(DataframeNodeExpr expr)
         {
             Visit(expr.Columns);
-            Visit(expr.DataPointers);
-            Visit(expr.DataTypes);
+            Visit(expr.Rows);
 
             return expr.Type;
         }

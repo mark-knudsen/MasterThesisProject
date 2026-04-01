@@ -589,10 +589,16 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
     }
 
+
     public class RecordField
     {
         public string Label { get; set; }
+
+        // Used during codegen
         public ExpressionNodeExpr Value { get; set; }
+
+        // Filled during typechecking
+        public Type Type { get; set; }
     }
 
     public class RecordNodeExpr : ExpressionNodeExpr
@@ -732,96 +738,68 @@ namespace MyCompiler
 
     public class DataframeNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr Columns { get; private set; }
-        public ExpressionNodeExpr DataPointers { get; private set; }
-        public ExpressionNodeExpr DataTypes { get; private set; }
+        public ArrayNodeExpr Columns { get; private set; }
+        public ArrayNodeExpr Rows { get; private set; } // array of RecordNodeExpr
 
         public DataframeNodeExpr(List<ExpressionNodeExpr> args)
         {
             foreach (var arg in args)
             {
+                // Handle named arguments
                 if (arg is NamedArgumentNodeExpr named)
                 {
                     switch (named.Name)
                     {
                         case "columns":
-                            if (Columns != null) throw new Exception("columns assigned twice");
-                            Columns = named.Value;
+                            Columns = named.Value as ArrayNodeExpr;
                             break;
+
                         case "data":
-                            if (DataPointers != null) throw new Exception("data assigned twice");
-                            DataPointers = named.Value;
+                        case "rows":
+                            Rows = named.Value as ArrayNodeExpr;
                             break;
+
                         default:
-                            throw new Exception($"Unknown argument {named.Name}");
+                            throw new Exception($"Unknown dataframe argument: {named.Name}");
                     }
                 }
                 else
                 {
-                    if (Columns == null) Columns = arg;
-                    else if (DataPointers == null) DataPointers = arg;
-                    else throw new Exception("Too many positional arguments for dataframe");
+                    // Positional arguments
+                    if (Columns == null)
+                        Columns = arg as ArrayNodeExpr;
+                    else if (Rows == null)
+                        Rows = arg as ArrayNodeExpr;
+                    else
+                        throw new Exception("Too many positional arguments for dataframe");
                 }
             }
 
-            if (Columns == null || DataPointers == null)
-                throw new Exception("Missing required dataframe arguments");
+            if (Columns == null || Rows == null)
+                throw new Exception("dataframe requires columns and data");
 
-            Type = CreateDataframe();
+            Type = CreateType();
         }
 
-        private DataframeType CreateDataframe()
+        private Type CreateType()
         {
-            var columns = (Columns as ArrayNodeExpr)?.Elements.OfType<StringNodeExpr>().Select(s => s.Value).ToList();
-            List<List<object>> dataPointers = (DataPointers as ArrayNodeExpr)?.Elements.OfType<ArrayNodeExpr>().Select(arr => arr.Elements.Select(value =>
-            {
-                if (value is NumberNodeExpr num) return (object)num.Value;
-                if (value is FloatNodeExpr flt) return (object)flt.Value;
-                if (value is StringNodeExpr str) return (object)str.Value;
-                if (value is BooleanNodeExpr boolean) return (object)boolean.Value;
-                throw new Exception("Unsupported dataframe data value type.");
-            }).ToList()).ToList();
+            var columnNames = Columns.Elements
+                .OfType<StringNodeExpr>()
+                .Select(s => s.Value)
+                .ToList();
 
-            var dataTypes = (DataTypes as ArrayNodeExpr)?.Elements.Select(dt =>
-            {
-                if (dt is StringNodeExpr) return new StringType() as Type;
-                if (dt is NumberNodeExpr) return new IntType() as Type;
-                if (dt is FloatNodeExpr) return new FloatType() as Type;
-                if (dt is BooleanNodeExpr) return new BoolType() as Type;
-                throw new Exception("Unsupported data type in dataframe.");
-            }).ToList();
+            var firstRow = Rows.Elements.FirstOrDefault() as RecordNodeExpr;
 
-            if (dataTypes == null)
-            {
-                var firstRow = (DataPointers as ArrayNodeExpr)?.Elements.OfType<ArrayNodeExpr>().FirstOrDefault();
-                if (firstRow != null)
-                {
-                    var inferred = firstRow.Elements.Select(value =>
-                    {
-                        if (value is StringNodeExpr) return new StringType() as Type;
-                        if (value is NumberNodeExpr) return new IntType() as Type;
-                        if (value is FloatNodeExpr) return new FloatType() as Type;
-                        if (value is BooleanNodeExpr) return new BoolType() as Type;
-                        throw new Exception("Unsupported dataframe data value type.");
-                    }).ToList();
+            if (firstRow == null)
+                throw new Exception("dataframe rows must be records");
 
-                    dataTypes = inferred;
-                    DataTypes = new ArrayNodeExpr(
-                         inferred
-                             .Select(type => new StringNodeExpr(type.ToString()))
-                             .Cast<ExpressionNodeExpr>()
-                             .ToList()
-                     );
-                }
-            }
-
-            if (columns == null || dataPointers == null || dataTypes == null)
-                throw new Exception("Invalid dataframe definition.");
-
-            return new DataframeType(columns, dataPointers, dataTypes);
+            return new DataframeType(columnNames, firstRow.Type as RecordType);
         }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitDataframeExpr(this);
     }
+
 
     public class ShowDataframeNodeExpr : ExpressionNodeExpr
     {

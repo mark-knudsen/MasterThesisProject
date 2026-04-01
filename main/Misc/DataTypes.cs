@@ -65,28 +65,45 @@ namespace MyCompiler
         }
     }
 
+
     public class DataframeType : Type
     {
         public List<string> Columns { get; }
-        public List<List<object>> DataPointers { get; }
-        public List<Type> DataTypes { get; }
+        public RecordType RowType { get; }
 
-        public DataframeType(List<string> columns, List<List<object>> dataPointers, List<Type> dataTypes)
+        public DataframeType(List<string> columns, RecordType rowType)
         {
             Columns = columns;
-            DataPointers = dataPointers;
-            DataTypes = dataTypes;
+            RowType = rowType;
+        }
+
+        public RecordType AsRecordType()
+        {
+            return new RecordType(new List<RecordField>
+            {
+                new RecordField
+                {
+                    Label = "columns",
+                    Type = new ArrayType(new StringType()) // pseudo value holder
+                },
+                new RecordField
+                {
+                    Label = "rows",
+                    Type = new ArrayType(RowType)
+                }
+            });
         }
 
         public override string ToString()
         {
             string returnVal = "dataframe(";
-            for (int i = 0; i < Columns.Count; i++)
+            foreach (var item in Columns)
             {
-                returnVal += Columns[i] + ": " + DataTypes[i].ToString() + ", ";
+                returnVal += item + ", ";
             }
             returnVal = returnVal[..^2];
             return returnVal + ")";
         }
     }
+
 }
