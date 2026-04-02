@@ -229,14 +229,13 @@ expr
         $$ = new RecordFieldNodeExpr($1 as ExpressionNodeExpr, (string)$3);
     }
 
-    //| expr DOT COPY                           { $$ = new CopyRecordNodeExpr($1 as ExpressionNodeExpr); }
     | expr DOT COPY                           { $$ = new CopyNodeExpr($1 as ExpressionNodeExpr); }
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
                                               { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
     
     // DO DATAFRAMES!   -  dataframe([], [{ name: "Bob",  }])
-   | DATAFRAME LPAREN expr COMMA expr RPAREN
+   | DATAFRAME LPAREN arg COMMA arg RPAREN
     {
         $$ = new DataframeNodeExpr(new List<ExpressionNodeExpr> 
         { 
