@@ -470,6 +470,8 @@ namespace MyCompiler
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
+                else if (entry?.Type is DataframeType dfType)
+                    inferred = dfType.RowType;
             }
             // else if (expr.SourceExpression is ArrayNodeExpr arrayLiteral)
             // {

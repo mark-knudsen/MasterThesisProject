@@ -779,15 +779,10 @@ namespace MyCompiler
             if (Columns == null || Rows == null)
                 throw new Exception("dataframe requires columns and data");
 
-
         }
 
-
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-            => visitor.VisitDataframeExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
     }
-
 
     public class ShowDataframeNodeExpr : ExpressionNodeExpr
     {
