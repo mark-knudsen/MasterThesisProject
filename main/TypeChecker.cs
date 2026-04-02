@@ -750,28 +750,36 @@ namespace MyCompiler
 
         public Type VisitRecordField(RecordFieldNodeExpr expr)
         {
-            Visit(expr.IdRecord);
-            Type recordFieldType = new IntType();
+            // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
+            Type recordSourceType = Visit(expr.IdRecord);
 
-            if (expr.IdRecord is IdNodeExpr idNode)
+            // 2. Initialize a default (or null)
+            Type resolvedFieldType = null;
+
+            // 3. Check if the source actually resolved to a RecordType
+            if (recordSourceType is RecordType recType)
             {
-                var entry = _context.Get(idNode.Name);
-                Console.WriteLine("entry type: " + entry?.Type);
-                if (entry?.Type is RecordType recType)
+                // 4. Look up the field label in the record definition
+                var field = recType.RecordFields.FirstOrDefault(f => f.Label == expr.IdField);
+                if (field != null)
                 {
-                    Console.WriteLine("we have the record: " + recType);
-                    foreach (var item in recType.RecordFields)
-                    {
-                        if (expr.IdField == item.Label) recordFieldType = item.Value.Type;
-                        Console.WriteLine("rec field label: " + item.Label);
-                        Console.WriteLine("rec field value: " + item.Value);
-                    }
+                    // Use the stored type from the field
+                    resolvedFieldType = field.Value?.Type ?? field.Type;
+                }
+                else
+                {
+                    throw new Exception($"Field '{expr.IdField}' not found in record.");
                 }
             }
+            else
+            {
+                throw new Exception($"Cannot access field '{expr.IdField}' on non-record type: {recordSourceType}");
+            }
 
-            Console.WriteLine("rec field: " + recordFieldType);
-            expr.SetType(recordFieldType);
-            return recordFieldType;
+            if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
+
+            expr.SetType(resolvedFieldType);
+            return resolvedFieldType;
         }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNodeExpr expr)

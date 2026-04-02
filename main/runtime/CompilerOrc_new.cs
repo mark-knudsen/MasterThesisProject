@@ -2867,35 +2867,26 @@ namespace MyCompiler
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNodeExpr recordExpr, string fieldName)
         {
-            // 1. Get record pointer
             var recordPtr = Visit(recordExpr);
-
-            // 2. Get record type
             var recordType = recordExpr.Type as RecordType;
-            if (recordType == null)
-                throw new Exception("Trying to access field on non-record type");
+            if (recordType == null) throw new Exception("Expected record type");
 
-            // 3. Resolve field index
             int fieldIndex = GetFieldIndex(fieldName, recordType.RecordFields);
 
-            // 4. Get struct type
-            var structType = GetOrCreateStructType(recordType);
+            // EVERY field in your record buffer is a pointer (i8*)
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            if (recordPtr.TypeOf.Kind != LLVMTypeKind.LLVMPointerTypeKind)
-                throw new Exception("Record must be a pointer to struct");
-
-            // 5. Get pointer to field
-            var fieldPtr = _builder.BuildStructGEP2(
-                structType,
+            // Use GEP to find the N-th pointer in the record buffer
+            // This is equivalent to: recordPtr + (fieldIndex * 8)
+            var fieldPtr = _builder.BuildGEP2(
+                i8Ptr,
                 recordPtr,
-                (uint)fieldIndex,
+                new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)fieldIndex) },
                 $"ptr_{fieldName}"
             );
 
-            // 6. Get field type
-            var fieldType = structType.StructGetTypeAtIndex((uint)fieldIndex);
-
-            return (fieldPtr, fieldType);
+            // We return i8Ptr because the slot contains a pointer
+            return (fieldPtr, i8Ptr);
         }
 
         private int GetFieldIndex(string name, List<RecordField> Fields)
@@ -2910,15 +2901,39 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr)
         {
-            var (fieldPtr, fieldType) = GetFieldPointer(expr.IdRecord, expr.IdField);
+            // 1. Get the address of the pointer in the record buffer
+            // Your IR already does this correctly: %ptr_name = getelementptr ptr, ptr %result_val, i64 1
+            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
 
-            var value = _builder.BuildLoad2(
-                fieldType,
-                fieldPtr,
-                $"load_{expr.IdField}"
-            );
+            // 2. Load the pointer stored in that slot
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_ptr_{expr.IdField}");
 
-            return value;
+            // 3. GET THE ACTUAL TYPE (from the Record definition)
+            var recordType = expr.IdRecord.Type as RecordType;
+            var fieldDef = recordType.RecordFields.Find(f => f.Label == expr.IdField);
+            var actualType = fieldDef.Value?.Type ?? fieldDef.Type;
+
+            // 4. CONDITIONAL UNBOXING
+            if (actualType is IntType)
+            {
+                // For ints, we need to load the 64-bit value FROM the pointer
+                return _builder.BuildLoad2(_module.Context.Int64Type, storedPtr, $"val_{expr.IdField}");
+            }
+
+            if (actualType is StringType)
+            {
+                // For strings, the pointer IS the value. Just return it.
+                return storedPtr;
+            }
+            if (actualType is FloatType)
+                return _builder.BuildLoad2(_module.Context.DoubleType, storedPtr, $"val_{expr.IdField}");
+
+            if (actualType is BoolType)
+                return _builder.BuildLoad2(_module.Context.Int1Type, storedPtr, $"val_{expr.IdField}");
+
+            // Strings, Arrays, and nested Records are already pointers; return as-is
+            return storedPtr;
         }
 
         private LLVMValueRef CopyRecord(LLVMValueRef recordPtr, RecordType recordType)
@@ -3272,156 +3287,6 @@ namespace MyCompiler
         }
 
 
-        // public LLVMValueRef VisitDataframeExpr2(DataframeNodeExpr expr)
-        // {
-        //     var ctx = _module.Context;
-        //     var i64 = ctx.Int64Type;
-        //     var i8 = ctx.Int8Type;
-        //     int ptrSize = 8;
-        //     var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-
-        //     var mallocFunc = GetOrDeclareMalloc();
-
-        //     var columns = expr.Columns as ArrayNodeExpr;
-        //     var rows = expr.DataPointers as ArrayNodeExpr;
-        //     var types = expr.DataTypes as ArrayNodeExpr;
-
-        //     int colCount = columns.Elements.Count;
-        //     int rowCount = rows.Elements.Count;
-
-        //     // --- 1. transpose rows -> columns ---
-        //     var columnData = new List<List<ExpressionNodeExpr>>();
-        //     for (int c = 0; c < colCount; c++)
-        //         columnData.Add(new List<ExpressionNodeExpr>());
-
-        //     foreach (ArrayNodeExpr row in rows.Elements)
-        //     {
-        //         for (int c = 0; c < colCount; c++)
-        //             columnData[c].Add(row.Elements[c]);
-        //     }
-
-        //     // --- 2. build each column array ---
-        //     var columnPtrs = new List<LLVMValueRef>();
-
-        //     for (int c = 0; c < colCount; c++)
-        //     {
-        //         var colExpr = new ArrayNodeExpr(columnData[c])
-        //         {
-        //             ElementType = types.Elements[c].Type
-        //         };
-
-        //         columnPtrs.Add(VisitArrayExpr(colExpr));
-        //     }
-
-        //     // --- 3. build data array (array of pointers) ---
-        //     var dataRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[]
-        //     {
-        //         LLVMValueRef.CreateConstInt(i64, (ulong)(colCount * ptrSize))
-        //     }, "df_data_raw");
-
-        //     for (int i = 0; i < colCount; i++)
-        //     {
-        //         var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-
-        //         var castPtr = _builder.BuildBitCast(columnPtrs[i], i8Ptr, "col_cast");
-        //         var gep = _builder.BuildGEP2(i8Ptr, dataRaw, new[] { idx }, "data_gep");
-
-        //         _builder.BuildStore(castPtr, gep);
-        //     }
-
-        //     var indexElements = new List<ExpressionNodeExpr>();
-
-        //     for (int i = 0; i < rowCount; i++)
-        //     {
-        //         indexElements.Add(new NumberNodeExpr(i));
-        //     }
-
-        //     var indexExpr = new ArrayNodeExpr(indexElements)
-        //     {
-        //         ElementType = new IntType()
-        //     };
-
-        //     // wrap in ArrayObject
-        //     var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i64, i8Ptr }, false);
-
-        //     var dataHeader = _builder.BuildCall2(_mallocType, mallocFunc,
-        //         new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "df_data_header");
-
-        //     _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
-        //         _builder.BuildStructGEP2(arrayStructType, dataHeader, 0));
-
-        //     _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
-        //         _builder.BuildStructGEP2(arrayStructType, dataHeader, 1));
-
-        //     _builder.BuildStore(dataRaw,
-        //         _builder.BuildStructGEP2(arrayStructType, dataHeader, 2));
-
-        //     var indexPtr = VisitArrayExpr(indexExpr);
-        //     _builder.BuildStore(indexPtr,
-        //         _builder.BuildStructGEP2(arrayStructType, dataHeader, 3));
-
-        //     // --- 4. build other arrays normally ---
-        //     var columnsPtr = VisitArrayExpr(columns);
-        //     var typesPtr = VisitArrayExpr(types);
-
-        //     // --- 5. dataframe struct ---
-        //     var dfType = _module.Context.CreateNamedStruct("dataframe");
-        //     dfType.StructSetBody(new[]
-        //     {
-        //         i8Ptr, // columns (ArrayObject*)
-        //         i8Ptr, // data (ArrayObject*)
-        //         i8Ptr, // types (ArrayObject*)
-        //         i8Ptr  // index (ArrayObject*)
-        //     }, false);
-
-        //     var dfPtr = _builder.BuildMalloc(dfType, "df");
-
-        //     _builder.BuildStore(columnsPtr, _builder.BuildStructGEP2(dfType, dfPtr, 0));
-        //     _builder.BuildStore(dataHeader, _builder.BuildStructGEP2(dfType, dfPtr, 1));
-        //     _builder.BuildStore(typesPtr, _builder.BuildStructGEP2(dfType, dfPtr, 2));
-        //     _builder.BuildStore(indexPtr, _builder.BuildStructGEP2(dfType, dfPtr, 3));
-        //     return dfPtr;
-        // }
-
-        // public LLVMValueRef VisitDataframeExpr_mine(DataframeNodeExpr expr)
-        // {
-        //     // dataframe(columns=["name", "age"], data=[["dan", 30], ["alice", 25]])
-
-        //     // dataframe(["name", "age"], [["dan", 30], ["alice", 25]])
-
-        //     var columnsPtr = Visit(expr.Columns as ArrayNodeExpr);
-        //     var dataPtr = Visit(expr.DataPointers as ArrayNodeExpr);
-        //     var typesPtr = Visit(expr.DataTypes as ArrayNodeExpr);
-
-        //     var columnsType = GetLLVMType((expr.Columns as ArrayNodeExpr).ElementType);
-        //     var dataType = GetLLVMType((expr.DataPointers as ArrayNodeExpr).ElementType);
-        //     var typesType = GetLLVMType((expr.DataTypes as ArrayNodeExpr).ElementType);
-
-        //     // 🔥 Define dataframe struct type
-        //     var dfType = _module.Context.CreateNamedStruct("dataframe");
-
-        //     dfType.StructSetBody(new[]
-        //     {
-        //         columnsType,
-        //         dataType,
-        //         typesType
-        //     }, false);
-
-        //     // 🔥 Allocate dataframe
-        //     var dfPtr = _builder.BuildMalloc(dfType, "df");
-
-        //     // 🔥 Store fields
-        //     var colPtr = _builder.BuildStructGEP2(dfType, dfPtr, 0, "col_ptr");
-        //     _builder.BuildStore(columnsPtr, colPtr);
-
-        //     var dataPtrGep = _builder.BuildStructGEP2(dfType, dfPtr, 1, "data_ptr");
-        //     _builder.BuildStore(dataPtr, dataPtrGep);
-
-        //     var typesPtrGep = _builder.BuildStructGEP2(dfType, dfPtr, 2, "types_ptr");
-        //     _builder.BuildStore(typesPtr, typesPtrGep);
-
-        //     return dfPtr;
-        // }
 
         public LLVMValueRef VisitNamedArgumentExpr(NamedArgumentNodeExpr expr) // this is never called?
         {
@@ -3593,54 +3458,45 @@ namespace MyCompiler
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var field = recordType.RecordFields[i];
+                // Handle both Field objects and direct Types
                 var fieldType = field.Value?.Type ?? field.Type;
 
-                // recordPtr is the start of the struct. 
-                // Each field is a pointer (8 bytes).
-                IntPtr fieldLocation = IntPtr.Add(recordPtr, i * 8);
-                IntPtr ptr = Marshal.ReadIntPtr(fieldLocation);
+                // 1. Get the pointer stored at this record offset (index i * 8 bytes)
+                IntPtr valuePtr = Marshal.ReadIntPtr(IntPtr.Add(recordPtr, i * 8));
 
-                if (ptr == IntPtr.Zero)
+                if (valuePtr == IntPtr.Zero)
                 {
                     result.Add("null");
                     continue;
                 }
 
+                // 2. Dereference based on the known type
                 if (fieldType is IntType)
-                {
-                    // Based on your IR, Ints are pointers to an i64
-                    result.Add(Marshal.ReadInt64(ptr));
-                }
+                    result.Add(Marshal.ReadInt64(valuePtr));
                 else if (fieldType is FloatType)
                 {
-                    // Floats are pointers to a double
-                    result.Add(BitConverter.Int64BitsToDouble(Marshal.ReadInt64(ptr)));
+                    byte[] bytes = new byte[8];
+                    Marshal.Copy(valuePtr, bytes, 0, 8);
+                    result.Add(BitConverter.ToDouble(bytes, 0));
                 }
                 else if (fieldType is BoolType)
-                {
-                    // Bools are pointers to an i1 (stored as i8)
-                    result.Add(Marshal.ReadByte(ptr) != 0);
-                }
+                    result.Add(Marshal.ReadByte(valuePtr) != 0);
                 else if (fieldType is StringType)
-                {
-                    // Strings are pointers to C-strings
-                    result.Add(Marshal.PtrToStringAnsi(ptr));
-                }
-                else if (fieldType is ArrayType || fieldType is RecordType || fieldType is DataframeType)
-                {
-                    // Complex types: we just pass the pointer along to the next Handler
-                    result.Add(ptr);
-                }
+                    result.Add(Marshal.PtrToStringAnsi(valuePtr)); // Direct pointer to C-String
                 else
-                {
-                    result.Add("unknown");
-                }
+                    result.Add(valuePtr); // Return raw pointer for complex types
             }
-
             return result;
         }
 
+        /*  df = dataframe(columns=["name", "age", "hasJob", "savings"], 
 
-
+        data=[
+        {name:"Bob", age: 23, hasJob: true, savings: 230500.00},
+        {name:"Alice", age: 23, hasJob: true, savings: 100500.55},
+        {name:"John", age: 87, hasJob: false, savings: 1209000.02},
+        {name:"Mary", age: 29, hasJob: false, savings: 10700.25}
+        ])
+        */
     }
 }
