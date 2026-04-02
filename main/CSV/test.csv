@@ -1,1 +1,5 @@
-
+index,name,age,hasJob,savings
+0,Bob,23,True,230500.0
+1,Alice,23,True,100500.55
+2,John,87,False,1209000.02
+3,Mary,29,False,10700.25

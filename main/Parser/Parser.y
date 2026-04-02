@@ -141,6 +141,7 @@ expr
     | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
     | STRING              { $$ = new StringNodeExpr((string)$1); }
     | NULL_LITERAL        { $$ = new NullNodeExpr(); }
+    /* | Type { $$ = new TypeLiteralNodeExpr($1); } */
     
     /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
@@ -213,10 +214,10 @@ expr
     }
   
     /* Global Function Style */
-    | READCSV LPAREN expr RPAREN 
+    | READCSV LPAREN expr_list RPAREN 
         { 
-            // $3 is the 'expr' (the filename string)
-            $$ = new ReadCsvNodeExpr($3 as ExpressionNodeExpr); 
+            // Just pass the list of expressions/named args to the node
+            $$ = new ReadCsvNodeExpr($3); 
         }
 
     | TOCSV LPAREN expr COMMA expr RPAREN 

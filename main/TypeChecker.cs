@@ -607,10 +607,21 @@ namespace MyCompiler
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
         {
             Visit(expr.FileNameExpr);
+            Type schemaType = Visit(expr.SchemaExpr);
 
-            expr.SetType(new StringType());
-            return expr.Type;
+            if (schemaType is RecordType recType)
+            {
+                // Extract names and types from the record fields to satisfy the constructor
+                var names = recType.RecordFields.Select(f => f.Label).ToList();
+                var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
+
+                var dfType = new DataframeType(names, types, recType);
+                expr.SetType(dfType);
+                return dfType;
+            }
+            throw new Exception("read_csv requires a record template for dtypes.");
         }
+
         public Type VisitToCsv(ToCsvNodeExpr expr)
         {
             Visit(expr.Expression);

@@ -53,34 +53,49 @@ namespace MyCompiler
 
     public static class LanguageRuntime
     {
-        public static IntPtr ReadCsvInternal(IntPtr pathPtr)
+        public static IntPtr ReadCsvInternal(IntPtr pathPtr, IntPtr schemaPtr) // Added second param
         {
-            if (pathPtr == IntPtr.Zero) return IntPtr.Zero;
+            Console.WriteLine("--- C# Runtime: ReadCsvInternal Started ---");
             string path = Marshal.PtrToStringAnsi(pathPtr);
-            if (!System.IO.File.Exists(path)) return IntPtr.Zero;
+            Console.WriteLine($"Loading: {path}");
+            // schemaDescriptor could be a string like "S,I,F" (String, Int, Float)
+            string schema = Marshal.PtrToStringAnsi(schemaPtr);
 
-            var lines = System.IO.File.ReadAllLines(path)
-                .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-            int count = lines.Length;
+            var lines = File.ReadAllLines(path).Skip(1).ToArray(); // Skip CSV header
+            int rowCount = lines.Length;
 
-            IntPtr header = Marshal.AllocHGlobal(24);
-            IntPtr dataBuffer = Marshal.AllocHGlobal(count * 8);
+            // 1. Allocate the Dataframe Header { ptr columns, ptr rows, ptr name }
+            IntPtr dfHeader = Marshal.AllocHGlobal(24);
 
-            Marshal.WriteInt64(header, 0, count);
-            Marshal.WriteInt64(header, 8, count);
-            Marshal.WriteIntPtr(header, 16, dataBuffer);
+            // 2. Allocate the Rows Array Header { i64 len, i64 cap, ptr data }
+            IntPtr rowsArrayHeader = Marshal.AllocHGlobal(24);
+            IntPtr rowsDataBuffer = Marshal.AllocHGlobal(rowCount * 8); // Buffer of pointers
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < rowCount; i++)
             {
-                string val = lines[i].Trim();
-                long bitPattern = 0;
-                if (long.TryParse(val, out long iVal)) bitPattern = iVal;
-                else if (double.TryParse(val, out double dVal)) bitPattern = BitConverter.DoubleToInt64Bits(dVal);
-                else bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
+                string[] parts = lines[i].Split(',');
 
-                Marshal.WriteInt64(dataBuffer, i * 8, bitPattern);
+                // 3. Create a Record (Buffer of Pointers to Boxed Values)
+                // Assume 3 columns for this example: [index, name, age]
+                IntPtr recordBuffer = Marshal.AllocHGlobal(parts.Length * 8);
+
+                for (int col = 0; col < parts.Length; col++)
+                {
+                    // Get the character from the schema string for this column
+                    char typeCode = col < schema.Length ? schema[col] : 'S';
+                    IntPtr boxedVal = BoxValue(parts[col].Trim(), typeCode);
+                    Marshal.WriteIntPtr(recordBuffer, col * 8, boxedVal);
+                }
+
+                Marshal.WriteIntPtr(rowsDataBuffer, i * 8, recordBuffer);
             }
-            return header;
+
+            // Link headers
+            Marshal.WriteInt64(rowsArrayHeader, 0, rowCount);
+            Marshal.WriteIntPtr(rowsArrayHeader, 16, rowsDataBuffer);
+            Marshal.WriteIntPtr(dfHeader, 8, rowsArrayHeader); // Store in df.rows slot
+
+            return dfHeader;
         }
 
         public static void ToCsvInternal(IntPtr arrayHeaderPtr, IntPtr pathPtr)
@@ -119,6 +134,38 @@ namespace MyCompiler
                 }
             }
         }
+
+        private static IntPtr BoxValue(string rawValue, char typeCode)
+        {
+            // Allocate 8 bytes for the value (LLVM expects i64/ptr size)
+            IntPtr valPtr = Marshal.AllocHGlobal(8);
+
+            switch (typeCode)
+            {
+                case 'I': // Integer
+                    long.TryParse(rawValue, out long iVal);
+                    Marshal.WriteInt64(valPtr, iVal);
+                    break;
+                case 'F': // Float/Double
+                    double.TryParse(rawValue, out double dVal);
+                    long bits = BitConverter.DoubleToInt64Bits(dVal);
+                    Marshal.WriteInt64(valPtr, bits);
+                    break;
+                case 'S': // String
+                    IntPtr sPtr = Marshal.StringToHGlobalAnsi(rawValue);
+                    // For strings, we store the pointer to the string bytes
+                    Marshal.WriteIntPtr(valPtr, sPtr);
+                    break;
+                case 'B': // Boolean
+                    bool.TryParse(rawValue, out bool bVal);
+                    Marshal.WriteInt64(valPtr, bVal ? 1 : 0);
+                    break;
+                default:
+                    Marshal.WriteInt64(valPtr, 0);
+                    break;
+            }
+            return valPtr;
+        }
     }
 
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
@@ -150,7 +197,7 @@ namespace MyCompiler
 
         private ReadCsvDelegate _readCsvDelegate;
         private ToCsvDelegate _toCsvDelegate;
-        public delegate IntPtr ReadCsvDelegate(IntPtr path);
+        public delegate IntPtr ReadCsvDelegate(IntPtr path, IntPtr schema);
         public delegate void ToCsvDelegate(IntPtr data, IntPtr path);
 
         public CompilerOrc()
@@ -3051,23 +3098,36 @@ namespace MyCompiler
             return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
         }
 
+        private string GetTypeString(RecordType record)
+        {
+            string desc = "";
+            foreach (var field in record.RecordFields)
+            {
+                var t = field.Value?.Type ?? field.Type;
+                if (t is IntType) desc += "I";
+                else if (t is FloatType) desc += "F";
+                else if (t is StringType) desc += "S";
+                else if (t is BoolType) desc += "B";
+                else desc += "U"; // Unknown
+            }
+            return desc;
+        }
+
         public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
         {
             var path = Visit(expr.FileNameExpr);
 
-            // 1. CALL: Your internal function that reads the file
-            // Assuming it returns a raw pointer to an ArrayBuffer or RecordBuffer
-            var readCsvFunc = GetOrDeclareReadCsv();
-            var rawResultPtr = _builder.BuildCall2(readCsvFunc.TypeOf.ElementType, readCsvFunc, new[] { path }, "csv_raw_data");
+            // Create a string describing the types (e.g. "SIF" for String, Int, Float)
+            // to help the C# parser know how to parse the text.
+            string typeStr = GetTypeString(expr.SchemaExpr.Type as RecordType);
+            var schemaDesc = _builder.BuildGlobalStringPtr(typeStr, "schema_desc");
 
-            // 2. BOX: Wrap that raw pointer into a RuntimeValue box
-            // Since you are planning for DataFrames (Records), we use the Record tag (6)
-            // or the Array tag (5) depending on your strategy.
+            var readCsvFunc = GetOrDeclareReadCsv(); // Update this to take TWO i8* args
+            var rawDfPtr = _builder.BuildCall2(readCsvFunc.TypeOf.ElementType, readCsvFunc,
+                new[] { path, schemaDesc }, "csv_df");
 
-            short tag = (short)ValueTag.Array; // Default to Array for now
-            if (expr.Type is RecordType) tag = (short)ValueTag.Record;
-
-            return CreateRuntimeObject(tag, rawResultPtr);
+            // Tag 7 is your Dataframe tag
+            return CreateRuntimeObject(7, rawDfPtr);
         }
 
         private LLVMValueRef GetOrDeclareReadCsv()
@@ -3497,6 +3557,9 @@ namespace MyCompiler
         {name:"John", age: 87, hasJob: false, savings: 1209000.02},
         {name:"Mary", age: 29, hasJob: false, savings: 10700.25}
         ])
+
+        df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/test.csv")
+
         */
     }
 }

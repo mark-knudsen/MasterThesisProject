@@ -424,18 +424,45 @@ namespace MyCompiler
 
     public class ReadCsvNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr FileNameExpr { get; set; }
+        public ExpressionNodeExpr SchemaExpr { get; private set; }
+        public ExpressionNodeExpr FileNameExpr { get; private set; }
 
-        // Change this to only take ONE parameter
-        public ReadCsvNodeExpr(ExpressionNodeExpr fileNameExpr)
+        // Update constructor to take the list from the parser
+        public ReadCsvNodeExpr(List<ExpressionNodeExpr> args)
         {
-            FileNameExpr = fileNameExpr;
+            if (args == null || args.Count == 0)
+                throw new Exception("read_csv requires at least a file path.");
+
+            if (args.Count == 1)
+            {
+                // Case: read_csv("data.csv")
+                FileNameExpr = args[0];
+            }
+            else
+            {
+                // Case: read_csv([name: string], "data.csv") 
+                // OR read_csv(dtypes=[...], path="...")
+                foreach (var arg in args)
+                {
+                    if (arg is NamedArgumentNodeExpr named)
+                    {
+                        if (named.Name == "dtypes") SchemaExpr = named.Value;
+                        else if (named.Name == "path") FileNameExpr = named.Value;
+                    }
+                }
+
+                // Fallback for positional: [0] is Schema, [1] is Path
+                if (FileNameExpr == null)
+                {
+                    SchemaExpr = args[0];
+                    FileNameExpr = args[1];
+                }
+            }
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitReadCsvExpr(this);
     }
-
 
     public class ToCsvNodeExpr : ExpressionNodeExpr
     {
