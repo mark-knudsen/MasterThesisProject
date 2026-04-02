@@ -359,12 +359,12 @@ namespace MyCompiler
 
     public class IndexNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr IndexExpression { get; }
 
-        public IndexNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr indexExpr)
+        public IndexNodeExpr(ExpressionNodeExpr sourceExpr, ExpressionNodeExpr indexExpr)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = sourceExpr;
             IndexExpression = indexExpr;
             Type = new IntType();
         }
@@ -392,13 +392,13 @@ namespace MyCompiler
     public class WhereNodeExpr : ExpressionNodeExpr
     {
         public IdNodeExpr IteratorId;
-        public ExpressionNodeExpr ArrayExpr;
+        public ExpressionNodeExpr SourceExpr;
         public ExpressionNodeExpr Condition;
 
-        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
+        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr sourceExpr, ExpressionNodeExpr condition)
         {
             IteratorId = iteratorId;
-            ArrayExpr = arrayExpr;
+            SourceExpr = sourceExpr;
             Condition = condition;
         }
 
@@ -409,13 +409,13 @@ namespace MyCompiler
     {
         public IdNodeExpr IteratorId;
 
-        public ExpressionNodeExpr ArrayExpr;
+        public ExpressionNodeExpr SourceExpr;
         public ExpressionNodeExpr Assignment;
 
-        public MapNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr assignment)
+        public MapNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr sourceExpr, ExpressionNodeExpr assignment)
         {
             IteratorId = iteratorId;
-            ArrayExpr = arrayExpr;
+            SourceExpr = sourceExpr;
             Assignment = assignment;
         }
 

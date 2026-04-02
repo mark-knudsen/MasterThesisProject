@@ -461,21 +461,21 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
+            Visit(expr.SourceExpression);
             Visit(expr.IndexExpression);
 
             Type inferred = new IntType();
-            if (expr.ArrayExpression is IdNodeExpr idNode) // In the parser whe instantiate the index with an IdNode, the rest of the code should never be true
+            if (expr.SourceExpression is IdNodeExpr idNode) // In the parser whe instantiate the index with an IdNode, the rest of the code should never be true
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
             }
-            // else if (expr.ArrayExpression is ArrayNodeExpr arrayLiteral)
+            // else if (expr.SourceExpression is ArrayNodeExpr arrayLiteral)
             // {
             //     inferred = arrayLiteral.ElementType ?? new FloatType();
             // }
-            // else if (expr.ArrayExpression.Type is ArrayType arrayExprType)
+            // else if (expr.SourceExpression.Type is ArrayType arrayExprType)
             // {
             //     inferred = arrayExprType.ElementType;
             // }
@@ -566,12 +566,12 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            if (_debug) Console.WriteLine("The array node in where: " + expr.ArrayExpr);
+            if (_debug) Console.WriteLine("The array node in where: " + expr.SourceExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
             var condType = Visit(expr.Condition);
-            var arrayType = Visit(expr.ArrayExpr);
+            var arrayType = Visit(expr.SourceExpr);
 
             if (arrayType is not ArrayType)
                 throw new Exception("where can only be used on arrays");
@@ -581,24 +581,24 @@ namespace MyCompiler
                 throw new Exception("where condition must return bool");
 
             // 2. Determine element type (adjust depending on your language)
-            expr.SetType(expr.ArrayExpr.Type);
+            expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
 
         public Type VisitMap(MapNodeExpr expr)
         {
-            // if(_debug) Console.WriteLine("The array node in map: " + expr.ArrayExpr);
+            // if(_debug) Console.WriteLine("The array node in map: " + expr.SourceExpr);
             Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
 
             Visit(expr.IteratorId);
             Visit(expr.Assignment);
-            var arrayType = Visit(expr.ArrayExpr);
+            var arrayType = Visit(expr.SourceExpr);
 
             if (arrayType is not ArrayType)
                 throw new Exception("map can only be used on arrays");
 
             // 2. Determine element type (adjust depending on your language)
-            expr.SetType(expr.ArrayExpr.Type);
+            expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
 

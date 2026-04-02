@@ -366,14 +366,14 @@ namespace MyCompiler
 
                 case IndexNodeExpr ind:
                     Console.WriteLine($"{space}Array: ");
-                    PrintNode(ind.ArrayExpression, indent + 1);
+                    PrintNode(ind.SourceExpression, indent + 1);
                     PrintNode(ind.IndexExpression, indent + 1);
                     break;
 
                 case WhereNodeExpr whe:
                     Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
                     Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
-                    PrintNode(whe.ArrayExpr, indent + 1);
+                    PrintNode(whe.SourceExpr, indent + 1);
                     PrintNode(whe.Condition, indent + 1);
                     break;
 

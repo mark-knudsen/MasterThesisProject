@@ -1641,7 +1641,7 @@ namespace MyCompiler
             var indexVarName = "__where_i";
 
             // Save source array into a temp variable
-            var srcAssign = new AssignNodeExpr(srcVarName, expr.ArrayExpr);
+            var srcAssign = new AssignNodeExpr(srcVarName, expr.SourceExpr);
 
             // Allocate result array
             var resultAssign = new AssignNodeExpr(resultVarName, new ArrayNodeExpr(new List<ExpressionNodeExpr>()));
@@ -1700,7 +1700,7 @@ namespace MyCompiler
             var indexVarName = "__map_i";
 
             // 1 Clone source array
-            var srcAssign = new AssignNodeExpr(srcVarName, new CopyArrayNodeExpr(expr.ArrayExpr));
+            var srcAssign = new AssignNodeExpr(srcVarName, new CopyArrayNodeExpr(expr.SourceExpr));
 
             // 2 Allocate new array for result (length = src.length)
             var resultAssign = new AssignNodeExpr(resultVarName, new CopyArrayNodeExpr(new IdNodeExpr(srcVarName)));
@@ -1840,7 +1840,7 @@ namespace MyCompiler
             var indexVarName = "__map_i";
 
             // 1. Store source array
-            var srcAssign = new AssignNodeExpr(srcVarName, expr.ArrayExpr);
+            var srcAssign = new AssignNodeExpr(srcVarName, expr.SourceExpr);
 
             // 2. i = 0
             var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
@@ -1934,7 +1934,7 @@ namespace MyCompiler
             }
             else if (node is IndexNodeExpr idx)
             {
-                ReplaceIterator(idx.ArrayExpression, iteratorName, replacement);
+                ReplaceIterator(idx.SourceExpression, iteratorName, replacement);
                 ReplaceIterator(idx.IndexExpression, iteratorName, replacement);
             }
 
@@ -2003,75 +2003,86 @@ namespace MyCompiler
             var func = _builder.InsertBlock.Parent;
 
             // 1. Visit Array (Header Pointer) and Index
-            var headerPtr = Visit(expr.ArrayExpression);
+            var headerPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            var name = (expr.ArrayExpression as IdNodeExpr).Name;
+            var name = (expr.SourceExpression as IdNodeExpr).Name;
             var sourceType = _context.Get(name).Type;
 
             Console.WriteLine("semantic type of array being indexed: " + sourceType);
 
             if (sourceType is ArrayType arrType)
+            {
+
                 Console.WriteLine("Indexing array");
+
+
+                if (indexVal.TypeOf == ctx.DoubleType)
+                    indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
+
+                // Define the Struct Layout: { i64 len, i64 cap, i8* data }
+                var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+                // 2. Load Metadata from Header
+                var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_field_ptr");
+                var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_field_ptr");
+
+                var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+                var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+                // 3. --- BOUNDS CHECK ---
+                var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
+                var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
+                var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
+
+                var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
+                var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
+                _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
+
+                // --- FAIL BLOCK ---
+                _builder.PositionAtEnd(failBlock);
+                var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
+                _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+                _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
+
+                // --- SAFE BLOCK ---
+                _builder.PositionAtEnd(safeBlock);
+
+                // 4. STRIDE-AWARE ACCESS
+                // Check if the actual language type is boolean
+                bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
+
+                // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
+                var gepType = isBool ? i8 : i8Ptr;
+
+                // We index into dataPtr starting at 0 (no +2 offset anymore!)
+                var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
+                var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
+
+                // 5. Transform based on Type
+                // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
+                return expr.Type switch
+                {
+                    StringType => _builder.BuildBitCast(rawValue, i8Ptr),
+                    FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
+                    IntType => _builder.BuildPtrToInt(rawValue, i64),
+                    BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
+                    RecordType => _builder.BuildTrunc(rawValue, i8Ptr), // it did not have for record type before, but it still worked
+                    DataframeType => _builder.BuildTrunc(rawValue, i8Ptr),
+                    NullType => _builder.BuildTrunc(rawValue, i8Ptr),
+                    _ => rawValue
+                };
+            }
             else if (sourceType is DataframeType dfType)
+            {
                 Console.WriteLine("Indexing dataframe");
 
+                return default;
 
-            if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
+            }
 
-            // Define the Struct Layout: { i64 len, i64 cap, i8* data }
-            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            return default;
 
-            // 2. Load Metadata from Header
-            var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_field_ptr");
-            var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_field_ptr");
-
-            var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
-            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
-
-            // 3. --- BOUNDS CHECK ---
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
-            var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
-
-            var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
-            var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
-            _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
-
-            // --- FAIL BLOCK ---
-            _builder.PositionAtEnd(failBlock);
-            var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
-            _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
-
-            // --- SAFE BLOCK ---
-            _builder.PositionAtEnd(safeBlock);
-
-            // 4. STRIDE-AWARE ACCESS
-            // Check if the actual language type is boolean
-            bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
-
-            // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
-            var gepType = isBool ? i8 : i8Ptr;
-
-            // We index into dataPtr starting at 0 (no +2 offset anymore!)
-            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
-            var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
-
-            // 5. Transform based on Type
-            // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
-            return expr.Type switch
-            {
-                StringType => _builder.BuildBitCast(rawValue, i8Ptr),
-                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
-                IntType => _builder.BuildPtrToInt(rawValue, i64),
-                BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
-                RecordType => _builder.BuildTrunc(rawValue, i8Ptr), // it did not have for record type before, but it still worked
-                DataframeType => _builder.BuildTrunc(rawValue, i8Ptr),
-                NullType => _builder.BuildTrunc(rawValue, i8Ptr),
-                _ => rawValue
-            };
         }
 
         private LLVMTypeRef GetOrCreateStructType(RecordType recordType)
