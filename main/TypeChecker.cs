@@ -721,26 +721,30 @@ namespace MyCompiler
 
             return expr.Type;
         }
-
         public Type VisitRecord(RecordNodeExpr expr)
         {
-            List<Type> types = new List<Type>();
-
-            Console.WriteLine("the records type: " + expr.Type);
-
-            foreach (var item in expr.Fields)
+            foreach (var field in expr.Fields)
             {
-                var d = Visit(item.Value);
-                Console.WriteLine(d); // it returns int and string even tough it visits number and string which does create and should return stringType
-                //types.Add(item.Value.Type);
-                types.Add(d);
-                Console.WriteLine("item value in expr fields" + item.Value);
-                Console.WriteLine("item type in expr fields" + item.Value.Type);
+                // 1. Visit the node (NamedArgument or Value)
+                Type fieldType = Visit(field.Value);
+
+                // 2. Explicitly store the type in the node instance
+                // This ensures field.Value.Type is not null later
+                field.Value.SetType(fieldType);
+
+                if (_debug) Console.WriteLine($"Field {field.Label} resolved to {fieldType}");
             }
 
-            expr.SetType(new RecordType(expr.Fields));
-            return new RecordType(expr.Fields);
+            // 3. Create the RecordType using the now-populated fields
+            var recordType = new RecordType(expr.Fields);
+            expr.SetType(recordType);
+
+            return recordType;
         }
+
+
+
+
 
         public Type VisitRecordField(RecordFieldNodeExpr expr)
         {
@@ -798,18 +802,71 @@ namespace MyCompiler
             expr.SetType(new VoidType());
             return expr.Type;
         }
+
+
         public Type VisitDataframe(DataframeNodeExpr expr)
         {
-            Visit(expr.Columns);
-            Visit(expr.Rows);
 
-            return expr.Type;
+            for (int i = 0; i < expr.Rows.Elements.Count; i++)
+            {
+                (expr.Rows.Elements[i] as RecordNodeExpr).Fields.Insert(0, new RecordField() { Value = new NumberNodeExpr(i), Label = "index" });
+
+            }
+
+            expr.Columns.Elements.Insert(0, new StringNodeExpr("index"));
+
+
+
+            // 1. Visit Columns and Rows arrays to resolve their basic types
+            var columnsType = Visit(expr.Columns) as ArrayType;
+            var rowsType = Visit(expr.Rows) as ArrayType;
+
+            if (expr.Rows.Elements.Count == 0)
+                throw new Exception("Dataframe must have at least one row to infer types.");
+
+            // 2. Force the first row to resolve its internal fields
+            var firstRowNode = expr.Rows.Elements[0] as RecordNodeExpr;
+            RecordType actualRowType = VisitRecord(firstRowNode) as RecordType;
+
+            // 3. Extract Column Names
+            var names = expr.Columns.Elements
+                .OfType<StringNodeExpr>()
+                .Select(s => s.Value)
+                .ToList();
+
+            // 4. Map Names to Types and populate the Node's DataTypes list
+            var types = new List<Type>();
+            expr.DataTypes.Clear(); // Clear any existing just in case
+
+            foreach (var name in names)
+            {
+                var field = actualRowType.RecordFields.FirstOrDefault(f => f.Label == name);
+                if (field == null) throw new Exception($"Field '{name}' not found.");
+
+                if (field.Value.Type == null)
+                    throw new Exception($"Field '{name}' still has no type after visiting!");
+
+                types.Add(field.Value.Type);
+                expr.DataTypes.Add(field.Value.Type); // Fill the list on the node
+            }
+
+            // 5. Finalize the node's type
+            var dfType = new DataframeType(names, types, actualRowType);
+            expr.SetType(dfType);
+            return dfType;
         }
+
+
+
         public Type VisitNamedArgument(NamedArgumentNodeExpr expr)
         {
-            Visit(expr.Value);
-            expr.SetType(expr.Value.Type);
-            return expr.Type;
+            // If expr.Value is a StringNodeExpr ("Bob"), Visit returns StringType
+            Type valType = Visit(expr.Value);
+
+            // Save the type on the NamedArgument node itself
+            expr.SetType(valType);
+
+            return valType;
         }
 
         public Type VisitShowDataframe(ShowDataframeNodeExpr expr)

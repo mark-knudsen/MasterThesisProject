@@ -68,42 +68,20 @@ namespace MyCompiler
 
     public class DataframeType : Type
     {
-        public List<string> Columns { get; }
-        public RecordType RowType { get; }
+        public List<string> ColumnNames { get; }
+        public List<Type> DataTypes { get; } // NEW: Store the type for each column
+        public RecordType RowType { get; }     // The full record structure
 
-        public DataframeType(List<string> columns, RecordType rowType)
+        public DataframeType(List<string> names, List<Type> types, RecordType rowType)
         {
-            Columns = columns;
+            ColumnNames = names;
+            DataTypes = types;
             RowType = rowType;
         }
 
-        public RecordType AsRecordType()
-        {
-            return new RecordType(new List<RecordField>
-            {
-                new RecordField
-                {
-                    Label = "columns",
-                    Type = new ArrayType(new StringType()) // pseudo value holder
-                },
-                new RecordField
-                {
-                    Label = "rows",
-                    Type = new ArrayType(RowType)
-                }
-            });
-        }
-
-        public override string ToString()
-        {
-            string returnVal = "dataframe(";
-            foreach (var item in Columns)
-            {
-                returnVal += item + ", ";
-            }
-            returnVal = returnVal[..^2];
-            return returnVal + ")";
-        }
+        public override string ToString() =>
+            $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
     }
+
 
 }

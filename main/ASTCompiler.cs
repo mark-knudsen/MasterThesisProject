@@ -740,6 +740,7 @@ namespace MyCompiler
     {
         public ArrayNodeExpr Columns { get; private set; }
         public ArrayNodeExpr Rows { get; private set; } // array of RecordNodeExpr
+        public List<Type> DataTypes { get; private set; } = new List<Type>();
 
         public DataframeNodeExpr(List<ExpressionNodeExpr> args)
         {
@@ -778,23 +779,10 @@ namespace MyCompiler
             if (Columns == null || Rows == null)
                 throw new Exception("dataframe requires columns and data");
 
-            Type = CreateType();
+
         }
 
-        private Type CreateType()
-        {
-            var columnNames = Columns.Elements
-                .OfType<StringNodeExpr>()
-                .Select(s => s.Value)
-                .ToList();
 
-            var firstRow = Rows.Elements.FirstOrDefault() as RecordNodeExpr;
-
-            if (firstRow == null)
-                throw new Exception("dataframe rows must be records");
-
-            return new DataframeType(columnNames, firstRow.Type as RecordType);
-        }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitDataframeExpr(this);

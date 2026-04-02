@@ -33,11 +33,10 @@ namespace MyCompiler
     [StructLayout(LayoutKind.Sequential)]
     struct DataframeObject
     {
-        public long columnCount;
-        public long rowCount;
 
         public IntPtr columns; // array<string>
         public IntPtr rows;    // array<ptr to record>
+        public IntPtr dataTypes;
     }
 
     public enum ValueTag
@@ -335,6 +334,7 @@ namespace MyCompiler
 
 
 
+
             var builder = context.CreateBuilder();
 
             // 2 Create:  define double @__anon_expr_X()
@@ -487,16 +487,12 @@ namespace MyCompiler
 
             return "[" + string.Join(", ", elements) + "]";
         }
-
         private string HandleRecord(IntPtr dataPtr, RecordType record)
         {
             if (dataPtr == IntPtr.Zero) return "{ empty }";
 
             var result = new Dictionary<string, object>();
-            int fieldSize = 8; // Assuming 64-bit alignment for all fields
-
-            if (_debug) Console.WriteLine("Record type: " + record);
-            if (_debug) Console.WriteLine("Record type count: " + record.RecordFields?.Count);
+            int fieldSize = 8;
 
             for (int i = 0; i < record.RecordFields?.Count; i++)
             {
@@ -504,87 +500,64 @@ namespace MyCompiler
                 string label = rec.Label;
                 Type recType = rec.Value.Type;
 
-                if (_debug) Console.WriteLine($"Record {i} - label: {label}, type: {recType}");
-
-                // Calculate the address where this specific field is stored inside the record
                 IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
                 IntPtr ptr = Marshal.ReadIntPtr(fieldLocation);
 
                 switch (recType)
                 {
                     case IntType:
-                        // Read 8 bytes directly as a long/int64
                         result[label] = Marshal.ReadInt64(ptr);
                         break;
-
                     case FloatType:
-                        // Read the 8 bytes as a long, then convert the bits to a double
-                        long doubleBits = Marshal.ReadInt64(ptr);
-                        result[label] = BitConverter.Int64BitsToDouble(doubleBits);
+                        result[label] = BitConverter.Int64BitsToDouble(Marshal.ReadInt64(ptr));
                         break;
-
                     case BoolType:
-                        // LLVM i1 is usually stored as a single byte (0 or 1) 
-                        // but padded to the field size in a struct.
-                        byte boolVal = Marshal.ReadByte(ptr);
-                        result[label] = boolVal != 0;
+                        result[label] = Marshal.ReadByte(ptr) != 0;
                         break;
-
                     case StringType:
-                        // The record contains a pointer (address) to the string data
-                        if (ptr == IntPtr.Zero)
-                        {
-                            result[label] = "null";
-                        }
-                        else
-                        {
-                            // Use PtrToStringAnsi for C-style strings (null-terminated)
-                            result[label] = Marshal.PtrToStringAnsi(ptr);
-                        }
+                        result[label] = ptr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(ptr);
                         break;
-
                     case RecordType recT:
                         result[label] = HandleRecord(ptr, recT);
                         break;
-
                     case ArrayType arrT:
                         result[label] = HandleArray(ptr, arrT);
                         break;
-
                     default:
                         result[label] = "Unknown Type";
                         break;
                 }
             }
 
-            return "{ " + string.Join(", ", result.Select(kv => $"{kv.Key}: {kv.Value}")) + " }";
+            // Standardize formatting here using InvariantCulture
+            var entries = result.Select(kv =>
+            {
+                string valStr = kv.Value is IFormattable f
+                    ? f.ToString(null, CultureInfo.InvariantCulture)
+                    : kv.Value?.ToString() ?? "null";
+                return $"{kv.Key}: {valStr}";
+            });
+
+            return "{ " + string.Join(", ", entries) + " }";
         }
 
-        private List<object> ExtractArray(IntPtr arrayObjPtr, ArrayType type)
+
+        private List<string> ExtractArray(IntPtr arrayObjPtr, ArrayType type)
         {
             var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
 
+
             var elementType = type.ElementType;
-            var result = new List<object>();
+            var result = new List<string>(); // Add first column for index
 
             for (long i = 0; i < array.length; i++)
             {
                 IntPtr elemPtr = IntPtr.Add(array.data, (int)(i * 8));
                 IntPtr ptr = Marshal.ReadIntPtr(elemPtr);
 
-                if (elementType is IntType)
-                    result.Add(Marshal.ReadInt64(ptr));
-                else if (elementType is FloatType)
-                {
-                    long bits = Marshal.ReadInt64(ptr);
-                    result.Add(BitConverter.Int64BitsToDouble(bits));
-                }
-                else if (elementType is BoolType)
-                    result.Add(Marshal.ReadByte(ptr) != 0);
-                else if (elementType is StringType)
-                    result.Add(Marshal.PtrToStringAnsi(ptr));
-                else if (elementType is RecordType || elementType is ArrayType || elementType is DataframeType)
-                    result.Add(ptr);
+                if (elementType is StringType)
+                    result.Add(Marshal.PtrToStringAnsi(ptr).ToString());
+
                 else
                     result.Add("?");
             }
@@ -605,169 +578,47 @@ namespace MyCompiler
 
             return result;
         }
+
         private string HandleDataframe(IntPtr ptr, DataframeType type)
         {
-            Console.WriteLine("DEBUG: printing dataframe");
+            if (ptr == IntPtr.Zero) return "dataframe(null)";
 
-            if (ptr == IntPtr.Zero)
-                return "dataframe(null)";
+            // 1. Use your dedicated struct
+            var dfObj = Marshal.PtrToStructure<DataframeObject>(ptr);
 
-            // --- 0. Build the backing record type (explicit layout) ---
-            var recordType = new RecordType(new List<RecordField>
-    {
-        new RecordField { Label = "columns", Type = new ArrayType(new StringType()) },
-        new RecordField { Label = "rows", Type = new ArrayType(type.RowType) }
-    });
+            // 2. Extract Columns using existing HandleArray logic (but returning List)
+            // Note: We need the column names as strings for the header
 
-            // --- 1. Extract record fields ---
-            var values = ExtractRecord(ptr, recordType);
 
-            if (values == null || values.Count < 2)
-                return "Dataframe error: invalid record layout";
+            var columnNames = ExtractArray(dfObj.columns, new ArrayType(new StringType()));
 
-            if (!(values[0] is IntPtr columnsPtr) || columnsPtr == IntPtr.Zero)
-                return "Dataframe error: columns pointer invalid";
+            if (columnNames == null) return "Dataframe error: null columns";
 
-            if (!(values[1] is IntPtr rowsPtr) || rowsPtr == IntPtr.Zero)
-                return "Dataframe error: rows pointer invalid";
+            // 3. Load Rows
+            // We manually navigate the rows ArrayObject
+            var rowsArray = Marshal.PtrToStructure<ArrayObject>(dfObj.rows);
+            var colsArray = Marshal.PtrToStructure<ArrayObject>(dfObj.columns);
 
-            // --- 2. Load columns ---
-            var columnNames = ExtractArray(columnsPtr, new ArrayType(new StringType()))
-                ?.Select(x => x?.ToString() ?? "null")
-                .ToList();
-
-            if (columnNames == null || columnNames.Count == 0)
-                return "Dataframe error: no columns";
-
-            int colCount = columnNames.Count;
-
-            // --- 3. Load rows ---
-            ArrayObject rowsArray;
-            try
-            {
-                rowsArray = Marshal.PtrToStructure<ArrayObject>(rowsPtr);
-            }
-            catch
-            {
-                return "Dataframe error: failed to read rows array";
-            }
-
-            var rows = new List<List<object>>();
+            var rowsData = new List<List<object>>();
 
             for (long r = 0; r < rowsArray.length; r++)
             {
-                IntPtr rowPtrAddr = IntPtr.Add(rowsArray.data, (int)(r * IntPtr.Size));
-                IntPtr recordPtr = Marshal.ReadIntPtr(rowPtrAddr);
+                IntPtr recordPtrAddr = IntPtr.Add(rowsArray.data, (int)(r * 8));
+                IntPtr recordPtr = Marshal.ReadIntPtr(recordPtrAddr);
 
                 if (recordPtr == IntPtr.Zero)
                 {
-                    rows.Add(Enumerable.Repeat<object>("null", colCount).ToList());
+                    rowsData.Add(Enumerable.Repeat<object>("null", (int)colsArray.length).ToList());
                     continue;
                 }
-
-                List<object> rowValues;
-                try
-                {
-                    // ✅ Reuse your existing record logic
-                    rowValues = ExtractRecord(recordPtr, type.RowType);
-                }
-                catch
-                {
-                    rowValues = Enumerable.Repeat<object>("error", colCount).ToList();
-                }
-
-                // Safety: enforce column count match
-                if (rowValues.Count != colCount)
-                {
-                    rowValues = rowValues
-                        .Concat(Enumerable.Repeat<object>("null", colCount))
-                        .Take(colCount)
-                        .ToList();
-                }
-
-                rows.Add(rowValues);
+                // Extract using the RowType defined in your DataframeType
+                rowsData.Add(ExtractRecord(recordPtr, type.RowType));
             }
 
-            int rowCount = rows.Count;
-
-            // --- 4. Determine column widths ---
-            var colWidths = new int[colCount];
-
-            for (int c = 0; c < colCount; c++)
-            {
-                colWidths[c] = columnNames[c].Length;
-
-                foreach (var row in rows)
-                {
-                    var str = row[c]?.ToString() ?? "null";
-                    if (str.Length > colWidths[c])
-                        colWidths[c] = str.Length;
-                }
-            }
-
-            // --- 5. Row limiting ---
-            int maxRows = 10;
-            var rowIndices = new List<int>();
-
-            if (rowCount <= maxRows)
-            {
-                for (int i = 0; i < rowCount; i++)
-                    rowIndices.Add(i);
-            }
-            else
-            {
-                for (int i = 0; i < 5; i++)
-                    rowIndices.Add(i);
-
-                rowIndices.Add(-1);
-
-                for (int i = rowCount - 5; i < rowCount; i++)
-                    rowIndices.Add(i);
-            }
-
-            // --- 6. Formatting ---
-            string FormatRow(List<string> row)
-            {
-                var paddedCols = row.Select((val, i) =>
-                    val.PadRight(colWidths[i])
-                );
-
-                return string.Join(" | ", paddedCols);
-            }
-
-            string separator =
-                string.Join("-+-", colWidths.Select(w => new string('-', w)));
-
-            var lines = new List<string>();
-
-            // header
-            lines.Add(FormatRow(columnNames));
-            lines.Add(separator);
-
-            // rows
-            foreach (var r in rowIndices)
-            {
-                if (r == -1)
-                {
-                    var dots = string.Join(" | ",
-                        colWidths.Select(w => "...".PadRight(w)));
-
-                    lines.Add(dots);
-                    continue;
-                }
-
-                var row = rows[r]
-                    .Select(v => v?.ToString() ?? "null")
-                    .ToList();
-
-                lines.Add(FormatRow(row));
-            }
-
-            // --- 7. Final output ---
-            var indented = string.Join("\n", lines.Select(l => "  " + l));
-
-            return "Dataframe:\n" + indented;
+            // --- 4. Formatting (Standard Format) ---
+            return FormatTable(columnNames, rowsData);
         }
+
 
 
         // dataframe(["name", "age", "score", "isCool"], [["dan", 30, 1.1, true]])
@@ -790,6 +641,20 @@ namespace MyCompiler
         //     return $"Dataframe: \n - Columns: {columnDataArray}\n - DataTypes: {dataTypes}\n - Data: {data}";
         // }
 
+        private int GetTypeByTag(Type type)
+        {
+            return type switch
+            {
+                IntType => (Int16)ValueTag.Int,
+                FloatType => (Int16)ValueTag.Float,
+                BoolType => (Int16)ValueTag.Bool,
+                StringType => (Int16)ValueTag.String,
+                ArrayType => (Int16)ValueTag.Array,
+                RecordType => (Int16)ValueTag.Record,
+                DataframeType => (Int16)ValueTag.Dataframe,
+                _ => (Int16)ValueTag.None
+            };
+        }
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
             var ctx = _module.Context;
@@ -808,17 +673,7 @@ namespace MyCompiler
                 return value;
             }
 
-            int tag = type switch
-            {
-                IntType => (Int16)ValueTag.Int,
-                FloatType => (Int16)ValueTag.Float,
-                BoolType => (Int16)ValueTag.Bool,
-                StringType => (Int16)ValueTag.String,
-                ArrayType => (Int16)ValueTag.Array,
-                RecordType => (Int16)ValueTag.Record,
-                DataframeType => (Int16)ValueTag.Dataframe,
-                _ => (Int16)ValueTag.None
-            };
+            int tag = GetTypeByTag(type);
 
             LLVMValueRef dataPtr;
 
@@ -2906,32 +2761,44 @@ namespace MyCompiler
             return valueToAssign;
         }
 
-        public LLVMValueRef VisitRecordExpr(RecordNodeExpr expr) // x=record({name: "dan", age: 100}) 
+        public LLVMValueRef VisitRecordExpr(RecordNodeExpr expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var mallocFunc = GetOrDeclareMalloc();
 
-            var numFields = expr.Fields.Count;
-            var bufferSize = (ulong)numFields * 8;
-            var buffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, bufferSize) }, "record_buffer");
+            var numFields = (ulong)expr.Fields.Count;
+            // Each field is a pointer (8 bytes)
+            var buffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, numFields * 8) }, "record_buffer");
 
             for (int i = 0; i < expr.Fields.Count; i++)
             {
                 var val = Visit(expr.Fields[i].Value);
                 LLVMValueRef fieldPtr;
-                if (expr.Fields[i].Value.Type is IntType || expr.Fields[i].Value.Type is FloatType || expr.Fields[i].Value.Type is BoolType)
+
+                // CHECK LLVM TYPE: If it's a raw Int or Double, it MUST be boxed
+                bool isPrimitive = val.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
+                                   val.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind;
+
+                if (isPrimitive)
                 {
+                    // Allocate 8 bytes for the primitive value
                     var mem = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "field_mem");
+
+                    // Cast the malloc'd pointer to the correct type (e.g., i64* or double*) so we can store into it
                     var castPtr = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(val.TypeOf, 0), "cast");
                     _builder.BuildStore(val, castPtr);
+
                     fieldPtr = mem;
                 }
                 else
                 {
+                    // It's already a pointer (String, Array, another Record)
                     fieldPtr = _builder.BuildBitCast(val, i8Ptr, "to_i8ptr");
                 }
+
+                // Store the pointer (fieldPtr) into the record buffer
                 var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
                 var ptr = _builder.BuildGEP2(i8Ptr, buffer, new[] { index }, "field_ptr");
                 _builder.BuildStore(fieldPtr, ptr);
@@ -2939,6 +2806,7 @@ namespace MyCompiler
 
             return buffer;
         }
+
 
         public LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr)
         {
@@ -3243,21 +3111,135 @@ namespace MyCompiler
 
         public LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr)
         {
-            // Rewrite into record
-            var recordFields = new List<NamedArgumentNodeExpr>
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var mallocFunc = GetOrDeclareMalloc();
+
+            // DataframeObject Structure: { i64 (colCount), i64 (rowCount), ptr (cols), ptr (rows) }
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr, i8Ptr, i8Ptr }, false);
+
+
+
+
+
+            // 1. Visit the children to get the Array pointers
+            var colsPtr = Visit(expr.Columns); // returns pointer to ArrayObject
+            var rowsPtr = Visit(expr.Rows);    // returns pointer to ArrayObject
+            List<ExpressionNodeExpr> datatypeIntArray = new List<ExpressionNodeExpr>();
+
+            // Need to store datatypes
+            // Fill the DataTypes array
+            for (int i = 0; i < expr.DataTypes.Count; i++)
             {
-                new NamedArgumentNodeExpr("columns", expr.Columns),
-                new NamedArgumentNodeExpr("rows", expr.Rows)
-            };
-
-            var recordNode = new RecordNodeExpr(recordFields);
-
-            // Let TypeChecker assign correct types
-            PerformSemanticAnalysis(recordNode);
+                int typeId = GetTypeByTag(expr.DataTypes[i]);
+                datatypeIntArray.Add(new NumberNodeExpr(typeId));
+            }
+            var datatypeArray = new ArrayNodeExpr(datatypeIntArray);
+            var datatypeArrayPtr = Visit(datatypeArray);
 
 
-            // Reuse record codegen
-            return Visit(recordNode);
+            var datatypesCount = LLVMValueRef.CreateConstInt(i64, (ulong)datatypeArray.Elements.Count);
+            var datatypesCapacity = LLVMValueRef.CreateConstInt(i64, (ulong)datatypeArray.Elements.Count > 0 ? (ulong)datatypeArray.Elements.Count * 2 : 10);
+
+            var colsCount = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Columns.Elements.Count);
+            var colsCapacity = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Columns.Elements.Count > 0 ? (ulong)expr.Columns.Elements.Count * 2 : 10);
+
+            var rowsCount = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Rows.Elements.Count);
+            var rowsCapacity = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Rows.Elements.Count > 0 ? (ulong)expr.Rows.Elements.Count * 2 : 10);
+
+
+
+            // 2. Extract counts from the Array headers (Length is the first i64 in ArrayObject)
+            // We use GEP on the ArrayObject pointers to read the 'length' field
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+            var headerRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "header_raw");
+
+
+            // 4. Store Metadata into DataframeObject
+            // Struct Type: { i64, i64, i8Ptr, i8Ptr }
+            _builder.BuildStore(colsCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_col_count"));
+            _builder.BuildStore(colsCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_col_capacity"));
+            _builder.BuildStore(_builder.BuildBitCast(colsPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_cols"));
+
+            _builder.BuildStore(rowsCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_row_count"));
+            _builder.BuildStore(rowsCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_row_capacity"));
+            _builder.BuildStore(_builder.BuildBitCast(rowsPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_rows"));
+
+            _builder.BuildStore(datatypesCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_datatypes_count"));
+            _builder.BuildStore(datatypesCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_datatypes_capacity"));
+            _builder.BuildStore(_builder.BuildBitCast(datatypeArrayPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_datatypes"));
+
+
+
+            var dfType = _module.Context.CreateNamedStruct("dataframe");
+            dfType.StructSetBody(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfPtr = _builder.BuildMalloc(dfType, "df_ptr");
+
+            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
+            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
+            _builder.BuildStore(datatypeArrayPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+
+            return dfPtr;
+        }
+
+        private string FormatTable(List<string> columnNames, List<List<object>> rows)
+        {
+            int colCount = columnNames.Count;
+            var colWidths = new int[colCount];
+
+            // Calculate Widths
+            for (int c = 0; c < colCount; c++)
+            {
+                colWidths[c] = columnNames[c].Length;
+                foreach (var row in rows)
+                {
+                    string s = row[c] is IFormattable f
+                        ? f.ToString(null, CultureInfo.InvariantCulture)
+                        : row[c]?.ToString() ?? "null";
+                    if (s.Length > colWidths[c]) colWidths[c] = s.Length;
+                }
+            }
+
+
+            // Prepare indices for head/tail view
+            int rowCount = rows.Count;
+            int maxRows = 10;
+            var rowIndices = new List<int>();
+            if (rowCount <= maxRows)
+            {
+                for (int i = 0; i < rowCount; i++) rowIndices.Add(i);
+            }
+            else
+            {
+                for (int i = 0; i < 5; i++) rowIndices.Add(i);
+                rowIndices.Add(-1);
+                for (int i = rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
+            }
+
+            string FormatRow(List<string> data) =>
+                string.Join(" | ", data.Select((val, i) => val.PadRight(colWidths[i])));
+
+            string separator = string.Join("-+-", colWidths.Select(w => new string('-', w)));
+            var lines = new List<string> { FormatRow(columnNames), separator };
+
+            foreach (var r in rowIndices)
+            {
+                if (r == -1)
+                {
+                    lines.Add(string.Join(" | ", colWidths.Select(w => "...".PadRight(w))));
+                    continue;
+                }
+                var rowStrings = rows[r].Select(v =>
+                    v is IFormattable f
+                    ? f.ToString(null, CultureInfo.InvariantCulture)
+                    : v?.ToString() ?? "null"
+                ).ToList();
+                lines.Add(FormatRow(rowStrings));
+            }
+
+            return "Dataframe:\n" + string.Join("\n", lines.Select(l => "  " + l));
         }
 
 
@@ -3576,7 +3558,6 @@ namespace MyCompiler
 
             return phi;
         }
-
         private List<object> ExtractRecord(IntPtr recordPtr, RecordType recordType)
         {
             var result = new List<object>();
@@ -3584,30 +3565,54 @@ namespace MyCompiler
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var field = recordType.RecordFields[i];
-                var fieldType = field.Value.Type;
+                var fieldType = field.Value?.Type ?? field.Type;
 
+                // recordPtr is the start of the struct. 
+                // Each field is a pointer (8 bytes).
                 IntPtr fieldLocation = IntPtr.Add(recordPtr, i * 8);
                 IntPtr ptr = Marshal.ReadIntPtr(fieldLocation);
 
+                if (ptr == IntPtr.Zero)
+                {
+                    result.Add("null");
+                    continue;
+                }
+
                 if (fieldType is IntType)
+                {
+                    // Based on your IR, Ints are pointers to an i64
                     result.Add(Marshal.ReadInt64(ptr));
+                }
                 else if (fieldType is FloatType)
                 {
-                    long bits = Marshal.ReadInt64(ptr);
-                    result.Add(BitConverter.Int64BitsToDouble(bits));
+                    // Floats are pointers to a double
+                    result.Add(BitConverter.Int64BitsToDouble(Marshal.ReadInt64(ptr)));
                 }
                 else if (fieldType is BoolType)
+                {
+                    // Bools are pointers to an i1 (stored as i8)
                     result.Add(Marshal.ReadByte(ptr) != 0);
+                }
                 else if (fieldType is StringType)
+                {
+                    // Strings are pointers to C-strings
                     result.Add(Marshal.PtrToStringAnsi(ptr));
+                }
                 else if (fieldType is ArrayType || fieldType is RecordType || fieldType is DataframeType)
+                {
+                    // Complex types: we just pass the pointer along to the next Handler
                     result.Add(ptr);
+                }
                 else
+                {
                     result.Add("unknown");
+                }
             }
 
             return result;
         }
+
+
 
     }
 }
