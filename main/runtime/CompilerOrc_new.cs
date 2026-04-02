@@ -1949,6 +1949,9 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             uint count = (uint)expr.Elements.Count;
 
+            bool isBoolArray = expr.ElementType is BoolType;
+            int stride = isBoolArray ? 1 : 8; // 1 byte for bool, 8 for others
+
             var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
             var mallocFunc = GetOrDeclareMalloc();
 
@@ -1956,37 +1959,40 @@ namespace MyCompiler
             var headerRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "arr_header");
 
             // 2. Data Buffer
-            var dataSize = LLVMValueRef.CreateConstInt(i64, count * 8);
+            var capacity = count > 0 ? count : 4;
+            var dataSize = LLVMValueRef.CreateConstInt(i64, (ulong)capacity * (ulong)stride);
             var dataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { dataSize }, "arr_data");
 
             // 3. Store Metadata
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), _builder.BuildStructGEP2(arrayStructType, headerRaw, 0));
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), _builder.BuildStructGEP2(arrayStructType, headerRaw, 1));
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)capacity), _builder.BuildStructGEP2(arrayStructType, headerRaw, 1));
             _builder.BuildStore(dataPtr, _builder.BuildStructGEP2(arrayStructType, headerRaw, 2));
 
             // 4. Populate
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
-                LLVMValueRef elemPtr;
-                if (expr.Elements[i].Type is IntType || expr.Elements[i].Type is FloatType || expr.Elements[i].Type is BoolType)
+                var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+
+                if (isBoolArray)
                 {
-                    var mem = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "elem_mem");
-                    var castPtr = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(val.TypeOf, 0), "cast");
-                    _builder.BuildStore(val, castPtr);
-                    elemPtr = mem;
+                    // Store as i8 (1 byte)
+                    var castVal = _builder.BuildZExt(val, i8, "bool_to_i8");
+                    var elementPtr = _builder.BuildGEP2(i8, dataPtr, new[] { idx }, "elem_ptr");
+                    _builder.BuildStore(castVal, elementPtr);
                 }
                 else
                 {
-                    elemPtr = _builder.BuildBitCast(val, i8Ptr, "to_i8ptr");
+                    // Store as i8Ptr (8 bytes)
+                    var castVal = _builder.BuildBitCast(val, i8Ptr, "val_to_ptr");
+                    var elementPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { idx }, "elem_ptr");
+                    _builder.BuildStore(castVal, elementPtr);
                 }
-                var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-                var elementPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { idx }, "elem_ptr");
-                _builder.BuildStore(elemPtr, elementPtr);
             }
 
             return headerRaw;
         }
+
 
         public LLVMValueRef VisitIndexExpr(IndexNodeExpr expr)
         {
