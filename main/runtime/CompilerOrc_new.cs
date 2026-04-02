@@ -2091,18 +2091,25 @@ namespace MyCompiler
             Console.WriteLine("Indexing dataframe (NO RUNTIME WRAP)");
 
             // --- Load rows pointer ---
-            var dfType = GetLLVMType(expr.SourceExpression.Type);
+            var dfType = _module.GetTypeByName("dataframe");
+            if (dfType.Handle == IntPtr.Zero)
+            {
+                dfType = _module.Context.CreateNamedStruct("dataframe");
+                dfType.StructSetBody(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            }
 
             var rowsPtrPtr = _builder.BuildStructGEP2(dfType, dataframePtr, 1, "rows_ptr_ptr");
             var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsPtrPtr, "rows_ptr");
 
             // ArrayObject = { i64 length, i64 capacity, i8* data }
             var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            var arrayPtrType = LLVMTypeRef.CreatePointer(arrayStructType, 0);
+            var rowsHeaderPtr = _builder.BuildBitCast(rowsPtr, arrayPtrType, "rows_header_ptr");
 
-            var lengthPtr = _builder.BuildStructGEP2(arrayStructType, rowsPtr, 0, "len_ptr");
+            var lengthPtr = _builder.BuildStructGEP2(arrayStructType, rowsHeaderPtr, 0, "len_ptr");
             var length = _builder.BuildLoad2(i64, lengthPtr, "len");
 
-            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, rowsPtr, 2, "data_ptr_ptr");
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, rowsHeaderPtr, 2, "data_ptr_ptr");
             var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data_ptr");
 
             // 🔥 CRITICAL: cast to i8**
