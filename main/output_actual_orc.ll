@@ -1,25 +1,25 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@df = external global ptr
-@str = private unnamed_addr constant [12 x i8] c"Hary cotter\00", align 1
+@df3 = external global ptr
+@str = private unnamed_addr constant [8 x i8] c"Charles\00", align 1
 
-define ptr @main_10() {
+define ptr @main_9() {
 entry:
-  %df_load = load ptr, ptr @df, align 8
-  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_load, i32 0, i32 1
+  %df3_load = load ptr, ptr @df3, align 8
+  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df3_load, i32 0, i32 1
   %rows_array = load ptr, ptr %rows_field, align 8
   %record_buffer = call ptr @malloc(i64 40)
   %field_mem = call ptr @malloc(i64 8)
   %cast = bitcast ptr %field_mem to ptr
-  store i64 1002, ptr %cast, align 4
+  store i64 1008, ptr %cast, align 4
   %field_ptr = getelementptr ptr, ptr %record_buffer, i64 0
   store ptr %field_mem, ptr %field_ptr, align 8
   %field_ptr1 = getelementptr ptr, ptr %record_buffer, i64 1
   store ptr @str, ptr %field_ptr1, align 8
   %field_mem2 = call ptr @malloc(i64 8)
   %cast3 = bitcast ptr %field_mem2 to ptr
-  store i64 10, ptr %cast3, align 4
+  store i64 55, ptr %cast3, align 4
   %field_ptr4 = getelementptr ptr, ptr %record_buffer, i64 2
   store ptr %field_mem2, ptr %field_ptr4, align 8
   %field_mem5 = call ptr @malloc(i64 8)
@@ -29,7 +29,7 @@ entry:
   store ptr %field_mem5, ptr %field_ptr7, align 8
   %field_mem8 = call ptr @malloc(i64 8)
   %cast9 = bitcast ptr %field_mem8 to ptr
-  store double 1.000000e+06, ptr %cast9, align 8
+  store double 0x410879A7EB851EB8, ptr %cast9, align 8
   %field_ptr10 = getelementptr ptr, ptr %record_buffer, i64 4
   store ptr %field_mem8, ptr %field_ptr10, align 8
   %val_to_ptr = bitcast ptr %record_buffer to ptr
@@ -63,7 +63,7 @@ add_cont:                                         ; preds = %grow, %entry
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
   store i64 7, ptr %tag_ptr, align 4
   %data_ptr11 = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %df_load, ptr %data_ptr11, align 8
+  store ptr %df3_load, ptr %data_ptr11, align 8
   ret ptr %runtime_obj
 }
 

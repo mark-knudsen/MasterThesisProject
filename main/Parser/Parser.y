@@ -242,14 +242,11 @@ expr
                                               { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
     
-    // DO DATAFRAMES!   -  dataframe([], [{ name: "Bob",  }])
-    | DATAFRAME LPAREN arg COMMA arg RPAREN
+    /* dataframe(columns=[...], data=[...]) */
+    | DATAFRAME LPAREN arg_list RPAREN
     {
-        $$ = new DataframeNodeExpr(new List<ExpressionNodeExpr> 
-        { 
-            $3 as ExpressionNodeExpr, 
-            $5 as ExpressionNodeExpr 
-        });
+        // Make sure you have: using System.Linq; at the top of your parser file
+        $$ = new DataframeNodeExpr($3.Cast<ExpressionNodeExpr>().ToList());
     }
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNodeExpr($1 as ExpressionNodeExpr, $6 as List<ExpressionNodeExpr>); }
     | expr DOT COLUMNS              { $$ = new ColumnsNodeExpr($1 as ExpressionNodeExpr); }
@@ -267,11 +264,12 @@ arg_list
     ;
 
 arg
-    : ID ASSIGN expr { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
-    | ID COLON expr  { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
-    | expr           { $$ = $1 as ExpressionNodeExpr; }
+    : ID ASSIGN expr      { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
+    | ID COLON expr       { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
+    | COLUMNS ASSIGN expr { $$ = new NamedArgumentNodeExpr("columns", $3 as ExpressionNodeExpr); }
+    | COLUMNS COLON expr  { $$ = new NamedArgumentNodeExpr("columns", $3 as ExpressionNodeExpr); }
+    | expr                { $$ = new NamedArgumentNodeExpr(null, $1 as ExpressionNodeExpr); } 
     ;
-    
 %%
 
 internal Parser(Scanner s) : base(s) { }

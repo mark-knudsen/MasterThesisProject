@@ -476,7 +476,7 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
     }
-    
+
     public class AddRangeNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr SourceExpression { get; }
@@ -755,41 +755,44 @@ namespace MyCompiler
 
         public DataframeNodeExpr(List<ExpressionNodeExpr> args)
         {
-            foreach (var arg in args)
+            for (int i = 0; i < args.Count; i++)
             {
-                // Handle named arguments
-                if (arg is NamedArgumentNodeExpr named)
+                var currentArg = args[i];
+
+                // 1. Check if it's a Named Argument (columns=... or data=...)
+                if (currentArg is NamedArgumentNodeExpr named)
                 {
-                    switch (named.Name)
+                    // Extract the actual value (e.g. the ArrayNodeExpr) from the wrapper
+                    var actualValue = named.Value as ArrayNodeExpr;
+
+                    if (named.Name == "columns")
                     {
-                        case "columns":
-                            Columns = named.Value as ArrayNodeExpr;
-                            break;
-
-                        case "data":
-                        case "rows":
-                            Rows = named.Value as ArrayNodeExpr;
-                            break;
-
-                        default:
-                            throw new Exception($"Unknown dataframe argument: {named.Name}");
+                        Columns = actualValue;
+                    }
+                    else if (named.Name == "data" || named.Name == "rows")
+                    {
+                        Rows = actualValue;
+                    }
+                    else if (string.IsNullOrEmpty(named.Name))
+                    {
+                        // This handles positional arguments that got wrapped 
+                        // by the 'arg' rule but have no name string
+                        if (i == 0) Columns = actualValue;
+                        else if (i == 1) Rows = actualValue;
                     }
                 }
-                else
+                // 2. Check if it's a raw ArrayNodeExpr (Direct positional)
+                else if (currentArg is ArrayNodeExpr array)
                 {
-                    // Positional arguments
-                    if (Columns == null)
-                        Columns = arg as ArrayNodeExpr;
-                    else if (Rows == null)
-                        Rows = arg as ArrayNodeExpr;
-                    else
-                        throw new Exception("Too many positional arguments for dataframe");
+                    if (i == 0) Columns = array;
+                    else if (i == 1) Rows = array;
                 }
             }
 
-            if (Columns == null || Rows == null)
-                throw new Exception("dataframe requires columns and data");
+            if (Columns == null) throw new Exception("dataframe requires 'columns' array");
+            if (Rows == null) throw new Exception("dataframe requires 'data' array");
         }
+
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
     }

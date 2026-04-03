@@ -304,6 +304,153 @@ namespace MyCompiler
                     foreach (var stmt in seq.Statements) PrintNode(stmt, indent);
                     break;
 
+                case AssignNodeExpr assign:
+                    Console.WriteLine($"{space}Assignment: {assign.Id} =");
+                    PrintNode(assign.Expression, indent + 1);
+                    break;
+
+                // --- Dataframe & Records ---
+                case DataframeNodeExpr df:
+                    Console.WriteLine($"{space}DATAFRAME:");
+                    Console.WriteLine($"{space}  Columns:");
+                    PrintNode(df.Columns, indent + 2);
+                    Console.WriteLine($"{space}  Rows:");
+                    PrintNode(df.Rows, indent + 2);
+                    break;
+
+                case RecordNodeExpr rec:
+                    Console.WriteLine($"{space}RECORD {{");
+                    foreach (var field in rec.Fields)
+                    {
+                        Console.WriteLine($"{space}  Field: {field.Label}");
+                        PrintNode(field.Value, indent + 2);
+                    }
+                    Console.WriteLine($"{space}}}");
+                    break;
+
+                case RecordFieldNodeExpr rf:
+                    Console.WriteLine($"{space}Get Field: {rf.IdField} from:");
+                    PrintNode(rf.IdRecord, indent + 1);
+                    break;
+
+                case RecordFieldAssignNodeExpr rfa:
+                    Console.WriteLine($"{space}Set Field: {rfa.IdField} =");
+                    PrintNode(rfa.AssignExpression, indent + 1);
+                    Console.WriteLine($"{space}  On Record:");
+                    PrintNode(rfa.IdRecord, indent + 1);
+                    break;
+
+                // --- CSV Operations ---
+                case ReadCsvNodeExpr csv:
+                    Console.WriteLine($"{space}READ CSV:");
+                    Console.WriteLine($"{space}  Path:");
+                    PrintNode(csv.FileNameExpr, indent + 2);
+                    Console.WriteLine($"{space}  Schema:");
+                    PrintNode(csv.SchemaExpr, indent + 2);
+                    break;
+
+                case ToCsvNodeExpr toCsv:
+                    Console.WriteLine($"{space}TO CSV:");
+                    Console.WriteLine($"{space}  Source:");
+                    PrintNode(toCsv.Expression, indent + 2);
+                    Console.WriteLine($"{space}  Destination:");
+                    PrintNode(toCsv.FileNameExpr, indent + 2);
+                    break;
+
+                // --- Functional (Map / Where) ---
+                case MapNodeExpr map:
+                    Console.WriteLine($"{space}MAP (Iterator: {map.IteratorId.Name}):");
+                    Console.WriteLine($"{space}  Source:");
+                    PrintNode(map.SourceExpr, indent + 2);
+                    Console.WriteLine($"{space}  Transformation:");
+                    PrintNode(map.Assignment, indent + 2);
+                    break;
+
+                case WhereNodeExpr whe:
+                    Console.WriteLine($"{space}WHERE (Iterator: {whe.IteratorId.Name}):");
+                    Console.WriteLine($"{space}  Source:");
+                    PrintNode(whe.SourceExpr, indent + 2);
+                    Console.WriteLine($"{space}  Predicate:");
+                    PrintNode(whe.Condition, indent + 2);
+                    break;
+
+                // --- Array Modifications ---
+                case AddNodeExpr add:
+                    Console.WriteLine($"{space}ARRAY ADD:");
+                    PrintNode(add.SourceExpression, indent + 1);
+                    PrintNode(add.AddExpression, indent + 1);
+                    break;
+
+                case AddRangeNodeExpr addR:
+                    Console.WriteLine($"{space}ARRAY ADD RANGE:");
+                    PrintNode(addR.SourceExpression, indent + 1);
+                    PrintNode(addR.AddRangeExpression, indent + 1);
+                    break;
+
+                case RemoveNodeExpr rem:
+                    Console.WriteLine($"{space}ARRAY REMOVE:");
+                    PrintNode(rem.SourceExpression, indent + 1);
+                    PrintNode(rem.RemoveExpression, indent + 1);
+                    break;
+
+                case IndexAssignNodeExpr idxAsgn:
+                    Console.WriteLine($"{space}INDEX ASSIGNMENT:");
+                    Console.WriteLine($"{space}  Target:");
+                    PrintNode(idxAsgn.ArrayExpression, indent + 2);
+                    Console.WriteLine($"{space}  Index:");
+                    PrintNode(idxAsgn.IndexExpression, indent + 2);
+                    Console.WriteLine($"{space}  New Value:");
+                    PrintNode(idxAsgn.AssignExpression, indent + 2);
+                    break;
+
+                // --- Field Modification (Dynamic) ---
+                case AddFieldNodeExpr af:
+                    Console.WriteLine($"{space}ADD FIELD '{af.FieldName}':");
+                    PrintNode(af.Record, indent + 1);
+                    PrintNode(af.Value, indent + 1);
+                    break;
+
+                case RemoveFieldNodeExpr rmf:
+                    Console.WriteLine($"{space}REMOVE FIELD '{rmf.FieldName}' from:");
+                    PrintNode(rmf.Record, indent + 1);
+                    break;
+
+                // --- Literals & Basic Nodes ---
+                case TypeLiteralNodeExpr t:
+                    Console.WriteLine($"{space}Type Literal: {t.Value}");
+                    break;
+
+                case NamedArgumentNodeExpr na:
+                    Console.WriteLine($"{space}Named Arg: {na.Name} =>");
+                    PrintNode(na.Value, indent + 1);
+                    break;
+
+                case CopyNodeExpr cp:
+                    Console.WriteLine($"{space}COPY:");
+                    PrintNode(cp.Source, indent + 1);
+                    break;
+
+                case ArrayNodeExpr ar:
+                    Console.WriteLine($"{space}ARRAY (Size: {ar.Elements.Count}):");
+                    foreach (var el in ar.Elements) PrintNode(el, indent + 1);
+                    break;
+
+                case StringNodeExpr str:
+                    Console.WriteLine($"{space}String: \"{str.Value}\"");
+                    break;
+
+                case NumberNodeExpr num:
+                    Console.WriteLine($"{space}Int: {num.Value}");
+                    break;
+
+                case FloatNodeExpr f:
+                    Console.WriteLine($"{space}Float: {f.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                    break;
+
+                case IdNodeExpr id:
+                    Console.WriteLine($"{space}Variable: {id.Name}");
+                    break;
+
                 case IfNodeExpr ifNode:
                     Console.WriteLine($"{space}IF Statement:");
                     PrintNode(ifNode.Condition, indent + 2);
@@ -316,75 +463,43 @@ namespace MyCompiler
                     }
                     break;
 
-                case AssignNodeExpr assign:
-                    Console.WriteLine($"{space}Assignment: {assign.Id} =");
-                    PrintNode(assign.Expression, indent + 1);
+                // --- Aggregate Array Operations ---
+                case LengthNodeExpr len:
+                    Console.WriteLine($"{space}LENGTH OF:");
+                    PrintNode(len.ArrayExpression, indent + 1);
                     break;
 
-                case BinaryOpNodeExpr bin:
-                    Console.WriteLine($"{space}Op: {bin.Operator}");
-                    PrintNode(bin.Left, indent + 1);
-                    PrintNode(bin.Right, indent + 1);
+                case MinNodeExpr min:
+                    Console.WriteLine($"{space}MIN OF:");
+                    PrintNode(min.ArrayExpression, indent + 1);
                     break;
 
-                case FloatNodeExpr f: // Added missing Float case
-                    Console.WriteLine($"{space}Float Literal: {f.Value.ToString(CultureInfo.InvariantCulture)}");
+                case MaxNodeExpr max:
+                    Console.WriteLine($"{space}MAX OF:");
+                    PrintNode(max.ArrayExpression, indent + 1);
                     break;
 
-                case NumberNodeExpr num:
-                    Console.WriteLine($"{space}Int Literal: {num.Value}");
+                case MeanNodeExpr mean:
+                    Console.WriteLine($"{space}MEAN OF:");
+                    PrintNode(mean.ArrayExpression, indent + 1);
                     break;
 
-                case BooleanNodeExpr b:
-                    Console.WriteLine($"{space}Boolean: {b.Value}");
+                case SumNodeExpr sum:
+                    Console.WriteLine($"{space}SUM OF:");
+                    PrintNode(sum.ArrayExpression, indent + 1);
                     break;
 
-                case StringNodeExpr str:
-                    Console.WriteLine($"{space}String: \"{str.Value}\"");
+                // --- Unary Operations (e.g., -x) ---
+                case UnaryOpNodeExpr unary:
+                    Console.WriteLine($"{space}Unary Op: {unary.Operator}");
+                    PrintNode(unary.Operand, indent + 1);
                     break;
 
-                case IdNodeExpr id:
-                    Console.WriteLine($"{space}Variable: {id.Name}");
-                    break;
-
-                case PrintNodeExpr pn:
-                    Console.WriteLine($"{space}PRINT Statement:");
-                    PrintNode(pn.Expression, indent + 1);
-                    break;
-
-                case RandomNodeExpr rn:
-                    Console.WriteLine($"{space}Min value: {rn.MinValue}, Max value: {rn.MaxValue}");
-                    break;
-
-                case RoundNodeExpr ro:
-                    Console.WriteLine($"{space}Value: {ro.Value}, Decimals: {ro.Decimals}");
-                    break;
-
-                case ArrayNodeExpr ar:
-                    Console.WriteLine($"{space}Elements: {ar.Elements}, Decimals: {ar.ElementType}");
-                    break;
-
-                case IndexNodeExpr ind:
-                    Console.WriteLine($"{space}Array: ");
-                    PrintNode(ind.SourceExpression, indent + 1);
-                    PrintNode(ind.IndexExpression, indent + 1);
-                    break;
-
-                case WhereNodeExpr whe:
-                    Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
-                    Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
-                    PrintNode(whe.SourceExpr, indent + 1);
-                    PrintNode(whe.Condition, indent + 1);
-                    break;
-
-                case ForLoopNodeExpr forNode:
-                    Console.WriteLine($"{space}FOR Loop:");
-                    PrintNode(forNode.Initialization, indent + 2);
-                    PrintNode(forNode.Condition, indent + 2);
-                    PrintNode(forNode.Step, indent + 2);
-                    PrintNode(forNode.Body, indent + 2);
+                default:
+                    Console.WriteLine($"{space}Node: {node.GetType().Name}");
                     break;
             }
         }
+
     }
 }
