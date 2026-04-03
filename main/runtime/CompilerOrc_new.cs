@@ -136,74 +136,73 @@ namespace MyCompiler
             return runtimeBox;
         }
 
-        public static void ToCsvInternal(IntPtr arrayHeaderPtr, IntPtr pathPtr)
+        public static void ToCsvInternal(IntPtr dfPtr, IntPtr pathPtr)
         {
-            if (arrayHeaderPtr == IntPtr.Zero || pathPtr == IntPtr.Zero) return;
             string path = Marshal.PtrToStringAnsi(pathPtr);
 
-            // Ensure ArrayObject is defined in your namespace
-            var array = Marshal.PtrToStructure<ArrayObject>(arrayHeaderPtr);
+            // 1. Unpack Dataframe { ptr columns, ptr rows, ptr types }
+            IntPtr columnsArrayPtr = Marshal.ReadIntPtr(dfPtr, 0);
+            IntPtr rowsArrayPtr = Marshal.ReadIntPtr(dfPtr, 8);
+            IntPtr typesArrayPtr = Marshal.ReadIntPtr(dfPtr, 16);
 
-            using var writer = new System.IO.StreamWriter(path);
-            for (int i = 0; i < array.length; i++)
+            // 2. Get Metadata (Lengths) from Array Headers
+            long colCount = Marshal.ReadInt64(columnsArrayPtr, 0);
+            long rowCount = Marshal.ReadInt64(rowsArrayPtr, 0);
+
+            // Get raw buffers
+            IntPtr colDataBuf = Marshal.ReadIntPtr(columnsArrayPtr, 16);
+            IntPtr rowDataBuf = Marshal.ReadIntPtr(rowsArrayPtr, 16);
+            IntPtr typeDataBuf = Marshal.ReadIntPtr(typesArrayPtr, 16);
+
+            using (StreamWriter writer = new StreamWriter(path))
             {
-                IntPtr elemPtr = IntPtr.Add(array.data, i * 8);
-                long rawBits = Marshal.ReadInt64(elemPtr);
+                // 3. Write Header Row
+                List<string> colNames = new List<string>();
+                for (int i = 0; i < colCount; i++)
+                {
+                    IntPtr namePtr = Marshal.ReadIntPtr(colDataBuf, i * 8);
+                    colNames.Add(Marshal.PtrToStringAnsi(namePtr));
+                }
+                writer.WriteLine(string.Join(",", colNames));
 
-                if ((ulong)rawBits > 0x1000000)
+                // 4. Write Data Rows
+                for (int i = 0; i < rowCount; i++)
                 {
-                    try
+                    IntPtr recordPtr = Marshal.ReadIntPtr(rowDataBuf, i * 8);
+                    List<string> rowValues = new List<string>();
+
+                    for (int j = 0; j < colCount; j++)
                     {
-                        string s = Marshal.PtrToStringAnsi((IntPtr)rawBits);
-                        writer.WriteLine(s);
+                        IntPtr valBoxPtr = Marshal.ReadIntPtr(recordPtr, j * 8);
+                        int typeCode = (int)Marshal.ReadInt64(typeDataBuf, j * 8); // 1=Int, 2=Float, 3=Bool, 4=String
+
+                        string cellValue = "";
+                        if (typeCode == 1) // Int
+                        {
+                            cellValue = Marshal.ReadInt64(valBoxPtr).ToString();
+                        }
+                        else if (typeCode == 2) // Float (Double)
+                        {
+                            long bits = Marshal.ReadInt64(valBoxPtr);
+                            cellValue = BitConverter.Int64BitsToDouble(bits).ToString(CultureInfo.InvariantCulture);
+                        }
+                        else if (typeCode == 3) // Bool
+                        {
+                            cellValue = Marshal.ReadInt64(valBoxPtr) == 1 ? "true" : "false";
+                        }
+                        else if (typeCode == 4) // String
+                        {
+                            // Remember: for strings, valBoxPtr IS the pointer to the string
+                            cellValue = Marshal.PtrToStringAnsi(valBoxPtr);
+                        }
+                        rowValues.Add(cellValue);
                     }
-                    catch
-                    {
-                        writer.WriteLine(rawBits);
-                    }
-                }
-                else if (rawBits > 1000000)
-                {
-                    writer.WriteLine(BitConverter.Int64BitsToDouble(rawBits));
-                }
-                else
-                {
-                    writer.WriteLine(rawBits);
+                    writer.WriteLine(string.Join(",", rowValues));
                 }
             }
+            Console.WriteLine($"--- C# Runtime: CSV saved to {path} ---");
         }
 
-        private static IntPtr BoxValue(string rawValue, char typeCode)
-        {
-            // Allocate 8 bytes for the value (LLVM expects i64/ptr size)
-            IntPtr valPtr = Marshal.AllocHGlobal(8);
-
-            switch (typeCode)
-            {
-                case 'I': // Integer
-                    long.TryParse(rawValue, out long iVal);
-                    Marshal.WriteInt64(valPtr, iVal);
-                    break;
-                case 'F': // Float/Double
-                    double.TryParse(rawValue, out double dVal);
-                    long bits = BitConverter.DoubleToInt64Bits(dVal);
-                    Marshal.WriteInt64(valPtr, bits);
-                    break;
-                case 'S': // String
-                    IntPtr sPtr = Marshal.StringToHGlobalAnsi(rawValue);
-                    // For strings, we store the pointer to the string bytes
-                    Marshal.WriteIntPtr(valPtr, sPtr);
-                    break;
-                case 'B': // Boolean
-                    bool.TryParse(rawValue, out bool bVal);
-                    Marshal.WriteInt64(valPtr, bVal ? 1 : 0);
-                    break;
-                default:
-                    Marshal.WriteInt64(valPtr, 0);
-                    break;
-            }
-            return valPtr;
-        }
     }
 
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
@@ -3094,47 +3093,52 @@ namespace MyCompiler
 
             return newPtr;
         }
-
         public LLVMValueRef VisitToCsvExpr(ToCsvNodeExpr expr)
         {
+            // 1. Visit the Dataframe expression (e.g., the variable 'df2')
+            var dfValue = Visit(expr.Expression);
+
+            // 2. Visit the Path expression (the StringNodeExpr)
+            var pathValue = Visit(expr.FileNameExpr);
+
+            // 3. Setup the Function Type: void ToCsvInternal(ptr, ptr)
+            var voidType = _module.Context.VoidType;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var toCsvFnType = LLVMTypeRef.CreateFunction(voidType, new[] { i8Ptr, i8Ptr }, false);
+
+            // 4. Get or Declare the function in the LLVM Module
+            var toCsvFn = _module.GetNamedFunction("ToCsvInternal");
+            if (toCsvFn.Handle == IntPtr.Zero)
+            {
+                toCsvFn = _module.AddFunction("ToCsvInternal", toCsvFnType);
+            }
+
+            // 5. Build the Call
+            // Ensure dfValue is cast to i8Ptr if it isn't already (standard for 'ptr' in modern LLVM)
+            var dfCast = _builder.BuildBitCast(dfValue, i8Ptr, "df_cast");
+
+            _builder.BuildCall2(toCsvFnType, toCsvFn, new[] { dfCast, pathValue }, "");
+
+            // 6. Return a "None/Null" RuntimeObject as the expression result
+            return GenerateNoneResponse();
+        }
+
+        // Helper to return a null/none RuntimeValue { i64 0, ptr null }
+        private LLVMValueRef GenerateNoneResponse()
+        {
+            var i64 = _module.Context.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 1. Visit the Array (This is a variable 'arr', so it IS boxed)
-            var boxedArray = Visit(expr.Expression);
+            var runtimeObj = _builder.BuildMalloc(_runtimeValueType, "none_obj");
+            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 0, "tag_ptr");
+            var dataPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
 
-            // Extract the raw ArrayObject* from the box
-            var arrayDataAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedArray, 1, "array_unbox_gep");
-            var rawArrayPtr = _builder.BuildLoad2(i8Ptr, arrayDataAddr, "raw_array_ptr");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), tagPtr); // Tag 0 = None
+            _builder.BuildStore(LLVMValueRef.CreateConstNull(i8Ptr), dataPtr);
 
-            // 2. Visit the Path ("test.csv")
-            var pathValue = Visit(expr.FileNameExpr);
-            LLVMValueRef rawPathPtr;
-
-            // Check: If pathValue is a literal string, it's already a ptr to i8.
-            // If it's a variable, it's a ptr to RuntimeValue.
-            if (pathValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
-                pathValue.TypeOf.ElementType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-            {
-                // It's a raw string literal i8*
-                rawPathPtr = pathValue;
-            }
-            else
-            {
-                // It's a boxed variable (e.g. if you did 'p = "test.csv"' then 'to_csv(arr, p)')
-                var pathDataAddr = _builder.BuildStructGEP2(_runtimeValueType, pathValue, 1, "path_unbox_gep");
-                rawPathPtr = _builder.BuildLoad2(i8Ptr, pathDataAddr, "raw_path_ptr");
-            }
-
-            // 3. Setup the Function
-            var toCsvFunc = GetOrDeclareToCsv();
-            var toCsvType = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { i8Ptr, i8Ptr }, false);
-
-            // 4. Call with raw pointers
-            _builder.BuildCall2(toCsvType, toCsvFunc, new[] { rawArrayPtr, rawPathPtr }, "");
-
-            // 5. Return None box
-            return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
+            return runtimeObj;
         }
+
 
         private string GetTypeString(RecordType record)
         {

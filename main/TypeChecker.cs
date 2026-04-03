@@ -639,12 +639,29 @@ namespace MyCompiler
 
         public Type VisitToCsv(ToCsvNodeExpr expr)
         {
-            Visit(expr.Expression);
-            Visit(expr.FileNameExpr);
+            // 1. Get the types of the arguments
+            Type exprType = Visit(expr.Expression);
+            Type pathType = Visit(expr.FileNameExpr);
 
-            expr.SetType(new StringType());
-            return expr.Type;
+            // 2. Semantic Check: Is the first argument actually a Dataframe?
+            if (!(exprType is DataframeType))
+            {
+                throw new Exception($"to_csv() error: First argument must be a Dataframe, but got {exprType?.GetType().Name}");
+            }
+
+            // 3. Semantic Check: Is the second argument a String?
+            if (!(pathType is StringType))
+            {
+                throw new Exception($"to_csv() error: Second argument must be a String (file path), but got {pathType?.GetType().Name}");
+            }
+
+            // 4. Set the return type to Void/None 
+            // (Ensure this matches whatever type your REPL uses for 'null' results)
+            var voidType = new VoidType();
+            expr.SetType(voidType);
+            return voidType;
         }
+
 
         public Type VisitAdd(AddNodeExpr expr)
         {
