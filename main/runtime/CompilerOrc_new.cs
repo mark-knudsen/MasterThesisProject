@@ -3549,6 +3549,13 @@ namespace MyCompiler
             return result;
         }
 
+        public LLVMValueRef VisitTypeLiteralExpr(TypeLiteralNodeExpr expr)
+        {
+            if (_debug) Console.WriteLine("visiting: TypeLiteral (Skipping CodeGen)");
+            // Return a dummy null pointer so LLVM doesn't get a completely empty handle
+            return LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0));
+        }
+
         /*  df = dataframe(columns=["name", "age", "hasJob", "savings"], 
 
         data=[
