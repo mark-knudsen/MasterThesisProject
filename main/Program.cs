@@ -19,7 +19,7 @@ namespace MyCompiler
 
         static void PrintVariableTable(ICompiler compiler)
         {
-            Console.WriteLine("Variable table:\n");
+            Console.WriteLine("\nVariable table:\n");
             var context = compiler.GetContext();
             var elements = context.GetAll();
 
@@ -45,7 +45,7 @@ namespace MyCompiler
 
 
 #if LINUX
-            bool multipleLines = true;
+            bool multipleLines = false;
             string exitText = "e";
 #else
                 bool multipleLines = false;

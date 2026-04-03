@@ -75,6 +75,7 @@ namespace MyCompiler
                 AddFieldNodeExpr radd => VisitAddField(radd),
                 RemoveFieldNodeExpr rrem => VisitRemoveField(rrem),
                 DataframeNodeExpr df => VisitDataframe(df),
+                ColumnsNodeExpr cols => VisitColumns(cols),
                 ShowDataframeNodeExpr showdf => VisitShowDataframe(showdf),
                 NamedArgumentNodeExpr namedArg => VisitNamedArgument(namedArg),
 
@@ -144,14 +145,11 @@ namespace MyCompiler
         public Type VisitId(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
-
+            // if(_debug) Console.WriteLine(" we looking at id: " + expr.Name + " and its type is " + entry?.Type);
             // if(_debug) Console.WriteLine("id type: " + entry.Type); // prof we can get records type at type check time
 
             if (entry == null)
-            {
-                // Remove .Line if it's causing an error
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
-            }
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -357,7 +355,7 @@ namespace MyCompiler
             Type thenType = Visit(expr.ThenPart);
             Console.WriteLine("Type: ", thenType.GetType());
 
-            System.Console.WriteLine("then typee:" + thenType);
+            Console.WriteLine("then typee:" + thenType);
 
             Type elseType = new VoidType();
             if (expr.ElsePart != null)
@@ -430,7 +428,7 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNodeExpr expr)
         {
-            Type elementType = new IntType();
+            Type elementType = expr.ElementType;
 
             if (expr.Elements.Count > 0)
             {
@@ -568,15 +566,49 @@ namespace MyCompiler
 
         public Type VisitWhere(WhereNodeExpr expr)
         {
-            if (_debug) Console.WriteLine("The array node in where: " + expr.SourceExpr);
-            Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
-
-            Visit(expr.IteratorId);
-            var condType = Visit(expr.Condition);
             var arrayType = Visit(expr.SourceExpr);
 
-            if (arrayType is not ArrayType)
-                throw new Exception("where can only be used on arrays");
+            Console.WriteLine("we got source: " + expr.SourceExpr.Type);
+
+            // we need to assign the lambda value and give it the specific type
+
+            if (arrayType is ArrayType arrType)
+            {
+                if (arrType.ElementType is StringType)
+                    Visit(new AssignNodeExpr(expr.IteratorId.Name, new StringNodeExpr("")));
+                else if (arrType.ElementType is BoolType)
+                    Visit(new AssignNodeExpr(expr.IteratorId.Name, new BooleanNodeExpr(false)));
+                else
+                    Visit(new AssignNodeExpr(expr.IteratorId.Name, new NumberNodeExpr(0)));
+            }
+            else if (arrayType is DataframeType dfType)
+            {
+                var q = new List<NamedArgumentNodeExpr>();
+                for (int i = 0; i < dfType.ColumnNames.Count; i++)
+                {
+                    if (dfType.DataTypes[i] is StringType)
+                        q.Add(new NamedArgumentNodeExpr(dfType.ColumnNames[i], new StringNodeExpr("")));
+                    else if (dfType.DataTypes[i] is BoolType)
+                        q.Add(new NamedArgumentNodeExpr(dfType.ColumnNames[i], new BooleanNodeExpr(false)));
+                    else
+                        q.Add(new NamedArgumentNodeExpr(dfType.ColumnNames[i], new NumberNodeExpr(0)));
+                }
+
+                var d = new RecordNodeExpr(q);
+
+                Visit(new AssignNodeExpr(expr.IteratorId.Name, d));
+                Console.WriteLine(" we got data frame, now to get the records and assign to iterator");
+            }
+
+            Visit(expr.IteratorId);
+
+            Console.WriteLine("array type: " + arrayType);
+
+            var condType = Visit(expr.Condition);
+            Console.WriteLine("we got comparison: " + condType);
+
+            if (arrayType is not ArrayType && arrayType is not DataframeType)
+                throw new Exception("where can only be used on arrays and dataframes");
 
             // 5. Check condition
             if (condType is not BoolType)
@@ -596,7 +628,7 @@ namespace MyCompiler
             Visit(expr.Assignment);
             var arrayType = Visit(expr.SourceExpr);
 
-            if (arrayType is not ArrayType)
+            if (arrayType is not ArrayType && arrayType is not DataframeType)
                 throw new Exception("map can only be used on arrays");
 
             // 2. Determine element type (adjust depending on your language)
@@ -622,40 +654,63 @@ namespace MyCompiler
 
         public Type VisitAdd(AddNodeExpr expr)
         {
-            var arrayType = Visit(expr.ArrayExpression);
+            var arrayType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
 
             // check if the array and the node are of the same type
-            var arrayElementType = ((ArrayType)arrayType).ElementType;
 
-            if (arrayElementType.GetType() != addType.GetType())
-                throw new Exception($"Can't add {addType} value to a {arrayElementType} array");
+            if (arrayType is DataframeType dfType)
+            {
+                if (addType is not RecordType recType)
+                    throw new Exception("add can only add records to dataframes");
 
-            expr.SetType(expr.ArrayExpression.Type);
+                // Check if the record fields match the dataframe columns
+                var dfColumns = dfType.ColumnNames;
+                var recFields = recType.RecordFields.Select(f => f.Label).ToList();
+
+                if(_debug) Console.WriteLine("df columns: " + string.Join(", ", dfColumns));
+                if(_debug) Console.WriteLine("rec fields: " + string.Join(", ", recFields));
+
+                //recType.RecordFields.Insert(0, new RecordField("index", new NumberNodeExpr(0)) { Type = new IntType() });
+
+                if (!dfColumns.All(col => recFields.Contains(col)))
+                    throw new Exception("Record fields do not match dataframe columns");
+            }
+            else if (arrayType is ArrayType arrType)
+            {
+                var arrayElementType = ((ArrayType)arrayType).ElementType;
+
+                if (arrayElementType.GetType() != addType.GetType())
+                    throw new Exception($"Can't add {addType} value to a {arrayElementType} array");
+            }
+            else        
+                throw new Exception("add can only be used on arrays and dataframes");
+
+            expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
 
         public Type VisitAddRange(AddRangeNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
+            Visit(expr.SourceExpression);
             Visit(expr.AddRangeExpression);
-            expr.SetType(expr.ArrayExpression.Type);
+            expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
 
         public Type VisitRemove(RemoveNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
+            Visit(expr.SourceExpression);
             Visit(expr.RemoveExpression);
-            expr.SetType(expr.ArrayExpression.Type);
+            expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
 
         public Type VisitRemoveRange(RemoveRangeNodeExpr expr)
         {
-            Visit(expr.ArrayExpression);
+            Visit(expr.SourceExpression);
             Visit(expr.RemoveRangeExpression);
-            expr.SetType(expr.ArrayExpression.Type);
+            expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
 
@@ -723,6 +778,7 @@ namespace MyCompiler
 
             return expr.Type;
         }
+
         public Type VisitRecord(RecordNodeExpr expr)
         {
             foreach (var field in expr.Fields)
@@ -737,16 +793,14 @@ namespace MyCompiler
                 if (_debug) Console.WriteLine($"Field {field.Label} resolved to {fieldType}");
             }
 
+            Console.WriteLine("we done with visit record");
+
             // 3. Create the RecordType using the now-populated fields
             var recordType = new RecordType(expr.Fields);
             expr.SetType(recordType);
 
             return recordType;
         }
-
-
-
-
 
         public Type VisitRecordField(RecordFieldNodeExpr expr)
         {
@@ -813,19 +867,16 @@ namespace MyCompiler
             return expr.Type;
         }
 
-
         public Type VisitDataframe(DataframeNodeExpr expr)
         {
-
             for (int i = 0; i < expr.Rows.Elements.Count; i++)
             {
                 (expr.Rows.Elements[i] as RecordNodeExpr).Fields.Insert(0, new RecordField() { Value = new NumberNodeExpr(i), Label = "index" });
-
             }
 
+            Console.WriteLine("type check on df the type is: " + expr.Type);
+
             expr.Columns.Elements.Insert(0, new StringNodeExpr("index"));
-
-
 
             // 1. Visit Columns and Rows arrays to resolve their basic types
             var columnsType = Visit(expr.Columns) as ArrayType;
@@ -863,10 +914,9 @@ namespace MyCompiler
             // 5. Finalize the node's type
             var dfType = new DataframeType(names, types, actualRowType);
             expr.SetType(dfType);
+            Console.WriteLine("final df type: " + expr.Type);
             return dfType;
         }
-
-
 
         public Type VisitNamedArgument(NamedArgumentNodeExpr expr)
         {
@@ -882,6 +932,13 @@ namespace MyCompiler
         public Type VisitShowDataframe(ShowDataframeNodeExpr expr)
         {
             Visit(expr.Source);
+            return expr.Type;
+        }
+
+        public Type VisitColumns(ColumnsNodeExpr expr)
+        {
+            Visit(expr.DataframeExpression);
+            expr.SetType(new ArrayType(new StringType()));
             return expr.Type;
         }
     }
