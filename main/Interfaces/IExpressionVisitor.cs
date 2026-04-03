@@ -53,6 +53,7 @@ namespace MyCompiler
         LLVMValueRef VisitAddFieldExpr(AddFieldNodeExpr expr);
         LLVMValueRef VisitRemoveFieldExpr(RemoveFieldNodeExpr expr);
         LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr);
+        LLVMValueRef VisitColumnsExpr(ColumnsNodeExpr expr);
         LLVMValueRef VisitShowDataframeExpr(ShowDataframeNodeExpr expr);
         LLVMValueRef VisitNamedArgumentExpr(NamedArgumentNodeExpr expr);
         LLVMValueRef VisitTypeLiteralExpr(TypeLiteralNodeExpr expr);

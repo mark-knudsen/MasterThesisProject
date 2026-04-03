@@ -65,7 +65,6 @@ namespace MyCompiler
         }
     }
 
-
     public class DataframeType : Type
     {
         public List<string> ColumnNames { get; }

@@ -16,7 +16,7 @@
 %token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND READCSV TOCSV 
@@ -252,7 +252,7 @@ expr
         });
     }
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNodeExpr($1 as ExpressionNodeExpr, $6 as List<ExpressionNodeExpr>); }
-
+    | expr DOT COLUMNS              { $$ = new ColumnsNodeExpr($1 as ExpressionNodeExpr); }
     ;
 
 params

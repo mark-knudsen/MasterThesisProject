@@ -464,28 +464,29 @@ namespace MyCompiler
 
     public class AddNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr AddExpression { get; }
 
-        public AddNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addExpression)
+        public AddNodeExpr(ExpressionNodeExpr sourceExpr, ExpressionNodeExpr addExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
     }
+    
     public class AddRangeNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr AddRangeExpression { get; }
 
-        public AddRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addRangeExpression)
+        public AddRangeNodeExpr(ExpressionNodeExpr sourceExpr, ExpressionNodeExpr addRangeExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = sourceExpr;
             AddRangeExpression = addRangeExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddRangeExpr(this);
@@ -493,14 +494,14 @@ namespace MyCompiler
 
     public class RemoveNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr RemoveExpression { get; }
 
         public RemoveNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveExpr(this);
@@ -508,14 +509,14 @@ namespace MyCompiler
 
     public class RemoveRangeNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr RemoveRangeExpression { get; }
 
         public RemoveRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeRangeExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = arrayExpr;
             RemoveRangeExpression = removeRangeExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveRangeExpr(this);
@@ -659,7 +660,6 @@ namespace MyCompiler
 
         public RecordFieldNodeExpr(ExpressionNodeExpr idRecord, string idField)
         {
-            Console.WriteLine("record constructor: " + idRecord);
             IdRecord = idRecord;
             IdField = idField;
             Type = new IntType();
@@ -789,10 +789,20 @@ namespace MyCompiler
 
             if (Columns == null || Rows == null)
                 throw new Exception("dataframe requires columns and data");
-
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+    }
+
+    public class ColumnsNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr DataframeExpression { get; private set; }
+
+        public ColumnsNodeExpr(ExpressionNodeExpr dataframeExpr)
+        {
+            DataframeExpression = dataframeExpr;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitColumnsExpr(this);
     }
 
     public class ShowDataframeNodeExpr : ExpressionNodeExpr
