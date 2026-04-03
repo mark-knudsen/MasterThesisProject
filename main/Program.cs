@@ -238,7 +238,7 @@ namespace MyCompiler
                                     PrintNode(parser.RootNode, 0);
 
                                     // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
-                                    //Console.ResetColor();
+                                    Console.ResetColor();
                                 }
 
                                 try

@@ -17,12 +17,12 @@ namespace MyCompiler
     [StructLayout(LayoutKind.Sequential, Pack = 8)] // Pack 8 is standard for 64-bit pointers
     public struct RuntimeValue
     {
-        public Int16 tag;
+        public long tag;
         // The compiler adds 6 bytes of padding here automatically to align the pointer to 8
         public IntPtr data;
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     struct ArrayObject
     {
         public long length;    // i64
@@ -30,7 +30,7 @@ namespace MyCompiler
         public IntPtr data;    // pointer
     }
 
-    [StructLayout(LayoutKind.Sequential)]
+    [StructLayout(LayoutKind.Sequential, Pack = 8)]
     struct DataframeObject
     {
 
@@ -53,49 +53,87 @@ namespace MyCompiler
 
     public static class LanguageRuntime
     {
-        public static IntPtr ReadCsvInternal(IntPtr pathPtr, IntPtr schemaPtr) // Added second param
+        public static IntPtr ReadCsvInternal(IntPtr pathPtr, IntPtr schemaPtr)
         {
             Console.WriteLine("--- C# Runtime: ReadCsvInternal Started ---");
             string path = Marshal.PtrToStringAnsi(pathPtr);
-            Console.WriteLine($"Loading: {path}");
-            // schemaDescriptor could be a string like "S,I,F" (String, Int, Float)
-            string schema = Marshal.PtrToStringAnsi(schemaPtr);
+            string schema = Marshal.PtrToStringAnsi(schemaPtr); // e.g., "ISIBF"
 
-            var lines = File.ReadAllLines(path).Skip(1).ToArray(); // Skip CSV header
+            if (!File.Exists(path))
+            {
+                Console.WriteLine($"Error: File not found at {path}");
+                return IntPtr.Zero;
+            }
+
+            var lines = File.ReadAllLines(path).Skip(1).ToArray();
             int rowCount = lines.Length;
 
-            // 1. Allocate the Dataframe Header { ptr columns, ptr rows, ptr name }
-            IntPtr dfHeader = Marshal.AllocHGlobal(24);
-
-            // 2. Allocate the Rows Array Header { i64 len, i64 cap, ptr data }
+            // 1. Allocate Rows Array Header { i64 len, i64 cap, ptr data }
             IntPtr rowsArrayHeader = Marshal.AllocHGlobal(24);
-            IntPtr rowsDataBuffer = Marshal.AllocHGlobal(rowCount * 8); // Buffer of pointers
+            IntPtr rowsDataBuffer = Marshal.AllocHGlobal(rowCount * 8);
 
             for (int i = 0; i < rowCount; i++)
             {
                 string[] parts = lines[i].Split(',');
-
-                // 3. Create a Record (Buffer of Pointers to Boxed Values)
-                // Assume 3 columns for this example: [index, name, age]
+                // 2. Create the Record (Buffer of 8-byte pointers)
                 IntPtr recordBuffer = Marshal.AllocHGlobal(parts.Length * 8);
 
                 for (int col = 0; col < parts.Length; col++)
                 {
-                    // Get the character from the schema string for this column
                     char typeCode = col < schema.Length ? schema[col] : 'S';
-                    IntPtr boxedVal = BoxValue(parts[col].Trim(), typeCode);
-                    Marshal.WriteIntPtr(recordBuffer, col * 8, boxedVal);
-                }
+                    string rawValue = parts[col].Trim();
 
+                    // 3. Allocate 8 bytes for the actual data value (The Box)
+                    IntPtr valuePtr = Marshal.AllocHGlobal(8);
+
+                    if (typeCode == 'I')
+                    {
+                        long.TryParse(rawValue, out long val);
+                        Marshal.WriteInt64(valuePtr, val);
+                    }
+                    else if (typeCode == 'F')
+                    {
+                        // Parse as double and write raw bits to the 8-byte buffer
+                        double.TryParse(rawValue, NumberStyles.Any, CultureInfo.InvariantCulture, out double val);
+                        long bits = BitConverter.DoubleToInt64Bits(val);
+                        Marshal.WriteInt64(valuePtr, bits);
+                    }
+                    else if (typeCode == 'B')
+                    {
+                        bool val = rawValue.Equals("true", StringComparison.OrdinalIgnoreCase) || rawValue == "1";
+                        Marshal.WriteInt64(valuePtr, val ? 1 : 0);
+                    }
+                    else
+                    { // String 'S'
+                      // 1. Convert C# string to a C-style char*
+                        IntPtr strPtr = Marshal.StringToHGlobalAnsi(rawValue);
+
+                        // 2. Free the valuePtr we allocated above because we want to 
+                        // put the strPtr DIRECTLY into the record buffer, just like a long or double.
+                        Marshal.FreeHGlobal(valuePtr);
+                        valuePtr = strPtr;
+                    }
+
+
+                    // Store the pointer to the value in the record
+                    Marshal.WriteIntPtr(recordBuffer, col * 8, valuePtr);
+                }
+                // Store the record pointer in the rows data buffer
                 Marshal.WriteIntPtr(rowsDataBuffer, i * 8, recordBuffer);
             }
 
-            // Link headers
-            Marshal.WriteInt64(rowsArrayHeader, 0, rowCount);
-            Marshal.WriteIntPtr(rowsArrayHeader, 16, rowsDataBuffer);
-            Marshal.WriteIntPtr(dfHeader, 8, rowsArrayHeader); // Store in df.rows slot
+            // 4. Set up the Array Header fields
+            Marshal.WriteInt64(rowsArrayHeader, 0, rowCount);    // Length
+            Marshal.WriteInt64(rowsArrayHeader, 8, rowCount);    // Capacity
+            Marshal.WriteIntPtr(rowsArrayHeader, 16, rowsDataBuffer); // Data Ptr
 
-            return dfHeader;
+            // 5. Wrap it in a RuntimeValue box (Tag 7 = Dataframe/Array)
+            // Your LLVM code expects a 16-byte struct: { i64 tag, ptr data }
+            IntPtr runtimeBox = Marshal.AllocHGlobal(16);
+            Marshal.WriteInt64(runtimeBox, 7); // Tag for Dataframe
+            Marshal.WriteIntPtr(runtimeBox, 8, rowsArrayHeader);
+
+            return runtimeBox;
         }
 
         public static void ToCsvInternal(IntPtr arrayHeaderPtr, IntPtr pathPtr)
@@ -688,14 +726,14 @@ namespace MyCompiler
         {
             return type switch
             {
-                IntType => (Int16)ValueTag.Int,
-                FloatType => (Int16)ValueTag.Float,
-                BoolType => (Int16)ValueTag.Bool,
-                StringType => (Int16)ValueTag.String,
-                ArrayType => (Int16)ValueTag.Array,
-                RecordType => (Int16)ValueTag.Record,
-                DataframeType => (Int16)ValueTag.Dataframe,
-                _ => (Int16)ValueTag.None
+                IntType => (int)ValueTag.Int,
+                FloatType => (int)ValueTag.Float,
+                BoolType => (int)ValueTag.Bool,
+                StringType => (int)ValueTag.String,
+                ArrayType => (int)ValueTag.Array,
+                RecordType => (int)ValueTag.Record,
+                DataframeType => (int)ValueTag.Dataframe,
+                _ => (int)ValueTag.None
             };
         }
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
@@ -706,7 +744,7 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var mallocFunc = GetOrDeclareMalloc();
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
 
             // --- THE SHIELD ---
             // If the type is already a pointer to our RuntimeValue struct, DO NOT BOX AGAIN.    
@@ -769,7 +807,7 @@ namespace MyCompiler
 
             // Store tag
             var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr);
 
             // Store data
             var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
@@ -3115,20 +3153,80 @@ namespace MyCompiler
 
         public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
         {
-            var path = Visit(expr.FileNameExpr);
+            // 1. Visit the path (Check if your property is 'Path' or 'PathExpr')
+            var pathValue = Visit(expr.FileNameExpr);
 
-            // Create a string describing the types (e.g. "SIF" for String, Int, Float)
-            // to help the C# parser know how to parse the text.
-            string typeStr = GetTypeString(expr.SchemaExpr.Type as RecordType);
-            var schemaDesc = _builder.BuildGlobalStringPtr(typeStr, "schema_desc");
+            // 2. Get Schema from the semantic type
+            var dfType = (DataframeType)expr.Type;
+            var rowType = dfType.RowType;
 
-            var readCsvFunc = GetOrDeclareReadCsv(); // Update this to take TWO i8* args
-            var rawDfPtr = _builder.BuildCall2(readCsvFunc.TypeOf.ElementType, readCsvFunc,
-                new[] { path, schemaDesc }, "csv_df");
+            // 3. Generate Schema Code String (e.g., "ISIBF")
+            string schemaCode = GenerateSchemaCode(rowType);
+            var schemaCodeValue = _builder.BuildGlobalStringPtr(schemaCode, "csv_schema_code");
 
-            // Tag 7 is your Dataframe tag
-            return CreateRuntimeObject(7, rawDfPtr);
+            // 4. Setup ReadCsvInternal Call
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var readCsvFnType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr, i8Ptr }, false);
+            var readCsvFn = _module.GetNamedFunction("ReadCsvInternal");
+            if (readCsvFn.Handle == IntPtr.Zero)
+                readCsvFn = _module.AddFunction("ReadCsvInternal", readCsvFnType);
+
+            // 5. Call and Extract the raw Rows Array pointer
+            var boxedRes = _builder.BuildCall2(readCsvFnType, readCsvFn, new[] { pathValue, schemaCodeValue }, "csv_boxed_res");
+            // Offset 8 in RuntimeValue is the pointer
+            var unboxPtr = _builder.BuildStructGEP2(_runtimeValueType, boxedRes, 1, "unbox_ptr");
+            var rawRowsPtr = _builder.BuildLoad2(i8Ptr, unboxPtr, "raw_rows_ptr");
+
+            // 6. Assemble the full 3-pointer Dataframe
+            return AssembleFullDataframe(dfType, rawRowsPtr);
         }
+
+        private LLVMValueRef AssembleFullDataframe(DataframeType dfType, LLVMValueRef rawRowsPtr)
+        {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var rowType = dfType.RowType;
+
+            // --- 1. Create Columns Array ---
+            var colNamesNodes = rowType.RecordFields
+                .Select(f => (ExpressionNodeExpr)new StringNodeExpr(f.Label))
+                .ToList();
+            var colsArrayExpr = new ArrayNodeExpr(colNamesNodes);
+            var colsPtr = Visit(colsArrayExpr); // Reuses your Array logic!
+
+            // --- 2. Create DataTypes Array ---
+            var typeIdNodes = rowType.RecordFields
+                .Select(f => (ExpressionNodeExpr)new NumberNodeExpr(GetTypeByTag(f.Type)))
+                .ToList();
+            var typesArrayExpr = new ArrayNodeExpr(typeIdNodes);
+            var typesPtr = Visit(typesArrayExpr);
+
+            // --- 3. Wrap into Dataframe Struct { ptr, ptr, ptr } ---
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfPtr = _builder.BuildMalloc(dfStructType, "df_ptr_csv");
+
+            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
+            _builder.BuildStore(rawRowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
+            _builder.BuildStore(typesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+
+            return dfPtr;
+        }
+
+        // Helper to get schema string for C# side
+        private string GenerateSchemaCode(RecordType schema)
+        {
+            return string.Join("", schema.RecordFields.Select(f =>
+            {
+                var t = f.Type;
+                if (t is IntType) return "I";
+                if (t is StringType) return "S";
+                if (t is BoolType) return "B";
+                if (t is FloatType) return "F";
+                return "U";
+            }));
+        }
+
+
+
 
         private LLVMValueRef GetOrDeclareReadCsv()
         {
@@ -3185,7 +3283,7 @@ namespace MyCompiler
 
             // 4. Store the Tag
             var tagPtr = _builder.BuildStructGEP2(runtimeObjType, runtimeObj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr);
 
             // 5. Store the Data Pointer
             var dataFieldPtr = _builder.BuildStructGEP2(runtimeObjType, runtimeObj, 1, "data_ptr");

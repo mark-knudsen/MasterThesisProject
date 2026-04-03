@@ -622,6 +622,11 @@ namespace MyCompiler
                 var names = recType.RecordFields.Select(f => f.Label).ToList();
                 var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
 
+                for (int i = 0; i < recType.RecordFields.Count; i++)
+                {
+                    recType.RecordFields[i].Type = types[i];
+                }
+
                 var dfType = new DataframeType(names, types, recType);
                 expr.SetType(dfType);
                 return dfType;

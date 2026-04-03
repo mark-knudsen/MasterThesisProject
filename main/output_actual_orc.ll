@@ -3,12 +3,12 @@ source_filename = "repl_module"
 
 %dataframe = type { ptr, ptr, ptr }
 
-@df = external global ptr
+@df2 = external global ptr
 
-define ptr @main_3() {
+define ptr @main_16() {
 entry:
-  %df_load = load ptr, ptr @df, align 8
-  %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %df_load, i32 0, i32 1
+  %df2_load = load ptr, ptr @df2, align 8
+  %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %df2_load, i32 0, i32 1
   %rows_ptr = load ptr, ptr %rows_ptr_ptr, align 8
   %rows_header_ptr = bitcast ptr %rows_ptr to ptr
   %len_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_header_ptr, i32 0, i32 0
@@ -30,7 +30,7 @@ loop_body:                                        ; preds = %loop
   %field0_ptr = getelementptr ptr, ptr %record, i64 0
   %field0 = load ptr, ptr %field0_ptr, align 8
   %index_val = load i64, ptr %field0, align 8
-  %cmp = icmp eq i64 %index_val, 0
+  %cmp = icmp eq i64 %index_val, 23
   br i1 %cmp, label %found, label %continue
 
 continue:                                         ; preds = %loop_body
@@ -43,14 +43,12 @@ found:                                            ; preds = %loop_body
 
 end:                                              ; preds = %found, %loop
   %result_val = load ptr, ptr %result, align 8
-  %ptr_name = getelementptr ptr, ptr %result_val, i64 1
-  %load_ptr_name = load ptr, ptr %ptr_name, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
-  %tag_ptr = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_cast, i32 0, i32 0
-  store i16 4, ptr %tag_ptr, align 2
-  %data_ptr1 = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %load_ptr_name, ptr %data_ptr1, align 8
+  %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
+  store i64 6, ptr %tag_ptr, align 4
+  %data_ptr1 = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
+  store ptr %result_val, ptr %data_ptr1, align 8
   ret ptr %runtime_obj
 }
 
