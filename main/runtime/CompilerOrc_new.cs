@@ -3556,16 +3556,11 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0));
         }
 
-        /*  df = dataframe(columns=["name", "age", "hasJob", "savings"], 
-
-        data=[
-        {name:"Bob", age: 23, hasJob: true, savings: 230500.00},
-        {name:"Alice", age: 23, hasJob: true, savings: 100500.55},
-        {name:"John", age: 87, hasJob: false, savings: 1209000.02},
-        {name:"Mary", age: 29, hasJob: false, savings: 10700.25}
-        ])
+        /*  
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/test.csv")
+
+        df = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
 
         */
     }
