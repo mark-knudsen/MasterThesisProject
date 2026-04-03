@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 02-04-2026 23:31:33
-//  GPLEX input file <Lexer/Scanner.lex - 31-03-2026 21:05:46>
+//  DateTime: 03-04-2026 13:56:04
+//  GPLEX input file <Lexer/Scanner.lex - 03-04-2026 13:31:09>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -1924,7 +1924,7 @@ return (int)Tokens.INC;
 return (int)Tokens.PLUS_ASSIGN;
             break;
         case 194:
-yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING;
+yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL;
             break;
         case 195:
 return (int)Tokens.NE;

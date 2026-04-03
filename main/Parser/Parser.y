@@ -13,7 +13,7 @@
     public List<MyCompiler.NamedArgumentNodeExpr> arglist; // for arg_list
 }
 
-%token <obj> NUMBER STRING ID NULL_LITERAL
+%token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE
@@ -44,6 +44,7 @@
 %type <node> expr
 %type <type> Type
 %type <obj> params  /* Use <obj> for lists */
+
 %type <expr> arg
 %type <exprList> expr_list
 %type <arglist> arg_list
@@ -139,9 +140,10 @@ expr
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
-    | STRING              { $$ = new StringNodeExpr((string)$1); }
+    | STRING_LITERAL      { $$ = new StringNodeExpr((string)$1); }
+    | STRING              { $$ = new TypeLiteralNodeExpr(new StringType()); }
     | NULL_LITERAL        { $$ = new NullNodeExpr(); }
-    /* | Type { $$ = new TypeLiteralNodeExpr($1); } */
+    | Type                { $$ = new TypeLiteralNodeExpr($1); }
     
     /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
@@ -177,6 +179,7 @@ expr
 
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); } /*[1,2,3] */
     | LBRACE arg_list RBRACE { $$ = new RecordNodeExpr($2 as List<NamedArgumentNodeExpr>); } /*{ name: "Bob", age: 23 } */
+    | LBRACKET arg_list RBRACKET { $$ = new RecordNodeExpr($2 as List<NamedArgumentNodeExpr>); } /*[index: int, name: string] */
     | ID LBRACKET expr RBRACKET 
     { 
         // Cast $1 to string so the IdNodeExpr constructor accepts it
@@ -214,11 +217,15 @@ expr
     }
   
     /* Global Function Style */
-    | READCSV LPAREN expr_list RPAREN 
-        { 
-            // Just pass the list of expressions/named args to the node
-            $$ = new ReadCsvNodeExpr($3); 
-        }
+        /* Global Function Style */
+    | READCSV LPAREN expr COMMA expr RPAREN 
+    { 
+        // Force the creation of a list with exactly TWO elements
+        var args = new List<ExpressionNodeExpr>();
+        args.Add($3 as ExpressionNodeExpr); // This should be the Record/Schema
+        args.Add($5 as ExpressionNodeExpr); // This should be the String/Path
+        $$ = new ReadCsvNodeExpr(args); 
+    }
 
     | TOCSV LPAREN expr COMMA expr RPAREN 
         { $$ = new ToCsvNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
@@ -260,19 +267,11 @@ arg_list
     ;
 
 arg
-    : ID ASSIGN expr
-      {
-          $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr);
-      }
-    | ID COLON expr
-      {
-          $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr);
-      } 
-    | expr
-      {
-          $$ = $1 as ExpressionNodeExpr;
-      }
+    : ID ASSIGN expr { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
+    | ID COLON expr  { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
+    | expr           { $$ = $1 as ExpressionNodeExpr; }
     ;
+    
 %%
 
 internal Parser(Scanner s) : base(s) { }

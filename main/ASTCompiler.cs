@@ -424,45 +424,29 @@ namespace MyCompiler
 
     public class ReadCsvNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr SchemaExpr { get; private set; }
-        public ExpressionNodeExpr FileNameExpr { get; private set; }
+        public ExpressionNodeExpr SchemaExpr { get; set; }
+        public ExpressionNodeExpr FileNameExpr { get; set; }
 
-        // Update constructor to take the list from the parser
         public ReadCsvNodeExpr(List<ExpressionNodeExpr> args)
         {
-            if (args == null || args.Count == 0)
-                throw new Exception("read_csv requires at least a file path.");
+            // Find the actual string literal (e.g., "test.csv")
+            this.FileNameExpr = args.FirstOrDefault(a => a is StringNodeExpr);
 
-            if (args.Count == 1)
-            {
-                // Case: read_csv("data.csv")
-                FileNameExpr = args[0];
-            }
-            else
-            {
-                // Case: read_csv([name: string], "data.csv") 
-                // OR read_csv(dtypes=[...], path="...")
-                foreach (var arg in args)
-                {
-                    if (arg is NamedArgumentNodeExpr named)
-                    {
-                        if (named.Name == "dtypes") SchemaExpr = named.Value;
-                        else if (named.Name == "path") FileNameExpr = named.Value;
-                    }
-                }
+            // Find the record/schema ([index: int...])
+            this.SchemaExpr = args.FirstOrDefault(a => a is RecordNodeExpr);
 
-                // Fallback for positional: [0] is Schema, [1] is Path
-                if (FileNameExpr == null)
-                {
-                    SchemaExpr = args[0];
-                    FileNameExpr = args[1];
-                }
+            // If the parser didn't find them by type, fallback to positions
+            if (this.FileNameExpr == null && args.Count >= 2)
+            {
+                this.FileNameExpr = args[1];
+                this.SchemaExpr = args[0];
             }
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitReadCsvExpr(this);
     }
+
 
     public class ToCsvNodeExpr : ExpressionNodeExpr
     {
@@ -823,5 +807,20 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframeExpr(this);
     }
+
+    public class TypeLiteralNodeExpr : ExpressionNodeExpr
+    {
+        public Type Value { get; }
+
+        public TypeLiteralNodeExpr(Type value)
+        {
+            Value = value;
+            Type = value; // The type of a type literal is the type itself
+        }
+
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitTypeLiteralExpr(this);
+    }
+
 }
 

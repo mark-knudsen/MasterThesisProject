@@ -55,6 +55,7 @@ namespace MyCompiler
         LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr);
         LLVMValueRef VisitShowDataframeExpr(ShowDataframeNodeExpr expr);
         LLVMValueRef VisitNamedArgumentExpr(NamedArgumentNodeExpr expr);
+        LLVMValueRef VisitTypeLiteralExpr(TypeLiteralNodeExpr expr);
 
 
         // // Visit for define and usage of created functions

@@ -77,6 +77,7 @@ namespace MyCompiler
                 DataframeNodeExpr df => VisitDataframe(df),
                 ShowDataframeNodeExpr showdf => VisitShowDataframe(showdf),
                 NamedArgumentNodeExpr namedArg => VisitNamedArgument(namedArg),
+                TypeLiteralNodeExpr typeLit => VisitTypeLiteral(typeLit),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -333,6 +334,7 @@ namespace MyCompiler
 
             // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(expr.Id, default, null, valType, elemType);
+            expr.SetType(valType); // <--- ADD THIS LINE
             return valType;
         }
 
@@ -603,15 +605,20 @@ namespace MyCompiler
             expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
-
         public Type VisitReadCsv(ReadCsvNodeExpr expr)
         {
+            // Debug to console
+            Console.WriteLine($"TypeChecking ReadCsv: Path is {expr.FileNameExpr?.GetType().Name}, Schema is {expr.SchemaExpr?.GetType().Name}");
+
             Visit(expr.FileNameExpr);
+
+            if (expr.SchemaExpr == null)
+                throw new Exception("read_csv requires a schema.");
+
             Type schemaType = Visit(expr.SchemaExpr);
 
             if (schemaType is RecordType recType)
             {
-                // Extract names and types from the record fields to satisfy the constructor
                 var names = recType.RecordFields.Select(f => f.Label).ToList();
                 var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
 
@@ -619,8 +626,11 @@ namespace MyCompiler
                 expr.SetType(dfType);
                 return dfType;
             }
-            throw new Exception("read_csv requires a record template for dtypes.");
+
+            // If we reach here, the schema wasn't a record
+            throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
         }
+
 
         public Type VisitToCsv(ToCsvNodeExpr expr)
         {
@@ -628,7 +638,7 @@ namespace MyCompiler
             Visit(expr.FileNameExpr);
 
             expr.SetType(new StringType());
-            return expr.Type; // new VoidType()
+            return expr.Type;
         }
 
         public Type VisitAdd(AddNodeExpr expr)
@@ -894,6 +904,11 @@ namespace MyCompiler
         {
             Visit(expr.Source);
             return expr.Type;
+        }
+
+        public Type VisitTypeLiteral(TypeLiteralNodeExpr node)
+        {
+            return node.Value; // Just return the wrapped type
         }
     }
 }

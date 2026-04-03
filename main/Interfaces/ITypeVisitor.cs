@@ -47,6 +47,7 @@ namespace MyCompiler
         Type VisitDataframe(DataframeNodeExpr expr);
         Type VisitShowDataframe(ShowDataframeNodeExpr expr);
         Type VisitNamedArgument(NamedArgumentNodeExpr expr);
+        Type VisitTypeLiteral(TypeLiteralNodeExpr expr);
 
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);
