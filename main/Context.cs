@@ -24,6 +24,12 @@ namespace MyCompiler
             return new Context(_source.SetItem(name, newEntry));
         }
 
+        // Overload to allow adding a pre-constructed entry
+        public Context Add(string name, ContextEntry entry)
+        {
+            return new Context(_source.SetItem(name, entry));
+        }
+
         public ContextEntry? Get(string key)
         {
             return _source.TryGetValue(key, out var entry) ? entry : null;

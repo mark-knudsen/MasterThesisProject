@@ -59,5 +59,13 @@ namespace MyCompiler
 
         [DllImport(LibLLVM)]
         public static extern void LLVMConsumeError(IntPtr Err);
+
+
+
+        [DllImport("libLLVM", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr LLVMOrcDisposeLLJIT(IntPtr J);
+
+        [DllImport("libLLVM", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void LLVMOrcDisposeThreadSafeContext(IntPtr TSC);
     }
 }

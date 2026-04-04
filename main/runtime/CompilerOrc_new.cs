@@ -262,6 +262,31 @@ namespace MyCompiler
         public delegate IntPtr ReadCsvDelegate(IntPtr path, IntPtr schema);
         public delegate void ToCsvDelegate(IntPtr data, IntPtr path);
 
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Ansi)]
+        static extern IntPtr GetProcAddress(IntPtr hModule, string lpProcName);
+
+        [System.Runtime.InteropServices.DllImport("kernel32.dll", CharSet = System.Runtime.InteropServices.CharSet.Ansi)]
+        static extern IntPtr GetModuleHandle(string lpModuleName);
+
+        // In your Compiler class
+
+        private static ReadCsvDelegate _readCsvInstance = LanguageRuntime.ReadCsvInternal; // Keep reference so GC doesn't eat it
+        private LLVMTypeRef _readCsvInternalType;
+
+        private LLVMValueRef GetOrDeclareReadCsvInternal()
+        {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+
+            if (_readCsvInternalType.Handle == IntPtr.Zero)
+                _readCsvInternalType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr, i8Ptr }, false);
+
+            // Get the address of your C# method
+            IntPtr funcPtr = System.Runtime.InteropServices.Marshal.GetFunctionPointerForDelegate(_readCsvInstance);
+
+            var addrConst = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)funcPtr, false);
+            return _builder.BuildIntToPtr(addrConst, LLVMTypeRef.CreatePointer(_readCsvInternalType, 0), "abs_readcsv");
+        }
+
         public CompilerOrc()
         {
             LLVM.InitializeNativeTarget();
@@ -320,20 +345,24 @@ namespace MyCompiler
             var i64 = _module.Context.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // ptr malloc(i64)
+            // 1. Define the Function Type (Signature)
             if (_mallocType.Handle == IntPtr.Zero)
             {
                 _mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
             }
 
-            var mallocFn = _module.GetNamedFunction("malloc");
-            if (mallocFn.Handle == IntPtr.Zero)
-            {
-                mallocFn = _module.AddFunction("malloc", _mallocType);
-            }
-            return mallocFn;
-        }
+            // 2. Get the ACTUAL address of malloc from the Windows C-Runtime
+            IntPtr mallocLibPtr = GetModuleHandle("ucrtbase.dll"); // Modern Windows
+            if (mallocLibPtr == IntPtr.Zero) mallocLibPtr = GetModuleHandle("msvcrt.dll"); // Older Windows
 
+            IntPtr mallocAddr = GetProcAddress(mallocLibPtr, "malloc");
+
+            // 3. Convert that raw 64-bit address into an LLVM constant pointer
+            var addrConst = LLVMValueRef.CreateConstInt(i64, (ulong)mallocAddr, false);
+
+            // We return an inttoptr: (i64 0x7FF... to ptr)
+            return _builder.BuildIntToPtr(addrConst, LLVMTypeRef.CreatePointer(_mallocType, 0), "abs_malloc");
+        }
         private void DeclareValueStruct()
         {
             var ctx = _module.Context;
@@ -345,21 +374,46 @@ namespace MyCompiler
             _runtimeValueType.StructSetBody(new[] { ctx.Int64Type, i8Ptr }, false);
         }
 
-        private void DeclarePrintf()
+        // private void DeclarePrintf()
+        // {
+        //     var llvmCtx = _module.Context;
+        //     _printfType = LLVMTypeRef.CreateFunction(
+        //           llvmCtx.Int32Type,
+        //         new[] { LLVMTypeRef.CreatePointer(llvmCtx.DoubleType, 0) }, // should this be a double?
+        //         true); // varargs
+
+        //     _printf = _module.AddFunction("printf", _printfType);
+        // }
+
+        private LLVMValueRef GetPrintfPtr()
         {
             var llvmCtx = _module.Context;
-            _printfType = LLVMTypeRef.CreateFunction(
-                  llvmCtx.Int32Type,
-                new[] { LLVMTypeRef.CreatePointer(llvmCtx.DoubleType, 0) }, // should this be a double?
-                true); // varargs
+            var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
 
-            _printf = _module.AddFunction("printf", _printfType);
+            // 1. Define the type properly (printf takes a i8* as the first arg)
+            if (_printfType.Handle == IntPtr.Zero)
+            {
+                _printfType = LLVMTypeRef.CreateFunction(
+                    llvmCtx.Int32Type,
+                    new[] { i8Ptr },
+                    true); // Varargs = true
+            }
+
+            // 2. Get the physical address from the Windows C-Runtime
+            IntPtr hMod = GetModuleHandle("ucrtbase.dll");
+            if (hMod == IntPtr.Zero) hMod = GetModuleHandle("msvcrt.dll");
+            IntPtr printfAddr = GetProcAddress(hMod, "printf");
+
+            // 3. Return an inttoptr (absolute address)
+            var addrConst = LLVMValueRef.CreateConstInt(llvmCtx.Int64Type, (ulong)printfAddr, false);
+            return _builder.BuildIntToPtr(addrConst, LLVMTypeRef.CreatePointer(_printfType, 0), "abs_printf");
         }
 
         private void DeclareBoolStrings()
         {
-            _trueStr = _builder.BuildGlobalStringPtr("True\n", "true_str");
-            _falseStr = _builder.BuildGlobalStringPtr("False\n", "false_str");
+            // Use the absolute address logic we built earlier
+            _trueStr = GetPersistentString("True\n");
+            _falseStr = GetPersistentString("False\n");
         }
 
         private void EnsureJit()
@@ -440,127 +494,153 @@ namespace MyCompiler
 
         void CreateMain()
         {
-            //_funcName = $"main";
-            //_funcName = _debug ? "main" : $"main_{_replCounter++}";
             _funcName = $"main_{_replCounter++}";
 
-            // 1 Create a fresh context + module for this command
+            // Create a fresh context. Note: We will dispose this at the end of Run()
             var context = LLVMContextRef.Create();
             _module = context.CreateModuleWithName("repl_module");
-            var builder = context.CreateBuilder();
+            _builder = context.CreateBuilder();
 
-            // 2 Create:  define double @__anon_expr_X()
-            var funcType = LLVMTypeRef.CreateFunction( // the integration test does not like that the return type is a struct, it cant run
-                LLVMTypeRef.CreatePointer(_runtimeValueType, 0), // return type is now a pointer to the boxed struct
+            var funcType = LLVMTypeRef.CreateFunction(
+                LLVMTypeRef.CreatePointer(_runtimeValueType, 0),
                 Array.Empty<LLVMTypeRef>(),
                 false);
 
             var function = _module.AddFunction(_funcName, funcType);
             var entry = function.AppendBasicBlock("entry");
-            builder.PositionAtEnd(entry);
-
-            _builder = builder;
+            _builder.PositionAtEnd(entry);
         }
 
         public object Run(NodeExpr expr, bool debug = false)
         {
             _debug = debug;
-            // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
+            // 1. Setup the module and IR
             CreateMain();
-            DeclarePrintf();
+            GetPrintfPtr(); // Uses absolute address
 
             if (_debug) Console.WriteLine("we code gen");
             LLVMValueRef resultValue = Visit(expr);
-
-            if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
-            if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
             var boxedPtr = BoxValue(resultValue, prediction);
             _builder.BuildRet(boxedPtr);
 
             if (_debug) DumpIR(_module);
 
-            // 5 Wrap in ThreadSafeModule
-            var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
-            var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
+            // --- NEW STATLESS JIT BLOCK ---
+            IntPtr localJit = IntPtr.Zero;
+            IntPtr tsc = IntPtr.Zero;
+            object finalResult = null;
 
-            var dylib = OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit);
-            ThrowIfError(OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, dylib, tsm));
-
-            // 6 Lookup function pointer
-            ulong addr;
-            ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(_jit, out addr, _funcName));
-
-            // 7 Call it
-            var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
-            var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
-
-            // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
-            // Stopwatch sw = Stopwatch.StartNew();
-
-            var tempResult = delegateResult();
-            if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
-            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
-
-            // Print execution stats - uncomment if you want to see the stats for each command, but it can be a bit much
-            // sw.Stop();
-            // Console.WriteLine("\n--- Execution Stats ---");
-            // Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
-            // Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
-            // Console.WriteLine("------------------------\n");
-
-            switch ((ValueTag)result.tag)
+            try
             {
-                case ValueTag.Int:
-                    if (_debug) Console.WriteLine("return int");
-                    return Marshal.ReadInt64(result.data);
+                // 2. Create a temporary JIT instance
+                ThrowIfError(OrcBindings.LLVMOrcCreateLLJIT(out localJit, IntPtr.Zero));
 
-                case ValueTag.Float:
-                    if (_debug) Console.WriteLine("return float");
-                    return Marshal.PtrToStructure<double>(result.data);
+                // 3. Wrap module in ThreadSafeContext
+                tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
+                var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
 
-                case ValueTag.String:
-                    if (_debug) Console.WriteLine("return string");
-                    return Marshal.PtrToStringAnsi(result.data);
+                var dylib = OrcBindings.LLVMOrcLLJITGetMainJITDylib(localJit);
+                ThrowIfError(OrcBindings.LLVMOrcLLJITAddLLVMIRModule(localJit, dylib, tsm));
 
-                case ValueTag.Bool:
-                    if (_debug) Console.WriteLine("return bool");
+                // 4. Lookup and Execute
+                ulong addr;
+                ThrowIfError(OrcBindings.LLVMOrcLLJITLookup(localJit, out addr, _funcName));
 
-                    long b = Marshal.ReadByte(result.data);
-                    return b != 0;
+                // 7 Call it
+                var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
+                var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-                case ValueTag.Array:
-                    if (_debug) Console.WriteLine("return array");
-                    return HandleArray(result.data, prediction);
+                // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
+                // Stopwatch sw = Stopwatch.StartNew();
 
-                case ValueTag.Record:
-                    if (_debug) Console.WriteLine("return Record");
+                var tempResult = delegateResult();
+                if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
+                RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
 
-                    if (prediction is RecordType recType) // record(["name", "age"],["dan", 100]) 
-                    {
-                        return HandleRecord(result.data, recType);
-                    }
-                    return "Record Failure";
-                case ValueTag.Dataframe:
-                    if (_debug) Console.WriteLine("return Dataframe");
+                // Print execution stats - uncomment if you want to see the stats for each command, but it can be a bit much
+                // sw.Stop();
+                // Console.WriteLine("\n--- Execution Stats ---");
+                // Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+                // Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+                // Console.WriteLine("------------------------\n");
 
-                    if (prediction is DataframeType dfType)
-                    {
-                        return HandleDataframe(result.data, dfType);
-                    }
+                switch ((ValueTag)result.tag)
+                {
+                    case ValueTag.Int:
+                        if (_debug) Console.WriteLine("return int");
+                        return Marshal.ReadInt64(result.data);
 
-                    return "Dataframe display error";
+                    case ValueTag.Float:
+                        if (_debug) Console.WriteLine("return float");
+                        return Marshal.PtrToStructure<double>(result.data);
+
+                    case ValueTag.String:
+                        if (_debug) Console.WriteLine("return string");
+                        return Marshal.PtrToStringAnsi(result.data);
+
+                    case ValueTag.Bool:
+                        if (_debug) Console.WriteLine("return bool");
+
+                        long b = Marshal.ReadByte(result.data);
+                        return b != 0;
+
+                    case ValueTag.Array:
+                        if (_debug) Console.WriteLine("return array");
+                        return HandleArray(result.data, prediction);
+
+                    case ValueTag.Record:
+                        if (_debug) Console.WriteLine("return Record");
+
+                        if (prediction is RecordType recType) // record(["name", "age"],["dan", 100]) 
+                        {
+                            return HandleRecord(result.data, recType);
+                        }
+                        return "Record Failure";
+                    case ValueTag.Dataframe:
+                        if (_debug) Console.WriteLine("return Dataframe");
+
+                        if (prediction is DataframeType dfType)
+                        {
+                            return HandleDataframe(result.data, dfType);
+                        }
+
+                        return "Dataframe display error";
 
 
-                case ValueTag.None:
-                    if (_debug) Console.WriteLine("return none");
-                    return default;
+                    case ValueTag.None:
+                        if (_debug) Console.WriteLine("return none");
+                        return default;
+                }
+            }
+            finally
+            {
+                // 1. Dispose the builder first (it's just a helper, not owned by JIT)
+                _builder.Dispose();
+
+                // 2. IMPORTANT: DO NOT dispose _module or _module.Context here.
+                // When we created the 'tsm' (ThreadSafeModule), it took ownership 
+                // of the module and the context.
+
+                // 3. Dispose the JIT - This will automatically clean up the 
+                // ThreadSafeModules/Contexts we added to it.
+                if (localJit != IntPtr.Zero)
+                {
+                    OrcBindings.LLVMOrcDisposeLLJIT(localJit);
+                }
+
+                // 4. Dispose the ThreadSafeContext wrapper if it still exists
+                if (tsc != IntPtr.Zero)
+                {
+                    OrcBindings.LLVMOrcDisposeThreadSafeContext(tsc);
+                }
             }
 
-            return result;
+            return finalResult;
         }
+
 
         // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
@@ -1474,8 +1554,18 @@ namespace MyCompiler
 
         public LLVMValueRef VisitStringExpr(StringNodeExpr expr)
         {
-            return _builder.BuildGlobalStringPtr(expr.Value, "str");
+            // 1. Allocate the string in persistent C# memory (HGlobal)
+            // This memory stays at the same 64-bit address for the life of the process.
+            IntPtr stringPtr = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi(expr.Value + "\0");
+
+            // 2. Convert that 64-bit address into an LLVM constant integer
+            var addrConst = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, (ulong)stringPtr.ToInt64(), false);
+
+            // 3. Cast that integer to a pointer (ptr) so LLVM can use it as a string
+            // This creates IR like: inttoptr (i64 2457525516672 to ptr)
+            return _builder.BuildIntToPtr(addrConst, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "str_ptr");
         }
+
         public LLVMValueRef VisitNumberExpr(NumberNodeExpr expr)
         {
             return LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)expr.Value);
@@ -1498,56 +1588,36 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitAssignExpr(AssignNodeExpr expr)
         {
-            if (_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
-
             var value = Visit(expr.Expression);
-            var storageType = value.TypeOf;
-            var module = _module;
+            var entry = _context.Get(expr.Id);
 
-            LLVMValueRef global = module.GetNamedGlobal(expr.Id);
+            if (entry == null) throw new Exception($"Variable {expr.Id} not found.");
 
-            // Determine the natural alignment for this type
-            // Bools (i1) = 1, everything else (i64, double, ptr) = 8
-            uint alignment = (storageType.Kind == LLVMTypeKind.LLVMIntegerTypeKind && storageType.IntWidth == 1) ? 1u : 8u;
-
-            if (global.Handle == IntPtr.Zero)
+            // 1. Check if we need to allocate persistent memory
+            if (entry.Value.Handle == IntPtr.Zero)
             {
-                if (!_definedGlobals.Contains(expr.Id))
-                {
-                    // --- FIRST DEFINITION ---
-                    global = module.AddGlobal(storageType, expr.Id);
+                // Allocate 8 bytes for the storage slot
+                IntPtr persistentAddr = System.Runtime.InteropServices.Marshal.AllocHGlobal(8);
+                System.Runtime.InteropServices.Marshal.WriteInt64(persistentAddr, 0);
 
-                    // Set explicit alignment on the global variable definition itself
-                    global.SetAlignment(alignment);
+                // CREATE A NEW ENTRY (using 'with') and UPDATE THE CONTEXT
+                // This is how you "mutate" an immutable record and dictionary
+                var newEntry = entry with { Value = new LLVMValueRef(persistentAddr) };
 
-                    // Set initial dummy value so it's not "undef"
-                    if (storageType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
-                        global.Initializer = LLVMValueRef.CreateConstReal(storageType, 0.0);
-                    else if (storageType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                        global.Initializer = LLVMValueRef.CreateConstInt(storageType, 0);
-                    else
-                        global.Initializer = LLVMValueRef.CreateConstNull(storageType);
+                // IMPORTANT: Re-assign _context so the address is saved for the NEXT command
+                _context = _context.Add(expr.Id, newEntry.Value, newEntry.value, newEntry.Type, newEntry.ElementType);
 
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                    _definedGlobals.Add(expr.Id);
-                }
-                else
-                {
-                    // --- RE-DECLARATION (in a new REPL module) ---
-                    global = module.AddGlobal(storageType, expr.Id);
-
-                    // Linkage to External WITHOUT Initializer makes it 'extern'
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-
-                    // Ensure the declaration matches the definition's alignment
-                    global.SetAlignment(alignment);
-                }
+                // Refresh our local entry reference
+                entry = newEntry;
             }
 
-            // Perform the store
-            var store = _builder.BuildStore(value, global);
+            // 2. Map the absolute address into LLVM
+            var addrConst = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, (ulong)entry.Value.Handle, false);
+            var ptrToStore = _builder.BuildIntToPtr(addrConst, LLVMTypeRef.CreatePointer(value.TypeOf, 0), $"{expr.Id}_ptr");
 
-            // Set explicit alignment on the store instruction
+            // 3. Perform the store
+            uint alignment = (value.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind && value.TypeOf.IntWidth == 1) ? 1u : 8u;
+            var store = _builder.BuildStore(value, ptrToStore);
             store.SetAlignment(alignment);
 
             return value;
@@ -2880,7 +2950,6 @@ namespace MyCompiler
 
             return VisitSequenceExpr(program);
         }
-
         public LLVMValueRef VisitIdExpr(IdNodeExpr expr)
         {
             var entry = _context.Get(expr.Name);
@@ -2889,49 +2958,35 @@ namespace MyCompiler
             var llvmType = GetLLVMType(entry.Type);
             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {llvmType})");
 
-            LLVMValueRef ptrToLoad;
+            // 1. Get the Absolute Address from your Tracked Context
+            // We assume entry.Value.Handle holds the physical IntPtr of the memory we allocated
+            if (entry.Value.Handle == IntPtr.Zero)
+                throw new Exception($"Variable {expr.Name} has no physical memory address.");
 
-            // 1. Resolve the Pointer
-            if (entry.Value.Handle != IntPtr.Zero)
-            {
-                ptrToLoad = entry.Value;
-            }
-            else
-            {
-                var global = _module.GetNamedGlobal(expr.Name);
-                if (global.Handle == IntPtr.Zero)
-                {
-                    global = _module.AddGlobal(llvmType, expr.Name);
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                }
-                ptrToLoad = global;
-            }
+            // Convert the IntPtr to a constant i64 in LLVM
+            var addrConst = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, (ulong)entry.Value.Handle, false);
 
-            // 2. Determine Alignment
-            // i64 (Int) and double (Float) need 8. Bools need 1. Others (pointers) usually 8 on 64-bit.
-            uint alignment = 8;
-            if (entry.Type is BoolType) alignment = 1;
+            // 2. Create the Pointer using inttoptr
+            // This replaces @x = external global...
+            var ptrToLoad = _builder.BuildIntToPtr(addrConst, LLVMTypeRef.CreatePointer(llvmType, 0), $"{expr.Name}_addr");
 
-            // 3. Perform the Load
+            // 3. Determine Alignment
+            uint alignment = (entry.Type is BoolType) ? 1u : 8u;
+
+            // 4. Perform the Load
             LLVMValueRef loadInstruction;
-
             if (entry.Type is ArrayType || entry.Type is StringType)
             {
-                loadInstruction = _builder.BuildLoad2(
-                    LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
-                    ptrToLoad,
-                    expr.Name + "_load"
-                );
+                // Special case for pointers to pointers (Strings/Arrays)
+                var ptrType = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+                loadInstruction = _builder.BuildLoad2(ptrType, ptrToLoad, expr.Name + "_load");
             }
             else
             {
-                if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
                 loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
             }
 
-            // 4. Set the Alignment explicitly
             loadInstruction.SetAlignment(alignment);
-
             return loadInstruction;
         }
 
@@ -3304,50 +3359,53 @@ namespace MyCompiler
         }
 
 
-        private string GetTypeString(RecordType record)
-        {
-            string desc = "";
-            foreach (var field in record.RecordFields)
-            {
-                var t = field.Value?.Type ?? field.Type;
-                if (t is IntType) desc += "I";
-                else if (t is FloatType) desc += "F";
-                else if (t is StringType) desc += "S";
-                else if (t is BoolType) desc += "B";
-                else desc += "U"; // Unknown
-            }
-            return desc;
-        }
+
 
         public LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr)
         {
-            // 1. Visit the path (The CSV string)
             var pathValue = Visit(expr.FileNameExpr);
-
-            // 2. Cast the Schema expression to a RecordNodeExpr
-            // This fixes the CS1503 conversion errors
             var schemaRecord = (RecordNodeExpr)expr.SchemaExpr;
 
             // 3. Convert Schema AST to "ISIBF" string
             var schemaString = GetSchemaString(schemaRecord);
-            var schemaValue = _builder.BuildGlobalStringPtr(schemaString, "csv_schema_code");
 
-            // 4. Call the C# Runtime to get the Rows pointer
+            // FIX: Use absolute address instead of GlobalStringPtr
+            var schemaValue = GetPersistentString(schemaString);
+
             var readCsvFn = GetOrDeclareReadCsvInternal();
             var boxedResult = _builder.BuildCall2(_readCsvInternalType, readCsvFn,
-                                new[] { pathValue, schemaValue }, "csv_boxed_res");
+                                        new[] { pathValue, schemaValue }, "csv_boxed_res");
 
-            // Unbox the Rows Array Pointer { i64 tag, ptr data } from the RuntimeValue
+            // ... rest of the unboxing logic remains the same ...
             var i64 = _module.Context.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
-
             var dataPtrAddr = _builder.BuildStructGEP2(runtimeValueType, boxedResult, 1, "unbox_ptr");
             var rawRowsPtr = _builder.BuildLoad2(i8Ptr, dataPtrAddr, "raw_rows_ptr");
 
-            // 5. REUSE: Finalize the Dataframe Construction
-            // Passing the casted schemaRecord and the pointer we got from C#
             return BuildDataframeInternal(schemaRecord, rawRowsPtr);
+        }
+
+        // Cache to prevent memory leaks and redundant allocations
+        private readonly Dictionary<string, LLVMValueRef> _persistentStringCache = new();
+
+        private LLVMValueRef GetPersistentString(string text)
+        {
+            if (_persistentStringCache.TryGetValue(text, out var cachedValue))
+            {
+                return cachedValue;
+            }
+
+            // 1. Allocate in the C# Unmanaged Heap (Absolute 64-bit address)
+            // Marshal.StringToHGlobalAnsi automatically adds the null terminator \0
+            IntPtr ptr = System.Runtime.InteropServices.Marshal.StringToHGlobalAnsi(text);
+
+            // 2. Create the LLVM value as a raw pointer
+            var addr = LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, (ulong)ptr.ToInt64(), false);
+            var llvmPtr = _builder.BuildIntToPtr(addr, LLVMTypeRef.CreatePointer(LLVMTypeRef.Int8, 0), "abs_str_ptr");
+
+            _persistentStringCache[text] = llvmPtr;
+            return llvmPtr;
         }
 
         // Move your dataframe construction logic into this helper
@@ -3378,31 +3436,22 @@ namespace MyCompiler
             var i64 = _module.Context.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             int count = schema.Fields.Count;
-
-            // 1. Get function AND type
             var mallocFn = GetOrDeclareMalloc();
-            // Now _mallocType is guaranteed to be initialized
 
-            // 2. Allocate Header
-            var header = _builder.BuildCall2(_mallocType, mallocFn,
-                new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "names_header");
-
-            // 3. Allocate Data
-            var dataSize = LLVMValueRef.CreateConstInt(i64, (ulong)(count * 8));
-            var data = _builder.BuildCall2(_mallocType, mallocFn,
-                new[] { dataSize }, "names_data");
+            var header = _builder.BuildCall2(_mallocType, mallocFn, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "names_header");
+            var data = _builder.BuildCall2(_mallocType, mallocFn, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)(count * 8)) }, "names_data");
 
             for (int i = 0; i < count; i++)
             {
                 var field = schema.Fields[i];
-                var nameStr = _builder.BuildGlobalStringPtr(field.Label, $"col_name_{i}");
 
-                var target = _builder.BuildGEP2(i8Ptr, data,
-                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, $"ptr_{i}");
+                // FIX: No more BuildGlobalStringPtr
+                var nameStr = GetPersistentString(field.Label);
+
+                var target = _builder.BuildGEP2(i8Ptr, data, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, $"ptr_{i}");
                 _builder.BuildStore(nameStr, target);
             }
 
-            // Initialize Header { len, cap, data }
             var arrayType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(arrayType, header, 0, "len"));
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(arrayType, header, 1, "cap"));
@@ -3465,20 +3514,7 @@ namespace MyCompiler
         }
 
 
-        private LLVMTypeRef _readCsvInternalType;
-        private LLVMValueRef GetOrDeclareReadCsvInternal()
-        {
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            // ptr ReadCsvInternal(ptr path, ptr schema)
-            _readCsvInternalType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr, i8Ptr }, false);
 
-            var fn = _module.GetNamedFunction("ReadCsvInternal");
-            if (fn.Handle == IntPtr.Zero)
-            {
-                fn = _module.AddFunction("ReadCsvInternal", _readCsvInternalType);
-            }
-            return fn;
-        }
 
 
         private LLVMValueRef AssembleFullDataframe(DataframeType dfType, LLVMValueRef rawRowsPtr)
@@ -3593,34 +3629,6 @@ namespace MyCompiler
         }
 
 
-        private LLVMValueRef BuildPointerArray(List<LLVMValueRef> elements)
-        {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            var malloc = GetOrDeclareMalloc();
-
-            var count = elements.Count;
-
-            var size = LLVMValueRef.CreateConstInt(i64, (ulong)(count * 8));
-            var mem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "arr");
-
-            var cast = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(i8Ptr, 0), "arr_cast");
-
-            for (int i = 0; i < count; i++)
-            {
-                var ptr = _builder.BuildGEP2(i8Ptr, cast,
-                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
-                    "elem_ptr");
-
-                var val = _builder.BuildBitCast(elements[i], i8Ptr, "to_i8ptr");
-
-                _builder.BuildStore(val, ptr);
-            }
-
-            return mem;
-        }
 
         public LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr)
         {

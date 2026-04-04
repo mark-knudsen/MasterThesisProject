@@ -1,74 +1,60 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@df3 = external global ptr
-@str = private unnamed_addr constant [8 x i8] c"Charles\00", align 1
-
-define ptr @main_9() {
+define ptr @main_0() {
 entry:
-  %df3_load = load ptr, ptr @df3, align 8
-  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df3_load, i32 0, i32 1
-  %rows_array = load ptr, ptr %rows_field, align 8
-  %record_buffer = call ptr @malloc(i64 40)
-  %field_mem = call ptr @malloc(i64 8)
-  %cast = bitcast ptr %field_mem to ptr
-  store i64 1008, ptr %cast, align 4
-  %field_ptr = getelementptr ptr, ptr %record_buffer, i64 0
-  store ptr %field_mem, ptr %field_ptr, align 8
-  %field_ptr1 = getelementptr ptr, ptr %record_buffer, i64 1
-  store ptr @str, ptr %field_ptr1, align 8
-  %field_mem2 = call ptr @malloc(i64 8)
-  %cast3 = bitcast ptr %field_mem2 to ptr
-  store i64 55, ptr %cast3, align 4
-  %field_ptr4 = getelementptr ptr, ptr %record_buffer, i64 2
-  store ptr %field_mem2, ptr %field_ptr4, align 8
-  %field_mem5 = call ptr @malloc(i64 8)
-  %cast6 = bitcast ptr %field_mem5 to ptr
-  store i1 false, ptr %cast6, align 1
-  %field_ptr7 = getelementptr ptr, ptr %record_buffer, i64 3
-  store ptr %field_mem5, ptr %field_ptr7, align 8
-  %field_mem8 = call ptr @malloc(i64 8)
-  %cast9 = bitcast ptr %field_mem8 to ptr
-  store double 0x410879A7EB851EB8, ptr %cast9, align 8
-  %field_ptr10 = getelementptr ptr, ptr %record_buffer, i64 4
-  store ptr %field_mem8, ptr %field_ptr10, align 8
-  %val_to_ptr = bitcast ptr %record_buffer to ptr
-  %len_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
-  %cap_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
-  %data_ptr_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
-  %len = load i64, ptr %len_ptr, align 4
-  %cap = load i64, ptr %cap_ptr, align 4
-  %data_ptr = load ptr, ptr %data_ptr_ptr, align 8
-  %is_full = icmp uge i64 %len, %cap
-  br i1 %is_full, label %grow, label %add_cont
-
-grow:                                             ; preds = %entry
-  %0 = icmp eq i64 %cap, 0
-  %1 = mul i64 %cap, 2
-  %new_cap = select i1 %0, i64 4, i64 %1
-  %new_byte_size = mul i64 %new_cap, 8
-  %realloc_ptr = call ptr @realloc(ptr %data_ptr, i64 %new_byte_size)
-  store i64 %new_cap, ptr %cap_ptr, align 4
-  store ptr %realloc_ptr, ptr %data_ptr_ptr, align 8
-  br label %add_cont
-
-add_cont:                                         ; preds = %grow, %entry
-  %final_data_ptr = phi ptr [ %data_ptr, %entry ], [ %realloc_ptr, %grow ]
-  %target_ptr = getelementptr ptr, ptr %final_data_ptr, i64 %len
-  store ptr %val_to_ptr, ptr %target_ptr, align 8
-  %next_len = add i64 %len, 1
-  store i64 %next_len, ptr %len_ptr, align 4
-  %runtime_obj = call ptr @malloc(i64 16)
+  %csv_boxed_res = call ptr inttoptr (i64 140722553499812 to ptr)(ptr inttoptr (i64 2646027036784 to ptr), ptr inttoptr (i64 2646027144224 to ptr))
+  %unbox_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %csv_boxed_res, i32 0, i32 1
+  %raw_rows_ptr = load ptr, ptr %unbox_ptr, align 8
+  %names_header = call ptr inttoptr (i64 140727031823776 to ptr)(i64 24)
+  %names_data = call ptr inttoptr (i64 140727031823776 to ptr)(i64 40)
+  %ptr_0 = getelementptr ptr, ptr %names_data, i64 0
+  store ptr inttoptr (i64 2646027145024 to ptr), ptr %ptr_0, align 8
+  %ptr_1 = getelementptr ptr, ptr %names_data, i64 1
+  store ptr inttoptr (i64 2646027144384 to ptr), ptr %ptr_1, align 8
+  %ptr_2 = getelementptr ptr, ptr %names_data, i64 2
+  store ptr inttoptr (i64 2646027144336 to ptr), ptr %ptr_2, align 8
+  %ptr_3 = getelementptr ptr, ptr %names_data, i64 3
+  store ptr inttoptr (i64 2646027144400 to ptr), ptr %ptr_3, align 8
+  %ptr_4 = getelementptr ptr, ptr %names_data, i64 4
+  store ptr inttoptr (i64 2646027144240 to ptr), ptr %ptr_4, align 8
+  %len = getelementptr inbounds nuw { i64, i64, ptr }, ptr %names_header, i32 0, i32 0
+  store i64 5, ptr %len, align 4
+  %cap = getelementptr inbounds nuw { i64, i64, ptr }, ptr %names_header, i32 0, i32 1
+  store i64 5, ptr %cap, align 4
+  %data = getelementptr inbounds nuw { i64, i64, ptr }, ptr %names_header, i32 0, i32 2
+  store ptr %names_data, ptr %data, align 8
+  %types_header = call ptr inttoptr (i64 140727031823776 to ptr)(i64 24)
+  %types_data = call ptr inttoptr (i64 140727031823776 to ptr)(i64 40)
+  %ptr = getelementptr ptr, ptr %types_data, i64 0
+  store ptr inttoptr (i64 1 to ptr), ptr %ptr, align 8
+  %ptr1 = getelementptr ptr, ptr %types_data, i64 1
+  store ptr inttoptr (i64 4 to ptr), ptr %ptr1, align 8
+  %ptr2 = getelementptr ptr, ptr %types_data, i64 2
+  store ptr inttoptr (i64 1 to ptr), ptr %ptr2, align 8
+  %ptr3 = getelementptr ptr, ptr %types_data, i64 3
+  store ptr inttoptr (i64 3 to ptr), ptr %ptr3, align 8
+  %ptr4 = getelementptr ptr, ptr %types_data, i64 4
+  store ptr inttoptr (i64 2 to ptr), ptr %ptr4, align 8
+  %0 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %types_header, i32 0, i32 0
+  store i64 5, ptr %0, align 4
+  %1 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %types_header, i32 0, i32 1
+  store i64 5, ptr %1, align 4
+  %2 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %types_header, i32 0, i32 2
+  store ptr %types_data, ptr %2, align 8
+  %df_ptr = call ptr inttoptr (i64 140727031823776 to ptr)(i64 24)
+  %cols = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 0
+  %rows = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 1
+  %types = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 2
+  store ptr %names_header, ptr %cols, align 8
+  store ptr %raw_rows_ptr, ptr %rows, align 8
+  store ptr %types_header, ptr %types, align 8
+  store ptr %df_ptr, ptr inttoptr (i64 2646027144800 to ptr), align 8
+  %runtime_obj = call ptr inttoptr (i64 140727031823776 to ptr)(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
-  store i64 7, ptr %tag_ptr, align 4
-  %data_ptr11 = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %df3_load, ptr %data_ptr11, align 8
+  store i64 0, ptr %tag_ptr, align 8
+  %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
+  store ptr null, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
-
-declare i32 @printf(ptr, ...)
-
-declare ptr @malloc(i64)
-
-declare ptr @realloc(ptr, i64)
