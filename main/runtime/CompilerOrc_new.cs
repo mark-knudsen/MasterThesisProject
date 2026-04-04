@@ -95,9 +95,17 @@ namespace MyCompiler
                     }
                     else if (typeCode == 'F')
                     {
-                        double.TryParse(rawValue, out double val);
-                        long bits = BitConverter.DoubleToInt64Bits(val);
-                        Marshal.WriteInt64(valuePtr, bits);
+                        // Add System.Globalization.CultureInfo.InvariantCulture here
+                        if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                        {
+                            long bits = BitConverter.DoubleToInt64Bits(val);
+                            Marshal.WriteInt64(valuePtr, bits);
+                        }
+                        else
+                        {
+                            // Fallback for safety
+                            Marshal.WriteInt64(valuePtr, 0);
+                        }
                     }
                     else if (typeCode == 'B')
                     {
@@ -829,11 +837,11 @@ namespace MyCompiler
 
             // Store tag
             var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr).SetAlignment(8);
 
             // Store data
             var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
-            _builder.BuildStore(dataPtr, dataFieldPtr);
+            _builder.BuildStore(dataPtr, dataFieldPtr).SetAlignment(8);
 
             return objRaw;
         }
@@ -1498,12 +1506,19 @@ namespace MyCompiler
 
             LLVMValueRef global = module.GetNamedGlobal(expr.Id);
 
+            // Determine the natural alignment for this type
+            // Bools (i1) = 1, everything else (i64, double, ptr) = 8
+            uint alignment = (storageType.Kind == LLVMTypeKind.LLVMIntegerTypeKind && storageType.IntWidth == 1) ? 1u : 8u;
+
             if (global.Handle == IntPtr.Zero)
             {
                 if (!_definedGlobals.Contains(expr.Id))
                 {
-                    // FIRST DEFINITION
+                    // --- FIRST DEFINITION ---
                     global = module.AddGlobal(storageType, expr.Id);
+
+                    // Set explicit alignment on the global variable definition itself
+                    global.SetAlignment(alignment);
 
                     // Set initial dummy value so it's not "undef"
                     if (storageType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
@@ -1513,23 +1528,27 @@ namespace MyCompiler
                     else
                         global.Initializer = LLVMValueRef.CreateConstNull(storageType);
 
-                    // Use ExternalLinkage so it's visible to the JIT symbol table
                     global.Linkage = LLVMLinkage.LLVMExternalLinkage;
                     _definedGlobals.Add(expr.Id);
                 }
                 else
                 {
-                    // RE-DECLARATION (in a new module)
+                    // --- RE-DECLARATION (in a new REPL module) ---
                     global = module.AddGlobal(storageType, expr.Id);
 
-                    // IMPORTANT: Setting Linkage to External WITHOUT an Initializer 
-                    // makes this an 'extern' declaration.
+                    // Linkage to External WITHOUT Initializer makes it 'extern'
                     global.Linkage = LLVMLinkage.LLVMExternalLinkage;
+
+                    // Ensure the declaration matches the definition's alignment
+                    global.SetAlignment(alignment);
                 }
             }
 
+            // Perform the store
             var store = _builder.BuildStore(value, global);
-            store.SetAlignment(8);
+
+            // Set explicit alignment on the store instruction
+            store.SetAlignment(alignment);
 
             return value;
         }
@@ -1588,7 +1607,7 @@ namespace MyCompiler
                 var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
                 var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i64, 1), "range1");
                 var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
-                _builder.BuildStore(res1, resultPtr).SetAlignment(4); // it says %res1 = add i32 %mod1, i64 1   // what is the i64 1?
+                _builder.BuildStore(res1, resultPtr).SetAlignment(8); // res1 is i64, requires 8-byte alignment
 
                 _builder.BuildBr(mergeBB);
 
@@ -1597,7 +1616,7 @@ namespace MyCompiler
                 var diff2 = _builder.BuildSub(minVal, maxVal, "diff2"); // again this says i64 -99
                 var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i64, 1), "range2");
                 var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
-                _builder.BuildStore(res2, resultPtr).SetAlignment(4);
+                _builder.BuildStore(res2, resultPtr).SetAlignment(8);
 
                 _builder.BuildBr(mergeBB);
 
@@ -2872,40 +2891,48 @@ namespace MyCompiler
 
             LLVMValueRef ptrToLoad;
 
-            // Check if the variable exists in the current context
+            // 1. Resolve the Pointer
             if (entry.Value.Handle != IntPtr.Zero)
             {
-                // Use the pointer stored in context (stack-local or previously allocated global)
                 ptrToLoad = entry.Value;
             }
             else
             {
-                // Otherwise, treat it as a REPL/global variable
                 var global = _module.GetNamedGlobal(expr.Name);
-
                 if (global.Handle == IntPtr.Zero)
                 {
-                    // Allocate global in this module (not external)
                     global = _module.AddGlobal(llvmType, expr.Name);
                     global.Linkage = LLVMLinkage.LLVMExternalLinkage;
                 }
-
                 ptrToLoad = global;
             }
 
+            // 2. Determine Alignment
+            // i64 (Int) and double (Float) need 8. Bools need 1. Others (pointers) usually 8 on 64-bit.
+            uint alignment = 8;
+            if (entry.Type is BoolType) alignment = 1;
+
+            // 3. Perform the Load
+            LLVMValueRef loadInstruction;
+
             if (entry.Type is ArrayType || entry.Type is StringType)
             {
-                return _builder.BuildLoad2(
+                loadInstruction = _builder.BuildLoad2(
                     LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
                     ptrToLoad,
                     expr.Name + "_load"
                 );
             }
+            else
+            {
+                if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
+                loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
+            }
 
-            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
+            // 4. Set the Alignment explicitly
+            loadInstruction.SetAlignment(alignment);
 
-            // Load the value from the pointer
-            return _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
+            return loadInstruction;
         }
 
         public LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr)
@@ -3926,8 +3953,9 @@ namespace MyCompiler
 
         /*  COmman example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
-        df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/test.csv")
-
+        df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
+        to_csv(df, "CSV/mytest.csv")
+m
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
 
