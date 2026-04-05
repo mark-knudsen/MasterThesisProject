@@ -5,58 +5,58 @@ namespace MyCompiler
 {
     public interface IExpressionVisitor
     {
-        LLVMValueRef VisitSequenceExpr(SequenceNodeExpr expr);
-        LLVMValueRef VisitNumberExpr(NumberNodeExpr expr);
-        LLVMValueRef VisitFloatExpr(FloatNodeExpr expr);
-        LLVMValueRef VisitStringExpr(StringNodeExpr expr);
-        LLVMValueRef VisitBooleanExpr(BooleanNodeExpr expr);
-        LLVMValueRef VisitNullExpr(NullNodeExpr expr);
-        LLVMValueRef VisitUnaryOpExpr(UnaryOpNodeExpr expr);
-        LLVMValueRef VisitBinaryExpr(BinaryOpNodeExpr expr);
-        LLVMValueRef VisitLogicalOpExpr(LogicalOpNodeExpr expr);
-        LLVMValueRef VisitComparisonExpr(ComparisonNodeExpr expr);
-        LLVMValueRef VisitIncrementExpr(IncrementNodeExpr expr);
-        LLVMValueRef VisitDecrementExpr(DecrementNodeExpr expr);
-        LLVMValueRef VisitIdExpr(IdNodeExpr expr);
-        LLVMValueRef VisitAssignExpr(AssignNodeExpr expr);
-        LLVMValueRef VisitRandomExpr(RandomNodeExpr expr);
-        LLVMValueRef VisitPrintExpr(PrintNodeExpr expr);
-        LLVMValueRef VisitIfExpr(IfNodeExpr expr);
-        LLVMValueRef VisitForLoopExpr(ForLoopNodeExpr expr);
-        LLVMValueRef VisitForEachLoopExpr(ForEachLoopNodeExpr expr);
-        LLVMValueRef VisitArrayExpr(ArrayNodeExpr expr);
-        // LLVMValueRef VisitCopyArrayExpr(CopyArrayNodeExpr expr);
-        LLVMValueRef VisitIndexExpr(IndexNodeExpr expr);
-        LLVMValueRef VisitIndexAssignExpr(IndexAssignNodeExpr expr);
-        LLVMValueRef VisitAddExpr(AddNodeExpr expr);
-        LLVMValueRef VisitAddRangeExpr(AddRangeNodeExpr expr);
-        LLVMValueRef VisitRemoveExpr(RemoveNodeExpr expr);
-        LLVMValueRef VisitRemoveRangeExpr(RemoveRangeNodeExpr expr);
-        LLVMValueRef VisitLengthExpr(LengthNodeExpr expr);
-        LLVMValueRef VisitMinExpr(MinNodeExpr expr);
-        LLVMValueRef VisitMaxExpr(MaxNodeExpr expr);
-        LLVMValueRef VisitMeanExpr(MeanNodeExpr expr);
-        LLVMValueRef VisitSumExpr(SumNodeExpr expr);
-        LLVMValueRef VisitWhereExpr(WhereNodeExpr expr);
-        LLVMValueRef VisitMapExpr(MapNodeExpr expr);
-        LLVMValueRef VisitReadCsvExpr(ReadCsvNodeExpr expr);
+        LLVMValueRef VisitSequence(SequenceNode expr);
+        LLVMValueRef VisitNumber(NumberNode expr);
+        LLVMValueRef VisitFloat(FloatNode expr);
+        LLVMValueRef VisitString(StringNode expr);
+        LLVMValueRef VisitBoolean(BooleanNode expr);
+        LLVMValueRef VisitNull(NullNode expr);
+        LLVMValueRef VisitUnaryOp(UnaryOpNode expr);
+        LLVMValueRef VisitBinary(BinaryOpNode expr);
+        LLVMValueRef VisitLogicalOp(LogicalOpNode expr);
+        LLVMValueRef VisitComparison(ComparisonNode expr);
+        LLVMValueRef VisitIncrement(IncrementNode expr);
+        LLVMValueRef VisitDecrement(DecrementNode expr);
+        LLVMValueRef VisitId(IdNode expr);
+        LLVMValueRef VisitAssign(AssignNode expr);
+        LLVMValueRef VisitRandom(RandomNode expr);
+        LLVMValueRef VisitPrint(PrintNode expr);
+        LLVMValueRef VisitIf(IfNode expr);
+        LLVMValueRef VisitForLoop(ForLoopNode expr);
+        LLVMValueRef VisitForEachLoop(ForEachLoopNode expr);
+        LLVMValueRef VisitArray(ArrayNode expr);
+        // LLVMValueRef VisitCopyArray(CopyArrayNode expr);
+        LLVMValueRef VisitIndex(IndexNode expr);
+        LLVMValueRef VisitIndexAssign(IndexAssignNode expr);
+        LLVMValueRef VisitAdd(AddNode expr);
+        LLVMValueRef VisitAddRange(AddRangeNode expr);
+        LLVMValueRef VisitRemove(RemoveNode expr);
+        LLVMValueRef VisitRemoveRange(RemoveRangeNode expr);
+        LLVMValueRef VisitLength(LengthNode expr);
+        LLVMValueRef VisitMin(MinNode expr);
+        LLVMValueRef VisitMax(MaxNode expr);
+        LLVMValueRef VisitMean(MeanNode expr);
+        LLVMValueRef VisitSum(SumNode expr);
+        LLVMValueRef VisitWhere(WhereNode expr);
+        LLVMValueRef VisitMap(MapNode expr);
+        LLVMValueRef VisitReadCsv(ReadCsvNode expr);
 
-        LLVMValueRef VisitToCsvExpr(ToCsvNodeExpr expr);
+        LLVMValueRef VisitToCsv(ToCsvNode expr);
 
 
-        LLVMValueRef VisitRoundExpr(RoundNodeExpr expr);
-        LLVMValueRef VisitRecordExpr(RecordNodeExpr expr);
-        LLVMValueRef VisitRecordFieldExpr(RecordFieldNodeExpr expr);
-        LLVMValueRef VisitRecordFieldAssignExpr(RecordFieldAssignNodeExpr expr);
-        LLVMValueRef VisitCopyRecordExpr(CopyRecordNodeExpr expr);
-        LLVMValueRef VisitCopyExpr(CopyNodeExpr expr);
-        LLVMValueRef VisitAddFieldExpr(AddFieldNodeExpr expr);
-        LLVMValueRef VisitRemoveFieldExpr(RemoveFieldNodeExpr expr);
-        LLVMValueRef VisitDataframeExpr(DataframeNodeExpr expr);
-        LLVMValueRef VisitColumnsExpr(ColumnsNodeExpr expr);
-        LLVMValueRef VisitShowDataframeExpr(ShowDataframeNodeExpr expr);
-        LLVMValueRef VisitNamedArgumentExpr(NamedArgumentNodeExpr expr);
-        LLVMValueRef VisitTypeLiteralExpr(TypeLiteralNodeExpr expr);
+        LLVMValueRef VisitRound(RoundNode expr);
+        LLVMValueRef VisitRecord(RecordNode expr);
+        LLVMValueRef VisitRecordField(RecordFieldNode expr);
+        LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr);
+        LLVMValueRef VisitCopyRecord(CopyRecordNode expr);
+        LLVMValueRef VisitCopy(CopyNode expr);
+        LLVMValueRef VisitAddField(AddFieldNode expr);
+        LLVMValueRef VisitRemoveField(RemoveFieldNode expr);
+        LLVMValueRef VisitDataframe(DataframeNode expr);
+        LLVMValueRef VisitColumns(ColumnsNode expr);
+        LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);
+        LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
+        LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
 
 
         // // Visit for define and usage of created functions
