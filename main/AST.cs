@@ -756,8 +756,9 @@ namespace MyCompiler
 
     public class DataframeNode : ExpressionNode
     {
-        public ArrayNode Columns { get; private set; }
-        public ArrayNode Rows { get; private set; } // array of RecordNodeExpr
+        // Change these from ArrayNode to ExpressionNode
+        public ExpressionNode Columns { get; private set; }
+        public ExpressionNode Rows { get; private set; }
         public List<Type> DataTypes { get; private set; } = new List<Type>();
 
         public DataframeNode(List<ExpressionNode> args)
@@ -766,43 +767,34 @@ namespace MyCompiler
             {
                 var currentArg = args[i];
 
-                // 1. Check if it's a Named Argument (columns=... or data=...)
                 if (currentArg is NamedArgumentNode named)
                 {
-                    // Extract the actual value (e.g. the ArrayNodeExpr) from the wrapper
-                    var actualValue = named.Value as ArrayNode;
+                    // Remove the "as ArrayNode" cast. Use the raw ExpressionNode.
+                    var actualValue = named.Value;
 
-                    if (named.Name == "columns")
-                    {
-                        Columns = actualValue;
-                    }
-                    else if (named.Name == "data" || named.Name == "rows")
-                    {
-                        Rows = actualValue;
-                    }
+                    if (named.Name == "columns") Columns = actualValue;
+                    else if (named.Name == "data" || named.Name == "rows") Rows = actualValue;
                     else if (string.IsNullOrEmpty(named.Name))
                     {
-                        // This handles positional arguments that got wrapped 
-                        // by the 'arg' rule but have no name string
                         if (i == 0) Columns = actualValue;
                         else if (i == 1) Rows = actualValue;
                     }
                 }
-                // 2. Check if it's a raw ArrayNodeExpr (Direct positional)
-                else if (currentArg is ArrayNode array)
+                else
                 {
-                    if (i == 0) Columns = array;
-                    else if (i == 1) Rows = array;
+                    // Accept any ExpressionNode positionally
+                    if (i == 0) Columns = currentArg;
+                    else if (i == 1) Rows = currentArg;
                 }
             }
 
-            if (Columns == null) throw new Exception("dataframe requires 'columns' array");
-            if (Rows == null) throw new Exception("dataframe requires 'data' array");
+            if (Columns == null) throw new Exception("dataframe requires 'columns' expression");
+            if (Rows == null) throw new Exception("dataframe requires 'data' expression");
         }
-
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
+
 
     public class ColumnsNode : ExpressionNode
     {
@@ -826,6 +818,34 @@ namespace MyCompiler
             Columns = columns;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframe(this);
+    }
+    // For accessing fields like row.name
+    public class PropertyAccessNode : ExpressionNode
+    {
+        public ExpressionNode Source { get; }
+        public string PropertyName { get; }
+
+        public PropertyAccessNode(ExpressionNode source, string propertyName)
+        {
+            Source = source;
+            PropertyName = propertyName;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPropertyAccess(this);
+    }
+
+    // For grabbing the 'Rows' array out of a Dataframe pointer
+    public class InternalDataframeFieldNode : ExpressionNode
+    {
+        public ExpressionNode Source { get; }
+        public int FieldIndex { get; } // 0=Cols, 1=Rows, 2=Types
+
+        public InternalDataframeFieldNode(ExpressionNode source, int index, Type type)
+        {
+            Source = source;
+            FieldIndex = index;
+            this.Type = type;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitInternalDataframeField(this);
     }
 
     public class TypeLiteralNode : ExpressionNode
