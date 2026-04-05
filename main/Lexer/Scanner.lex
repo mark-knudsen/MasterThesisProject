@@ -16,6 +16,7 @@
 "else"          { return (int)Tokens.ELSE; }
 "true"          { yylval.boolVal = true; return (int)Tokens.BOOL_LITERAL; }
 "false"         { yylval.boolVal = false; return (int)Tokens.BOOL_LITERAL; }
+"NULL"          { return (int)Tokens.NULL_LITERAL; }
 "print"         { return (int)Tokens.PRINT; }
 "random"        { return (int)Tokens.RANDOM; }
 "round"         { return (int)Tokens.ROUND; }
@@ -24,15 +25,15 @@
 "foreach"       { return (int)Tokens.FOREACH; }
 "in"            { return (int)Tokens.IN; }
 
-
 "int"           { return (int)Tokens.INT; }
 "float"         { return (int)Tokens.FLOAT; }
 "string"        { return (int)Tokens.STRING; }
 "void"          { return (int)Tokens.VOID; }
+"null"          { return (int)Tokens.NULL; }
 "bool"          { return (int)Tokens.BOOL; }
 "array"         { return (int)Tokens.ARRAY; }
-"copy"          { return (int)Tokens.COPY; }
 
+"copy"          { return (int)Tokens.COPY; }
 "where"         { return (int)Tokens.WHERE; }
 "map"           { return (int)Tokens.MAP; }
 "=>"            { return (int)Tokens.LAMBDA; }
@@ -51,6 +52,9 @@
 "record"        { return (int)Tokens.RECORD; }
 "addField"      { return (int)Tokens.ADDFIELD; }
 "removeField"   { return (int)Tokens.REMOVEFIELD; }
+"dataframe"     { return (int)Tokens.DATAFRAME; }
+"columns"       { return (int)Tokens.COLUMNS; }
+"show"          { return (int)Tokens.SHOW; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
@@ -65,7 +69,7 @@
 
 [0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
 [0-9]+\.[0-9]+  { yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL; }
-\"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING; }
+\"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL; }
 [a-zA-Z_][a-zA-Z0-9_]* { yylval.obj = yytext; return (int)Tokens.ID; }    
 
 "+"             { return (int)Tokens.PLUS; }
@@ -84,7 +88,11 @@
 ","             { return (int)Tokens.COMMA; }
 "."             { return (int)Tokens.DOT; }
 
-[ \t\r\n]+       { /* skip */ }
+\r\n            { return (int)Tokens.NEWLINE; }   // Windows
+\n              { return (int)Tokens.NEWLINE; }   // Unix
+\r              { return (int)Tokens.NEWLINE; }   // Old Mac (rare)
+
+[ \t]+          { /* skip spaces/tabs only */ }
 .               { return (int)Tokens.error; }
 
 %%

@@ -8,18 +8,22 @@
     public double fval;
     public MyCompiler.Type type; 
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
+    public MyCompiler.ExpressionNodeExpr expr; // Single expression
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
+    public List<MyCompiler.NamedArgumentNodeExpr> arglist; // for arg_list
 }
 
-%token <obj> NUMBER STRING ID
+%token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
-%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA
+%token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND WHERE MAP FUNC ADD ADDRANGE REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM READCSV TOCSV COPY RECORD ADDFIELD REMOVEFIELD
+%token PRINT RANDOM ROUND READCSV TOCSV 
+%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD ADDFIELD REMOVEFIELD WHERE MAP FUNC ADD ADDRANGE 
+%token DATAFRAME SHOW 
 
-%token INT FLOAT BOOL STRING VOID ARRAY
+%token INT FLOAT BOOL STRING VOID NULL ARRAY
 
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
@@ -39,8 +43,11 @@
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
 %type <type> Type
-%type <obj> params args  /* Use <obj> for lists */
+%type <obj> params  /* Use <obj> for lists */
+
+%type <expr> arg
 %type <exprList> expr_list
+%type <arglist> arg_list
 
 
 /* This tells the parser which C# variable stores the final tree */
@@ -57,6 +64,8 @@ Prog
 StatementList
     : Statement { $$ = new SequenceNodeExpr(); ((SequenceNodeExpr)$$).Statements.Add($1); }
     | StatementList SEMICOLON Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
+    | StatementList NEWLINE Statement { ((SequenceNodeExpr)$1).Statements.Add($3); $$ = $1; }
+    | StatementList NEWLINE
 
     ;
 
@@ -76,13 +85,13 @@ Statement
         { $$ = new ForEachLoopNodeExpr(new IdNodeExpr((string)$3), $5 as ExpressionNodeExpr, $8 ); }
     ;
 
-
 Type
     : INT                 { $$ = new IntType(); }
     | FLOAT               { $$ = new FloatType(); }
     | BOOL                { $$ = new BoolType(); }
     | STRING              { $$ = new StringType(); }    
     | VOID                { $$ = new VoidType(); }
+    | NULL                { $$ = new NullType(); }
     | ARRAY GT Type LT    { $$ = new ArrayType($3); }
     ;
 
@@ -122,8 +131,8 @@ Assignment
     ;
 
 expr_list
-    : expr                     { $$ = new List<ExpressionNodeExpr> { $1 as ExpressionNodeExpr }; }
-    | expr_list COMMA expr     { $1.Add($3 as ExpressionNodeExpr); $$ = $1; }
+    : expr                  { $$ = new List<ExpressionNodeExpr> { $1 as ExpressionNodeExpr }; }
+    | expr_list COMMA expr { ((List<ExpressionNodeExpr>)$1).Add($3 as ExpressionNodeExpr); $$ = $1; }
     ;
 
 expr
@@ -131,7 +140,10 @@ expr
     | NUMBER              { $$ = new NumberNodeExpr((int)$1); }
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
-    | STRING              { $$ = new StringNodeExpr((string)$1); }
+    | STRING_LITERAL      { $$ = new StringNodeExpr((string)$1); }
+    | STRING              { $$ = new TypeLiteralNodeExpr(new StringType()); }
+    | NULL_LITERAL        { $$ = new NullNodeExpr(); }
+    | Type                { $$ = new TypeLiteralNodeExpr($1); }
     
     /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
@@ -141,8 +153,8 @@ expr
     | FUNC COLON ID ID LPAREN params RPAREN LBRACE expr RBRACE 
                           { $$ = new FunctionDefNode((string)$4, (string)$3, (List<string>)$6, $9 as NodeExpr); }
 
-    | ID LPAREN args RPAREN 
-                          { $$ = new FunctionCallNode((string)$1, (List<ExpressionNodeExpr>)$3); }
+    | ID LPAREN arg RPAREN 
+                          { $$ = new FunctionCallNode((string)$1, new List<ExpressionNodeExpr> { $3 as ExpressionNodeExpr }); }
     | ID                  { $$ = new IdNodeExpr((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNodeExpr($3 as ExpressionNodeExpr); }
@@ -166,6 +178,8 @@ expr
     | expr LT expr        { $$ = new ComparisonNodeExpr($1 as ExpressionNodeExpr, "<", $3 as ExpressionNodeExpr); }
 
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNodeExpr($2 as List<ExpressionNodeExpr>); } /*[1,2,3] */
+    | LBRACE arg_list RBRACE { $$ = new RecordNodeExpr($2 as List<NamedArgumentNodeExpr>); } /*{ name: "Bob", age: 23 } */
+    | LBRACKET arg_list RBRACKET { $$ = new RecordNodeExpr($2 as List<NamedArgumentNodeExpr>); } /*[index: int, name: string] */
     | ID LBRACKET expr RBRACKET 
     { 
         // Cast $1 to string so the IdNodeExpr constructor accepts it
@@ -203,27 +217,39 @@ expr
     }
   
     /* Global Function Style */
-    | READCSV LPAREN expr RPAREN 
-        { 
-            // $3 is the 'expr' (the filename string)
-            $$ = new ReadCsvNodeExpr($3 as ExpressionNodeExpr); 
-        }
+        /* Global Function Style */
+    | READCSV LPAREN expr COMMA expr RPAREN 
+    { 
+        // Force the creation of a list with exactly TWO elements
+        var args = new List<ExpressionNodeExpr>();
+        args.Add($3 as ExpressionNodeExpr); // This should be the Record/Schema
+        args.Add($5 as ExpressionNodeExpr); // This should be the String/Path
+        $$ = new ReadCsvNodeExpr(args); 
+    }
 
     | TOCSV LPAREN expr COMMA expr RPAREN 
         { $$ = new ToCsvNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
 
-    | RECORD LPAREN expr COMMA expr RPAREN   { $$ = new RecordNodeExpr($3 as ExpressionNodeExpr, $5 as ExpressionNodeExpr); }
+    | RECORD LPAREN LBRACE arg_list RBRACE RPAREN   { $$ = new RecordNodeExpr($4 as List<NamedArgumentNodeExpr>); }
 
     | expr DOT ID %prec LOWER_THAN_LPAREN
     {
         $$ = new RecordFieldNodeExpr($1 as ExpressionNodeExpr, (string)$3);
     }
 
-    //| expr DOT COPY                           { $$ = new CopyRecordNodeExpr($1 as ExpressionNodeExpr); }
     | expr DOT COPY                           { $$ = new CopyNodeExpr($1 as ExpressionNodeExpr); }
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
                                               { $$ = new AddFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5, $7 as ExpressionNodeExpr); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNodeExpr($1 as ExpressionNodeExpr, (string)$5); }
+    
+    /* dataframe(columns=[...], data=[...]) */
+    | DATAFRAME LPAREN arg_list RPAREN
+    {
+        // Make sure you have: using System.Linq; at the top of your parser file
+        $$ = new DataframeNodeExpr($3.Cast<ExpressionNodeExpr>().ToList());
+    }
+    | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNodeExpr($1 as ExpressionNodeExpr, $6 as List<ExpressionNodeExpr>); }
+    | expr DOT COLUMNS              { $$ = new ColumnsNodeExpr($1 as ExpressionNodeExpr); }
     ;
 
 params
@@ -232,10 +258,17 @@ params
     | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
     ;
 
-args
-    : /* empty */ { $$ = new List<ExpressionNodeExpr>(); }
-    | expr { var list = new List<ExpressionNodeExpr>(); list.Add($1 as ExpressionNodeExpr); $$ = list; }
-    | args COMMA expr { var list = (List<ExpressionNodeExpr>)$1; list.Add($3 as ExpressionNodeExpr); $$ = list; }
+arg_list
+    : arg                  { $$ = new List<NamedArgumentNodeExpr> { $1 as NamedArgumentNodeExpr }; }
+    | arg_list COMMA arg   { ((List<NamedArgumentNodeExpr>)$1).Add($3 as NamedArgumentNodeExpr); $$ = $1; }
+    ;
+
+arg
+    : ID ASSIGN expr      { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
+    | ID COLON expr       { $$ = new NamedArgumentNodeExpr((string)$1, $3 as ExpressionNodeExpr); }
+    | COLUMNS ASSIGN expr { $$ = new NamedArgumentNodeExpr("columns", $3 as ExpressionNodeExpr); }
+    | COLUMNS COLON expr  { $$ = new NamedArgumentNodeExpr("columns", $3 as ExpressionNodeExpr); }
+    | expr                { $$ = new NamedArgumentNodeExpr(null, $1 as ExpressionNodeExpr); } 
     ;
 %%
 

@@ -163,6 +163,29 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitStringExpr(this);
     }
 
+    // Boolean
+    public class BooleanNodeExpr : ExpressionNodeExpr
+    {
+        public bool Value { get; }
+
+        public BooleanNodeExpr(bool value)
+        {
+            Value = value;
+            Type = new BoolType();
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
+    }
+
+    public class NullNodeExpr : ExpressionNodeExpr
+    {
+        public NullNodeExpr()
+        {
+            Type = new NullType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNullExpr(this);
+    }
+
     // Represents a variable name (e.g., x)
     public class IdNodeExpr : ExpressionNodeExpr
     {
@@ -289,19 +312,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForEachLoopExpr(this);
     }
 
-    // Boolean
-    public class BooleanNodeExpr : ExpressionNodeExpr
-    {
-        public bool Value { get; }
-
-        public BooleanNodeExpr(bool value)
-        {
-            Value = value;
-            Type = new BoolType();
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBooleanExpr(this);
-    }
-
     public class ComparisonNodeExpr : ExpressionNodeExpr
     {
         public ExpressionNodeExpr Left;
@@ -342,19 +352,19 @@ namespace MyCompiler
 
     public class CopyArrayNodeExpr : CopyNodeExpr
     {
-        public CopyArrayNodeExpr(ExpressionNodeExpr source) : base (source) {}
+        public CopyArrayNodeExpr(ExpressionNodeExpr source) : base(source) { }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
 
     public class IndexNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr IndexExpression { get; }
 
-        public IndexNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr indexExpr)
+        public IndexNodeExpr(ExpressionNodeExpr sourceExpr, ExpressionNodeExpr indexExpr)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = sourceExpr;
             IndexExpression = indexExpr;
             Type = new IntType();
         }
@@ -382,13 +392,13 @@ namespace MyCompiler
     public class WhereNodeExpr : ExpressionNodeExpr
     {
         public IdNodeExpr IteratorId;
-        public ExpressionNodeExpr ArrayExpr;
+        public ExpressionNodeExpr SourceExpr;
         public ExpressionNodeExpr Condition;
 
-        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr condition)
+        public WhereNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr sourceExpr, ExpressionNodeExpr condition)
         {
             IteratorId = iteratorId;
-            ArrayExpr = arrayExpr;
+            SourceExpr = sourceExpr;
             Condition = condition;
         }
 
@@ -399,13 +409,13 @@ namespace MyCompiler
     {
         public IdNodeExpr IteratorId;
 
-        public ExpressionNodeExpr ArrayExpr;
+        public ExpressionNodeExpr SourceExpr;
         public ExpressionNodeExpr Assignment;
 
-        public MapNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr arrayExpr, ExpressionNodeExpr assignment)
+        public MapNodeExpr(IdNodeExpr iteratorId, ExpressionNodeExpr sourceExpr, ExpressionNodeExpr assignment)
         {
             IteratorId = iteratorId;
-            ArrayExpr = arrayExpr;
+            SourceExpr = sourceExpr;
             Assignment = assignment;
         }
 
@@ -414,12 +424,23 @@ namespace MyCompiler
 
     public class ReadCsvNodeExpr : ExpressionNodeExpr
     {
+        public ExpressionNodeExpr SchemaExpr { get; set; }
         public ExpressionNodeExpr FileNameExpr { get; set; }
 
-        // Change this to only take ONE parameter
-        public ReadCsvNodeExpr(ExpressionNodeExpr fileNameExpr)
+        public ReadCsvNodeExpr(List<ExpressionNodeExpr> args)
         {
-            FileNameExpr = fileNameExpr;
+            // Find the actual string literal (e.g., "test.csv")
+            this.FileNameExpr = args.FirstOrDefault(a => a is StringNodeExpr);
+
+            // Find the record/schema ([index: int...])
+            this.SchemaExpr = args.FirstOrDefault(a => a is RecordNodeExpr);
+
+            // If the parser didn't find them by type, fallback to positions
+            if (this.FileNameExpr == null && args.Count >= 2)
+            {
+                this.FileNameExpr = args[1];
+                this.SchemaExpr = args[0];
+            }
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
@@ -443,28 +464,29 @@ namespace MyCompiler
 
     public class AddNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr AddExpression { get; }
 
-        public AddNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addExpression)
+        public AddNodeExpr(ExpressionNodeExpr sourceExpr, ExpressionNodeExpr addExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddExpr(this);
     }
+
     public class AddRangeNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr AddRangeExpression { get; }
 
-        public AddRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr addRangeExpression)
+        public AddRangeNodeExpr(ExpressionNodeExpr sourceExpr, ExpressionNodeExpr addRangeExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = sourceExpr;
             AddRangeExpression = addRangeExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddRangeExpr(this);
@@ -472,14 +494,14 @@ namespace MyCompiler
 
     public class RemoveNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr RemoveExpression { get; }
 
         public RemoveNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveExpr(this);
@@ -487,14 +509,14 @@ namespace MyCompiler
 
     public class RemoveRangeNodeExpr : ExpressionNodeExpr
     {
-        public ExpressionNodeExpr ArrayExpression { get; }
+        public ExpressionNodeExpr SourceExpression { get; }
         public ExpressionNodeExpr RemoveRangeExpression { get; }
 
         public RemoveRangeNodeExpr(ExpressionNodeExpr arrayExpr, ExpressionNodeExpr removeRangeExpression)
         {
-            ArrayExpression = arrayExpr;
+            SourceExpression = arrayExpr;
             RemoveRangeExpression = removeRangeExpression;
-            Type = new ArrayType(ArrayExpression.Type);
+            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveRangeExpr(this);
@@ -579,10 +601,16 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
     }
 
+
     public class RecordField
     {
         public string Label { get; set; }
+
+        // Used during codegen
         public ExpressionNodeExpr Value { get; set; }
+
+        // Filled during typechecking
+        public Type Type { get; set; }
     }
 
     public class RecordNodeExpr : ExpressionNodeExpr
@@ -590,11 +618,11 @@ namespace MyCompiler
         public List<RecordField> Fields { get; } = new List<RecordField>();
         public List<Type> ElementTypes { get; } = new List<Type>();
 
-        public RecordNodeExpr(ExpressionNodeExpr labelsArray, ExpressionNodeExpr valuesArray)
+        public RecordNodeExpr(List<NamedArgumentNodeExpr> valuesArray)
         {
             // 1. Cast the inputs to ArrayNodeExpr to get into their internal lists
-            var labelNodes = (labelsArray as ArrayNodeExpr)?.Elements;
-            var valueNodes = (valuesArray as ArrayNodeExpr)?.Elements;
+            var labelNodes = valuesArray.Select(v => new StringNodeExpr(v.Name)).ToList();
+            var valueNodes = valuesArray;
 
             if (labelNodes == null || valueNodes == null)
                 throw new Exception("Record requires two arrays: labels and values.");
@@ -632,7 +660,6 @@ namespace MyCompiler
 
         public RecordFieldNodeExpr(ExpressionNodeExpr idRecord, string idField)
         {
-            Console.WriteLine("record constructor: " + idRecord);
             IdRecord = idRecord;
             IdField = idField;
             Type = new IntType();
@@ -660,7 +687,7 @@ namespace MyCompiler
 
     public class CopyRecordNodeExpr : CopyNodeExpr
     {
-        public CopyRecordNodeExpr(ExpressionNodeExpr source) : base (source) {}
+        public CopyRecordNodeExpr(ExpressionNodeExpr source) : base(source) { }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyRecordExpr(this);
     }
@@ -672,7 +699,7 @@ namespace MyCompiler
         public CopyNodeExpr(ExpressionNodeExpr source)
         {
             Source = source;
-            Type = source.Type; 
+            Type = source.Type;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyExpr(this);
     }
@@ -704,4 +731,109 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveFieldExpr(this);
     }
+
+
+    public class NamedArgumentNodeExpr : ExpressionNodeExpr
+    {
+        public string Name { get; }
+        public ExpressionNodeExpr Value { get; }
+
+        public NamedArgumentNodeExpr(string name, ExpressionNodeExpr value)
+        {
+            Name = name;
+            Value = value;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNamedArgumentExpr(this);
+    }
+
+    public class DataframeNodeExpr : ExpressionNodeExpr
+    {
+        public ArrayNodeExpr Columns { get; private set; }
+        public ArrayNodeExpr Rows { get; private set; } // array of RecordNodeExpr
+        public List<Type> DataTypes { get; private set; } = new List<Type>();
+
+        public DataframeNodeExpr(List<ExpressionNodeExpr> args)
+        {
+            for (int i = 0; i < args.Count; i++)
+            {
+                var currentArg = args[i];
+
+                // 1. Check if it's a Named Argument (columns=... or data=...)
+                if (currentArg is NamedArgumentNodeExpr named)
+                {
+                    // Extract the actual value (e.g. the ArrayNodeExpr) from the wrapper
+                    var actualValue = named.Value as ArrayNodeExpr;
+
+                    if (named.Name == "columns")
+                    {
+                        Columns = actualValue;
+                    }
+                    else if (named.Name == "data" || named.Name == "rows")
+                    {
+                        Rows = actualValue;
+                    }
+                    else if (string.IsNullOrEmpty(named.Name))
+                    {
+                        // This handles positional arguments that got wrapped 
+                        // by the 'arg' rule but have no name string
+                        if (i == 0) Columns = actualValue;
+                        else if (i == 1) Rows = actualValue;
+                    }
+                }
+                // 2. Check if it's a raw ArrayNodeExpr (Direct positional)
+                else if (currentArg is ArrayNodeExpr array)
+                {
+                    if (i == 0) Columns = array;
+                    else if (i == 1) Rows = array;
+                }
+            }
+
+            if (Columns == null) throw new Exception("dataframe requires 'columns' array");
+            if (Rows == null) throw new Exception("dataframe requires 'data' array");
+        }
+
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+    }
+
+    public class ColumnsNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr DataframeExpression { get; private set; }
+
+        public ColumnsNodeExpr(ExpressionNodeExpr dataframeExpr)
+        {
+            DataframeExpression = dataframeExpr;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitColumnsExpr(this);
+    }
+
+    public class ShowDataframeNodeExpr : ExpressionNodeExpr
+    {
+        public ExpressionNodeExpr Source { get; private set; }
+        public List<ExpressionNodeExpr> Columns { get; private set; }
+
+        public ShowDataframeNodeExpr(ExpressionNodeExpr source, List<ExpressionNodeExpr> columns)
+        {
+            Source = source;
+            Columns = columns;
+        }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframeExpr(this);
+    }
+
+    public class TypeLiteralNodeExpr : ExpressionNodeExpr
+    {
+        public Type Value { get; }
+
+        public TypeLiteralNodeExpr(Type value)
+        {
+            Value = value;
+            Type = value; // The type of a type literal is the type itself
+        }
+
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitTypeLiteralExpr(this);
+    }
+
 }
+

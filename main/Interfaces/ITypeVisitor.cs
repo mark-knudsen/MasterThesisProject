@@ -7,6 +7,7 @@ namespace MyCompiler
         Type VisitFloat(FloatNodeExpr expr);
         Type VisitString(StringNodeExpr expr);
         Type VisitBoolean(BooleanNodeExpr expr);
+        Type VisitNull(NullNodeExpr expr);
         Type VisitBinary(BinaryOpNodeExpr expr);
         Type VisitLogical(LogicalOpNodeExpr expr);
         Type VisitComparison(ComparisonNodeExpr expr);
@@ -43,6 +44,12 @@ namespace MyCompiler
         Type VisitCopy(CopyNodeExpr expr);
         Type VisitAddField(AddFieldNodeExpr expr);
         Type VisitRemoveField(RemoveFieldNodeExpr expr);
+        Type VisitDataframe(DataframeNodeExpr expr);
+        Type VisitShowDataframe(ShowDataframeNodeExpr expr);
+        Type VisitColumns(ColumnsNodeExpr expr);
+        Type VisitNamedArgument(NamedArgumentNodeExpr expr);
+        Type VisitTypeLiteral(TypeLiteralNodeExpr expr);
+
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);
     }

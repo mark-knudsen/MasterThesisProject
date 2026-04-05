@@ -24,6 +24,10 @@ namespace MyCompiler
     {
         public override string ToString() { return "void"; }
     }
+    public class NullType : Type
+    {
+        public override string ToString() { return "null"; }
+    }
 
     public class ArrayType : Type
     {
@@ -39,7 +43,7 @@ namespace MyCompiler
             return "array" + "(" + ElementType.ToString() + ")";
         }
     }
-    
+
     public class RecordType : Type
     {
         public List<RecordField> RecordFields { get; }
@@ -60,4 +64,23 @@ namespace MyCompiler
             return returnVal + ")";
         }
     }
+
+    public class DataframeType : Type
+    {
+        public List<string> ColumnNames { get; }
+        public List<Type> DataTypes { get; } // NEW: Store the type for each column
+        public RecordType RowType { get; }     // The full record structure
+
+        public DataframeType(List<string> names, List<Type> types, RecordType rowType)
+        {
+            ColumnNames = names;
+            DataTypes = types;
+            RowType = rowType;
+        }
+
+        public override string ToString() =>
+            $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
+    }
+
+
 }
