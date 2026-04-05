@@ -71,7 +71,7 @@ namespace MyCompiler
                 RecordNode rec => VisitRecord(rec),
                 RecordFieldNode recf => VisitRecordField(recf),
                 RecordFieldAssignNode reca => VisitRecordFieldAssign(reca),
-                CopyRecordNode copr => VisitCopyRecord(copr),
+                //CopyRecordNode copr => VisitCopyRecord(copr),
                 CopyNode cop => VisitCopy(cop),
                 AddFieldNode radd => VisitAddField(radd),
                 RemoveFieldNode rrem => VisitRemoveField(rrem),
@@ -443,13 +443,13 @@ namespace MyCompiler
             expr.SetType(arrayType);
             return expr.Type;
         }
-
-        public Type VisitCopyArray(CopyArrayNode expr)
-        {
-            var sourceArray = Visit(expr.Source);
-            expr.SetType(sourceArray as ArrayType);
-            return expr.Type;
-        }
+        // OLD Code - try using generic copy now!
+        // public Type VisitCopyArray(CopyArrayNode expr)
+        // {
+        //     var sourceArray = Visit(expr.Source);
+        //     expr.SetType(sourceArray as ArrayType);
+        //     return expr.Type;
+        // }
 
         public Type VisitCopy(CopyNode expr)
         {
@@ -889,12 +889,13 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitCopyRecord(CopyRecordNode expr)
-        {
-            Visit(expr.Source);
-            expr.SetType(expr.Source.Type);
-            return expr.Type;
-        }
+        // Old code - try use generic copy now!
+        // public Type VisitCopyRecord(CopyRecordNode expr)
+        // {
+        //     Visit(expr.Source);
+        //     expr.SetType(expr.Source.Type);
+        //     return expr.Type;
+        // }
 
         public Type VisitAddField(AddFieldNode expr)
         {

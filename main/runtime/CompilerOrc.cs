@@ -1897,91 +1897,214 @@ namespace MyCompiler
 
         public LLVMValueRef VisitCopy(CopyNode expr)
         {
-            var value = Visit(expr.Source); // LLVM value
-            var type = expr.Source.Type;    // language type
-
-            var elementType = ((ArrayType)expr.Source.Type).ElementType;
-
-            if (type is ArrayType)
-                return CopyArray(value, elementType);
-
-            if (type is RecordType t)
-                return CopyRecord(value, t);
-
-            throw new Exception($"Cannot call copy on type {type}");
+            var value = Visit(expr.Source);
+            return EmitDeepCopy(value, expr.Source.Type);
         }
 
-        public LLVMValueRef VisitCopyArrayExpr(CopyArrayNode expr)
+        private LLVMValueRef EmitDeepCopy(LLVMValueRef sourceVal, Type type)
         {
-            return VisitCopy(expr);
+            if (type is ArrayType at)
+                return CopyArray(sourceVal, at);
+
+            if (type is RecordType rt)
+                return CopyRecord(sourceVal, rt);
+
+            // 3. Dataframes
+            if (type is DataframeType dt)
+                return CopyDataframe(sourceVal, dt);
+
+            // 4. Primitives (Your existing Boxed Logic)
+            if (type is IntType || type is FloatType || type is BoolType)
+            {
+                var ctx = _module.Context;
+                var mallocFunc = GetOrDeclareMalloc();
+                var i64 = ctx.Int64Type;
+                var newBox = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "primitive_box_copy");
+                var llvmType = GetLLVMType(type);
+                var srcTyped = _builder.BuildBitCast(sourceVal, LLVMTypeRef.CreatePointer(llvmType, 0));
+                var dstTyped = _builder.BuildBitCast(newBox, LLVMTypeRef.CreatePointer(llvmType, 0));
+                var val = _builder.BuildLoad2(llvmType, srcTyped, "box_val");
+                _builder.BuildStore(val, dstTyped);
+                return newBox;
+            }
+
+            return sourceVal;
         }
 
-        public LLVMValueRef VisitCopyRecord(CopyRecordNode expr)
+
+
+        private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
         {
-            return VisitCopy(expr);
+            var ctx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // The Dataframe struct layout: { ptr cols, ptr rows, ptr types }
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+
+            // 1. Allocate the NEW Dataframe header container
+            var newDfPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "df_copy_header");
+
+            // 2. Deep Copy Columns (Array of Strings)
+            var colsPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0), "ld_cols");
+            var columnArrayType = new ArrayType(new StringType()); // Columns are always strings
+            var newCols = CopyArray(colsPtr, columnArrayType);
+            _builder.BuildStore(newCols, _builder.BuildStructGEP2(dfStructType, newDfPtr, 0));
+
+            // 3. Deep Copy Rows (Array of Records)
+            var rowsPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1), "ld_rows");
+            var rowArrayType = new ArrayType(dfType.RowType); // Uses the RowType from your DataframeType
+            var newRows = CopyArray(rowsPtr, rowArrayType);
+            _builder.BuildStore(newRows, _builder.BuildStructGEP2(dfStructType, newDfPtr, 1));
+
+            // 4. Deep Copy DataTypes (Array of Integers)
+            var typesPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2), "ld_types");
+            var typeArrayType = new ArrayType(new IntType()); // Metadata array is always ints
+            var newTypes = CopyArray(typesPtr, typeArrayType);
+            _builder.BuildStore(newTypes, _builder.BuildStructGEP2(dfStructType, newDfPtr, 2));
+
+            return newDfPtr;
+        }
+        private LLVMValueRef CopyRecord(LLVMValueRef recordPtr, RecordType recordType)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var mallocFunc = GetOrDeclareMalloc();
+
+            // 1. Allocate the new record buffer (exactly like VisitRecord)
+            var numFields = (ulong)recordType.RecordFields.Count;
+            var newRecordBuffer = _builder.BuildCall2(_mallocType, mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, numFields * 8) }, "record_copy_buffer");
+
+            for (int i = 0; i < recordType.RecordFields.Count; i++)
+            {
+                var fieldType = recordType.RecordFields[i].Type;
+                var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+
+                // 2. Get the address of the pointer in the OLD record
+                var srcSlotPtr = _builder.BuildGEP2(i8Ptr, recordPtr, new[] { index }, "src_slot");
+                // Load the pointer stored there
+                var storedPtr = _builder.BuildLoad2(i8Ptr, srcSlotPtr, "stored_ptr");
+
+                // 3. Perform the Deep Copy
+                // Note: For Primitives, your architecture stores a POINTER to the value.
+                // We must handle that inside EmitDeepCopy or here.
+                var copiedValuePtr = EmitDeepCopy(storedPtr, fieldType);
+
+                // 4. Store the new pointer into the NEW record
+                var dstSlotPtr = _builder.BuildGEP2(i8Ptr, newRecordBuffer, new[] { index }, "dst_slot");
+                _builder.BuildStore(copiedValuePtr, dstSlotPtr);
+            }
+
+            return newRecordBuffer;
         }
 
-        private LLVMValueRef CopyArray(LLVMValueRef srcHeaderPtr, Type elementType)
+        private LLVMValueRef CopyArray(LLVMValueRef srcHeaderPtr, ArrayType arrayType)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var elementType = arrayType.ElementType;
 
-            // Define the Header Layout: { i64 len, i64 cap, i8* data }
             var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 1. Load Length and Data Pointer from Source Header
+            // 1. Load Length and Data Pointer
             var srcLenPtr = _builder.BuildStructGEP2(arrayStructType, srcHeaderPtr, 0, "src_len_ptr");
             var srcDataPtrField = _builder.BuildStructGEP2(arrayStructType, srcHeaderPtr, 2, "src_data_ptr_field");
-
             var length = _builder.BuildLoad2(i64, srcLenPtr, "length");
             var srcDataPtr = _builder.BuildLoad2(i8Ptr, srcDataPtrField, "src_data_ptr");
 
-            // 2. Allocate NEW Header (24 bytes)
+            // 2. Allocate New Header
             var newHeaderPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "new_header");
 
-            // 3. Determine Stride (1 for bool, 8 for others)
-            bool isBool = elementType is BoolType;
-            var stride = isBool ? 1 : 8;
-
-            // 4. Allocate NEW Data Buffer
-            // We allocate exactly what is needed for the current length (or use length for capacity)
+            // 3. Determine Stride
+            bool isComplex = elementType is RecordType || elementType is ArrayType;
+            var stride = (elementType is BoolType) ? 1 : 8;
             var byteCount = _builder.BuildMul(length, LLVMValueRef.CreateConstInt(i64, (ulong)stride), "byte_count");
 
-            // Ensure we allocate at least something if length is 0
+            // 4. Allocate New Data Buffer
             var isZero = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, length, LLVMValueRef.CreateConstInt(i64, 0));
             var allocSize = _builder.BuildSelect(isZero, LLVMValueRef.CreateConstInt(i64, (ulong)(4 * stride)), byteCount);
-
             var newDataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { allocSize }, "new_data");
 
-            // 5. Initialize New Header Fields
-            var dstLenPtr = _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 0);
-            var dstCapPtr = _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 1);
-            var dstDataPtrField = _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 2);
+            // 5. Initialize New Header
+            _builder.BuildStore(length, _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 0));
+            _builder.BuildStore(length, _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 1));
+            _builder.BuildStore(newDataPtr, _builder.BuildStructGEP2(arrayStructType, newHeaderPtr, 2));
 
-            _builder.BuildStore(length, dstLenPtr);
-            _builder.BuildStore(length, dstCapPtr); // Capacity matches length on copy
-            _builder.BuildStore(newDataPtr, dstDataPtrField);
-
-            // 6. Bulk Copy Data using Memmove/Memcpy (Faster than a loop)
-            // memcpy(dest, src, length * stride)
-            var memcpyFunc = GetOrDeclareMemmove(); // You can use memmove for safety
-
-            // Only copy if length > 0
+            // 6. Branching for Copy Logic
             var hasElements = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, length, LLVMValueRef.CreateConstInt(i64, 0));
             var copyBlock = ctx.AppendBasicBlock(_builder.InsertBlock.Parent, "copy.do");
             var endBlock = ctx.AppendBasicBlock(_builder.InsertBlock.Parent, "copy.end");
             _builder.BuildCondBr(hasElements, copyBlock, endBlock);
 
             _builder.PositionAtEnd(copyBlock);
-            _builder.BuildCall2(_memmoveType, memcpyFunc, new[] { newDataPtr, srcDataPtr, byteCount }, "");
-            _builder.BuildBr(endBlock);
 
+            if (!isComplex)
+            {
+                // Simple bitwise copy for primitives
+                var memcpyFunc = GetOrDeclareMemmove();
+                _builder.BuildCall2(_memmoveType, memcpyFunc, new[] { newDataPtr, srcDataPtr, byteCount }, "");
+            }
+            else
+            {
+                // Recursive loop for Records/Arrays/Dataframes
+                EmitArrayLoopCopy(length, newDataPtr, srcDataPtr, elementType);
+            }
+
+            _builder.BuildBr(endBlock);
             _builder.PositionAtEnd(endBlock);
             return newHeaderPtr;
         }
+
+        private void EmitArrayLoopCopy(LLVMValueRef length, LLVMValueRef newDataPtr, LLVMValueRef srcDataPtr, Type elementType)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var llvmElemType = GetLLVMType(elementType);
+
+            // Cast i8* data pointers to the actual element type pointers
+            var srcTypedPtr = _builder.BuildBitCast(srcDataPtr, LLVMTypeRef.CreatePointer(llvmElemType, 0));
+            var dstTypedPtr = _builder.BuildBitCast(newDataPtr, LLVMTypeRef.CreatePointer(llvmElemType, 0));
+
+            var loopBlock = ctx.AppendBasicBlock(_builder.InsertBlock.Parent, "array.copy.loop");
+            var exitBlock = ctx.AppendBasicBlock(_builder.InsertBlock.Parent, "array.copy.exit");
+
+            var indexPtr = _builder.BuildAlloca(i64, "index_ptr");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), indexPtr);
+            _builder.BuildBr(loopBlock);
+
+            _builder.PositionAtEnd(loopBlock);
+            var i = _builder.BuildLoad2(i64, indexPtr, "i");
+
+            // Load from source, Deep Copy, Store to destination
+            var srcElemPtr = _builder.BuildGEP2(llvmElemType, srcTypedPtr, new[] { i }, "src_elem_p");
+            var srcElemVal = _builder.BuildLoad2(llvmElemType, srcElemPtr, "src_elem_v");
+
+            var copiedVal = EmitDeepCopy(srcElemVal, elementType); // RECURSION
+
+            var dstElemPtr = _builder.BuildGEP2(llvmElemType, dstTypedPtr, new[] { i }, "dst_elem_p");
+            _builder.BuildStore(copiedVal, dstElemPtr);
+
+            // Increment index
+            var nextI = _builder.BuildAdd(i, LLVMValueRef.CreateConstInt(i64, 1), "next_i");
+            _builder.BuildStore(nextI, indexPtr);
+
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, nextI, length, "loop_cond");
+            _builder.BuildCondBr(cond, loopBlock, exitBlock);
+
+            _builder.PositionAtEnd(exitBlock);
+        }
+
+
+        // public LLVMValueRef VisitCopyRecord(CopyRecordNode expr)
+        // {
+        //     return VisitCopy(expr);
+        // }
+
 
         public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
         {
@@ -3184,22 +3307,7 @@ namespace MyCompiler
             return storedPtr;
         }
 
-        private LLVMValueRef CopyRecord(LLVMValueRef recordPtr, RecordType recordType)
-        {
-            var structType = GetOrCreateStructType(recordType);
-            var newPtr = _builder.BuildMalloc(structType, "record_copy");
 
-            // Copy each field
-            for (int i = 0; i < recordType.RecordFields.Count; i++)
-            {
-                var oldFieldPtr = _builder.BuildStructGEP2(structType, recordPtr, (uint)i, "old_ptr");
-                var val = _builder.BuildLoad2(structType.StructGetTypeAtIndex((uint)i), oldFieldPtr, "val");
-                var newFieldPtr = _builder.BuildStructGEP2(structType, newPtr, (uint)i, "new_ptr");
-                _builder.BuildStore(val, newFieldPtr);
-            }
-
-            return newPtr;
-        }
 
         public LLVMValueRef VisitAddField(AddFieldNode expr)
         {
@@ -3480,147 +3588,6 @@ namespace MyCompiler
             return fn;
         }
 
-
-        private LLVMValueRef AssembleFullDataframe(DataframeType dfType, LLVMValueRef rawRowsPtr)
-        {
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var rowType = dfType.RowType;
-
-            // --- 1. Create Columns Array ---
-            var colNamesNodes = rowType.RecordFields
-                .Select(f => (ExpressionNode)new StringNode(f.Label))
-                .ToList();
-            var colsArrayExpr = new ArrayNode(colNamesNodes);
-            var colsPtr = Visit(colsArrayExpr); // Reuses your Array logic!
-
-            // --- 2. Create DataTypes Array ---
-            var typeIdNodes = rowType.RecordFields
-                .Select(f => (ExpressionNode)new NumberNode(GetTypeByTag(f.Type)))
-                .ToList();
-            var typesArrayExpr = new ArrayNode(typeIdNodes);
-            var typesPtr = Visit(typesArrayExpr);
-
-            // --- 3. Wrap into Dataframe Struct { ptr, ptr, ptr } ---
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-            var dfPtr = _builder.BuildMalloc(dfStructType, "df_ptr_csv");
-
-            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
-            _builder.BuildStore(rawRowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
-            _builder.BuildStore(typesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
-
-            return dfPtr;
-        }
-
-        // Helper to get schema string for C# side
-        private string GenerateSchemaCode(RecordType schema)
-        {
-            return string.Join("", schema.RecordFields.Select(f =>
-            {
-                var t = f.Type;
-                if (t is IntType) return "I";
-                if (t is StringType) return "S";
-                if (t is BoolType) return "B";
-                if (t is FloatType) return "F";
-                return "U";
-            }));
-        }
-
-
-
-
-        private LLVMValueRef GetOrDeclareReadCsv()
-        {
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var func = _module.GetNamedFunction("ReadCsvInternal");
-            if (func.Handle != IntPtr.Zero) return func;
-
-            // Returns a raw pointer (i8*) to an array/record buffer
-            var type = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr });
-            return _module.AddFunction("ReadCsvInternal", type);
-        }
-
-        private LLVMValueRef GetOrDeclareToCsv()
-        {
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var func = _module.GetNamedFunction("ToCsvInternal");
-            if (func.Handle != IntPtr.Zero) return func;
-
-            // Void return, two i8* (pointer) arguments
-            var type = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { i8Ptr, i8Ptr });
-            return _module.AddFunction("ToCsvInternal", type);
-        }
-
-        private LLVMValueRef CreateRuntimeObject(short tag, LLVMValueRef dataPtr)
-        {
-            var ctx = _module.Context;
-            var i16 = ctx.Int16Type;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-
-            // 1. Define the struct type { i16, ptr } 
-            // Make sure this matches your C# RuntimeValue struct exactly
-            var runtimeObjType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
-
-            // 2. GET MALLOC (Safety Check)
-            // We must look for malloc in the CURRENT module
-            var mallocFunc = _module.GetNamedFunction("malloc");
-            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 });
-
-            if (mallocFunc.Handle == IntPtr.Zero)
-            {
-                // If not found in this module, declare it
-                mallocFunc = _module.AddFunction("malloc", mallocType);
-            }
-
-            // 3. ALLOCATE 16 bytes
-            // This is where your crash was happening because mallocFunc was likely null
-            var runtimeObj = _builder.BuildCall2(
-                mallocType,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 16) },
-                "runtime_obj"
-            );
-
-            // 4. Store the Tag
-            var tagPtr = _builder.BuildStructGEP2(runtimeObjType, runtimeObj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr);
-
-            // 5. Store the Data Pointer
-            var dataFieldPtr = _builder.BuildStructGEP2(runtimeObjType, runtimeObj, 1, "data_ptr");
-            _builder.BuildStore(dataPtr, dataFieldPtr);
-
-            return runtimeObj;
-        }
-
-
-        private LLVMValueRef BuildPointerArray(List<LLVMValueRef> elements)
-        {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            var malloc = GetOrDeclareMalloc();
-
-            var count = elements.Count;
-
-            var size = LLVMValueRef.CreateConstInt(i64, (ulong)(count * 8));
-            var mem = _builder.BuildCall2(_mallocType, malloc, new[] { size }, "arr");
-
-            var cast = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(i8Ptr, 0), "arr_cast");
-
-            for (int i = 0; i < count; i++)
-            {
-                var ptr = _builder.BuildGEP2(i8Ptr, cast,
-                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
-                    "elem_ptr");
-
-                var val = _builder.BuildBitCast(elements[i], i8Ptr, "to_i8ptr");
-
-                _builder.BuildStore(val, ptr);
-            }
-
-            return mem;
-        }
 
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
