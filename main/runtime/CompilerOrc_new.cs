@@ -714,8 +714,6 @@ namespace MyCompiler
             Console.WriteLine("Rows length: " + rows.length);
             Console.WriteLine("Rows capacity: " + rows.capacity);
 
-
-
             // 1. Use your dedicated struct
             var dfObj = Marshal.PtrToStructure<DataframeObject>(ptr);
 
@@ -1754,9 +1752,9 @@ namespace MyCompiler
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({index: 5, name: "Hary potter2", age: 301})
-        }
+        }  // x=dataframe(["name", "age"], type=[string, int])
 
-        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
+        public LLVMValueRef VisitWhereExpr(WhereNodeExpr expr) // x=dataframe(["name", "age"], data=[{name: "dan", age: 30}, {name: "alice", age: 25}])
         {
             // 1. Allocate local variables for source and result
             var srcVarName = "__where_src";       // x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
@@ -1778,69 +1776,143 @@ namespace MyCompiler
                 // Check for different array types (int, string, float, bool)
                 if (elementType is not IntType && elementType is not FloatType && elementType is not StringType && elementType is not BoolType)
                     throw new Exception("Unsupported array element type: " + elementType);
+
+                // Create the result array with the same element type as the source
+                var resultArray = new ArrayNodeExpr(new List<ExpressionNodeExpr>()) { ElementType = elementType };
+
+                Console.WriteLine("result array element type: " + resultArray.ElementType);
+
+                // Save source array into a temp variable
+                var srcAssign = new AssignNodeExpr(srcVarName, expr.SourceExpr);
+
+                // Allocate result array (of the same type as source)
+                var resultAssign = new AssignNodeExpr(resultVarName, resultArray);
+
+                // Initialize loop index
+                var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
+
+                // Loop condition: i < src.length
+                var loopCond = new ComparisonNodeExpr(
+                    new IdNodeExpr(indexVarName),
+                    "<",
+                    new LengthNodeExpr(new IdNodeExpr(srcVarName))
+                );
+
+                // Loop step: i++
+                var loopStep = new IncrementNodeExpr(indexVarName);
+
+                // Current element: src[i]
+                var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
+
+                // Rewrite the iterator variable inside the condition
+                ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+                // Add element to result array if condition is true
+                var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
+
+                var ifBody = new SequenceNodeExpr();
+                ifBody.Statements.Add(addNode);
+                var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+                // Loop body
+                var loopBody = new SequenceNodeExpr();
+                loopBody.Statements.Add(ifNode);
+
+                var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+                // Sequence
+                var program = new SequenceNodeExpr();
+                program.Statements.Add(srcAssign);
+                program.Statements.Add(resultAssign);
+                program.Statements.Add(forLoop);
+
+                // Return the filtered array
+                program.Statements.Add(new IdNodeExpr(resultVarName));
+
+                // Perform semantic checks if you have them
+                PerformSemanticAnalysis(program);
+
+                return VisitSequenceExpr(program);
             }
             else if (sourceType is DataframeType recType)
             {
                 Console.WriteLine("We got data frame and should probably handle things differently");
                 elementType = recType; // For records, the "element type" is the record type itself
+
+
+                var argumentList = new List<NamedArgumentNodeExpr>();
+                // we need the array of columns 
+                // we need the array of records
+
+                var columnsArray = recType.ColumnNames.Select(f => new StringNodeExpr(f) as ExpressionNodeExpr).ToList();
+                var columnsArrayExpr = new ArrayNodeExpr(columnsArray);
+
+                argumentList.Add(new NamedArgumentNodeExpr("columns", columnsArrayExpr));
+
+                //var recordsTypes = (expr.SourceExpr as DataframeNodeExpr).DataTypes;// Placeholder for actual records
+
+
+                //var resultDataframe = new DataframeNodeExpr();
+
+                // Create the result array with the same element type as the source
+                var resultArray = new ArrayNodeExpr(new List<ExpressionNodeExpr>()) { ElementType = elementType };
+
+                Console.WriteLine("result array element type: " + resultArray.ElementType);
+
+                // Save source array into a temp variable
+                var srcAssign = new AssignNodeExpr(srcVarName, expr.SourceExpr);
+
+                // Allocate result array (of the same type as source)
+                var resultAssign = new AssignNodeExpr(resultVarName, resultArray);
+
+                // Initialize loop index
+                var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
+
+                // Loop condition: i < src.length
+                var loopCond = new ComparisonNodeExpr(
+                    new IdNodeExpr(indexVarName),
+                    "<",
+                    new LengthNodeExpr(new IdNodeExpr(srcVarName))
+                );
+
+                // Loop step: i++
+                var loopStep = new IncrementNodeExpr(indexVarName);
+
+                // Current element: src[i]
+                var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
+
+                // Rewrite the iterator variable inside the condition
+                ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+                // Add element to result array if condition is true
+                var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
+
+                var ifBody = new SequenceNodeExpr();
+                ifBody.Statements.Add(addNode);
+                var ifNode = new IfNodeExpr(ifCond, ifBody);
+
+                // Loop body
+                var loopBody = new SequenceNodeExpr();
+                loopBody.Statements.Add(ifNode);
+
+                var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
+
+                // Sequence
+                var program = new SequenceNodeExpr();
+                program.Statements.Add(srcAssign);
+                program.Statements.Add(resultAssign);
+                program.Statements.Add(forLoop);
+
+                // Return the filtered array
+                program.Statements.Add(new IdNodeExpr(resultVarName));
+
+                // Perform semantic checks if you have them
+                PerformSemanticAnalysis(program);
+
+                return VisitSequenceExpr(program);
             }
 
-            // Create the result array with the same element type as the source
-            var resultArray = new ArrayNodeExpr(new List<ExpressionNodeExpr>()) { ElementType = elementType };
-
-            Console.WriteLine("result array element type: " + resultArray.ElementType);
-
-            // Save source array into a temp variable
-            var srcAssign = new AssignNodeExpr(srcVarName, expr.SourceExpr);
-
-            // Allocate result array (of the same type as source)
-            var resultAssign = new AssignNodeExpr(resultVarName, resultArray);
-
-            // Initialize loop index
-            var indexAssign = new AssignNodeExpr(indexVarName, new NumberNodeExpr(0));
-
-            // Loop condition: i < src.length
-            var loopCond = new ComparisonNodeExpr(
-                new IdNodeExpr(indexVarName),
-                "<",
-                new LengthNodeExpr(new IdNodeExpr(srcVarName))
-            );
-
-            // Loop step: i++
-            var loopStep = new IncrementNodeExpr(indexVarName);
-
-            // Current element: src[i]
-            var currentElement = new IndexNodeExpr(new IdNodeExpr(srcVarName), new IdNodeExpr(indexVarName));
-
-            // Rewrite the iterator variable inside the condition
-            ExpressionNodeExpr ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
-
-            // Add element to result array if condition is true
-            var addNode = new AddNodeExpr(new IdNodeExpr(resultVarName), currentElement);
-
-            var ifBody = new SequenceNodeExpr();
-            ifBody.Statements.Add(addNode);
-            var ifNode = new IfNodeExpr(ifCond, ifBody);
-
-            // Loop body
-            var loopBody = new SequenceNodeExpr();
-            loopBody.Statements.Add(ifNode);
-
-            var forLoop = new ForLoopNodeExpr(indexAssign, loopCond, loopStep, loopBody);
-
-            // Sequence
-            var program = new SequenceNodeExpr();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(forLoop);
-
-            // Return the filtered array
-            program.Statements.Add(new IdNodeExpr(resultVarName));
-
-            // Perform semantic checks if you have them
-            PerformSemanticAnalysis(program);
-
-            return VisitSequenceExpr(program);
+            return default;
         }
 
         public LLVMValueRef VisitMapExpr(MapNodeExpr expr)
@@ -2230,10 +2302,7 @@ namespace MyCompiler
             return default;
         }
 
-        private LLVMValueRef HandleDataframeIndexing(
-            LLVMValueRef dataframePtr,
-            LLVMValueRef indexPtr,
-            IndexNodeExpr expr)
+        private LLVMValueRef HandleDataframeIndexing(LLVMValueRef dataframePtr, LLVMValueRef indexPtr, IndexNodeExpr expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
@@ -3592,7 +3661,6 @@ namespace MyCompiler
             return runtimeObj;
         }
 
-
         private LLVMValueRef BuildPointerArray(List<LLVMValueRef> elements)
         {
             var ctx = _module.Context;
@@ -3627,62 +3695,31 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var mallocFunc = GetOrDeclareMalloc();
 
-            // DataframeObject Structure: { i64 (colCount), i64 (rowCount), ptr (cols), ptr (rows) }
+            // 1. Get pointers
+            var colsPtr = Visit(expr.Columns);
+
+            var rowsPtr = Visit(expr.Rows);
+
+            // 2. Build datatype array from TYPE (not AST)
+            var dfType = expr.Type as DataframeType
+                ?? throw new Exception("Expected dataframe type.");
+
+            var datatypeNodes = dfType.DataTypes
+                .Select(t => new NumberNodeExpr(GetTypeByTag(t)))
+                .Cast<ExpressionNodeExpr>()
+                .ToList();
+
+            var datatypeArray = new ArrayNodeExpr(datatypeNodes);
+            var dataTypesPtr = Visit(datatypeArray);
+
+            // 3. Struct: { cols, rows, types }
             var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-
-            // 1. Visit the children to get the Array pointers
-            var colsPtr = Visit(expr.Columns); // returns pointer to ArrayObject
-            var rowsPtr = Visit(expr.Rows);    // returns pointer to ArrayObject
-            List<ExpressionNodeExpr> datatypeIntArray = new List<ExpressionNodeExpr>();
-
-            // Need to store datatypes
-            // Fill the DataTypes array
-            for (int i = 0; i < expr.DataTypes.Count; i++)
-            {
-                int typeId = GetTypeByTag(expr.DataTypes[i]);
-                datatypeIntArray.Add(new NumberNodeExpr(typeId));
-            }
-            var datatypeArray = new ArrayNodeExpr(datatypeIntArray);
-            var datatypeArrayPtr = Visit(datatypeArray);
-
-            var datatypesCount = LLVMValueRef.CreateConstInt(i64, (ulong)datatypeArray.Elements.Count);
-            var datatypesCapacity = LLVMValueRef.CreateConstInt(i64, (ulong)datatypeArray.Elements.Count > 0 ? (ulong)datatypeArray.Elements.Count * 2 : 10);
-
-            var colsCount = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Columns.Elements.Count);
-            var colsCapacity = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Columns.Elements.Count > 0 ? (ulong)expr.Columns.Elements.Count * 2 : 10);
-
-            var rowsCount = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Rows.Elements.Count);
-            var rowsCapacity = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Rows.Elements.Count > 0 ? (ulong)expr.Rows.Elements.Count * 2 : 10);
-
-            // 2. Extract counts from the Array headers (Length is the first i64 in ArrayObject)
-            // We use GEP on the ArrayObject pointers to read the 'length' field
-            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
-
-            var headerRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "header_raw");
-
-            // 4. Store Metadata into DataframeObject
-            // Struct Type: { i64, i64, i8Ptr }
-            _builder.BuildStore(colsCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_col_count"));
-            _builder.BuildStore(colsCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_col_capacity"));
-            _builder.BuildStore(_builder.BuildBitCast(colsPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_cols"));
-
-            _builder.BuildStore(rowsCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_row_count"));
-            _builder.BuildStore(rowsCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_row_capacity"));
-            _builder.BuildStore(_builder.BuildBitCast(rowsPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_rows"));
-
-            _builder.BuildStore(datatypesCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_datatypes_count"));
-            _builder.BuildStore(datatypesCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_datatypes_capacity"));
-            _builder.BuildStore(_builder.BuildBitCast(datatypeArrayPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_datatypes"));
-
-            var dfType = _module.Context.CreateNamedStruct("dataframe");
-            dfType.StructSetBody(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-            var dfPtr = _builder.BuildMalloc(dfType, "df_ptr");
+            var dfPtr = _builder.BuildMalloc(dfStructType, "df");
 
             _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
             _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
-            _builder.BuildStore(datatypeArrayPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
 
             return dfPtr;
         }

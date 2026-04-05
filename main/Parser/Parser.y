@@ -6,7 +6,6 @@
     public object obj; 
     public bool boolVal;
     public double fval;
-    public MyCompiler.Type type; 
     public MyCompiler.NodeExpr node; // Add this to hold AST pieces
     public MyCompiler.ExpressionNodeExpr expr; // Single expression
     public List<MyCompiler.ExpressionNodeExpr> exprList; // for expr_list
@@ -42,7 +41,7 @@
 
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
-%type <type> Type
+%type <expr> Type
 %type <obj> params  /* Use <obj> for lists */
 
 %type <expr> arg
@@ -86,13 +85,13 @@ Statement
     ;
 
 Type
-    : INT                 { $$ = new IntType(); }
-    | FLOAT               { $$ = new FloatType(); }
-    | BOOL                { $$ = new BoolType(); }
-    | STRING              { $$ = new StringType(); }    
-    | VOID                { $$ = new VoidType(); }
-    | NULL                { $$ = new NullType(); }
-    | ARRAY GT Type LT    { $$ = new ArrayType($3); }
+    : INT                 { $$ = new TypeNodeExpr("int"); }
+    | FLOAT               { $$ = new TypeNodeExpr("float"); }
+    | BOOL                { $$ = new TypeNodeExpr("bool"); }
+    | STRING              { $$ = new TypeNodeExpr("string"); }   
+    | VOID                { $$ = new TypeNodeExpr("void"); }
+    | NULL                { $$ = new TypeNodeExpr("null"); }
+    | ARRAY GT Type LT    { $$ = new TypeNodeExpr("array"); }
     ;
 
 Assignment 
@@ -141,9 +140,9 @@ expr
     | FLOAT_LITERAL       { $$ = new FloatNodeExpr($1); }
     | MINUS expr          { $$ = new UnaryOpNodeExpr("-", $2 as ExpressionNodeExpr); }
     | STRING_LITERAL      { $$ = new StringNodeExpr((string)$1); }
-    | STRING              { $$ = new TypeLiteralNodeExpr(new StringType()); }
+    | STRING              { $$ = new TypeLiteralNodeExpr(new TypeNodeExpr("string")); }
     | NULL_LITERAL        { $$ = new NullNodeExpr(); }
-    | Type                { $$ = new TypeLiteralNodeExpr($1); }
+    | Type                { $$ = new TypeLiteralNodeExpr($1 as TypeNodeExpr); }
     
     /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 

@@ -34,7 +34,6 @@ namespace MyCompiler
         {
             try
             {
-
                 Console.WriteLine("--- AST Compiler Shell ---");
 
                 ICompiler compiler = new CompilerOrc();
@@ -43,10 +42,9 @@ namespace MyCompiler
                 bool Debug = true;
                 KeepRunning = true;
 
-
 #if LINUX
-            bool multipleLines = false;
-            string exitText = "e";
+                bool multipleLines = true;
+                string exitText = "e";
 #else
                 bool multipleLines = false;
                 string exitText = "exit";
@@ -60,7 +58,7 @@ namespace MyCompiler
                     Console.ForegroundColor = ConsoleColor.Gray;
                     Console.Write("> "); // Prompt for input
 
-                    var lines = new List<string>();
+                    var lines = new List<string>() { "\n" };
                     var currentLine = new StringBuilder();
                     int cursorPosition = 0;
                     bool isComplete = false;
@@ -133,11 +131,8 @@ namespace MyCompiler
                                 cursorPosition++;
                             }
 
-                            // Redraw line
                             Console.SetCursorPosition(0, Console.CursorTop);
                             Console.Write("> " + currentLine.ToString() + " ");
-
-                            // Move cursor to correct position
                             Console.SetCursorPosition(2 + cursorPosition, Console.CursorTop);
                         }
                     }
@@ -150,6 +145,7 @@ namespace MyCompiler
                     // Add the current lines to user input
                     if (multipleLines)
                     {
+                        Console.WriteLine();
                         if (currentLine.Length > 0)
                             lines.Add(currentLine.ToString());
                         userInput.Append(string.Join(Environment.NewLine, lines).Trim());
@@ -231,14 +227,14 @@ namespace MyCompiler
                                 if (Debug)
                                 {
                                     // 1. Set the color
-                                    //Console.ForegroundColor = ConsoleColor.Cyan;
+                                    Console.ForegroundColor = ConsoleColor.Cyan;
                                     //Console.WriteLine("\nAST Structure:");
 
                                     // 2. Print the tree
                                     //PrintNode(parser.RootNode, 0);
 
                                     // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
-                                    //Console.ResetColor();
+                                    // Console.ResetColor();
                                 }
 
                                 try
@@ -270,7 +266,6 @@ namespace MyCompiler
                                     Console.ResetColor(); // Final safety reset
                                 }
                             }
-
                         }
                     }
                     catch (Exception ex)
@@ -417,7 +412,7 @@ namespace MyCompiler
 
                 // --- Literals & Basic Nodes ---
                 case TypeLiteralNodeExpr t:
-                    Console.WriteLine($"{space}Type Literal: {t.Value}");
+                    Console.WriteLine($"{space}Type Literal: {t.Type}");
                     break;
 
                 case NamedArgumentNodeExpr na:

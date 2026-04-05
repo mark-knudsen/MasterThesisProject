@@ -29,6 +29,14 @@ namespace MyCompiler
         public void SetType(Type type) => Type = type;
     }
 
+    public class TypeNodeExpr : ExpressionNodeExpr
+    {
+        public string Name { get; }
+        public TypeNodeExpr(string name) => Name = name;
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException(); // not used in codegen
+    }
+
     public abstract class StatementNodeExpr : NodeExpr
     {
         public Type Type { get; protected set; }
@@ -601,7 +609,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOpExpr(this);
     }
 
-
     public class RecordField
     {
         public string Label { get; set; }
@@ -732,7 +739,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveFieldExpr(this);
     }
 
-
     public class NamedArgumentNodeExpr : ExpressionNodeExpr
     {
         public string Name { get; }
@@ -749,14 +755,83 @@ namespace MyCompiler
 
     public class DataframeNodeExpr : ExpressionNodeExpr
     {
+        public ArrayNodeExpr Columns { get; }
+        public ArrayNodeExpr Rows { get; }
+        public ArrayNodeExpr DataTypes { get; }
+
+        // Internal flag to prevent double index injection
+        public bool HasIndex { get; set; } = false;
+
+        public DataframeNodeExpr(List<ExpressionNodeExpr> args)
+        {
+            ArrayNodeExpr columns = null;
+            ArrayNodeExpr rows = null;
+            ArrayNodeExpr types = null;
+
+            int positionalIndex = 0;
+
+            foreach (var arg in args.OfType<NamedArgumentNodeExpr>())
+            {
+                var value = arg.Value as ArrayNodeExpr;
+
+                if (value == null)
+                    throw new Exception("Dataframe arguments must be arrays.");
+
+                if (!string.IsNullOrEmpty(arg.Name))
+                {
+                    // Named arguments
+                    switch (arg.Name)
+                    {
+                        case "columns":
+                            columns = value;
+                            break;
+
+                        case "rows":
+                        case "data":
+                            rows = value;
+                            break;
+
+                        case "type":
+                        case "types":
+                            types = value;
+                            break;
+
+                        default:
+                            throw new Exception($"Unknown dataframe argument '{arg.Name}'");
+                    }
+                }
+                else
+                {
+                    // Positional arguments
+                    if (positionalIndex == 0) columns = value;
+                    else if (positionalIndex == 1) rows = value;
+                    else if (positionalIndex == 2) types = value;
+
+                    positionalIndex++;
+                }
+            }
+
+            Columns = columns ?? throw new Exception("Dataframe requires 'columns'");
+            Rows = rows;
+            if (Rows == null)
+                Rows = new ArrayNodeExpr(new List<ExpressionNodeExpr>());
+            DataTypes = types;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+    }
+
+    public class DataframeNodeExpr2 : ExpressionNodeExpr
+    {
         public ArrayNodeExpr Columns { get; private set; }
         public ArrayNodeExpr Rows { get; private set; } // array of RecordNodeExpr
         public List<Type> DataTypes { get; private set; } = new List<Type>();
 
-        public DataframeNodeExpr(List<ExpressionNodeExpr> args)
+        public DataframeNodeExpr2(List<ExpressionNodeExpr> args)
         {
-            for (int i = 0; i < args.Count; i++)
+            for (int i = 0; i < args?.Count; i++)
             {
+                System.Console.WriteLine("hi");
                 var currentArg = args[i];
 
                 // 1. Check if it's a Named Argument (columns=... or data=...)
@@ -772,29 +847,91 @@ namespace MyCompiler
                     else if (named.Name == "data" || named.Name == "rows")
                     {
                         Rows = actualValue;
+                        foreach (var item in actualValue.Elements)
+                        {
+                            DataTypes.Add(item.Type);
+                        }
+                    }
+                    else if (named.Name == "type")
+                    {
+                        System.Console.WriteLine("1");
+                        foreach (var item in actualValue.Elements)
+                        {
+                            DataTypes.Add(item.Type);
+                        }
                     }
                     else if (string.IsNullOrEmpty(named.Name))
                     {
                         // This handles positional arguments that got wrapped 
                         // by the 'arg' rule but have no name string
                         if (i == 0) Columns = actualValue;
-                        else if (i == 1) Rows = actualValue;
+                        else if (i == 1)
+                        {
+                            Rows = actualValue;
+                            foreach (var item in actualValue.Elements)
+                            {
+                                DataTypes.Add(item.Type);
+                            }
+                        }
                     }
                 }
                 // 2. Check if it's a raw ArrayNodeExpr (Direct positional)
                 else if (currentArg is ArrayNodeExpr array)
                 {
                     if (i == 0) Columns = array;
-                    else if (i == 1) Rows = array;
+                    else if (i == 1)
+                    {
+                        System.Console.WriteLine("have array node");
+                        Rows = array;
+                        foreach (var item in array.Elements)
+                        {
+                            DataTypes.Add(item.Type);
+                        }
+                    }
                 }
             }
 
             if (Columns == null) throw new Exception("dataframe requires 'columns' array");
-            if (Rows == null) throw new Exception("dataframe requires 'data' array");
+            if (Rows == null && DataTypes.Count == 0) throw new Exception("dataframe requires data or data type");
+
+            var columns = Columns.Elements.Select(f => (f as StringNodeExpr).Value).ToList();
+
+            System.Console.WriteLine("yo:" + string.Join(", ", columns.Select((n, i) => $"{n}: {columns[i]}")));
+
+            if (Rows == null) System.Console.WriteLine("rows is null");
+            System.Console.WriteLine("yo:" + (Rows?.Elements[0] as RecordNodeExpr)?.Type);
+
+            var records = new List<RecordField>();
+
+            for (int i = 0; i < columns.Count; i++)
+            {
+
+                records.Add(new RecordField() { Label = columns[i], Value = Rows?.Elements[i], Type = DataTypes[i] });
+            }
+            System.Console.WriteLine("yo:" + DataTypes[0]);
+
+            var recordType = new RecordType(records);
+
+            Type = new DataframeType(columns, DataTypes, recordType);
         }
 
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+        {
+            throw new NotImplementedException();
+        }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
+    }
+
+    public class RecordField2
+    {
+        public string Label { get; set; }
+
+        // Used during codegen
+        public ExpressionNodeExpr Value { get; set; }
+
+        // Filled during typechecking
+        public Type Type { get; set; }
     }
 
     public class ColumnsNodeExpr : ExpressionNodeExpr
@@ -823,17 +960,14 @@ namespace MyCompiler
 
     public class TypeLiteralNodeExpr : ExpressionNodeExpr
     {
-        public Type Value { get; }
+        public TypeNodeExpr TypeNode { get; }
 
-        public TypeLiteralNodeExpr(Type value)
+        public TypeLiteralNodeExpr(TypeNodeExpr typeNode)
         {
-            Value = value;
-            Type = value; // The type of a type literal is the type itself
+            TypeNode = typeNode;
         }
-
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitTypeLiteralExpr(this);
     }
-
 }
 
