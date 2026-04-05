@@ -24,7 +24,7 @@ namespace MyCompiler
         {
             var name = node.GetType().Name;
 
-            //if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
+            if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
             return node switch // it says the last numbers node is null
             {
                 NumberNode n => VisitNumber(n),
@@ -623,22 +623,41 @@ namespace MyCompiler
             expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
-
         public Type VisitMap(MapNode expr)
         {
-            var arrayType = Visit(expr.SourceExpr) as ArrayType;
-            if (arrayType == null) throw new Exception("map source must be an array");
+            var sourceType = Visit(expr.SourceExpr);
+            Type elementType;
+
+            // 1. Determine what the iterator 'x' represents
+            if (sourceType is ArrayType arrayType)
+            {
+                elementType = arrayType.ElementType;
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                // For dataframes, we iterate over the RowType (the Record)
+                elementType = dfType.RowType;
+            }
+            else
+            {
+                throw new Exception("Map source must be an array or a dataframe.");
+            }
 
             var previousContext = _context;
 
-            // THE CRITICAL LINE:
-            _context = _context.Add(expr.IteratorId.Name, default, null!, arrayType.ElementType);
+            // 2. Inject 'x' into the context with the correct type (Primitive or Record)
+            _context = _context.Add(expr.IteratorId.Name, default, null!, elementType);
 
             try
             {
+                // Visit the iterator ID to ensure it's registered
                 Visit(expr.IteratorId);
+
+                // 3. Visit the transformation (the lambda body)
+                // If x is a Record, x.name will now resolve correctly because x has RowType
                 var bodyType = Visit(expr.Assignment);
 
+                // 4. The result of a Map is always an Array of whatever the body returns
                 var resultType = new ArrayType(bodyType);
                 expr.SetType(resultType);
                 return resultType;
@@ -648,6 +667,7 @@ namespace MyCompiler
                 _context = previousContext;
             }
         }
+
 
 
         public Type VisitReadCsv(ReadCsvNode expr)
@@ -1066,7 +1086,7 @@ namespace MyCompiler
             // Visit all column expressions to validate them
             foreach (var col in expr.Columns)
             {
-                System.Console.WriteLine("type check of columns: ", (col as StringNode).Value);
+                //System.Console.WriteLine("type check of columns: ", (col as StringNode).Value);
                 var colType = Visit(col);
                 if (!(colType is StringType))
                     throw new Exception($"Show column names must be strings, got {colType}");

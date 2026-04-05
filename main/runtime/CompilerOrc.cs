@@ -1839,128 +1839,85 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
-
         public LLVMValueRef VisitMap(MapNode expr)
         {
-            var arrayType = (ArrayType)expr.SourceExpr.Type;
+            // --- 1. PRE-PROCESS: Extract the Array ---
+            ExpressionNode effectiveSource = expr.SourceExpr;
+            bool isFromDataframe = expr.SourceExpr.Type is DataframeType;
+
+            if (isFromDataframe)
+            {
+                var dfType = (DataframeType)expr.SourceExpr.Type;
+                // Logic: Turn 'df' into 'df._rows' (the internal Array<Record>)
+                effectiveSource = new InternalDataframeFieldNode(
+                    expr.SourceExpr,
+                    1, // The Index of the rows array in the struct
+                    new ArrayType(dfType.RowType)
+                );
+                // Ensure the effective source has the correct type for the logic below
+                effectiveSource.SetType(new ArrayType(dfType.RowType));
+            }
+
+            var arrayType = (ArrayType)effectiveSource.Type;
             var resultType = (ArrayType)expr.Type;
             var intType = new IntType();
 
+            // --- 2. LOOP SETUP (Standard Array Logic) ---
             var srcVarName = "__map_src";
             var resultVarName = "__map_result";
             var indexVarName = "__map_i";
 
-            // 1. Context Injection
             _context = _context.Add(srcVarName, default, null!, arrayType);
             _context = _context.Add(resultVarName, default, null!, resultType);
             _context = _context.Add(indexVarName, default, null!, intType);
 
             IdNode TypedId(string name, Type type)
             {
-                var id = new IdNode(name);
-                id.SetType(type);
-                return id;
+                var id = new IdNode(name); id.SetType(type); return id;
             }
 
-            // 2. Setup Loop Logic Nodes
-            var srcAssign = new AssignNode(srcVarName, new CopyArrayNode(expr.SourceExpr));
-            srcAssign.SetType(arrayType);
-
+            var srcAssign = new AssignNode(srcVarName, new CopyArrayNode(effectiveSource));
             var resultAssign = new AssignNode(resultVarName, new CopyArrayNode(TypedId(srcVarName, arrayType)));
-            resultAssign.SetType(resultType);
-
             var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
-            indexAssign.SetType(intType);
 
-            var loopCond = new ComparisonNode(
-                TypedId(indexVarName, intType),
-                "<",
-                new LengthNode(TypedId(srcVarName, arrayType))
-            );
-
+            var loopCond = new ComparisonNode(TypedId(indexVarName, intType), "<", new LengthNode(TypedId(srcVarName, arrayType)));
             var loopStep = new IncrementNode(indexVarName);
+
+            // This is the 'x' in 'x => x.age'
             var currentElement = new IndexNode(TypedId(srcVarName, arrayType), TypedId(indexVarName, intType));
             currentElement.SetType(arrayType.ElementType);
 
+            // Replace iterator in 'x.age + 2' with the indexed access
             var mapExpr = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
 
-            var indexAssignNode = new IndexAssignNode(
-                TypedId(resultVarName, resultType),
-                TypedId(indexVarName, intType),
-                mapExpr
-            );
-
+            var indexAssignNode = new IndexAssignNode(TypedId(resultVarName, resultType), TypedId(indexVarName, intType), mapExpr);
             var loopBody = new SequenceNode();
             loopBody.Statements.Add(indexAssignNode);
 
             var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
-
-            // 3. Generate the Loop IR
             var program = new SequenceNode();
             program.Statements.Add(srcAssign);
             program.Statements.Add(resultAssign);
             program.Statements.Add(forLoop);
 
+            // 3. Execute the Loop AST
             VisitSequence(program);
 
-            // 4. LLVM 20 TYPE DEFINITION
-            // Define the dataframe structure: { ptr cols, ptr rows, ptr types }
-            var ptrType = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { ptrType, ptrType, ptrType }, false);
+            // 4. GET THE RAW POINTER
+            // Do NOT use BoxValue here yet. Just get the pointer to the header.
+            var resultValue = Visit(new IdNode(resultVarName));
 
-            // 5. EXTRACT METADATA FROM SOURCE
-            var mappedRows = Visit(new IdNode(resultVarName));
-            var sourceDfPtr = Visit(expr.SourceExpr);
-
-            // Extract pointers for Column Names (Index 0) and Column Types (Index 2)
-            var sourceColsGep = _builder.BuildStructGEP2(dfStructType, sourceDfPtr, 0, "src_cols_gep");
-            var sourceTypesGep = _builder.BuildStructGEP2(dfStructType, sourceDfPtr, 2, "src_types_gep");
-
-            var colNamesPtr = _builder.BuildLoad2(ptrType, sourceColsGep, "col_names");
-            var colTypesPtr = _builder.BuildLoad2(ptrType, sourceTypesGep, "col_types");
-
-            // 6. ALLOCATE NEW DATAFRAME HEADER
-            var i64 = _module.Context.Int64Type;
-            var mallocFunc = GetOrDeclareMalloc();
-            var mallocProto = LLVMTypeRef.CreateFunction(ptrType, new[] { i64 }, false);
-
-            // Allocate 24 bytes (3 pointers * 8 bytes)
-            var dfMalloc = _builder.BuildCall2(
-                mallocProto,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 24) },
-                "df_header_raw"
-            );
-
-            // Cast the raw malloc memory to our Dataframe struct pointer
-            var dfPtrTyped = _builder.BuildBitCast(dfMalloc, LLVMTypeRef.CreatePointer(dfStructType, 0), "df_ptr");
-
-            // 7. STORE DATA INTO THE NEW HEADER
-            var destColsGep = _builder.BuildStructGEP2(dfStructType, dfPtrTyped, 0, "dest_cols_gep");
-            var destRowsGep = _builder.BuildStructGEP2(dfStructType, dfPtrTyped, 1, "dest_rows_gep");
-            var destTypesGep = _builder.BuildStructGEP2(dfStructType, dfPtrTyped, 2, "dest_types_gep");
-
-            _builder.BuildStore(colNamesPtr, destColsGep);
-            _builder.BuildStore(mappedRows, destRowsGep);
-            _builder.BuildStore(colTypesPtr, destTypesGep);
-
-            // --- REMOVE THE CODE THAT CREATES df_ptr63 ---
-            // (The code that calls malloc(i32 ptrtoint ...) and stores arr_header again)
-
-            // 8. FINAL BOXING FIX
-            var finalResultType = expr.Type;
-
-            if (finalResultType == null || finalResultType is VoidType)
+            // 5. MANUAL BOXING BASED ON TYPE
+            if (isFromDataframe && resultType.ElementType is RecordType resRecordType)
             {
-                // Ensure we use the schema from our mapped result
-                var rowSchema = (RecordType)resultType.ElementType;
-                finalResultType = new DataframeType(new List<string>(), new List<Type>(), rowSchema);
+                // Wrap the raw result array back into a Dataframe struct
+                return WrapArrayAsDataframe(resultValue, resRecordType);
             }
 
-            // Return the direct pointer to the 3-pointer struct {cols, rows, types}
-            return BoxValue(dfPtrTyped, finalResultType);
-
+            // If it's a standard array map, box it ONCE
+            return BoxValue(resultValue, resultType);
         }
+
 
         // REMOVE THIS:
         // PerformSemanticAnalysis(program); 
@@ -2001,6 +1958,33 @@ namespace MyCompiler
             return sourceVal;
         }
 
+
+        private LLVMValueRef WrapArrayAsDataframe(LLVMValueRef rowsArrayPtr, RecordType rowType)
+        {
+            // 1. Generate Column Names Array from the Record Labels
+            var colNames = rowType.RecordFields.Select(f => f.Label).ToList();
+            var colNamesArrayExpr = new ArrayNode(colNames.Select(c => (ExpressionNode)new StringNode(c)).ToList());
+            var colNamesPtr = Visit(colNamesArrayExpr);
+
+            // 2. Generate Type Tags Array
+            var typeTagsArrayExpr = new ArrayNode(rowType.RecordFields.Select(f => (ExpressionNode)new NumberNode(GetTagForType(f.Type))).ToList());
+            var typeTagsPtr = Visit(typeTagsArrayExpr);
+
+            // 3. Malloc the 3-pointer struct { cols, rows, types }
+            var dfHeader = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
+                new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 24) }, "df_header");
+
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+
+            _builder.BuildStore(colNamesPtr, _builder.BuildStructGEP2(dfStructType, dfHeader, 0));
+            _builder.BuildStore(rowsArrayPtr, _builder.BuildStructGEP2(dfStructType, dfHeader, 1));
+            _builder.BuildStore(typeTagsPtr, _builder.BuildStructGEP2(dfStructType, dfHeader, 2));
+
+            // 4. Box it as a Dataframe Type
+            var dfType = new DataframeType(colNames, rowType.RecordFields.Select(f => f.Type).ToList(), rowType);
+            return BoxValue(dfHeader, dfType);
+        }
 
 
         private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
@@ -3849,80 +3833,89 @@ namespace MyCompiler
             // The name is used for semantic analysis and doesn't affect codegen directly.
             return Visit(expr.Value);
         }
+
         public LLVMValueRef VisitShowDataframe(ShowDataframeNode expr)
         {
             var sourceType = expr.Source.Type as DataframeType;
             if (sourceType == null) throw new Exception("Show requires a Dataframe source");
 
             var requestedNames = new List<string>();
-            var requestedColumns = new List<ExpressionNode>();
-
             foreach (var col in expr.Columns)
             {
-                Console.WriteLine("columns data: ", col);
-                if (col is StringNode strNode)
-                {
-                    requestedNames.Add(strNode.Value);
-                    requestedColumns.Add(col);
-                }
+                if (col is StringNode strNode) requestedNames.Add(strNode.Value);
                 else throw new Exception("Show columns must be string literals");
             }
 
+            // 1. Extract the 'rows' array from the source dataframe
+            var getRowsArray = new InternalDataframeFieldNode(
+                expr.Source,
+                1, // Field 1 is the rows array
+                new ArrayType(sourceType.RowType)
+            );
 
-            // 1. Setup Source Rows
-            var getRowsArray = new InternalDataframeFieldNode(expr.Source, 1, new ArrayType(sourceType.RowType));
             var tempRowsVar = "$src_rows";
             var assignTemp = new AssignNode(tempRowsVar, getRowsArray);
 
-            // 2. Setup Iterator
+            // 2. Build the Record Transformation (The Projection)
             var itName = "$row_show";
             var itId = new IdNode(itName);
-            itId.SetType(sourceType.RowType); // Seed type for PropertyAccess
+            itId.SetType(sourceType.RowType);
 
-            // 3. Build Row Transform
             var newFields = new List<NamedArgumentNode>();
             foreach (var name in requestedNames)
             {
-                newFields.Add(new NamedArgumentNode(name, new PropertyAccessNode(itId, name)));
+                var fieldAccess = new PropertyAccessNode(itId, name);
+                newFields.Add(new NamedArgumentNode(name, fieldAccess));
             }
             var rowTransform = new RecordNode(newFields);
 
-            // 4. Build Nodes
+            // 3. Create the MapNode (reusing our generic array map!)
             var mappedRows = new MapNode(itId, new IdNode(tempRowsVar), rowTransform);
-            var constructionNode = new DataframeNode(new List<ExpressionNode> {
-                new ArrayNode(requestedColumns),
-                mappedRows
-            });
 
-            // --- FIX: Explicitly populate DataTypes for the constructionNode ---
-            constructionNode.DataTypes.Clear(); // Ensure fresh start
+            // 4. Build the new Column Names array
+            var columnExprs = requestedNames.Select(n => (ExpressionNode)new StringNode(n)).ToList();
+            var columnArray = new ArrayNode(columnExprs);
+
+            // 5. Construct the final DataframeNode
+            var dfNode = new DataframeNode(new List<ExpressionNode> { columnArray, mappedRows });
+
+            // 6. Transfer the correct data types for the new schema
+            dfNode.DataTypes.Clear();
             foreach (var name in requestedNames)
             {
                 int idx = sourceType.ColumnNames.IndexOf(name);
                 if (idx == -1) throw new Exception($"Column {name} not found");
-                constructionNode.DataTypes.Add(sourceType.DataTypes[idx]);
+                dfNode.DataTypes.Add(sourceType.DataTypes[idx]);
             }
 
-            // 5. Sequence and Analysis
+            // 7. Sequence and Execute
             var seq = new SequenceNode();
             seq.Statements.Add(assignTemp);
-            seq.Statements.Add(constructionNode);
+            seq.Statements.Add(dfNode);
 
-            PerformSemanticAnalysis(seq);
-
+            PerformSemanticAnalysis(seq); // Important: Re-check types for the new nodes
             return Visit(seq);
         }
 
+
+
         public LLVMValueRef VisitInternalDataframeField(InternalDataframeFieldNode node)
         {
+            // The source might be a Pointer to a Pointer (if it's a variable)
+            // Ensure dfPtr is the actual pointer to the struct
             var dfPtr = Visit(node.Source);
+
             var ctx = _module.Context;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // Layout: { ptr cols, ptr rows, ptr types }
+            // Layout: { ptr colNames, ptr rowArray, ptr colTypes }
+            // Note: If your struct is defined as %dataframe = type { ptr, ptr, ptr }
             var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
 
+            // GEP to the field (0=cols, 1=rows, 2=types)
             var fieldPtr = _builder.BuildStructGEP2(dfStructType, dfPtr, (uint)node.FieldIndex, "df_field_extract");
+
+            // Load the pointer stored at that field
             return _builder.BuildLoad2(i8Ptr, fieldPtr, "arr_header_ptr");
         }
         public LLVMValueRef VisitPropertyAccess(PropertyAccessNode node)
@@ -3932,38 +3925,41 @@ namespace MyCompiler
             int fieldIdx = recType.RecordFields.FindIndex(f => f.Label == node.PropertyName);
             var fieldType = recType.RecordFields[fieldIdx].Type;
 
-            // 1. Get the pointer to the record slot
-            var ptrType = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var indexValue = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)fieldIdx);
-            var fieldSlot = _builder.BuildGEP2(ptrType, recPtr, new[] { indexValue }, $"gep_{node.PropertyName}");
+            var ctx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 2. Load the value stored in the slot (this is always a pointer)
-            var dataPtr = _builder.BuildLoad2(ptrType, fieldSlot, $"ptr_to_{node.PropertyName}");
+            // GEP to the slot in the record (which is an array of pointers)
+            var fieldSlot = _builder.BuildGEP2(i8Ptr, recPtr,
+                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)fieldIdx) }, $"gep_{node.PropertyName}");
 
-            // 3. ONLY load again if it's a boxed primitive (Int, Float, Bool)
-            // If it's a String, 'dataPtr' IS the pointer to the characters.
+            // Load the pointer stored in that slot
+            var boxPtr = _builder.BuildLoad2(i8Ptr, fieldSlot, $"ptr_to_{node.PropertyName}");
+
             if (fieldType is StringType)
             {
-                return dataPtr;
+                return boxPtr; // Strings are just pointers
             }
             else
             {
-                LLVMTypeRef llvmFieldType = MapToLLVMType(fieldType);
-                return _builder.BuildLoad2(llvmFieldType, dataPtr, $"val_{node.PropertyName}");
+                // For Int/Float/Bool, we must LOAD the value out of the box
+                // This allows RecordNode to create a FRESH box for the new record
+                LLVMTypeRef llvmType = MapToLLVMType(fieldType);
+                return _builder.BuildLoad2(llvmType, boxPtr, $"val_{node.PropertyName}");
             }
         }
+
 
         private LLVMTypeRef MapToLLVMType(Type type)
         {
             var ctx = _module.Context;
-            if (type is IntType) return ctx.Int64Type;     // Assuming 64-bit ints
-            if (type is FloatType) return ctx.DoubleType;  // This fixes the scientific notation!
+            if (type is IntType) return ctx.Int64Type;
+            if (type is FloatType) return ctx.DoubleType; // Use 64-bit double
             if (type is BoolType) return ctx.Int1Type;
             if (type is StringType) return LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // Default to pointer for complex types
             return LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
         }
+
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
