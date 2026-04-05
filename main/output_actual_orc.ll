@@ -1,12 +1,10 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-%dataframe = type { ptr, ptr, ptr }
-
-@df2 = external global ptr
+@df3 = external global ptr
 @"$src_rows" = external global ptr, align 8
-@str = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@str.1 = private unnamed_addr constant [4 x i8] c"age\00", align 1
+@str = private unnamed_addr constant [4 x i8] c"age\00", align 1
+@str.1 = private unnamed_addr constant [8 x i8] c"savings\00", align 1
 @__map_src = external global ptr, align 8
 @__map_result = external global ptr, align 8
 @__map_i = external global i64, align 8
@@ -14,10 +12,10 @@ source_filename = "repl_module"
 @err_msg.2 = private unnamed_addr constant [37 x i8] c"Runtime Error: Index Out of Bounds!\0A\00", align 1
 @err_msg.3 = private unnamed_addr constant [37 x i8] c"Runtime Error: Index Out of Bounds!\0A\00", align 1
 
-define ptr @main_2() {
+define ptr @main_12() {
 entry:
-  %df2_load = load ptr, ptr @df2, align 8
-  %df_field_extract = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df2_load, i32 0, i32 1
+  %df3_load = load ptr, ptr @df3, align 8
+  %df_field_extract = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df3_load, i32 0, i32 1
   %arr_header_ptr = load ptr, ptr %df_field_extract, align 8
   store ptr %arr_header_ptr, ptr @"$src_rows", align 8
   %arr_header = call ptr @malloc(i64 24)
@@ -210,10 +208,10 @@ for.step:                                         ; preds = %bounds.ok76
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-  %__map_result_load82 = load ptr, ptr @__map_result, align 8
-  %"$src_rows_load83" = load ptr, ptr @"$src_rows", align 8
-  %src_cols_gep = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %"$src_rows_load83", i32 0, i32 0
-  %src_types_gep = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %"$src_rows_load83", i32 0, i32 2
+  %__map_result_load84 = load ptr, ptr @__map_result, align 8
+  %"$src_rows_load85" = load ptr, ptr @"$src_rows", align 8
+  %src_cols_gep = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %"$src_rows_load85", i32 0, i32 0
+  %src_types_gep = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %"$src_rows_load85", i32 0, i32 2
   %col_names = load ptr, ptr %src_cols_gep, align 8
   %col_types = load ptr, ptr %src_types_gep, align 8
   %df_header_raw = call ptr @malloc(i64 24)
@@ -222,35 +220,33 @@ for.end:                                          ; preds = %for.cond
   %dest_rows_gep = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 1
   %dest_types_gep = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 2
   store ptr %col_names, ptr %dest_cols_gep, align 8
-  store ptr %__map_result_load82, ptr %dest_rows_gep, align 8
+  store ptr %__map_result_load84, ptr %dest_rows_gep, align 8
   store ptr %col_types, ptr %dest_types_gep, align 8
-  %tags_data = call ptr @malloc(i64 16)
-  %tag_slot_0 = getelementptr i8, ptr %tags_data, i64 0
-  %tag_cast_0 = bitcast ptr %tag_slot_0 to ptr
-  store i64 4, ptr %tag_cast_0, align 4
-  %tag_slot_1 = getelementptr i8, ptr %tags_data, i64 8
-  %tag_cast_1 = bitcast ptr %tag_slot_1 to ptr
-  store i64 1, ptr %tag_cast_1, align 4
-  %tags_header = call ptr @malloc(i64 24)
-  %25 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %tags_header, i32 0, i32 0
+  %arr_header86 = call ptr @malloc(i64 24)
+  %arr_data87 = call ptr @malloc(i64 32)
+  %25 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header86, i32 0, i32 0
   store i64 2, ptr %25, align 4
-  %26 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %tags_header, i32 0, i32 1
-  store i64 2, ptr %26, align 4
-  %27 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %tags_header, i32 0, i32 2
-  store ptr %tags_data, ptr %27, align 8
-  %df_ptr84 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
-  %28 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr84, i32 0, i32 0
+  %26 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header86, i32 0, i32 1
+  store i64 4, ptr %26, align 4
+  %27 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header86, i32 0, i32 2
+  store ptr %arr_data87, ptr %27, align 8
+  %elem_ptr88 = getelementptr ptr, ptr %arr_data87, i64 0
+  store ptr bitcast (i64 1 to ptr), ptr %elem_ptr88, align 8
+  %elem_ptr89 = getelementptr ptr, ptr %arr_data87, i64 1
+  store ptr bitcast (i64 2 to ptr), ptr %elem_ptr89, align 8
+  %df = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr ({ ptr, ptr, ptr }, ptr null, i32 1) to i32))
+  %28 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df, i32 0, i32 0
   store ptr %arr_header, ptr %28, align 8
-  %29 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr84, i32 0, i32 1
+  %29 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df, i32 0, i32 1
   store ptr %df_ptr, ptr %29, align 8
-  %30 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr84, i32 0, i32 2
-  store ptr %tags_header, ptr %30, align 8
+  %30 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df, i32 0, i32 2
+  store ptr %arr_header86, ptr %30, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_cast, i32 0, i32 0
   store i16 7, ptr %tag_ptr, align 8
-  %data_ptr85 = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %df_ptr84, ptr %data_ptr85, align 8
+  %data_ptr90 = getelementptr inbounds nuw { i16, ptr }, ptr %runtime_cast, i32 0, i32 1
+  store ptr %df, ptr %data_ptr90, align 8
   ret ptr %runtime_obj
 
 assign_bounds.fail:                               ; preds = %for.body
@@ -277,10 +273,14 @@ bounds.fail:                                      ; preds = %assign_bounds.ok
 bounds.ok:                                        ; preds = %assign_bounds.ok
   %elem_ptr67 = getelementptr ptr, ptr %data_ptr64, i64 %__map_i_load62
   %raw_val = load ptr, ptr %elem_ptr67, align 8
-  %gep_name = getelementptr ptr, ptr %raw_val, i64 1
-  %ptr_to_name = load ptr, ptr %gep_name, align 8
+  %gep_age = getelementptr ptr, ptr %raw_val, i64 2
+  %ptr_to_age = load ptr, ptr %gep_age, align 8
+  %val_age = load i64, ptr %ptr_to_age, align 4
+  %field_mem = call ptr @malloc(i64 8)
+  %cast = bitcast ptr %field_mem to ptr
+  store i64 %val_age, ptr %cast, align 4
   %field_ptr = getelementptr ptr, ptr %record_buffer, i64 0
-  store ptr %ptr_to_name, ptr %field_ptr, align 8
+  store ptr %field_mem, ptr %field_ptr, align 8
   %__map_src_load68 = load ptr, ptr @__map_src, align 8
   %__map_i_load69 = load i64, ptr @__map_i, align 8
   %len_field_ptr70 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %__map_src_load68, i32 0, i32 0
@@ -299,17 +299,17 @@ bounds.fail75:                                    ; preds = %bounds.ok
 bounds.ok76:                                      ; preds = %bounds.ok
   %elem_ptr78 = getelementptr ptr, ptr %data_ptr73, i64 %__map_i_load69
   %raw_val79 = load ptr, ptr %elem_ptr78, align 8
-  %gep_age = getelementptr ptr, ptr %raw_val79, i64 2
-  %ptr_to_age = load ptr, ptr %gep_age, align 8
-  %val_age = load i64, ptr %ptr_to_age, align 4
-  %field_mem = call ptr @malloc(i64 8)
-  %cast = bitcast ptr %field_mem to ptr
-  store i64 %val_age, ptr %cast, align 4
-  %field_ptr80 = getelementptr ptr, ptr %record_buffer, i64 1
-  store ptr %field_mem, ptr %field_ptr80, align 8
+  %gep_savings = getelementptr ptr, ptr %raw_val79, i64 4
+  %ptr_to_savings = load ptr, ptr %gep_savings, align 8
+  %val_savings = load double, ptr %ptr_to_savings, align 8
+  %field_mem80 = call ptr @malloc(i64 8)
+  %cast81 = bitcast ptr %field_mem80 to ptr
+  store double %val_savings, ptr %cast81, align 8
+  %field_ptr82 = getelementptr ptr, ptr %record_buffer, i64 1
+  store ptr %field_mem80, ptr %field_ptr82, align 8
   %val_to_ptr = bitcast ptr %record_buffer to ptr
-  %elem_ptr81 = getelementptr ptr, ptr %data_ptr, i64 %__map_i_load60
-  store ptr %val_to_ptr, ptr %elem_ptr81, align 8
+  %elem_ptr83 = getelementptr ptr, ptr %data_ptr, i64 %__map_i_load60
+  store ptr %val_to_ptr, ptr %elem_ptr83, align 8
   br label %for.step
 }
 

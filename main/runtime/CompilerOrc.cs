@@ -3722,71 +3722,36 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i64Ptr = LLVMTypeRef.CreatePointer(i64, 0); // Pointer to 64-bit int
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var mallocFunc = GetOrDeclareMalloc();
 
-            // The Dataframe Header { ptr cols, ptr rows, ptr types }
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-            // The Array Header { i64 length, i64 capacity, i8Ptr data }
-            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
-
-            // 1. Visit the children
+            // 1. Get pointers
             var colsPtr = Visit(expr.Columns);
+
             var rowsPtr = Visit(expr.Rows);
 
-            // 2. Handle DataTypes
-            int tagCount = expr.DataTypes.Count;
-            uint dataSize = (uint)(tagCount * 8);
+            // 2. Build datatype array from TYPE (not AST)
+            var dfType = expr.Type as DataframeType
+                ?? throw new Exception("Expected dataframe type.");
 
-            var tagsDataPtr = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, dataSize) }, "tags_data");
+            var datatypeNodes = dfType.DataTypes
+                .Select(t => new NumberNode(GetTypeByTag(t)))
+                .Cast<ExpressionNode>()
+                .ToList();
 
-            for (int i = 0; i < tagCount; i++)
-            {
-                var currentType = expr.DataTypes[i];
-                if (currentType == null)
-                {
-                    Console.WriteLine($"Warning: Column {i} has no type information. Defaulting to None.");
-                }
+            var datatypeArray = new ArrayNode(datatypeNodes);
+            var dataTypesPtr = Visit(datatypeArray);
 
-                // 1. Get the tag ID (String should be 4, Int should be 1, etc.)
-                int typeId = GetTypeByTag(expr.DataTypes[i]);
-
-                // 2. Calculate the byte offset (i * 8)
-                var offset = LLVMValueRef.CreateConstInt(i64, (ulong)(i * 8));
-
-                // 3. GEP using ctx.Int8Type to move by bytes
-                var slotPtr = _builder.BuildGEP2(ctx.Int8Type, tagsDataPtr,
-                    new[] { offset }, $"tag_slot_{i}");
-
-                // 4. CAST the pointer from i8* to i64* so we can store 8 bytes
-                var i64PtrType = LLVMTypeRef.CreatePointer(i64, 0);
-                var tagCast = _builder.BuildBitCast(slotPtr, i64PtrType, $"tag_cast_{i}");
-
-                // 5. Store the actual ID
-                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)typeId), tagCast);
-            }
-
-            // Create Array Header for tags
-            var tagsHeader = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "tags_header");
-
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tagCount), _builder.BuildStructGEP2(arrayStructType, tagsHeader, 0));
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tagCount), _builder.BuildStructGEP2(arrayStructType, tagsHeader, 1));
-            _builder.BuildStore(tagsDataPtr, _builder.BuildStructGEP2(arrayStructType, tagsHeader, 2));
-
-            // 3. Final Dataframe Allocation
-            var dfType = _module.Context.CreateNamedStruct("dataframe");
-            dfType.StructSetBody(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-            var dfPtr = _builder.BuildMalloc(dfType, "df_ptr");
+            // 3. Struct: { cols, rows, types }
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfPtr = _builder.BuildMalloc(dfStructType, "df");
 
             _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
             _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
-            _builder.BuildStore(tagsHeader, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
 
             return dfPtr;
         }
+
         private string FormatTable(List<string> columnNames, List<List<object>> rows, List<long> colTypes)
         {
             int colCount = columnNames.Count;
