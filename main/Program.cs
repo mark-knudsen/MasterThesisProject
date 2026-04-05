@@ -231,14 +231,14 @@ namespace MyCompiler
                                 if (Debug)
                                 {
                                     // 1. Set the color
-                                    Console.ForegroundColor = ConsoleColor.Cyan;
-                                    Console.WriteLine("\nAST Structure:");
+                                    //Console.ForegroundColor = ConsoleColor.Cyan;
+                                    //Console.WriteLine("\nAST Structure:");
 
                                     // 2. Print the tree
-                                    PrintNode(parser.RootNode, 0);
+                                    //PrintNode(parser.RootNode, 0);
 
                                     // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
-                                    Console.ResetColor();
+                                    //Console.ResetColor();
                                 }
 
                                 try

@@ -18,7 +18,7 @@ namespace MyCompiler
     [StructLayout(LayoutKind.Sequential, Pack = 8)] // Pack 8 is standard for 64-bit pointers
     public struct RuntimeValue
     {
-        public long tag;
+        public Int16 tag;
         // The compiler adds 6 bytes of padding here automatically to align the pointer to 8
         public IntPtr data;
     }
@@ -342,7 +342,7 @@ namespace MyCompiler
             // Use a Named Struct so it's easy to see in IR
             _runtimeValueType = ctx.CreateNamedStruct("RuntimeValue");
             // Ensure this matches your C# 'public Int16 tag; public IntPtr data;'
-            _runtimeValueType.StructSetBody(new[] { ctx.Int64Type, i8Ptr }, false);
+            _runtimeValueType.StructSetBody(new[] { ctx.Int16Type, i8Ptr }, false);
         }
 
         private void DeclarePrintf()
@@ -755,14 +755,14 @@ namespace MyCompiler
         {
             return type switch
             {
-                IntType => (int)ValueTag.Int,
-                FloatType => (int)ValueTag.Float,
-                BoolType => (int)ValueTag.Bool,
-                StringType => (int)ValueTag.String,
-                ArrayType => (int)ValueTag.Array,
-                RecordType => (int)ValueTag.Record,
-                DataframeType => (int)ValueTag.Dataframe,
-                _ => (int)ValueTag.None
+                IntType => (Int16)ValueTag.Int,
+                FloatType => (Int16)ValueTag.Float,
+                BoolType => (Int16)ValueTag.Bool,
+                StringType => (Int16)ValueTag.String,
+                ArrayType => (Int16)ValueTag.Array,
+                RecordType => (Int16)ValueTag.Record,
+                DataframeType => (Int16)ValueTag.Dataframe,
+                _ => (Int16)ValueTag.None
             };
         }
 
@@ -774,7 +774,7 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var mallocFunc = GetOrDeclareMalloc();
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
 
             // --- THE SHIELD ---
             // If the type is already a pointer to our RuntimeValue struct, DO NOT BOX AGAIN.    
@@ -837,7 +837,7 @@ namespace MyCompiler
 
             // Store tag
             var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr).SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr).SetAlignment(8);
 
             // Store data
             var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 1, "data_ptr");
@@ -3290,14 +3290,14 @@ namespace MyCompiler
         // Helper to return a null/none RuntimeValue { i64 0, ptr null }
         private LLVMValueRef GenerateNoneResponse()
         {
-            var i64 = _module.Context.Int64Type;
+            var ctx = _module.Context;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
             var runtimeObj = _builder.BuildMalloc(_runtimeValueType, "none_obj");
             var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 0, "tag_ptr");
             var dataPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
 
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), tagPtr); // Tag 0 = None
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, 0), tagPtr); // Tag 0 = None
             _builder.BuildStore(LLVMValueRef.CreateConstNull(i8Ptr), dataPtr);
 
             return runtimeObj;
@@ -3338,9 +3338,9 @@ namespace MyCompiler
                                 new[] { pathValue, schemaValue }, "csv_boxed_res");
 
             // Unbox the Rows Array Pointer { i64 tag, ptr data } from the RuntimeValue
-            var i64 = _module.Context.Int64Type;
+            var ctx = _module.Context;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { ctx.Int16Type, i8Ptr }, false);
 
             var dataPtrAddr = _builder.BuildStructGEP2(runtimeValueType, boxedResult, 1, "unbox_ptr");
             var rawRowsPtr = _builder.BuildLoad2(i8Ptr, dataPtrAddr, "raw_rows_ptr");
@@ -3663,7 +3663,7 @@ namespace MyCompiler
             var headerRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "header_raw");
 
             // 4. Store Metadata into DataframeObject
-            // Struct Type: { i64, i64, i8Ptr, i8Ptr }
+            // Struct Type: { i64, i64, i8Ptr }
             _builder.BuildStore(colsCount, _builder.BuildStructGEP2(arrayStructType, headerRaw, 0, "df_col_count"));
             _builder.BuildStore(colsCapacity, _builder.BuildStructGEP2(arrayStructType, headerRaw, 1, "df_col_capacity"));
             _builder.BuildStore(_builder.BuildBitCast(colsPtr, i8Ptr), _builder.BuildStructGEP2(arrayStructType, headerRaw, 2, "df_cols"));
