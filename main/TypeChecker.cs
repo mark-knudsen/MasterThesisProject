@@ -46,7 +46,6 @@ namespace MyCompiler
                 ForLoopNode _for => VisitForLoop(_for),
                 ForEachLoopNode _foreach => VisitForEachLoop(_foreach),
                 ArrayNode arr => VisitArray(arr),
-                //CopyArrayNode clo => VisitCopyArray(clo),
                 IndexNode idx => VisitIndex(idx),
                 IndexAssignNode idxa => VisitIndexAssign(idxa),
                 WhereNode whe => VisitWhere(whe),
@@ -63,7 +62,6 @@ namespace MyCompiler
                 MaxNode max => VisitMax(max),
                 MeanNode mean => VisitMean(mean),
                 SumNode sum => VisitSum(sum),
-
                 //FunctionDefNode fdef => VisitFunctionDef(fdef),
                 //FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNode rnd => VisitRound(rnd),
@@ -71,7 +69,6 @@ namespace MyCompiler
                 RecordNode rec => VisitRecord(rec),
                 RecordFieldNode recf => VisitRecordField(recf),
                 RecordFieldAssignNode reca => VisitRecordFieldAssign(reca),
-                //CopyRecordNode copr => VisitCopyRecord(copr),
                 CopyNode cop => VisitCopy(cop),
                 AddFieldNode radd => VisitAddField(radd),
                 RemoveFieldNode rrem => VisitRemoveField(rrem),
@@ -87,34 +84,46 @@ namespace MyCompiler
             };
         }
 
+        // Inside TypeChecker.cs
         public Type VisitForEachLoop(ForEachLoopNode expr)
         {
-            Type targetType = Visit(expr.Array);
-            Type elementType = null;
+            var collectionType = Visit(expr.Array);
+            RecordType rowType = null;
 
-            if (targetType is ArrayType arrType)
-                elementType = arrType.ElementType;
-            else if (targetType is DataframeType dfType)
-                elementType = dfType.RowType;
-            else
-                throw new Exception("Foreach target must be an array or a dataframe.");
+            // Determine the type of 'item'
+            if (collectionType is DataframeType df) rowType = df.RowType;
+            else if (collectionType is ArrayType arr && arr.ElementType is RecordType rec) rowType = rec;
 
-            // --- THE FIX ---
-            // Stamp the type onto the IdNode itself
-            expr.Iterator.SetType(elementType);
+            if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
 
-            // Register in the symbol table for body lookups
-            _context = _context.Add(expr.Iterator.Name, null, elementType);
+            //_context = _context.Add(expr.Iterator.Name, null, rowType);
+            var testEntry = _context.Get(expr.Iterator.Name);
+            Console.WriteLine($"[DEBUG] Internal Check: Found '{expr.Iterator.Name}'? " + (testEntry != null));
+
+
+            // CRITICAL: Push the context so 'item' exists for the body
+            var oldContext = _context;
+
+            // Use named arguments to be 100% safe
+            _context = _context.Add(
+                name: expr.Iterator.Name,
+                value: default,
+                _value: null!,
+                type: rowType // Make sure it hits the 4th parameter!
+            );
 
             Visit(expr.Body);
+            _context = oldContext;
             return new VoidType();
         }
+
 
         public Type VisitNumber(NumberNode expr)
         {
             expr.SetType(new IntType());
             return expr.Type;
         }
+
         public Type VisitString(StringNode expr)
         {
             expr.SetType(new StringType());
@@ -133,18 +142,27 @@ namespace MyCompiler
             return expr.Type;
         }
 
+
         public Type VisitId(IdNode expr)
         {
-            var entry = _context.Get(expr.Name);
             // if(_debug) Console.WriteLine(" we looking at id: " + expr.Name + " and its type is " + entry?.Type);
             // if(_debug) Console.WriteLine("id type: " + entry.Type); // prof we can get records type at type check time
 
-            if (entry == null)
-                throw new Exception($"type check - Undefined variable '{expr.Name}'");
+            Console.WriteLine($"[DEBUG] VisitId looking for: '{expr.Name}'");
 
-            expr.SetType(entry.Type);
-            return entry.Type;
+            var entry = _context.Get(expr.Name);
+
+            Console.WriteLine($"[DEBUG] Looking for '{expr.Name}'. Found? {entry != null}");
+
+            if (entry != null)
+            {
+                // If rowType was put in the wrong parameter, entry.Type is null here!
+                expr.SetType(entry.Type);
+                return entry.Type;
+            }
+            return expr.Type;
         }
+
 
         public Type VisitBinary(BinaryOpNode expr)
         {
@@ -337,53 +355,58 @@ namespace MyCompiler
 
         public Type VisitIf(IfNode expr)
         {
+            // 1. Visit the condition and ensure it's a Boolean
             var condType = Visit(expr.Condition);
-
-            // 1. Condition Check
             if (condType is not BoolType)
-                throw new Exception("If condition must be Bool: " + condType.ToString());
+            {
+                throw new Exception($"Type Error: 'if' condition must be a bool, but got {condType}");
+            }
 
-            // Use .Then and .Else to match your Node definition
+            // 2. Visit branches
             Type thenType = Visit(expr.ThenPart);
-            Console.WriteLine("Type: ", thenType.GetType());
+            Type elseType = (expr.ElsePart != null) ? Visit(expr.ElsePart) : new VoidType();
 
-            Console.WriteLine("then typee:" + thenType);
-
-            Type elseType = new VoidType();
-            if (expr.ElsePart != null)
-                elseType = Visit(expr.ElsePart);
+            // Debugging (Fixed your Console.WriteLine syntax)
+            Console.WriteLine($"[TypeCheck] If branches: Then={thenType}, Else={elseType}");
 
             Type finalType;
 
-            // 2. Promotion Logic (Bool <-> Number)
-            if (thenType.GetType() != elseType.GetType())
+            // 3. Unification / Promotion Logic
+            if (thenType.GetType() == elseType.GetType())
             {
-                // Allow mixing any Numeric type (Int/Float) with Booleans
-                bool isThenNumeric = (thenType is FloatType || thenType is IntType || thenType is BoolType);
-                bool isElseNumeric = (elseType is FloatType || elseType is IntType || elseType is BoolType);
-
-                // If we have mixed Numbers and Bools
-                if (isThenNumeric && isElseNumeric)
-                {
-                    // If either side is an Int, let's treat the result as an Int/Float 
-                    // so we see numbers instead of "True/False"
-                    finalType = new FloatType();
-                }
-                // Handle cases where one side is None (Void)
-                else if (thenType is VoidType)
+                // Exact match (e.g., both are Void, both are Int, or both are String)
+                finalType = thenType;
+            }
+            else
+            {
+                // One branch is Void (Statement style: if (c) { x=1 })
+                if (thenType is VoidType)
                     finalType = elseType;
                 else if (elseType is VoidType)
                     finalType = thenType;
-                else
-                    throw new Exception($"Type Mismatch: Then branch is {thenType}, Else is {elseType}");
-            }
-            else
-                finalType = thenType;
 
-            // 3. Set the type and return
+                // Mixed Numeric types (Expression style: x = if (c) 1.5 else 2)
+                else if (IsNumeric(thenType) && IsNumeric(elseType))
+                {
+                    // Promote to Float if either side is Float or Bool (treated as 0/1)
+                    finalType = (thenType is FloatType || elseType is FloatType)
+                                ? new FloatType()
+                                : new IntType();
+                }
+                else
+                {
+                    // HARD ERROR: Trying to mix incompatible types (e.g., String and Int)
+                    throw new Exception($"Type Mismatch: 'if' branches are incompatible ({thenType} vs {elseType})");
+                }
+            }
+
             expr.SetType(finalType);
-            return expr.Type;
+            return finalType;
         }
+
+        // Helper method to keep the code clean
+        private bool IsNumeric(Type t) => t is IntType || t is FloatType || t is BoolType;
+
 
         public Type VisitPrint(PrintNode expr)
         {
@@ -432,13 +455,6 @@ namespace MyCompiler
             expr.SetType(arrayType);
             return expr.Type;
         }
-        // OLD Code - try using generic copy now!
-        // public Type VisitCopyArray(CopyArrayNode expr)
-        // {
-        //     var sourceArray = Visit(expr.Source);
-        //     expr.SetType(sourceArray as ArrayType);
-        //     return expr.Type;
-        // }
 
         public Type VisitCopy(CopyNode expr)
         {
@@ -495,53 +511,6 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        // public Type VisitFunctionDef(FunctionDefNode node)
-        // {
-        //     // 1. Convert the string return type (e.g., "int") to your MyType enum
-        //     Type returnType = node.ReturnTypeName;
-
-        //     // 2. Save the global context
-        //     var globalContext = _context;
-
-        //     // 3. Create Local Scope: Add parameters so the body can see them
-        //     // We assume parameters are Floats/Numbers in your current setup
-
-        //     foreach (var paramName in node.Parameters)
-        //     {
-        //         // If the function returns a string, assume parameters are strings.
-        //         // Otherwise, assume they are numbers.
-        //         Type pType = (returnType is StringType) ? new StringType() : new FloatType();
-
-        //         _context = _context.Add(paramName, default!, null, pType, null);
-        //     }
-
-        //     // 4. Visit the body to ensure variables like 'x' and 'y' are defined
-        //     Visit(node.Body);
-
-        //     // 5. Restore Global Context (parameters shouldn't exist outside)
-        //     _context = globalContext;
-
-        //     // 6. Register the FUNCTION itself so we can call it
-        //     // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
-        //     _context = _context.Add(node.Name, default!, null, returnType, null);
-
-        //     return new VoidType();
-        // }
-
-        // public Type VisitFunctionCall(FunctionCallNode expr)
-        // {
-        //     var entry = _context.Get(expr.Name);
-        //     if (entry == null) throw new Exception($"Function {expr.Name} is not defined");
-
-        //     // Check if the number of arguments matches (Very important for LLVM!)
-        //     // Note: You'll need to store the parameter count in your ContextEntry to do this properly.
-
-        //     foreach (var arg in expr.Arguments) Visit(arg);
-
-        //     // Use the actual return type of the function!
-        //     expr.SetType(entry.Type);
-        //     return expr.Type;
-        // }
 
         public Type VisitRound(RoundNode expr)
         {
@@ -612,6 +581,7 @@ namespace MyCompiler
             expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
+
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
@@ -657,8 +627,6 @@ namespace MyCompiler
             }
         }
 
-
-
         public Type VisitReadCsv(ReadCsvNode expr)
         {
             // Debug to console
@@ -690,7 +658,6 @@ namespace MyCompiler
             throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
         }
 
-
         public Type VisitToCsv(ToCsvNode expr)
         {
             // 1. Get the types of the arguments
@@ -716,7 +683,6 @@ namespace MyCompiler
             return voidType;
         }
 
-
         public Type VisitAdd(AddNode expr)
         {
             var arrayType = Visit(expr.SourceExpression);
@@ -729,17 +695,28 @@ namespace MyCompiler
                 if (addType is not RecordType recType)
                     throw new Exception("add can only add records to dataframes");
 
-                // Check if the record fields match the dataframe columns
+                // 1. Check Field Names (You already have this)
                 var dfColumns = dfType.ColumnNames;
                 var recFields = recType.RecordFields.Select(f => f.Label).ToList();
-
-                if (_debug) Console.WriteLine("df columns: " + string.Join(", ", dfColumns));
-                if (_debug) Console.WriteLine("rec fields: " + string.Join(", ", recFields));
-
-                //recType.RecordFields.Insert(0, new RecordField("index", new NumberNode(0)) { Type = new IntType() });
-
                 if (!dfColumns.All(col => recFields.Contains(col)))
                     throw new Exception("Record fields do not match dataframe columns");
+
+                // 2. NEW: Check Field Types
+                foreach (var dfField in dfType.RowType.RecordFields)
+                {
+                    var providedField = recType.RecordFields.First(f => f.Label == dfField.Label);
+
+                    // Check if types match exactly
+                    if (dfField.Type.GetType() != providedField.Type.GetType())
+                    {
+                        // Optional: Allow Int -> Float promotion but throw error for others
+                        if (!(dfField.Type is FloatType && providedField.Type is IntType))
+                        {
+                            throw new Exception($"Type mismatch for field '{dfField.Label}': " +
+                                $"expected {dfField.Type}, but got {providedField.Type}");
+                        }
+                    }
+                }
             }
             else if (arrayType is ArrayType arrType)
             {
@@ -881,36 +858,26 @@ namespace MyCompiler
 
         public Type VisitRecordField(RecordFieldNode expr)
         {
-            // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
-            Type recordSourceType = Visit(expr.IdRecord);
+            Console.WriteLine($"[DEBUG] Visiting RecordField. Accessing '{expr.IdField}' on node '{expr.IdRecord}'");
 
-            // 2. Initialize a default (or null)
-            Type resolvedFieldType = null;
+            // 1. THIS IS THE TRIGGER
+            var lhsType = Visit(expr.IdRecord);
 
-            // 3. Check if the source actually resolved to a RecordType
-            if (recordSourceType is RecordType recType)
+            Console.WriteLine($"[DEBUG] Result of visiting '{expr.IdRecord}': " + (lhsType?.ToString() ?? "STILL NULL"));
+            if (lhsType is RecordType rt)
             {
-                // 4. Look up the field label in the record definition
-                var field = recType.RecordFields.FirstOrDefault(f => f.Label == expr.IdField);
+                var field = rt.RecordFields.FirstOrDefault(f => f.Label == expr.IdField);
                 if (field != null)
                 {
-                    // Use the stored type from the field
-                    resolvedFieldType = field.Value?.Type ?? field.Type;
+                    // Stamp the node type so CodeGen knows it's a string/int/etc.
+                    expr.SetType(field.Type);
+                    return field.Type;
                 }
-                else
-                {
-                    throw new Exception($"Field '{expr.IdField}' not found in record.");
-                }
-            }
-            else
-            {
-                throw new Exception($"Cannot access field '{expr.IdField}' on non-record type: {recordSourceType}");
+                throw new Exception($"Field {expr.IdField} not found in record.");
             }
 
-            if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
-
-            expr.SetType(resolvedFieldType);
-            return resolvedFieldType;
+            // This is where you are hitting the error because lhsType is still NULL
+            throw new Exception($"Cannot access field '{expr.IdField}' on non-record type: {lhsType}");
         }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
@@ -922,13 +889,6 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        // Old code - try use generic copy now!
-        // public Type VisitCopyRecord(CopyRecordNode expr)
-        // {
-        //     Visit(expr.Source);
-        //     expr.SetType(expr.Source.Type);
-        //     return expr.Type;
-        // }
 
         public Type VisitAddField(AddFieldNode expr)
         {
@@ -1125,5 +1085,53 @@ namespace MyCompiler
             return ResolveType(expr.TypeNode); // Just return the wrapped type
 
         }
+
+        // public Type VisitFunctionDef(FunctionDefNode node)
+        // {
+        //     // 1. Convert the string return type (e.g., "int") to your MyType enum
+        //     Type returnType = node.ReturnTypeName;
+
+        //     // 2. Save the global context
+        //     var globalContext = _context;
+
+        //     // 3. Create Local Scope: Add parameters so the body can see them
+        //     // We assume parameters are Floats/Numbers in your current setup
+
+        //     foreach (var paramName in node.Parameters)
+        //     {
+        //         // If the function returns a string, assume parameters are strings.
+        //         // Otherwise, assume they are numbers.
+        //         Type pType = (returnType is StringType) ? new StringType() : new FloatType();
+
+        //         _context = _context.Add(paramName, default!, null, pType, null);
+        //     }
+
+        //     // 4. Visit the body to ensure variables like 'x' and 'y' are defined
+        //     Visit(node.Body);
+
+        //     // 5. Restore Global Context (parameters shouldn't exist outside)
+        //     _context = globalContext;
+
+        //     // 6. Register the FUNCTION itself so we can call it
+        //     // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
+        //     _context = _context.Add(node.Name, default!, null, returnType, null);
+
+        //     return new VoidType();
+        // }
+
+        // public Type VisitFunctionCall(FunctionCallNode expr)
+        // {
+        //     var entry = _context.Get(expr.Name);
+        //     if (entry == null) throw new Exception($"Function {expr.Name} is not defined");
+
+        //     // Check if the number of arguments matches (Very important for LLVM!)
+        //     // Note: You'll need to store the parameter count in your ContextEntry to do this properly.
+
+        //     foreach (var arg in expr.Arguments) Visit(arg);
+
+        //     // Use the actual return type of the function!
+        //     expr.SetType(entry.Type);
+        //     return expr.Type;
+        // }
     }
 }

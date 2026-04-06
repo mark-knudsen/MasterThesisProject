@@ -945,13 +945,17 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Get the Array Header Pointer
+            // Save the parent context to restore later (scoping 'item')
+            var oldCtx = _context;
+
+            // 1. Get the Array/Dataframe Header
             var sourcePtr = Visit(expr.Array);
             LLVMValueRef arrayHeaderPtr;
 
             if (expr.Array.Type is DataframeType)
             {
-                // If it's a dataframe, we iterate over the 'rows' array (index 1 in the DF struct)
+                // Dataframe struct: { ptr columns, ptr rows, ptr types }
+                // We want the 'rows' array at index 1
                 var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
                 var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 1, "df_rows_ptr");
                 arrayHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_array_header");
@@ -961,59 +965,71 @@ namespace MyCompiler
                 arrayHeaderPtr = sourcePtr;
             }
 
-            // 2. Load Length and Data Pointer from the Array Header { i64, i64, i8* }
+            // 2. Load Metadata from Array Header { i64 len, i64 cap, i8* data }
             var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
-
             var lenPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 0, "len_ptr");
             var arrayLen = _builder.BuildLoad2(i64, lenPtr, "array_len");
-
             var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 2, "data_ptr_ptr");
             var dataBuffer = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data_buffer");
 
-            // 3. Setup Iterator Variable
+            // 3. Setup Iterator Variable Scoping
             Type elementType;
             if (expr.Array.Type is DataframeType df) elementType = df.RowType;
             else elementType = ((ArrayType)expr.Array.Type).ElementType;
 
-            // All elements in our buffers are pointers (i8*)
+            // Create the 'alloca' for the iterator (e.g., 'item')
             var iteratorAlloc = _builder.BuildAlloca(i8Ptr, expr.Iterator.Name);
+            // Add to a new context so 'item' is visible to Visit(expr.Body)
             _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType);
 
-            // 4. Loop Blocks
+            // 4. Create Basic Blocks
             var condBlock = func.AppendBasicBlock("foreach.cond");
             var bodyBlock = func.AppendBasicBlock("foreach.body");
             var nextBlock = func.AppendBasicBlock("foreach.next");
             var endBlock = func.AppendBasicBlock("foreach.end");
 
+            // 5. Initialize Counter
             var counterAlloc = _builder.BuildAlloca(i64, "foreach_counter");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), counterAlloc);
             _builder.BuildBr(condBlock);
 
-            // 5. Condition
+            // 6. Condition Block
             _builder.PositionAtEnd(condBlock);
             var curIdx = _builder.BuildLoad2(i64, counterAlloc, "cur_idx");
-            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
-            _builder.BuildCondBr(cond, bodyBlock, endBlock);
+            var loopTest = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
+            _builder.BuildCondBr(loopTest, bodyBlock, endBlock);
 
-            // 6. Body
+            // 7. Body Block
             _builder.PositionAtEnd(bodyBlock);
 
-            // Calculate address: dataBuffer + (curIdx * 8)
+            // --- CRITICAL: Load current element into 'item' BEFORE visiting body ---
             var elemPtr = _builder.BuildGEP2(i8Ptr, dataBuffer, new[] { curIdx }, "elem_ptr");
             var elemVal = _builder.BuildLoad2(i8Ptr, elemPtr, "elem_val");
-
             _builder.BuildStore(elemVal, iteratorAlloc);
 
+            // Now visit the statements inside the loop
             Visit(expr.Body);
-            _builder.BuildBr(nextBlock);
 
-            // 7. Next (Increment)
+            // Only branch to next if the body doesn't already have a terminator (like a return)
+            if (_builder.InsertBlock.Terminator.Handle == IntPtr.Zero)
+            {
+                _builder.BuildBr(nextBlock);
+            }
+
+            // 8. Next Block (Increment)
             _builder.PositionAtEnd(nextBlock);
-            var nextIdx = _builder.BuildAdd(curIdx, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
+            var idxToInc = _builder.BuildLoad2(i64, counterAlloc, "idx_to_inc");
+            var nextIdx = _builder.BuildAdd(idxToInc, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             _builder.BuildStore(nextIdx, counterAlloc);
             _builder.BuildBr(condBlock);
 
+            // 9. End Block
             _builder.PositionAtEnd(endBlock);
+
+            // Restore original context (item goes out of scope)
+            _context = oldCtx;
+
+            // Return a dummy value (or a void-like object)
             return default;
         }
 
@@ -1198,7 +1214,6 @@ namespace MyCompiler
         public LLVMValueRef VisitIf(IfNode node)
         {
             var condValue = Visit(node.Condition);
-
             var function = _builder.InsertBlock.Parent;
 
             var thenBlock = function.AppendBasicBlock("then");
@@ -1207,37 +1222,50 @@ namespace MyCompiler
 
             _builder.BuildCondBr(condValue, thenBlock, elseBlock);
 
-            // THEN
+            // 1. Declare outside so they are visible everywhere in this function
+            LLVMValueRef thenVal = default;
+            LLVMValueRef elseVal = default;
+
+            // --- THEN ---
             _builder.PositionAtEnd(thenBlock);
-            var thenValue = Visit(node.ThenPart);
+            thenVal = Visit(node.ThenPart);
             _builder.BuildBr(mergeBlock);
-            thenBlock = _builder.InsertBlock;
+            thenBlock = _builder.InsertBlock; // Update block ref in case Visit created new blocks
 
-            // ELSE
+            // --- ELSE ---
             _builder.PositionAtEnd(elseBlock);
-
-            LLVMValueRef elseValue;
-
             if (node.ElsePart != null)
-                elseValue = Visit(node.ElsePart);
+            {
+                elseVal = Visit(node.ElsePart);
+            }
             else
-                elseValue = LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0);
-
+            {
+                // If it's an expression, we need a dummy value. 
+                // If it's a statement (void), this won't even be used by the PHI.
+                elseVal = LLVMValueRef.CreateConstNull(thenVal.TypeOf);
+            }
             _builder.BuildBr(mergeBlock);
             elseBlock = _builder.InsertBlock;
 
-            // MERGE
+            // --- MERGE ---
             _builder.PositionAtEnd(mergeBlock);
 
-            var phi = _builder.BuildPhi(thenValue.TypeOf, "iftmp");
+            // 2. IMPORTANT: Skip PHI if this is just a statement (Void)
+            if (node.Type is VoidType)
+            {
+                return LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0));
+            }
 
+            // 3. Build the PHI node for expressions
+            var phi = _builder.BuildPhi(thenVal.TypeOf, "iftmp");
             phi.AddIncoming(
-                new[] { thenValue, elseValue },
+                new[] { thenVal, elseVal },
                 new[] { thenBlock, elseBlock },
                 2);
 
             return phi;
         }
+
 
         private LLVMValueRef EnsureFloat(LLVMValueRef value, Type currentType)
         {
@@ -2877,6 +2905,7 @@ namespace MyCompiler
             var finalDataPtr = _builder.BuildPhi(i8Ptr, "final_data_ptr");
             finalDataPtr.AddIncoming(new[] { dataPtr, newDataPtr }, new[] { startBlock, growBlock }, 2);
 
+
             var targetPtr = _builder.BuildGEP2(llvmElementType, finalDataPtr, new[] { length }, "target_ptr");
             _builder.BuildStore(valueToStore, targetPtr);
 
@@ -3458,53 +3487,110 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
-            Console.WriteLine("Visiting record field assign");
+            // Use the helper to get the address of the slot in the record
+            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
 
-            var (fieldPtr, fieldType) = GetFieldPointer(expr.IdRecord, expr.IdField);
+            var newValue = Visit(expr.AssignExpression);
 
-            var value = Visit(expr.AssignExpression);
+            // Get type info for boxing logic
+            var recType = (RecordType)expr.IdRecord.Type;
+            var fieldDef = recType.RecordFields.First(f => f.Label == expr.IdField);
 
-            // Optional: type check (recommended)
-            if (value.TypeOf != fieldType)
-                throw new Exception($"Cannot assign to record field '{expr.IdField}': type mismatch");
+            if (fieldDef.Type is IntType or FloatType or BoolType)
+            {
+                // Primitives are boxed: load the pointer to the box, then store the value
+                var boxPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), fieldSlotPtr, "box_ptr");
+                var castBoxPtr = _builder.BuildBitCast(boxPtr, LLVMTypeRef.CreatePointer(newValue.TypeOf, 0));
+                _builder.BuildStore(newValue, castBoxPtr);
+            }
+            else
+            {
+                // Strings/Records: Store the pointer directly in the slot
+                _builder.BuildStore(newValue, fieldSlotPtr);
+            }
 
-            _builder.BuildStore(value, fieldPtr);
+            return newValue;
+        }
 
-            return value;
+        public LLVMValueRef VisitRecordField(RecordFieldNode expr)
+        {
+            var ctx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // Use the helper
+            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
+
+            // Load the pointer/value from the slot
+            var valInSlot = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"val_in_{expr.IdField}");
+
+            // Resolve type for unboxing
+            var recType = (RecordType)expr.IdRecord.Type;
+            var fieldDef = recType.RecordFields.First(f => f.Label == expr.IdField);
+
+            if (fieldDef.Type is IntType)
+            {
+                var cast = _builder.BuildBitCast(valInSlot, LLVMTypeRef.CreatePointer(ctx.Int64Type, 0));
+                return _builder.BuildLoad2(ctx.Int64Type, cast, "int_val");
+            }
+            if (fieldDef.Type is BoolType)
+            {
+                var cast = _builder.BuildBitCast(valInSlot, LLVMTypeRef.CreatePointer(ctx.Int1Type, 0));
+                return _builder.BuildLoad2(ctx.Int1Type, cast, "bool_val");
+            }
+            if (fieldDef.Type is FloatType)
+            {
+                var cast = _builder.BuildBitCast(valInSlot, LLVMTypeRef.CreatePointer(ctx.DoubleType, 0));
+                return _builder.BuildLoad2(ctx.DoubleType, cast, "float_val");
+            }
+
+            return valInSlot; // Strings/Records
         }
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
-            // 1. Visit the IdNode (item). This returns the address of the 'alloca'
-            var itemStackAddr = Visit(recordExpr);
+            var i64 = _module.Context.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 2. Get the semantic type (this is what we 'SetType' in the TypeChecker)
-            var recordType = recordExpr.Type as RecordType;
-            if (recordType == null)
+            LLVMValueRef recordBuffer;
+
+            if (recordExpr is IdNode id)
             {
-                // Fallback: If the node type is null, try looking it up in the context by name
-                if (recordExpr is IdNode id)
-                {
-                    recordType = _context.Get(id.Name).Type as RecordType;
-                }
+                // 1. Get the storage (the alloca for 'item' or global for 'df2')
+                var entry = _context.Get(id.Name);
+                LLVMValueRef storage = (entry.Value.Handle != IntPtr.Zero)
+                    ? entry.Value
+                    : _module.GetNamedGlobal(id.Name);
+
+                // 2. LOAD ONCE to get the heap address of the record
+                recordBuffer = _builder.BuildLoad2(i8Ptr, storage, "rec_buf_from_id");
+            }
+            else
+            {
+                // For IndexNode or Function calls, Visit() returns the record pointer directly
+                // because the search loop already did the load from its internal %result.
+                recordBuffer = Visit(recordExpr);
             }
 
-            if (recordType == null)
-                throw new Exception($"Expected record type for field '{fieldName}'");
+            // Resolve Type info safely
+            var nodeType = recordExpr.Type;
+            if (nodeType == null && recordExpr is IdNode idNode)
+                nodeType = _context.Get(idNode.Name).Type;
 
-            // 3. LOAD the actual heap address from the stack
-            // item is 'alloca ptr', we want the 'ptr' stored inside it.
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var actualRecordPtr = _builder.BuildLoad2(i8Ptr, itemStackAddr, "load_record_ptr");
+            var recType = (RecordType)nodeType;
+            int fieldIndex = recType.RecordFields.FindIndex(f => f.Label == fieldName);
+            var fieldDef = recType.RecordFields[fieldIndex];
 
-            // 4. Calculate field offset
-            int fieldIndex = GetFieldIndex(fieldName, recordType.RecordFields);
-            var offset = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)fieldIndex);
+            // 3. Calculate field slot: recordBuffer + (index * 8)
+            var fieldAddr = _builder.BuildGEP2(
+                i8Ptr,
+                recordBuffer,
+                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)fieldIndex) },
+                $"ptr_{fieldName}"
+            );
 
-            var fieldSlotPtr = _builder.BuildGEP2(i8Ptr, actualRecordPtr, new[] { offset }, $"ptr_{fieldName}");
-
-            return (fieldSlotPtr, i8Ptr);
+            return (fieldAddr, i8Ptr);
         }
+
 
         private int GetFieldIndex(string name, List<RecordField> Fields)
         {
@@ -3515,35 +3601,6 @@ namespace MyCompiler
             }
             throw new Exception($"Field '{name}' not found.");
         }
-        public LLVMValueRef VisitRecordField(RecordFieldNode expr)
-        {
-            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
-            var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // Load the pointer stored in the record slot
-            var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_{expr.IdField}_ptr");
-
-            if (expr.Type is IntType)
-                return _builder.BuildLoad2(ctx.Int64Type, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is FloatType)
-                return _builder.BuildLoad2(ctx.DoubleType, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is BoolType)
-                return _builder.BuildLoad2(ctx.Int1Type, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is StringType)
-            {
-                // NO GEP HERE. The storedPtr is already the char* (or the pointer to the string)
-                return storedPtr;
-            }
-
-            return storedPtr;
-        }
-
-
-
         public LLVMValueRef VisitAddField(AddFieldNode expr)
         {
             var oldPtr = Visit(expr.Record);
@@ -4227,7 +4284,13 @@ m
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
 
-            record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+        df2.add({index: 10, name: "Harry Potter", age: 10, hasJob: false, savings: 10000000})
+        
+        r = record({name: "harry", age: 23, hasJob: true, savings: 10000.10})
+        
+        foreach(item in df) {item.name = "Bob"}
+        foreach(item in df) {if(item.name = "Tom") item.name = "Bobby"}
+        df2.show(["age","index", "Name"])
         */
     }
 }
