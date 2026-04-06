@@ -1831,29 +1831,31 @@ namespace MyCompiler
                 Console.WriteLine("We got data frame and should probably handle things differently");
                 elementType = recType; // For records, the "element type" is the record type itself
 
-                var argumentList = new List<NamedArgumentNode>();
+                var argumentList = new List<ExpressionNode>();
                 // we need the array of columns 
                 // we need the array of records
 
                 var columnsArray = recType.ColumnNames.Select(f => new StringNode(f) as ExpressionNode).ToList();
                 var columnsArrayExpr = new ArrayNode(columnsArray);
 
+
                 argumentList.Add(new NamedArgumentNode("columns", columnsArrayExpr));
+                argumentList.Add(new NamedArgumentNode("type", new ArrayNode(recType.DataTypes.Select(f => new NumberNode(0) as ExpressionNode).ToList())));
 
                 //var recordsTypes = (expr.SourceExpr as DataframeNode).DataTypes;// Placeholder for actual records
 
-                //var resultDataframe = new DataframeNode();
+                var resultDataframe = new DataframeNode(argumentList);
 
-                // Create the result array with the same element type as the source
-                var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
+                // Create the result dataframe with the same element type as the source
+                //var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
 
-                Console.WriteLine("result array element type: " + resultArray.ElementType);
+                Console.WriteLine("result array element type: " + resultDataframe.Rows.ElementType);
 
-                // Save source array into a temp variable
+                // Save source dataframe into a temp variable
                 var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
 
                 // Allocate result array (of the same type as source)
-                var resultAssign = new AssignNode(resultVarName, resultArray);
+                var resultAssign = new AssignNode(resultVarName, resultDataframe);
 
                 // Initialize loop index
                 var indexAssign = new AssignNode(indexVarName, new NumberNode(0));

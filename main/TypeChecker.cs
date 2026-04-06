@@ -360,7 +360,7 @@ namespace MyCompiler
             Type thenType = Visit(expr.ThenPart);
             Console.WriteLine("Type: ", thenType.GetType());
 
-            Console.WriteLine("then typee:" + thenType);
+            Console.WriteLine("then type: " + thenType); // THIS IS WRONG DATAFRAME TYPE
 
             Type elseType = new VoidType();
             if (expr.ElsePart != null)
@@ -1040,19 +1040,29 @@ namespace MyCompiler
 
         private Type ResolveTypeNode(ExpressionNode expr)
         {
+
+            if (expr.Type is Type tt)
+            {
+                System.Console.WriteLine("Type is: " + tt);
+
+                return tt;
+            }
+
             if (expr is TypeLiteralNode t)
             {
+                System.Console.WriteLine("it is typeliteral");
                 return t.TypeNode.Name switch
                 {
                     "int" => new IntType(),
                     "float" => new FloatType(),
                     "bool" => new BoolType(),
                     "string" => new StringType(),
+                    "dataframe" => new DataframeType(new List<string>(), new List<Type>(), new RecordType(new List<RecordField>())),
                     _ => throw new Exception($"Unknown type '{t.TypeNode.Name}'")
                 };
             }
 
-            throw new Exception("Expected type node.");
+            throw new Exception("Expected type node." + expr.Type);
         }
 
         public Type VisitNamedArgument(NamedArgumentNode expr)

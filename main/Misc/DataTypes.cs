@@ -80,21 +80,4 @@ namespace MyCompiler
           public override string ToString() =>
             $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
     }
-
-    public class DataframeType2 : Type
-    {
-        public List<string> ColumnNames { get; }
-        public List<Type> DataTypes { get; } // NEW: Store the type for each column
-        public RecordType RowType { get; }     // The full record structure
-
-        public DataframeType2(List<string> names, List<Type> types, RecordType rowType)
-        {
-            ColumnNames = names;
-            DataTypes = types;
-            RowType = rowType;
-        }
-
-        public override string ToString() =>
-            $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
-    }
 }
