@@ -681,19 +681,7 @@ namespace MyCompiler
             return result;
         }
 
-        private List<IntPtr> ExtractRecordRaw(IntPtr recordPtr, RecordType recordType)
-        {
-            var result = new List<IntPtr>();
-            int fieldSize = 8;
 
-            for (int i = 0; i < recordType.RecordFields.Count; i++)
-            {
-                IntPtr fieldLocation = IntPtr.Add(recordPtr, i * fieldSize);
-                result.Add(Marshal.ReadIntPtr(fieldLocation));
-            }
-
-            return result;
-        }
         private string HandleDataframe(IntPtr ptr, DataframeType type)
         {
             if (ptr == IntPtr.Zero) return "dataframe(null)";
@@ -3553,22 +3541,6 @@ namespace MyCompiler
             return runtimeObj;
         }
 
-
-        private string GetTypeString(RecordType record)
-        {
-            string desc = "";
-            foreach (var field in record.RecordFields)
-            {
-                var t = field.Value?.Type ?? field.Type;
-                if (t is IntType) desc += "I";
-                else if (t is FloatType) desc += "F";
-                else if (t is StringType) desc += "S";
-                else if (t is BoolType) desc += "B";
-                else desc += "U"; // Unknown
-            }
-            return desc;
-        }
-
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {
             // 1. Visit the path (The CSV string)
@@ -3862,9 +3834,6 @@ namespace MyCompiler
             return "\nDataframe (" + rowCount + " rows):\n" + string.Join("\n", lines.Select(l => "  " + l));
         }
 
-
-
-
         public LLVMValueRef VisitNamedArgument(NamedArgumentNode expr) // this is never called?
         {
             // This node is just a wrapper for a regular expression with a name.
@@ -4039,141 +4008,6 @@ namespace MyCompiler
             return recordPtr;
         }
 
-        // public LLVMValueRef VisitShowDataframe(ShowDataframeNode expr)
-        // {
-        //     var sourceType = expr.Source.Type as DataframeType;
-        //     if (sourceType == null) throw new Exception("Show requires a Dataframe source");
-
-        //     var requestedNames = new List<string>();
-        //     foreach (var col in expr.Columns)
-        //     {
-        //         if (col is StringNode strNode) requestedNames.Add(strNode.Value);
-        //         else throw new Exception("Show columns must be string literals");
-        //     }
-
-        //     // 1. Extract the 'rows' array from the source dataframe
-        //     var getRowsArray = new InternalDataframeFieldNode(
-        //         expr.Source,
-        //         1, // Field 1 is the rows array
-        //         new ArrayType(sourceType.RowType)
-        //     );
-
-        //     var tempRowsVar = "$src_rows";
-        //     var assignTemp = new AssignNode(tempRowsVar, getRowsArray);
-
-        //     // 2. Build the Record Transformation (The Projection)
-        //     var itName = "$row_show";
-        //     var itId = new IdNode(itName);
-        //     itId.SetType(sourceType.RowType);
-
-        //     var newFields = new List<NamedArgumentNode>();
-        //     foreach (var name in requestedNames)
-        //     {
-        //         var fieldAccess = new RecordFieldNode(itId, name);
-        //         newFields.Add(new NamedArgumentNode(name, fieldAccess));
-        //     }
-        //     var rowTransform = new RecordNode(newFields);
-
-        //     // Start of my new approch that do not use MapNode.
-        //     // List<ExpressionNode> records = new List<ExpressionNode>();
-        //     // foreach (var item in rowTransform.Fields)
-        //     // {
-        //     //     records.Add(item.Value);
-        //     // }
-        //     // var recordsArray = new ArrayNode(records);
-
-
-        //     // 3. Create the MapNode (reusing our generic array map!)
-        //     var mappedRows = new MapNode(itId, new IdNode(tempRowsVar), rowTransform);
-
-        //     // 4. Build the new Column Names array
-        //     var columnExprs = requestedNames.Select(n => (ExpressionNode)new StringNode(n)).ToList();
-        //     var columnArray = new ArrayNode(columnExprs);
-
-        //     // 5. Construct the final DataframeNode
-        //     var dfNode = new DataframeNode(new List<ExpressionNode> { columnArray, mappedRows });
-
-        //     // 6. Transfer the correct data types for the new schema
-        //     dfNode.DataTypes.Clear();
-        //     foreach (var name in requestedNames)
-        //     {
-        //         int idx = sourceType.ColumnNames.IndexOf(name);
-        //         if (idx == -1) throw new Exception($"Column {name} not found");
-        //         dfNode.DataTypes.Add(sourceType.DataTypes[idx]);
-        //     }
-
-        //     // 7. Sequence and Execute
-        //     var seq = new SequenceNode();
-        //     seq.Statements.Add(assignTemp);
-        //     seq.Statements.Add(dfNode);
-
-        //     PerformSemanticAnalysis(seq); // Important: Re-check types for the new nodes
-        //     return Visit(seq);
-        // }
-
-
-
-        // public LLVMValueRef VisitInternalDataframeField(InternalDataframeFieldNode node)
-        // {
-        //     // The source might be a Pointer to a Pointer (if it's a variable)
-        //     // Ensure dfPtr is the actual pointer to the struct
-        //     var dfPtr = Visit(node.Source);
-
-        //     var ctx = _module.Context;
-        //     var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-        //     // Layout: { ptr colNames, ptr rowArray, ptr colTypes }
-        //     // Note: If your struct is defined as %dataframe = type { ptr, ptr, ptr }
-        //     var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-
-        //     // GEP to the field (0=cols, 1=rows, 2=types)
-        //     var fieldPtr = _builder.BuildStructGEP2(dfStructType, dfPtr, (uint)node.FieldIndex, "df_field_extract");
-
-        //     // Load the pointer stored at that field
-        //     return _builder.BuildLoad2(i8Ptr, fieldPtr, "arr_header_ptr");
-        // }
-        // public LLVMValueRef VisitPropertyAccess(PropertyAccessNode node)
-        // {
-        //     var recPtr = Visit(node.Source);
-        //     var recType = node.Source.Type as RecordType;
-        //     int fieldIdx = recType.RecordFields.FindIndex(f => f.Label == node.IdField);
-        //     var fieldType = recType.RecordFields[fieldIdx].Type;
-
-        //     var ctx = _module.Context;
-        //     var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-        //     // GEP to the slot in the record (which is an array of pointers)
-        //     var fieldSlot = _builder.BuildGEP2(i8Ptr, recPtr,
-        //         new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)fieldIdx) }, $"gep_{node.IdField}");
-
-        //     // Load the pointer stored in that slot
-        //     var boxPtr = _builder.BuildLoad2(i8Ptr, fieldSlot, $"ptr_to_{node.IdField}");
-
-        //     if (fieldType is StringType)
-        //     {
-        //         return boxPtr; // Strings are just pointers
-        //     }
-        //     else
-        //     {
-        //         // For Int/Float/Bool, we must LOAD the value out of the box
-        //         // This allows RecordNode to create a FRESH box for the new record
-        //         LLVMTypeRef llvmType = MapToLLVMType(fieldType);
-        //         return _builder.BuildLoad2(llvmType, boxPtr, $"val_{node.IdField}");
-        //     }
-        // }
-
-
-        private LLVMTypeRef MapToLLVMType(Type type)
-        {
-            var ctx = _module.Context;
-            if (type is IntType) return ctx.Int64Type;
-            if (type is FloatType) return ctx.DoubleType; // Use 64-bit double
-            if (type is BoolType) return ctx.Int1Type;
-            if (type is StringType) return LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            return LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-        }
-
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
@@ -4239,72 +4073,7 @@ namespace MyCompiler
             return colPtr;
         }
 
-        public LLVMValueRef VisitDataframeElementAccess(LLVMValueRef dfPtr, LLVMValueRef colIndex, LLVMValueRef rowIndex)
-        {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i1 = ctx.Int1Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            var dfType = _module.GetTypeByName("dataframe");
-
-            // --- 1. get column pointer ---
-            var colPtr = VisitDataframeColumnAccess(dfPtr, colIndex);
-
-            // --- 2. get type info ---
-            var typesArrayPtr = _builder.BuildLoad2(
-                i8Ptr,
-                _builder.BuildStructGEP2(dfType, dfPtr, 2),
-                "df_types"
-            );
-
-            var typesData = GetArrayData(typesArrayPtr);
-
-            var typePtr = _builder.BuildGEP2(i8Ptr, typesData, new[] { colIndex }, "type_ptr_ptr");
-            var typeVal = _builder.BuildLoad2(i8Ptr, typePtr, "type_val");
-
-            // You need a way to identify bool type
-            // Example: compare against a global type tag
-            // bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
-            // var isBool = BuildIsBoolType(typeVal); // YOU implement this           
-
-            // --- 3. branch ---
-            var func = _builder.InsertBlock.Parent;
-
-            // 2. Define the Basic Blocks
-            var boolBlock = func.AppendBasicBlock("bool_case");
-            var otherBlock = func.AppendBasicBlock("other_case");
-            var mergeBlock = func.AppendBasicBlock("merge");
-
-            //_builder.BuildCondBr(isBool, boolBlock, otherBlock);
-
-            // --- BOOL CASE ---
-            _builder.PositionAtEnd(boolBlock);
-
-            var boolValRaw = GetArrayElementRaw(colPtr, rowIndex, true);
-            var boolVal = _builder.BuildTrunc(boolValRaw, i1, "bool_i1");
-
-            _builder.BuildBr(mergeBlock);
-            var boolBlockEnd = _builder.InsertBlock;
-
-            // --- OTHER CASE ---
-            _builder.PositionAtEnd(otherBlock);
-
-            var ptrVal = GetArrayElementRaw(colPtr, rowIndex, false);
-
-            _builder.BuildBr(mergeBlock);
-            var otherBlockEnd = _builder.InsertBlock;
-
-            // --- MERGE ---
-            _builder.PositionAtEnd(mergeBlock);
-
-            var phi = _builder.BuildPhi(i8Ptr, "df_elem");
-
-            phi.AddIncoming(new[] { boolValRaw, ptrVal }, new[] { boolBlockEnd, otherBlockEnd }, 0);
-
-            return phi;
-        }
         private List<object> ExtractRecord(IntPtr recordPtr, RecordType recordType)
         {
             var result = new List<object>();
