@@ -3475,46 +3475,33 @@ namespace MyCompiler
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            // 1. Visit the IdNode (item). This returns the address of the 'alloca'
+            var itemStackAddr = Visit(recordExpr);
 
-            // 1. Get the address of the variable
-            var recordVarAddr = Visit(recordExpr);
-
-            // 2. Resolve the RecordType (Metadata)
+            // 2. Get the semantic type (this is what we 'SetType' in the TypeChecker)
             var recordType = recordExpr.Type as RecordType;
-            if (recordType == null && recordExpr is IdNode id)
+            if (recordType == null)
             {
-                recordType = _context.Get(id.Name).Type as RecordType;
+                // Fallback: If the node type is null, try looking it up in the context by name
+                if (recordExpr is IdNode id)
+                {
+                    recordType = _context.Get(id.Name).Type as RecordType;
+                }
             }
 
             if (recordType == null)
-                throw new Exception($"Expected record type for field access '{fieldName}'");
+                throw new Exception($"Expected record type for field '{fieldName}'");
 
-            // 3. Resolve the Pointer to the actual Heap Data
-            // If we are dealing with a local variable (like 'item' in foreach), 
-            // recordVarAddr is a 'ptr*' (pointer to the pointer on the stack).
-            // We must load it to get the actual heap address.
-            LLVMValueRef actualHeapAddr;
+            // 3. LOAD the actual heap address from the stack
+            // item is 'alloca ptr', we want the 'ptr' stored inside it.
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var actualRecordPtr = _builder.BuildLoad2(i8Ptr, itemStackAddr, "load_record_ptr");
 
-            // Check if the address returned is indeed a pointer to our record pointer
-            // (In your system, all records on the heap are accessed via i8Ptr)
-            if (recordVarAddr.TypeOf.Kind == LLVMTypeKind.LLVMPointerType)
-            {
-                actualHeapAddr = _builder.BuildLoad2(i8Ptr, recordVarAddr, "actual_record_addr");
-            }
-            else
-            {
-                actualHeapAddr = recordVarAddr;
-            }
-
-            // 4. Calculate field offset and GEP
+            // 4. Calculate field offset
             int fieldIndex = GetFieldIndex(fieldName, recordType.RecordFields);
-            var offset = LLVMValueRef.CreateConstInt(i64, (ulong)fieldIndex);
+            var offset = LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)fieldIndex);
 
-            // We use i8Ptr here because your record is a flat buffer of 8-byte slots
-            var fieldSlotPtr = _builder.BuildGEP2(i8Ptr, actualHeapAddr, new[] { offset }, $"ptr_{fieldName}");
+            var fieldSlotPtr = _builder.BuildGEP2(i8Ptr, actualRecordPtr, new[] { offset }, $"ptr_{fieldName}");
 
             return (fieldSlotPtr, i8Ptr);
         }
