@@ -78,8 +78,8 @@ namespace MyCompiler
                 DataframeNode df => VisitDataframe(df),
                 ColumnsNode cols => VisitColumns(cols),
                 ShowDataframeNode showdf => VisitShowDataframe(showdf),
-                InternalDataframeFieldNode interDFField => VisitInternalDataframeField(interDFField),
-                PropertyAccessNode propAccecc => VisitPropertyAccess(propAccecc),
+                //InternalDataframeFieldNode interDFField => VisitInternalDataframeField(interDFField),
+                //PropertyAccessNode propAccecc => VisitPropertyAccess(propAccecc),
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
 
@@ -1041,43 +1041,43 @@ namespace MyCompiler
 
 
 
-        public Type VisitPropertyAccess(PropertyAccessNode node)
-        {
-            var sourceType = Visit(node.Source);
+        // public Type VisitPropertyAccess(PropertyAccessNode node)
+        // {
+        //     var sourceType = Visit(node.Source);
 
-            if (sourceType is RecordType recType)
-            {
-                var field = recType.RecordFields.FirstOrDefault(f => f.Label == node.PropertyName);
-                if (field == null) throw new Exception($"Record does not have field '{node.PropertyName}'");
+        //     if (sourceType is RecordType recType)
+        //     {
+        //         var field = recType.RecordFields.FirstOrDefault(f => f.Label == node.PropertyName);
+        //         if (field == null) throw new Exception($"Record does not have field '{node.PropertyName}'");
 
-                node.SetType(field.Type);
-                return field.Type;
-            }
+        //         node.SetType(field.Type);
+        //         return field.Type;
+        //     }
 
-            throw new Exception("Property access is only supported on Record types.");
-        }
+        //     throw new Exception("Property access is only supported on Record types.");
+        // }
 
-        public Type VisitInternalDataframeField(InternalDataframeFieldNode node)
-        {
-            // Visit the source (the Dataframe) to make sure its type is resolved
-            var sourceType = Visit(node.Source) as DataframeType;
-            if (sourceType == null) throw new Exception("Internal field access requires a Dataframe source.");
+        // public Type VisitInternalDataframeField(InternalDataframeFieldNode node)
+        // {
+        //     // Visit the source (the Dataframe) to make sure its type is resolved
+        //     var sourceType = Visit(node.Source) as DataframeType;
+        //     if (sourceType == null) throw new Exception("Internal field access requires a Dataframe source.");
 
-            // FieldIndex 0 = Columns (Array of Strings)
-            // FieldIndex 1 = Rows (Array of Records)
-            // FieldIndex 2 = Types (Array of Ints)
+        //     // FieldIndex 0 = Columns (Array of Strings)
+        //     // FieldIndex 1 = Rows (Array of Records)
+        //     // FieldIndex 2 = Types (Array of Ints)
 
-            Type resultType;
-            if (node.FieldIndex == 0)
-                resultType = new ArrayType(new StringType());
-            else if (node.FieldIndex == 1)
-                resultType = new ArrayType(sourceType.RowType);
-            else
-                resultType = new ArrayType(new IntType());
+        //     Type resultType;
+        //     if (node.FieldIndex == 0)
+        //         resultType = new ArrayType(new StringType());
+        //     else if (node.FieldIndex == 1)
+        //         resultType = new ArrayType(sourceType.RowType);
+        //     else
+        //         resultType = new ArrayType(new IntType());
 
-            node.SetType(resultType);
-            return resultType;
-        }
+        //     node.SetType(resultType);
+        //     return resultType;
+        // }
 
         public Type VisitNamedArgument(NamedArgumentNode expr)
         {

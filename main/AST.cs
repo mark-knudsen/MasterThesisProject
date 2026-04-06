@@ -820,33 +820,33 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframe(this);
     }
     // For accessing fields like row.name
-    public class PropertyAccessNode : ExpressionNode
-    {
-        public ExpressionNode Source { get; }
-        public string PropertyName { get; }
+    // public class PropertyAccessNode : ExpressionNode
+    // {
+    //     public ExpressionNode Source { get; }
+    //     public string IdField { get; }
 
-        public PropertyAccessNode(ExpressionNode source, string propertyName)
-        {
-            Source = source;
-            PropertyName = propertyName;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPropertyAccess(this);
-    }
+    //     public PropertyAccessNode(ExpressionNode source, string propertyName)
+    //     {
+    //         Source = source;
+    //         IdField = propertyName;
+    //     }
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPropertyAccess(this);
+    // }
 
-    // For grabbing the 'Rows' array out of a Dataframe pointer
-    public class InternalDataframeFieldNode : ExpressionNode
-    {
-        public ExpressionNode Source { get; }
-        public int FieldIndex { get; } // 0=Cols, 1=Rows, 2=Types
+    // // For grabbing the 'Rows' array out of a Dataframe pointer
+    // public class InternalDataframeFieldNode : ExpressionNode
+    // {
+    //     public ExpressionNode Source { get; }
+    //     public int FieldIndex { get; } // 0=Cols, 1=Rows, 2=Types
 
-        public InternalDataframeFieldNode(ExpressionNode source, int index, Type type)
-        {
-            Source = source;
-            FieldIndex = index;
-            this.Type = type;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitInternalDataframeField(this);
-    }
+    //     public InternalDataframeFieldNode(ExpressionNode source, int index, Type type)
+    //     {
+    //         Source = source;
+    //         FieldIndex = index;
+    //         this.Type = type;
+    //     }
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitInternalDataframeField(this);
+    // }
 
     public class TypeLiteralNode : ExpressionNode
     {

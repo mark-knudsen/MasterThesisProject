@@ -417,7 +417,7 @@ namespace MyCompiler
 
                 // --- Literals & Basic Nodes ---
                 case TypeLiteralNode t:
-                    Console.WriteLine($"{space}Type Literal: {t.Value}");
+                    Console.WriteLine($"{space}Type Literal: {t.Type}");
                     break;
 
                 case NamedArgumentNode na:

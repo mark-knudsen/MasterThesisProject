@@ -55,8 +55,8 @@ namespace MyCompiler
         LLVMValueRef VisitDataframe(DataframeNode expr);
         LLVMValueRef VisitColumns(ColumnsNode expr);
         LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);
-        LLVMValueRef VisitPropertyAccess(PropertyAccessNode node);
-        LLVMValueRef VisitInternalDataframeField(InternalDataframeFieldNode node);
+        //LLVMValueRef VisitPropertyAccess(PropertyAccessNode node);
+        //LLVMValueRef VisitInternalDataframeField(InternalDataframeFieldNode node);
         LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
         LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
 
