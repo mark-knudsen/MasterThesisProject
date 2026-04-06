@@ -15,7 +15,7 @@ namespace MyCompiler
     //     Array,
     //     None
     // }
-    // The base class for all NodeExprs in your tree
+    // The base class for all Node in your tree
     public abstract class Node
     {
         public abstract LLVMValueRef Accept(IExpressionVisitor visitor);
@@ -78,53 +78,53 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRound(this);
     }
 
-    //------Function-nodes------//
-    public class FunctionDefNode : Node
-    {
-        public string Name { get; }
-        public Type ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
-        public List<string> Parameters { get; set; }
-        public Node Body { get; set; }
+    // //------Function-nodes------//
+    // public class FunctionDefNode : Node
+    // {
+    //     public string Name { get; }
+    //     public Type ReturnTypeName { get; set; } // "Int", "String", "Float", etc.
+    //     public List<string> Parameters { get; set; }
+    //     public Node Body { get; set; }
 
-        public FunctionDefNode(string name, string returnType, List<string> parameters, Node body)
-        {
-            Name = name;
+    //     public FunctionDefNode(string name, string returnType, List<string> parameters, Node body)
+    //     {
+    //         Name = name;
 
-            ReturnTypeName = returnType.ToLower() switch
-            {
-                "int" => new IntType(),
-                "float" => new FloatType(),
-                "double" => new FloatType(),
-                "bool" => new BoolType(),
-                "string" => new StringType(),
-                "array" => new ArrayType(new IntType()), // Temporarily default element type until type-analysis updates it
-                _ => new VoidType()
-            };
+    //         ReturnTypeName = returnType.ToLower() switch
+    //         {
+    //             "int" => new IntType(),
+    //             "float" => new FloatType(),
+    //             "double" => new FloatType(),
+    //             "bool" => new BoolType(),
+    //             "string" => new StringType(),
+    //             "array" => new ArrayType(new IntType()), // Temporarily default element type until type-analysis updates it
+    //             _ => new VoidType()
+    //         };
 
-            Parameters = parameters;
-            Body = body;
-        }
+    //         Parameters = parameters;
+    //         Body = body;
+    //     }
 
-        //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionDef(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
-    }
+    //     //public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionDef(this);
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+    // }
 
-    public class FunctionCallNode : ExpressionNode
-    {
-        public string Name { get; }
-        public List<ExpressionNode> Arguments { get; }
+    // public class FunctionCallNode : ExpressionNode
+    // {
+    //     public string Name { get; }
+    //     public List<ExpressionNode> Arguments { get; }
 
-        public FunctionCallNode(string name, List<ExpressionNode> arguments)
-        {
-            Name = name;
-            Arguments = arguments;
-            // For now, we assume functions return Float to be safe with math
-            Type = new FloatType();
-        }
+    //     public FunctionCallNode(string name, List<ExpressionNode> arguments)
+    //     {
+    //         Name = name;
+    //         Arguments = arguments;
+    //         // For now, we assume functions return Float to be safe with math
+    //         Type = new FloatType();
+    //     }
 
-        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
-    }
+    //     // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFunctionCall(this);
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
+    // }
 
     public class FloatNode : ExpressionNode
     {
@@ -285,7 +285,7 @@ namespace MyCompiler
 
         public ExpressionNode Condition;
         public StatementNode Step;
-        public Node Body; // Changed from ExpressionNodeExpr
+        public Node Body; // Changed from ExpressionNode
 
         public ForLoopNode(StatementNode init, ExpressionNode cond, StatementNode step, Node body)
         {
@@ -334,6 +334,7 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
+        public uint? Capacity { get; set; }
 
         public ArrayNode(List<ExpressionNode> elements)
         {
@@ -601,7 +602,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitUnaryOp(this);
     }
 
-
     public class RecordField
     {
         public string Label { get; set; }
@@ -613,6 +613,7 @@ namespace MyCompiler
         public Type Type { get; set; }
     }
 
+
     public class RecordNode : ExpressionNode
     {
         public List<RecordField> Fields { get; } = new List<RecordField>();
@@ -620,7 +621,7 @@ namespace MyCompiler
 
         public RecordNode(List<NamedArgumentNode> valuesArray)
         {
-            // 1. Cast the inputs to ArrayNodeExpr to get into their internal lists
+            // 1. Cast the inputs to ArrayNode to get into their internal lists
             var labelNodes = valuesArray.Select(v => new StringNode(v.Name)).ToList();
             var valueNodes = valuesArray;
 
@@ -633,7 +634,7 @@ namespace MyCompiler
             // 2. Zip them together into the Fields list
             for (int i = 0; i < labelNodes.Count; i++)
             {
-                // Ensure the label is actually a StringNodeExpr
+                // Ensure the label is actually a StringNode
                 if (labelNodes[i] is StringNode strNode)
                 {
                     Fields.Add(new RecordField
@@ -652,6 +653,7 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecord(this);
     }
+
 
     public class RecordFieldNode : ExpressionNode
     {
@@ -757,40 +759,69 @@ namespace MyCompiler
     public class DataframeNode : ExpressionNode
     {
         // Change these from ArrayNode to ExpressionNode
-        public ExpressionNode Columns { get; private set; }
-        public ExpressionNode Rows { get; private set; }
-        public List<Type> DataTypes { get; private set; } = new List<Type>();
+        public ArrayNode Columns { get; }
+        public ArrayNode Rows { get; }
+        public ArrayNode DataTypes { get; }
+
+        // Internal flag to prevent double index injection
+        public bool HasIndex { get; set; } = false;
 
         public DataframeNode(List<ExpressionNode> args)
         {
-            for (int i = 0; i < args.Count; i++)
+            ArrayNode columns = null;
+            ArrayNode rows = null;
+            ArrayNode types = null;
+
+            int positionalIndex = 0;
+
+            foreach (var arg in args.OfType<NamedArgumentNode>())
             {
-                var currentArg = args[i];
+                var value = arg.Value as ArrayNode;
 
-                if (currentArg is NamedArgumentNode named)
+                if (value == null)
+                    throw new Exception("Dataframe arguments must be arrays.");
+
+                if (!string.IsNullOrEmpty(arg.Name))
                 {
-                    // Remove the "as ArrayNode" cast. Use the raw ExpressionNode.
-                    var actualValue = named.Value;
-
-                    if (named.Name == "columns") Columns = actualValue;
-                    else if (named.Name == "data" || named.Name == "rows") Rows = actualValue;
-                    else if (string.IsNullOrEmpty(named.Name))
+                    // Named arguments
+                    switch (arg.Name)
                     {
-                        if (i == 0) Columns = actualValue;
-                        else if (i == 1) Rows = actualValue;
+                        case "columns":
+                            columns = value;
+                            break;
+
+                        case "rows":
+                        case "data":
+                            rows = value;
+                            break;
+
+                        case "type":
+                        case "types":
+                            types = value;
+                            break;
+
+                        default:
+                            throw new Exception($"Unknown dataframe argument '{arg.Name}'");
                     }
                 }
                 else
                 {
-                    // Accept any ExpressionNode positionally
-                    if (i == 0) Columns = currentArg;
-                    else if (i == 1) Rows = currentArg;
+                    // Positional arguments
+                    if (positionalIndex == 0) columns = value;
+                    else if (positionalIndex == 1) rows = value;
+                    else if (positionalIndex == 2) types = value;
+
+                    positionalIndex++;
                 }
             }
 
-            if (Columns == null) throw new Exception("dataframe requires 'columns' expression");
-            if (Rows == null) throw new Exception("dataframe requires 'data' expression");
+            Columns = columns ?? throw new Exception("Dataframe requires 'columns'");
+            Rows = rows;
+            if (Rows == null)
+                Rows = new ArrayNode(new List<ExpressionNode>());
+            DataTypes = types;
         }
+
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
@@ -848,17 +879,23 @@ namespace MyCompiler
     //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitInternalDataframeField(this);
     // }
 
+    public class TypeNode : ExpressionNode
+    {
+        public string Name { get; }
+        public TypeNode(string name) => Name = name;
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException(); // not used in codegen
+    }
+
     public class TypeLiteralNode : ExpressionNode
     {
-        public Type Value { get; }
 
-        public TypeLiteralNode(Type value)
+        public TypeNode TypeNode { get; }
+
+        public TypeLiteralNode(TypeNode typeNode)
         {
-            Value = value;
-            Type = value; // The type of a type literal is the type itself
+            TypeNode = typeNode;
         }
-
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitTypeLiteral(this);
     }
 

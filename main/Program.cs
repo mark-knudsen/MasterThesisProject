@@ -32,6 +32,7 @@ namespace MyCompiler
 
         public static void Main(string[] args)
         {
+            
             try
             {
                 Console.WriteLine("--- AST Compiler Shell ---");

@@ -246,7 +246,7 @@ namespace MyCompiler
         LLVMTypeRef _memmoveType;
         LLVMTypeRef _reallocType;
         private Type _lastType; // Store the type of the last expression for auto-printing
-        //private NodeExpr _lastNode; // Store the last expression for auto-printing
+        //private Node _lastNode; // Store the last expression for auto-printing
         private LLVMTypeRef _runtimeValueType;
         HashSet<string> _definedGlobals = new(); // wouldn't we use our context for this job?
         private Context _context;
@@ -1768,69 +1768,141 @@ namespace MyCompiler
                 // Check for different array types (int, string, float, bool)
                 if (elementType is not IntType && elementType is not FloatType && elementType is not StringType && elementType is not BoolType)
                     throw new Exception("Unsupported array element type: " + elementType);
+
+                // Create the result array with the same element type as the source
+                var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
+
+                Console.WriteLine("result array element type: " + resultArray.ElementType);
+
+                // Save source array into a temp variable
+                var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+
+                // Allocate result array (of the same type as source)
+                var resultAssign = new AssignNode(resultVarName, resultArray);
+
+                // Initialize loop index
+                var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
+
+                // Loop condition: i < src.length
+                var loopCond = new ComparisonNode(
+                    new IdNode(indexVarName),
+                    "<",
+                    new LengthNode(new IdNode(srcVarName))
+                );
+
+                // Loop step: i++
+                var loopStep = new IncrementNode(indexVarName);
+
+                // Current element: src[i]
+                var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
+
+                // Rewrite the iterator variable inside the condition
+                ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+                // Add element to result array if condition is true
+                var addNode = new AddNode(new IdNode(resultVarName), currentElement);
+
+                var ifBody = new SequenceNode();
+                ifBody.Statements.Add(addNode);
+                var ifNode = new IfNode(ifCond, ifBody);
+
+                // Loop body
+                var loopBody = new SequenceNode();
+                loopBody.Statements.Add(ifNode);
+
+                var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
+
+                // Sequence
+                var program = new SequenceNode();
+                program.Statements.Add(srcAssign);
+                program.Statements.Add(resultAssign);
+                program.Statements.Add(forLoop);
+
+                // Return the filtered array
+                program.Statements.Add(new IdNode(resultVarName));
+
+                // Perform semantic checks if you have them
+                PerformSemanticAnalysis(program);
+
+                return VisitSequence(program);
             }
             else if (sourceType is DataframeType recType)
             {
                 Console.WriteLine("We got data frame and should probably handle things differently");
                 elementType = recType; // For records, the "element type" is the record type itself
+
+                var argumentList = new List<NamedArgumentNode>();
+                // we need the array of columns 
+                // we need the array of records
+
+                var columnsArray = recType.ColumnNames.Select(f => new StringNode(f) as ExpressionNode).ToList();
+                var columnsArrayExpr = new ArrayNode(columnsArray);
+
+                argumentList.Add(new NamedArgumentNode("columns", columnsArrayExpr));
+
+                //var recordsTypes = (expr.SourceExpr as DataframeNode).DataTypes;// Placeholder for actual records
+
+                //var resultDataframe = new DataframeNode();
+
+                // Create the result array with the same element type as the source
+                var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
+
+                Console.WriteLine("result array element type: " + resultArray.ElementType);
+
+                // Save source array into a temp variable
+                var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+
+                // Allocate result array (of the same type as source)
+                var resultAssign = new AssignNode(resultVarName, resultArray);
+
+                // Initialize loop index
+                var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
+
+                // Loop condition: i < src.length
+                var loopCond = new ComparisonNode(
+                    new IdNode(indexVarName),
+                    "<",
+                    new LengthNode(new IdNode(srcVarName))
+                );
+
+                // Loop step: i++
+                var loopStep = new IncrementNode(indexVarName);
+
+                // Current element: src[i]
+                var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
+
+                // Rewrite the iterator variable inside the condition
+                ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+                // Add element to result array if condition is true
+                var addNode = new AddNode(new IdNode(resultVarName), currentElement);
+
+                var ifBody = new SequenceNode();
+                ifBody.Statements.Add(addNode);
+                var ifNode = new IfNode(ifCond, ifBody);
+
+                // Loop body
+                var loopBody = new SequenceNode();
+                loopBody.Statements.Add(ifNode);
+
+                var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
+
+                // Sequence
+                var program = new SequenceNode();
+                program.Statements.Add(srcAssign);
+                program.Statements.Add(resultAssign);
+                program.Statements.Add(forLoop);
+
+                // Return the filtered array
+                program.Statements.Add(new IdNode(resultVarName));
+
+                // Perform semantic checks if you have them
+                PerformSemanticAnalysis(program);
+
+                return VisitSequence(program);
             }
 
-            // Create the result array with the same element type as the source
-            var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
-
-            Console.WriteLine("result array element type: " + resultArray.ElementType);
-
-            // Save source array into a temp variable
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-
-            // Allocate result array (of the same type as source)
-            var resultAssign = new AssignNode(resultVarName, resultArray);
-
-            // Initialize loop index
-            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
-
-            // Loop condition: i < src.length
-            var loopCond = new ComparisonNode(
-                new IdNode(indexVarName),
-                "<",
-                new LengthNode(new IdNode(srcVarName))
-            );
-
-            // Loop step: i++
-            var loopStep = new IncrementNode(indexVarName);
-
-            // Current element: src[i]
-            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
-
-            // Rewrite the iterator variable inside the condition
-            ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
-
-            // Add element to result array if condition is true
-            var addNode = new AddNode(new IdNode(resultVarName), currentElement);
-
-            var ifBody = new SequenceNode();
-            ifBody.Statements.Add(addNode);
-            var ifNode = new IfNode(ifCond, ifBody);
-
-            // Loop body
-            var loopBody = new SequenceNode();
-            loopBody.Statements.Add(ifNode);
-
-            var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
-
-            // Sequence
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(forLoop);
-
-            // Return the filtered array
-            program.Statements.Add(new IdNode(resultVarName));
-
-            // Perform semantic checks if you have them
-            PerformSemanticAnalysis(program);
-
-            return VisitSequence(program);
+            return default;
         }
 
         public LLVMValueRef VisitMap(MapNode expr)
@@ -2326,6 +2398,7 @@ namespace MyCompiler
 
             // 2. Data Buffer
             var capacity = count > 0 ? count * 2 : 4;
+            if (expr.Capacity != null) capacity = (uint)expr.Capacity * 2;
             var dataSize = LLVMValueRef.CreateConstInt(i64, (ulong)capacity * (ulong)stride);
             var dataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { dataSize }, "arr_data");
 
@@ -2936,14 +3009,6 @@ namespace MyCompiler
                 throw new Exception("Columns operator is only supported on dataframes");
         }
 
-        private LLVMValueRef GetArrayDataPtr(LLVMValueRef arrayPtr)
-        {
-            var i64 = _module.Context.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var dataPtrGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 2) }, "data_ptr");
-            return _builder.BuildLoad2(i8Ptr, dataPtrGEP, "data_ptr");  // Pointer to array data
-        }
-
         private LLVMValueRef GetArrayLength(LLVMValueRef arrayPtr)
         {
             var i64 = _module.Context.Int64Type;
@@ -2956,6 +3021,14 @@ namespace MyCompiler
             var i64 = _module.Context.Int64Type;
             var capacityGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 1) }, "capacity_ptr");
             return _builder.BuildLoad2(i64, capacityGEP, "capacity");  // Load the array capacity
+        }
+
+        private LLVMValueRef GetArrayDataPtr(LLVMValueRef arrayPtr)
+        {
+            var i64 = _module.Context.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var dataPtrGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 2) }, "data_ptr");
+            return _builder.BuildLoad2(i8Ptr, dataPtrGEP, "data_ptr");  // Pointer to array data
         }
 
         public LLVMValueRef VisitMin(MinNode expr)
@@ -3500,7 +3573,7 @@ namespace MyCompiler
             // 1. Visit the Dataframe expression (e.g., the variable 'df2')
             var dfValue = Visit(expr.Expression);
 
-            // 2. Visit the Path expression (the StringNodeExpr)
+            // 2. Visit the Path expression (the StringNode)
             var pathValue = Visit(expr.FileNameExpr);
 
             // 3. Setup the Function Type: void ToCsvInternal(ptr, ptr)
@@ -3546,7 +3619,7 @@ namespace MyCompiler
             // 1. Visit the path (The CSV string)
             var pathValue = Visit(expr.FileNameExpr);
 
-            // 2. Cast the Schema expression to a RecordNodeExpr
+            // 2. Cast the Schema expression to a RecordNode
             // This fixes the CS1503 conversion errors
             var schemaRecord = (RecordNode)expr.SchemaExpr;
 
@@ -3710,22 +3783,15 @@ namespace MyCompiler
 
             // 1. Get pointers
             var colsPtr = Visit(expr.Columns);
-
             var rowsPtr = Visit(expr.Rows);
-
-
 
             // 2. Build datatype array from TYPE (not AST)
             var dfType = expr.Type as DataframeType
                 ?? throw new Exception("Expected dataframe type.");
 
             var datatypeNodes = dfType.DataTypes
-                .Select(t =>
-                {
-                    var num = new NumberNode(GetTypeByTag(t));
-                    num.SetType(new IntType()); // Ensure it's treated as an Int
-                    return (ExpressionNode)num;
-                })
+                .Select(t => new NumberNode(GetTypeByTag(t)))
+                .Cast<ExpressionNode>()
                 .ToList();
 
             var datatypeArray = new ArrayNode(datatypeNodes);
@@ -3735,9 +3801,9 @@ namespace MyCompiler
             var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
             var dfPtr = _builder.BuildMalloc(dfStructType, "df");
 
-            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0)).SetAlignment(8);
-            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1)).SetAlignment(8);
-            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2)).SetAlignment(8);
+            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
+            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
+            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
 
             return dfPtr;
         }
@@ -4074,6 +4140,7 @@ namespace MyCompiler
         }
 
 
+
         private List<object> ExtractRecord(IntPtr recordPtr, RecordType recordType)
         {
             var result = new List<object>();
@@ -4093,7 +4160,7 @@ namespace MyCompiler
                     continue;
                 }
 
-                // 2. Dereference based on the known type - valuePtr points to a value box
+                // 2. Dereference based on the known type
                 if (fieldType is IntType)
                     result.Add(Marshal.ReadInt64(valuePtr));
                 else if (fieldType is FloatType)
@@ -4105,46 +4172,13 @@ namespace MyCompiler
                 else if (fieldType is BoolType)
                     result.Add(Marshal.ReadByte(valuePtr) != 0);
                 else if (fieldType is StringType)
-                {
-                    result.Add(Marshal.PtrToStringAnsi(valuePtr) ?? valuePtr.ToString());
-                }
+                    result.Add(Marshal.PtrToStringAnsi(valuePtr)); // Direct pointer to C-String
                 else
-                {
-                    // For unknown types, try multiple approaches to extract string data
-                    try
-                    {
-                        // First, try to read the 8 bytes directly as string data
-                        byte[] bytes = new byte[8];
-                        Marshal.Copy(valuePtr, bytes, 0, 8);
-                        string str = Encoding.ASCII.GetString(bytes).TrimEnd('\0');
-                        if (!string.IsNullOrEmpty(str))
-                            result.Add(str);
-                        else
-                        {
-                            // Try direct pointer to string
-                            str = Marshal.PtrToStringAnsi(valuePtr);
-                            if (!string.IsNullOrEmpty(str))
-                                result.Add(str);
-                            else
-                            {
-                                // Try indirect pointer to string
-                                IntPtr possibleStrPtr = Marshal.ReadIntPtr(valuePtr);
-                                str = Marshal.PtrToStringAnsi(possibleStrPtr);
-                                if (!string.IsNullOrEmpty(str))
-                                    result.Add(str);
-                                else
-                                    result.Add(valuePtr.ToString());
-                            }
-                        }
-                    }
-                    catch
-                    {
-                        result.Add(valuePtr.ToString());
-                    }
-                }
+                    result.Add(valuePtr); // Return raw pointer for complex types
             }
             return result;
         }
+
 
         public LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr)
         {

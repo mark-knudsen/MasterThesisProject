@@ -145,16 +145,7 @@ expr
     | NULL_LITERAL        { $$ = new NullNode(); }
     | Type                { $$ = new TypeLiteralNode($1 as TypeNode); }
     
-    /* 1. Standard function: Defaults to "Float" */
-    | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
-                          { $$ = new FunctionDefNode((string)$2, "Float", (List<string>)$4, $7 as Node); }
 
-    /* 2. Typed function: Uses the ID after the colon as the type */
-    | FUNC COLON ID ID LPAREN params RPAREN LBRACE expr RBRACE 
-                          { $$ = new FunctionDefNode((string)$4, (string)$3, (List<string>)$6, $9 as Node); }
-
-    | ID LPAREN arg RPAREN 
-                          { $$ = new FunctionCallNode((string)$1, new List<ExpressionNode> { $3 as ExpressionNode }); }
     | ID                  { $$ = new IdNode((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNode($3 as ExpressionNode); }
