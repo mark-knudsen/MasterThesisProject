@@ -42,7 +42,7 @@
 
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
-%type <type> Type
+%type <expr> Type
 %type <obj> params  /* Use <obj> for lists */
 
 %type <expr> arg
@@ -86,13 +86,13 @@ Statement
     ;
 
 Type
-    : INT                 { $$ = new IntType(); }
-    | FLOAT               { $$ = new FloatType(); }
-    | BOOL                { $$ = new BoolType(); }
-    | STRING              { $$ = new StringType(); }    
-    | VOID                { $$ = new VoidType(); }
-    | NULL                { $$ = new NullType(); }
-    | ARRAY GT Type LT    { $$ = new ArrayType($3); }
+    : INT                 { $$ = new TypeNode("int"); }
+    | FLOAT               { $$ = new TypeNode("float"); }
+    | BOOL                { $$ = new TypeNode("bool"); }
+    | STRING              { $$ = new TypeNode("string"); }   
+    | VOID                { $$ = new TypeNode("void"); }
+    | NULL                { $$ = new TypeNode("null"); }
+    | ARRAY GT Type LT    { $$ = new TypeNode("array"); }
     ;
 
 Assignment 
@@ -141,9 +141,9 @@ expr
     | FLOAT_LITERAL       { $$ = new FloatNode($1); }
     | MINUS expr          { $$ = new UnaryOpNode("-", $2 as ExpressionNode); }
     | STRING_LITERAL      { $$ = new StringNode((string)$1); }
-    | STRING              { $$ = new TypeLiteralNode(new StringType()); }
+    | STRING              { $$ = new TypeLiteralNode(new TypeNode("string")); }
     | NULL_LITERAL        { $$ = new NullNode(); }
-    | Type                { $$ = new TypeLiteralNode($1); }
+    | Type                { $$ = new TypeLiteralNode($1 as TypeNode); }
     
     /* 1. Standard function: Defaults to "Float" */
     | FUNC ID LPAREN params RPAREN LBRACE expr RBRACE 
