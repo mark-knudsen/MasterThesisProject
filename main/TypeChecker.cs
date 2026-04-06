@@ -89,38 +89,25 @@ namespace MyCompiler
 
         public Type VisitForEachLoop(ForEachLoopNode expr)
         {
-            // 1. Check the array expression to ensure it's actually an array
-            Type arrayType = Visit(expr.Array);
-            if (arrayType is not ArrayType)
-            {
-                throw new Exception("Foreach target must be an array.");
-            }
+            Type targetType = Visit(expr.Array);
+            Type elementType = null;
 
-            // 2. Determine the element type (e.g., MyType.Float for [12, 200])
-            Type elementType = null; // Default
-            if (expr.Array is ArrayNode arrayNode)
-            {
-                elementType = arrayNode.ElementType ?? new FloatType();
-            }
-            else if (expr.Array is IdNode idNode)
-            {
-                var entry = _context.Get(idNode.Name);
-                elementType = entry?.ElementType ?? new FloatType();
-            }
+            if (targetType is ArrayType arrType)
+                elementType = arrType.ElementType;
+            else if (targetType is DataframeType dfType)
+                elementType = dfType.RowType;
+            else
+                throw new Exception("Foreach target must be an array or a dataframe.");
 
-            // arr = ["a", "b", "c"];
-            // arr = [1, 2, 3];
-            // arr = [true, false, false];
+            // --- THE FIX ---
+            // Stamp the type onto the IdNode itself
+            expr.Iterator.SetType(elementType);
 
+            // Register in the symbol table for body lookups
+            _context = _context.Add(expr.Iterator.Name, null, elementType);
 
-            // 3. Register the iterator variable (e.g., 'item') in the context
-            // This allows the Body to know 'item' is a Float/String
-            _context = _context.Add(expr.Iterator.Name, default, elementType);
-
-            // 4. Check the body
             Visit(expr.Body);
-
-            return new VoidType(); // Loops don't return a value
+            return new VoidType();
         }
 
         public Type VisitNumber(NumberNode expr)

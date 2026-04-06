@@ -3,7 +3,7 @@ source_filename = "repl_module"
 
 @df = external global ptr
 
-define ptr @main_1() {
+define ptr @main_3() {
 entry:
   %df_load = load ptr, ptr @df, align 8
   %runtime_obj = call ptr @malloc(i64 16)

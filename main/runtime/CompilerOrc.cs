@@ -551,7 +551,7 @@ namespace MyCompiler
                         return HandleDataframe(result.data, dfType);
                     }
 
-                    return "Dataframe display error";
+                    return null;
 
 
                 case ValueTag.None:
@@ -941,59 +941,82 @@ namespace MyCompiler
         public LLVMValueRef VisitForEachLoop(ForEachLoopNode expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // Array pointer and length
-            var arrayPtr = Visit(expr.Array);
-            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+            // 1. Get the Array Header Pointer
+            var sourcePtr = Visit(expr.Array);
+            LLVMValueRef arrayHeaderPtr;
 
-            // Stack-local iterator
-            var elementType = ((ArrayType)expr.Array.Type).ElementType;
-            var iteratorAlloc = _builder.BuildAlloca(GetLLVMType(elementType), expr.Iterator.Name);
+            if (expr.Array.Type is DataframeType)
+            {
+                // If it's a dataframe, we iterate over the 'rows' array (index 1 in the DF struct)
+                var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+                var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 1, "df_rows_ptr");
+                arrayHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_array_header");
+            }
+            else
+            {
+                arrayHeaderPtr = sourcePtr;
+            }
 
-            // Add to context
+            // 2. Load Length and Data Pointer from the Array Header { i64, i64, i8* }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+            var lenPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 0, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(i64, lenPtr, "array_len");
+
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 2, "data_ptr_ptr");
+            var dataBuffer = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data_buffer");
+
+            // 3. Setup Iterator Variable
+            Type elementType;
+            if (expr.Array.Type is DataframeType df) elementType = df.RowType;
+            else elementType = ((ArrayType)expr.Array.Type).ElementType;
+
+            // All elements in our buffers are pointers (i8*)
+            var iteratorAlloc = _builder.BuildAlloca(i8Ptr, expr.Iterator.Name);
             _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType);
 
-            // Loop blocks
+            // 4. Loop Blocks
             var condBlock = func.AppendBasicBlock("foreach.cond");
             var bodyBlock = func.AppendBasicBlock("foreach.body");
+            var nextBlock = func.AppendBasicBlock("foreach.next");
             var endBlock = func.AppendBasicBlock("foreach.end");
 
-            // Counter
-            var counterAlloc = _builder.BuildAlloca(ctx.Int64Type, "foreach_counter");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), counterAlloc);
+            var counterAlloc = _builder.BuildAlloca(i64, "foreach_counter");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), counterAlloc);
             _builder.BuildBr(condBlock);
 
-            // Condition
+            // 5. Condition
             _builder.PositionAtEnd(condBlock);
-            var curIdx = _builder.BuildLoad2(ctx.Int64Type, counterAlloc, "cur_idx");
+            var curIdx = _builder.BuildLoad2(i64, counterAlloc, "cur_idx");
             var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
             _builder.BuildCondBr(cond, bodyBlock, endBlock);
 
-            // Body
+            // 6. Body
             _builder.PositionAtEnd(bodyBlock);
-            var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var memIdx = _builder.BuildAdd(curIdx, two64, "mem_idx");
 
-            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { memIdx }, "elem_ptr");
-            var elementVal = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "elem_val");
+            // Calculate address: dataBuffer + (curIdx * 8)
+            var elemPtr = _builder.BuildGEP2(i8Ptr, dataBuffer, new[] { curIdx }, "elem_ptr");
+            var elemVal = _builder.BuildLoad2(i8Ptr, elemPtr, "elem_val");
 
-            // Store into stack-local iterator
-            _builder.BuildStore(elementVal, iteratorAlloc);
+            _builder.BuildStore(elemVal, iteratorAlloc);
 
             Visit(expr.Body);
+            _builder.BuildBr(nextBlock);
 
-            // Increment counter
-            var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
-            var nextIdx = _builder.BuildAdd(curIdx, one64, "next_idx");
+            // 7. Next (Increment)
+            _builder.PositionAtEnd(nextBlock);
+            var nextIdx = _builder.BuildAdd(curIdx, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             _builder.BuildStore(nextIdx, counterAlloc);
             _builder.BuildBr(condBlock);
 
             _builder.PositionAtEnd(endBlock);
             return default;
         }
+
         public LLVMValueRef VisitIncrement(IncrementNode expr)
         {
             // 1. Get the pointer
@@ -3452,26 +3475,48 @@ namespace MyCompiler
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
-            var recordPtr = Visit(recordExpr);
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 1. Get the address of the variable
+            var recordVarAddr = Visit(recordExpr);
+
+            // 2. Resolve the RecordType (Metadata)
             var recordType = recordExpr.Type as RecordType;
-            if (recordType == null) throw new Exception("Expected record type");
+            if (recordType == null && recordExpr is IdNode id)
+            {
+                recordType = _context.Get(id.Name).Type as RecordType;
+            }
 
+            if (recordType == null)
+                throw new Exception($"Expected record type for field access '{fieldName}'");
+
+            // 3. Resolve the Pointer to the actual Heap Data
+            // If we are dealing with a local variable (like 'item' in foreach), 
+            // recordVarAddr is a 'ptr*' (pointer to the pointer on the stack).
+            // We must load it to get the actual heap address.
+            LLVMValueRef actualHeapAddr;
+
+            // Check if the address returned is indeed a pointer to our record pointer
+            // (In your system, all records on the heap are accessed via i8Ptr)
+            if (recordVarAddr.TypeOf.Kind == LLVMTypeKind.LLVMPointerType)
+            {
+                actualHeapAddr = _builder.BuildLoad2(i8Ptr, recordVarAddr, "actual_record_addr");
+            }
+            else
+            {
+                actualHeapAddr = recordVarAddr;
+            }
+
+            // 4. Calculate field offset and GEP
             int fieldIndex = GetFieldIndex(fieldName, recordType.RecordFields);
+            var offset = LLVMValueRef.CreateConstInt(i64, (ulong)fieldIndex);
 
-            // EVERY field in your record buffer is a pointer (i8*)
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            // We use i8Ptr here because your record is a flat buffer of 8-byte slots
+            var fieldSlotPtr = _builder.BuildGEP2(i8Ptr, actualHeapAddr, new[] { offset }, $"ptr_{fieldName}");
 
-            // Use GEP to find the N-th pointer in the record buffer
-            // This is equivalent to: recordPtr + (fieldIndex * 8)
-            var fieldPtr = _builder.BuildGEP2(
-                i8Ptr,
-                recordPtr,
-                new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)fieldIndex) },
-                $"ptr_{fieldName}"
-            );
-
-            // We return i8Ptr because the slot contains a pointer
-            return (fieldPtr, i8Ptr);
+            return (fieldSlotPtr, i8Ptr);
         }
 
         private int GetFieldIndex(string name, List<RecordField> Fields)
