@@ -2930,53 +2930,168 @@ namespace MyCompiler
 
             return newRange;
         }
+
         public LLVMValueRef VisitRemove(RemoveNode expr)
+        {
+            var headerPtr = Visit(expr.SourceExpression);
+            var target = Visit(expr.RemoveExpression);
+            var sourceType = expr.SourceExpression.Type;
+
+            if (sourceType is DataframeType dfType)
+            {
+                // 1. Get the internal rows array
+                var rowsArrayHeader = GetInternalRowsArray(headerPtr);
+
+                // 2. Reuse the Search Helper
+                var physicalIndex = FindDataframeRowIndex(rowsArrayHeader, target);
+
+                // 3. Conditional Removal
+                var wasFound = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, physicalIndex,
+                                 LLVMValueRef.CreateConstInt(_module.Context.Int64Type, unchecked((ulong)-1), true));
+
+                var function = _builder.InsertBlock.Parent;
+                var removeBlock = _module.Context.AppendBasicBlock(function, "do_remove");
+                var contBlock = _module.Context.AppendBasicBlock(function, "remove_cont");
+
+                _builder.BuildCondBr(wasFound, removeBlock, contBlock);
+
+                _builder.PositionAtEnd(removeBlock);
+                ExecuteArrayRemoval(rowsArrayHeader, physicalIndex, dfType.RowType);
+                _builder.BuildBr(contBlock);
+
+                _builder.PositionAtEnd(contBlock);
+            }
+            else
+            {
+                // For standard arrays, the target IS the physical index
+                ExecuteArrayRemoval(headerPtr, target, sourceType);
+            }
+
+            return headerPtr;
+        }
+
+        private LLVMValueRef FindDataframeRowIndex(LLVMValueRef rowsArrayHeader, LLVMValueRef targetId)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+            // 1. Load Metadata
+            var len = _builder.BuildLoad2(i64, _builder.BuildStructGEP2(arrayStructType, rowsArrayHeader, 0), "len");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(arrayStructType, rowsArrayHeader, 2), "data_ptr");
+
+            // 2. Setup Loop
+            var foundOffset = _builder.BuildAlloca(i64, "found_offset");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, unchecked((ulong)-1), true), foundOffset);
+
+            var counter = _builder.BuildAlloca(i64, "i");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), counter);
+
+            var function = _builder.InsertBlock.Parent;
+            var cond = ctx.AppendBasicBlock(function, "find.cond");
+            var body = ctx.AppendBasicBlock(function, "find.body");
+            var next = ctx.AppendBasicBlock(function, "find.next");
+            var found = ctx.AppendBasicBlock(function, "find.found");
+            var end = ctx.AppendBasicBlock(function, "find.end");
+
+            _builder.BuildBr(cond);
+
+            // --- Loop ---
+            _builder.PositionAtEnd(cond);
+            var iVal = _builder.BuildLoad2(i64, counter);
+            _builder.BuildCondBr(_builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, iVal, len), body, end);
+
+            _builder.PositionAtEnd(body);
+            var recordPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildGEP2(i8Ptr, dataPtr, new[] { iVal }));
+
+            // Access field 0 (the ID)
+            var idBox = _builder.BuildLoad2(i8Ptr, _builder.BuildGEP2(i8Ptr, recordPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) }));
+            var actualId = _builder.BuildLoad2(i64, _builder.BuildBitCast(idBox, LLVMTypeRef.CreatePointer(i64, 0)));
+
+            _builder.BuildCondBr(_builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, actualId, targetId), found, next);
+
+            _builder.PositionAtEnd(next);
+            _builder.BuildStore(_builder.BuildAdd(iVal, LLVMValueRef.CreateConstInt(i64, 1)), counter);
+            _builder.BuildBr(cond);
+
+            _builder.PositionAtEnd(found);
+            _builder.BuildStore(iVal, foundOffset);
+            _builder.BuildBr(end);
+
+            _builder.PositionAtEnd(end);
+            return _builder.BuildLoad2(i64, foundOffset);
+        }
+
+        private LLVMValueRef GetInternalRowsArray(LLVMValueRef dfPtr)
+        {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "rows_field_ptr");
+            return _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_array");
+        }
+
+        private void ExecuteArrayRemoval(LLVMValueRef headerPtr, LLVMValueRef indexVal, Type elementType)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-
-            // Header: { i64 len, i64 cap, i8* data }
             var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
 
-            var headerPtr = Visit(expr.SourceExpression);
-            var indexVal = Visit(expr.RemoveExpression);
-
-            // 1. Determine if this is a packed (boolean) array
-            bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
-
-            // This is the CRITICAL part:
-            // If bool, we tell GEP the elements are 1-byte (i8).
-            // If not, we tell GEP the elements are 8-bytes (i8Ptr).
+            // 1. Determine element size
+            // If it's a Dataframe removal, elementType passed is RecordType (8 bytes)
+            // If it's an Array removal, check if it's a BoolType
+            bool isBool = (elementType is BoolType) || (elementType is ArrayType at && at.ElementType is BoolType);
             var gepStrideType = isBool ? i8 : i8Ptr;
-            var strideMultiplier = isBool ? 1 : 8;
+            ulong strideMultiplier = isBool ? 1UL : 8UL;
+
+            // 2. Load Metadata
             var lenFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 0, "len_ptr");
             var dataFieldPtr = _builder.BuildStructGEP2(arrayStructType, headerPtr, 2, "data_ptr_ptr");
+
             var length = _builder.BuildLoad2(i64, lenFieldPtr, "len");
             var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
 
-            // 2. Calculate Pointers
-            // Use gepStrideType here! Do NOT use dataPtr.TypeOf.
+            // 3. Calculate Move Parameters
+            // dst = data + index
             var dstPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { indexVal }, "dst");
 
-            var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1));
+            // src = data + index + 1
+            var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             var srcPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { nextIdx }, "src");
 
-            // 3. Calculate Bytes to Move
-            var moveCount = _builder.BuildSub(_builder.BuildSub(length, indexVal), LLVMValueRef.CreateConstInt(i64, 1));
-            var bytesToMove = _builder.BuildMul(moveCount, LLVMValueRef.CreateConstInt(i64, (ulong)strideMultiplier), "bytes");
+            // moveCount = length - index - 1
+            var moveCount = _builder.BuildSub(
+                _builder.BuildSub(length, indexVal),
+                LLVMValueRef.CreateConstInt(i64, 1),
+                "move_count"
+            );
 
-            // 4. Memmove
+            // 4. Conditional Memmove (Only move if we aren't removing the very last element)
+            var hasItemsToShift = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, moveCount, LLVMValueRef.CreateConstInt(i64, 0));
+
+            var function = _builder.InsertBlock.Parent;
+            var moveBlock = ctx.AppendBasicBlock(function, "do_move");
+            var endBlock = ctx.AppendBasicBlock(function, "remove_end");
+
+            _builder.BuildCondBr(hasItemsToShift, moveBlock, endBlock);
+
+            // --- Move Block ---
+            _builder.PositionAtEnd(moveBlock);
+            var bytesToMove = _builder.BuildMul(moveCount, LLVMValueRef.CreateConstInt(i64, strideMultiplier), "bytes");
             var memmoveFunc = GetOrDeclareMemmove();
             _builder.BuildCall2(_memmoveType, memmoveFunc, new[] { dstPtr, srcPtr, bytesToMove }, "");
+            _builder.BuildBr(endBlock);
 
-            // 5. Update Length
-            var newLen = _builder.BuildSub(length, LLVMValueRef.CreateConstInt(i64, 1));
+            // --- End Block ---
+            _builder.PositionAtEnd(endBlock);
+
+            // 5. Decrement Length
+            var newLen = _builder.BuildSub(length, LLVMValueRef.CreateConstInt(i64, 1), "new_len");
             _builder.BuildStore(newLen, lenFieldPtr);
-
-            return headerPtr;
         }
+
 
         public LLVMValueRef VisitRemoveRange(RemoveRangeNode expr)
         {

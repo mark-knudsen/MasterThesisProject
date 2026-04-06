@@ -742,9 +742,16 @@ namespace MyCompiler
 
         public Type VisitRemove(RemoveNode expr)
         {
-            Visit(expr.SourceExpression);
-            Visit(expr.RemoveExpression);
-            expr.SetType(expr.SourceExpression.Type);
+            var sourceType = Visit(expr.SourceExpression);
+            var indexType = Visit(expr.RemoveExpression);
+
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception("Remove operation is only supported on arrays and dataframes");
+
+            if (indexType is not IntType)
+                throw new Exception("Remove index must be an integer");
+
+            expr.SetType(sourceType);
             return expr.Type;
         }
 
