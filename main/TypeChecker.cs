@@ -944,88 +944,101 @@ namespace MyCompiler
             expr.SetType(new VoidType());
             return expr.Type;
         }
-
         public Type VisitDataframe(DataframeNode expr)
         {
-            // 1. Visit Columns and Rows to resolve their types
+            // 1. PRE-INJECTION: We must inject 'index' BEFORE calling Visit() on Rows or Columns
+            // so that the recursive visitor picks up the new nodes and types them correctly.
+            if (expr.Rows is ArrayNode arrayRows && expr.Columns is ArrayNode arrayCols)
+            {
+                // Ensure "index" is at the start of the column names array
+                bool hasIndexCol = arrayCols.Elements.OfType<StringNode>().Any(s => s.Value == "index");
+                if (!hasIndexCol)
+                {
+                    arrayCols.Elements.Insert(0, new StringNode("index"));
+                }
+
+                for (int i = 0; i < arrayRows.Elements.Count; i++)
+                {
+                    if (arrayRows.Elements[i] is RecordNode rec)
+                    {
+                        // Check if 'index' field already exists to avoid double-injection
+                        if (!rec.Fields.Any(f => f.Label == "index"))
+                        {
+                            var indexValue = new NumberNode(i);
+                            // Explicitly set the type to IntType so the CodeGen doesn't see NULL
+                            indexValue.SetType(new IntType());
+
+                            var indexField = new RecordField()
+                            {
+                                Label = "index",
+                                Value = indexValue,
+                                Type = new IntType() // CRITICAL: Assign the type here
+                            };
+
+                            rec.Fields.Insert(0, indexField);
+                        }
+                    }
+                }
+            }
+
+            // 2. NOW Visit: This will resolve the types of the modified Arrays/Records
             var columnsType = Visit(expr.Columns) as ArrayType;
             var rowsType = Visit(expr.Rows) as ArrayType;
 
             if (columnsType == null || rowsType == null)
                 throw new Exception("Dataframe arguments must resolve to Array types.");
 
-            // 2. Resolve the Row Type (What is inside the rows array?)
             var rowType = rowsType.ElementType as RecordType;
             if (rowType == null)
                 throw new Exception("Dataframe rows must be an array of records.");
 
-            // --- Handling the 'index' column injection ---
-            if (expr.Rows is ArrayNode arrayRows && expr.Columns is ArrayNode arrayCols)
-            {
-                for (int i = 0; i < arrayRows.Elements.Count; i++)
-                {
-                    if (arrayRows.Elements[i] is RecordNode rec)
-                    {
-                        if (!rec.Fields.Any(f => f.Label == "index"))
-                            rec.Fields.Insert(0, new RecordField() { Value = new NumberNode(i), Label = "index" });
-                    }
-                }
-                if (arrayCols.Elements.OfType<StringNode>().All(s => s.Value != "index"))
-                {
-                    arrayCols.Elements.Insert(0, new StringNode("index"));
-                }
-            }
-
-            // 3. Extract Column Names
+            // 3. Extract Column Names (including the newly injected "index")
             List<string> columnNames = new List<string>();
             if (expr.Columns is ArrayNode colArray)
             {
                 foreach (var element in colArray.Elements)
                 {
-                    // Visit the element first to ensure it's resolved
+                    // Ensure the element (StringNode or IdNode) is visited/typed
                     Visit(element);
 
                     if (element is StringNode str)
                         columnNames.Add(str.Value);
                     else if (element is IdNode id && id.Type is StringType)
-                        columnNames.Add(id.Name); // Or however you resolve dynamic names
+                        columnNames.Add(id.Name);
                 }
             }
 
-            // 4. Map Names to Types
-            // In Typechecker.VisitDataframe
-            if (columnNames.Count > 0)
-            {
-                // ONLY clear and rebuild if the list is currently empty
-                if (expr.DataTypes.Count == 0)
-                {
-                    foreach (var name in columnNames)
-                    {
-                        var field = rowType.RecordFields.FirstOrDefault(f => f.Label == name);
-                        if (field != null) expr.DataTypes.Add(field.Type);
-                    }
-                }
-            }
+            // 4. Map Names to Types using the resolved rowType
+            // We clear expr.DataTypes to ensure we don't have stale/null entries from previous attempts
+            expr.DataTypes.Clear();
 
-            // ADD THIS: If we have no columnNames (dynamic/show), 
-            // but we already have DataTypes, reconstruct columnNames from the rowType
-            else if (expr.DataTypes.Count == 0 && rowType != null)
+            foreach (var name in columnNames)
             {
-                // Fallback: use all fields from the record if columns are empty
-                foreach (var field in rowType.RecordFields)
+                var field = rowType.RecordFields.FirstOrDefault(f => f.Label == name);
+                if (field != null)
                 {
-                    columnNames.Add(field.Label);
+                    if (field.Type == null)
+                        throw new Exception($"Field '{name}' has a NULL type. Check injection logic.");
+
                     expr.DataTypes.Add(field.Type);
                 }
+                else
+                {
+                    throw new Exception($"Column '{name}' was requested but not found in the row record.");
+                }
             }
 
-            // 5. CRITICAL: Re-verify that columnNames and DataTypes match in length
-            var finalNames = columnNames.Count > 0 ? columnNames : rowType.RecordFields.Select(f => f.Label).ToList();
+            // 5. Finalize the DataframeType
+            var finalNames = columnNames.Count > 0
+                ? columnNames
+                : rowType.RecordFields.Select(f => f.Label).ToList();
 
             var dfType = new DataframeType(finalNames, new List<Type>(expr.DataTypes), rowType);
-            expr.SetType(dfType); // Ensure the node itself knows its type!
+            expr.SetType(dfType);
+
             return dfType;
         }
+
 
 
         public Type VisitPropertyAccess(PropertyAccessNode node)
@@ -1079,72 +1092,63 @@ namespace MyCompiler
 
         public Type VisitShowDataframe(ShowDataframeNode expr)
         {
+            // 1. Resolve the source Dataframe
             var sourceType = Visit(expr.Source) as DataframeType;
             if (sourceType == null)
-                throw new Exception("Show requires a Dataframe source");
+                throw new Exception("Show requires a Dataframe source.");
 
-            // Visit all column expressions to validate them
-            foreach (var col in expr.Columns)
-            {
-                //System.Console.WriteLine("type check of columns: ", (col as StringNode).Value);
-                var colType = Visit(col);
-                if (!(colType is StringType))
-                    throw new Exception($"Show column names must be strings, got {colType}");
-            }
-
-            // Extract column names for validation
             var columnNames = new List<string>();
             var columnTypes = new List<Type>();
+            var semanticFields = new List<RecordField>();
 
-            foreach (var col in expr.Columns)
+            // 2. Validate requested columns against the source schema
+            foreach (var colExpr in expr.Columns)
             {
-                if (col is StringNode strNode)
+                // Visit the column name expression (usually a StringNode)
+                var colExprType = Visit(colExpr);
+                if (!(colExprType is StringType))
+                    throw new Exception($"Show column names must be strings, got {colExprType}");
+
+                if (colExpr is StringNode strNode)
                 {
-                    var name = strNode.Value;
+                    string name = strNode.Value;
+
+                    // Find the index of this column in the source dataframe
                     int idx = sourceType.ColumnNames.IndexOf(name);
                     if (idx < 0)
-                        throw new Exception($"Column '{name}' not found in dataframe");
+                        throw new Exception($"Column '{name}' not found in dataframe. Available: {string.Join(", ", sourceType.ColumnNames)}");
+
+                    // Pull the correct Type (which we just fixed in VisitDataframe)
+                    var colType = sourceType.DataTypes[idx];
+                    if (colType == null)
+                        throw new Exception($"Internal Error: Column '{name}' has a null type in source dataframe.");
 
                     columnNames.Add(name);
-                    columnTypes.Add(sourceType.DataTypes[idx]);
+                    columnTypes.Add(colType);
+
+                    // 3. Build the RecordField for the new RowType
+                    semanticFields.Add(new RecordField
+                    {
+                        Label = name,
+                        Type = colType
+                        // Value is null because this is a Type definition
+                    });
                 }
                 else
                 {
-                    throw new Exception("Show columns must be string literals");
+                    throw new Exception("Show columns must be string literals (e.g., \"name\")");
                 }
             }
 
-            // 1. Create the schema for the new row (the RecordType)
-            // We use the semantic 'Type' objects directly.
-            // Ensure your RecordType constructor/structure supports this.
-            var fields = new Dictionary<string, Type>();
-            for (int i = 0; i < columnNames.Count; i++)
-            {
-                fields.Add(columnNames[i], columnTypes[i]);
-            }
-
-            // 1. Create the list of semantic RecordField objects using object initializers
-            var semanticFields = new List<RecordField>();
-            for (int i = 0; i < columnNames.Count; i++)
-            {
-                semanticFields.Add(new RecordField
-                {
-                    Label = columnNames[i],
-                    Type = columnTypes[i]
-                    // Value is left null here because this is a Type definition, 
-                    // not a concrete instance of a record.
-                });
-            }
-
-            // 2. Create the RecordType using the list of RecordFields
+            // 4. Create the new RowType (a subset of the original record)
             var rowType = new RecordType(semanticFields);
 
-            // 3. Create the final DataframeType
+            // 5. Construct the resulting DataframeType
+            // Note: Show creates a "View" or a new DF structure with only selected columns
             var resultType = new DataframeType(columnNames, columnTypes, rowType);
 
             expr.SetType(resultType);
             return resultType;
-
         }
 
 

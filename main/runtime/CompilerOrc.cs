@@ -1841,82 +1841,71 @@ namespace MyCompiler
 
         public LLVMValueRef VisitMap(MapNode expr)
         {
-            // --- 1. PRE-PROCESS: Extract the Array ---
-            ExpressionNode effectiveSource = expr.SourceExpr;
-            bool isFromDataframe = expr.SourceExpr.Type is DataframeType;
 
-            if (isFromDataframe)
-            {
-                var dfType = (DataframeType)expr.SourceExpr.Type;
-                // Logic: Turn 'df' into 'df._rows' (the internal Array<Record>)
-                effectiveSource = new InternalDataframeFieldNode(
-                    expr.SourceExpr,
-                    1, // The Index of the rows array in the struct
-                    new ArrayType(dfType.RowType)
-                );
-                // Ensure the effective source has the correct type for the logic below
-                effectiveSource.SetType(new ArrayType(dfType.RowType));
-            }
-
-            var arrayType = (ArrayType)effectiveSource.Type;
+            var arrayType = (ArrayType)expr.SourceExpr.Type;
             var resultType = (ArrayType)expr.Type;
             var intType = new IntType();
 
-            // --- 2. LOOP SETUP (Standard Array Logic) ---
             var srcVarName = "__map_src";
             var resultVarName = "__map_result";
             var indexVarName = "__map_i";
 
+            // 1. Inject internal variables into context for the duration of the map
             _context = _context.Add(srcVarName, default, null!, arrayType);
             _context = _context.Add(resultVarName, default, null!, resultType);
             _context = _context.Add(indexVarName, default, null!, intType);
 
+            // Helper to create typed IDs
             IdNode TypedId(string name, Type type)
             {
-                var id = new IdNode(name); id.SetType(type); return id;
+                var id = new IdNode(name);
+                id.SetType(type);
+                return id;
             }
 
-            var srcAssign = new AssignNode(srcVarName, new CopyArrayNode(effectiveSource));
+            // 2. Build the Loop AST
+            var srcAssign = new AssignNode(srcVarName, new CopyArrayNode(expr.SourceExpr));
+
+            // Create an empty array of the same length for results
             var resultAssign = new AssignNode(resultVarName, new CopyArrayNode(TypedId(srcVarName, arrayType)));
             var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
 
             var loopCond = new ComparisonNode(TypedId(indexVarName, intType), "<", new LengthNode(TypedId(srcVarName, arrayType)));
             var loopStep = new IncrementNode(indexVarName);
 
-            // This is the 'x' in 'x => x.age'
+
+            // Access the current element in the source array
             var currentElement = new IndexNode(TypedId(srcVarName, arrayType), TypedId(indexVarName, intType));
             currentElement.SetType(arrayType.ElementType);
 
-            // Replace iterator in 'x.age + 2' with the indexed access
+            // Replace all instances of the iterator (e.g., "$row") with the actual array index access
             var mapExpr = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
 
+            // Assign the result of the transformation into the new array
             var indexAssignNode = new IndexAssignNode(TypedId(resultVarName, resultType), TypedId(indexVarName, intType), mapExpr);
             var loopBody = new SequenceNode();
+
             loopBody.Statements.Add(indexAssignNode);
 
             var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
+
+            // 3. Execute the Loop AST
             var program = new SequenceNode();
+
             program.Statements.Add(srcAssign);
             program.Statements.Add(resultAssign);
             program.Statements.Add(forLoop);
 
-            // 3. Execute the Loop AST
             VisitSequence(program);
 
-            // 4. GET THE RAW POINTER
-            // Do NOT use BoxValue here yet. Just get the pointer to the header.
-            var resultValue = Visit(new IdNode(resultVarName));
+            // 4. Return the resulting Array Header Pointer
+            return Visit(new IdNode(resultVarName));
 
-            // 5. MANUAL BOXING BASED ON TYPE
-            if (isFromDataframe && resultType.ElementType is RecordType resRecordType)
-            {
-                // Wrap the raw result array back into a Dataframe struct
-                return WrapArrayAsDataframe(resultValue, resRecordType);
-            }
-
-            // If it's a standard array map, box it ONCE
-            return BoxValue(resultValue, resultType);
         }
+
+
+
+
 
 
         // REMOVE THIS:
@@ -3729,9 +3718,9 @@ namespace MyCompiler
             var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
             var dfPtr = _builder.BuildMalloc(dfStructType, "df");
 
-            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
-            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
-            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0)).SetAlignment(8);
+            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1)).SetAlignment(8);
+            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2)).SetAlignment(8);
 
             return dfPtr;
         }
@@ -3760,6 +3749,7 @@ namespace MyCompiler
                     {
                         case 0: // Index (Int)
                         case 1: // Int
+                            if (ptr == IntPtr.Zero) return "0"; // Handle raw 0
                             return Marshal.ReadInt64(ptr).ToString();
                         case 2: // Float (Double)
                             byte[] bytes = new byte[8];
