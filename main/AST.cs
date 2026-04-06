@@ -687,19 +687,7 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldAssign(this);
     }
 
-    // public class CopyRecordNode : CopyNode
-    // {
-    //     public CopyRecordNode(ExpressionNode source) : base(source) { }
 
-    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyRecord(this);
-    // }
-
-    // public class CopyDataframeNode : CopyNode
-    // {
-    //     public CopyDataframeNode(ExpressionNode source) : base(source) { }
-
-    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopyDataframe(this);
-    // }
 
     public class CopyNode : ExpressionNode
     {
