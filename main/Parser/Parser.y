@@ -236,7 +236,11 @@ expr
     /* dataframe(columns=[...], data=[...]) */
     | DATAFRAME LPAREN arg_list RPAREN
     {
-        // Make sure you have: using System.Linq; at the top of your parser file
+        $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList());
+    }
+
+    | DATAFRAME LPAREN expr_list RPAREN
+    {
         $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList());
     }
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); }

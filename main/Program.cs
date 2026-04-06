@@ -36,7 +36,6 @@ namespace MyCompiler
             CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
             CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
 
-
             try
             {
                 Console.WriteLine("--- AST Compiler Shell ---");
@@ -48,7 +47,7 @@ namespace MyCompiler
                 KeepRunning = true;
 
 #if LINUX
-                bool multipleLines = false;
+                bool multipleLines = true;
                 string exitText = "e";
 #else
                 bool multipleLines = false;
@@ -236,7 +235,7 @@ namespace MyCompiler
                                     //Console.WriteLine("\nAST Structure:");
 
                                     // 2. Print the tree
-                                    PrintNode(parser.RootNode, 0);
+                                    //PrintNode(parser.RootNode, 0);
 
                                     // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
                                     // Console.ResetColor();
@@ -500,6 +499,5 @@ namespace MyCompiler
                     break;
             }
         }
-
     }
 }

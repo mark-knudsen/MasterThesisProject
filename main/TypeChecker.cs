@@ -46,7 +46,6 @@ namespace MyCompiler
                 ForLoopNode _for => VisitForLoop(_for),
                 ForEachLoopNode _foreach => VisitForEachLoop(_foreach),
                 ArrayNode arr => VisitArray(arr),
-                //CopyArrayNode clo => VisitCopyArray(clo),
                 IndexNode idx => VisitIndex(idx),
                 IndexAssignNode idxa => VisitIndexAssign(idxa),
                 WhereNode whe => VisitWhere(whe),
@@ -71,7 +70,6 @@ namespace MyCompiler
                 RecordNode rec => VisitRecord(rec),
                 RecordFieldNode recf => VisitRecordField(recf),
                 RecordFieldAssignNode reca => VisitRecordFieldAssign(reca),
-                //CopyRecordNode copr => VisitCopyRecord(copr),
                 CopyNode cop => VisitCopy(cop),
                 AddFieldNode radd => VisitAddField(radd),
                 RemoveFieldNode rrem => VisitRemoveField(rrem),
@@ -79,7 +77,6 @@ namespace MyCompiler
                 ColumnsNode cols => VisitColumns(cols),
                 ShowDataframeNode showdf => VisitShowDataframe(showdf),
                 //InternalDataframeFieldNode interDFField => VisitInternalDataframeField(interDFField),
-                //PropertyAccessNode propAccecc => VisitPropertyAccess(propAccecc),
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
 
@@ -508,54 +505,6 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        // public Type VisitFunctionDef(FunctionDefNode node)
-        // {
-        //     // 1. Convert the string return type (e.g., "int") to your MyType enum
-        //     Type returnType = node.ReturnTypeName;
-
-        //     // 2. Save the global context
-        //     var globalContext = _context;
-
-        //     // 3. Create Local Scope: Add parameters so the body can see them
-        //     // We assume parameters are Floats/Numbers in your current setup
-
-        //     foreach (var paramName in node.Parameters)
-        //     {
-        //         // If the function returns a string, assume parameters are strings.
-        //         // Otherwise, assume they are numbers.
-        //         Type pType = (returnType is StringType) ? new StringType() : new FloatType();
-
-        //         _context = _context.Add(paramName, default!, null, pType, null);
-        //     }
-
-        //     // 4. Visit the body to ensure variables like 'x' and 'y' are defined
-        //     Visit(node.Body);
-
-        //     // 5. Restore Global Context (parameters shouldn't exist outside)
-        //     _context = globalContext;
-
-        //     // 6. Register the FUNCTION itself so we can call it
-        //     // Using 'rType' (the enum) instead of 'node.ReturnTypeName' (the string)
-        //     _context = _context.Add(node.Name, default!, null, returnType, null);
-
-        //     return new VoidType();
-        // }
-
-        // public Type VisitFunctionCall(FunctionCallNode expr)
-        // {
-        //     var entry = _context.Get(expr.Name);
-        //     if (entry == null) throw new Exception($"Function {expr.Name} is not defined");
-
-        //     // Check if the number of arguments matches (Very important for LLVM!)
-        //     // Note: You'll need to store the parameter count in your ContextEntry to do this properly.
-
-        //     foreach (var arg in expr.Arguments) Visit(arg);
-
-        //     // Use the actual return type of the function!
-        //     expr.SetType(entry.Type);
-        //     return expr.Type;
-        // }
-
         public Type VisitRound(RoundNode expr)
         {
             Visit(expr.Value);
@@ -570,6 +519,78 @@ namespace MyCompiler
         }
 
         public Type VisitWhere(WhereNode expr)
+        {
+            // Visit source expression
+            var sourceType = Visit(expr.SourceExpr);
+
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception("where can only be used on arrays or dataframes");
+
+            // --- Create iterator variable ---
+            if (sourceType is ArrayType arrType)
+            {
+                ExpressionNode defaultVal = arrType.ElementType switch
+                {
+                    StringType => new StringNode(""),
+                    BoolType => new BooleanNode(false),
+                    IntType => new NumberNode(0),
+                    FloatType => new FloatNode(0.0),
+                    _ => throw new Exception("Unsupported array element type")
+                };
+
+                Visit(new AssignNode(expr.IteratorId.Name, defaultVal));
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                // Create a RecordNode matching the row type including 'index'
+                var rowFields = new List<NamedArgumentNode>();
+
+                for (int i = 0; i < dfType.ColumnNames.Count; i++)
+                {
+                    var colName = dfType.ColumnNames[i];
+                    var colType = dfType.DataTypes[i];
+
+                    ExpressionNode defaultVal = colType switch
+                    {
+                        StringType => new StringNode(""),
+                        BoolType => new BooleanNode(false),
+                        IntType => new NumberNode(0),
+                        FloatType => new FloatNode(0.0),
+                        _ => throw new Exception("Unsupported column type in dataframe")
+                    };
+
+                    rowFields.Add(new NamedArgumentNode(colName, defaultVal));
+                }
+
+                var rowRecord = new RecordNode(rowFields);
+                Visit(new AssignNode(expr.IteratorId.Name, rowRecord));
+
+                // Create empty result dataframe with the same schema (including index)
+                if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
+                    throw new Exception("Dataframe has duplicate column names");
+
+                // --- Create empty result dataframe with same schema (no index duplication) ---
+                var resultDf = new DataframeNode(new List<ExpressionNode>
+                {
+                    new ArrayNode(dfType.ColumnNames.Select(n => new StringNode(n) as ExpressionNode).ToList()), // columns
+                    new ArrayNode(new List<ExpressionNode>()), // empty rows
+                    new ArrayNode(dfType.DataTypes.Select(t => new StringNode(t.ToString()) as ExpressionNode).ToList()) // types
+                });
+
+                Visit(new AssignNode("__where_result", resultDf));
+            }
+
+            // --- Type check condition ---
+            var condType = Visit(expr.Condition);
+            if (condType is not BoolType)
+                throw new Exception("where condition must return bool");
+
+            // Set the type of the Where expression to match source
+            expr.SetType(expr.SourceExpr.Type);
+            return expr.Type;
+        }
+
+        public Type VisitWhere2(WhereNode expr)
         {
             var arrayType = Visit(expr.SourceExpr);
 
@@ -602,7 +623,6 @@ namespace MyCompiler
                 var record = new RecordNode(recordArguments);
 
                 Visit(new AssignNode(expr.IteratorId.Name, record));
-                Console.WriteLine(" we got data frame, now to get the records and assign to iterator");
             }
             else
                 throw new Exception("where can only be used on arrays and dataframes");
@@ -625,6 +645,7 @@ namespace MyCompiler
             expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
+
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
@@ -957,6 +978,7 @@ namespace MyCompiler
             expr.SetType(new VoidType());
             return expr.Type;
         }
+
         public Type VisitDataframe(DataframeNode expr)
         {
             // 1. Extract and Normalize Columns
@@ -1013,6 +1035,7 @@ namespace MyCompiler
                     if (field == null) throw new Exception($"Column '{col}' missing in row.");
 
                     columnTypes.Add(field.Value.Type);
+                    System.Console.WriteLine("yoooo: " + field.Value.Type);
                     finalFields.Add(field);
                 }
                 rowType = new RecordType(finalFields);
@@ -1022,9 +1045,19 @@ namespace MyCompiler
                 // Explicit types for empty dataframe
                 if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
 
+                System.Console.WriteLine("datatypes" + expr.DataTypes.Elements.Count);
+                System.Console.WriteLine("datatypes" + expr.DataTypes.Elements[0]);
+
+                Visit(expr.DataTypes);
+
                 columnTypes = expr.DataTypes.Elements.Select(e => ResolveTypeNode(e)).ToList();
                 // Prepend index type to match the columnNames insertion
                 columnTypes.Insert(0, new IntType());
+
+                foreach (var item in columnTypes)
+                {
+                    Console.WriteLine("the datatypes at ctor: " + item);
+                }
 
                 rowType = new RecordType(columnNames.Select((name, i) => new RecordField
                 {
@@ -1040,11 +1073,9 @@ namespace MyCompiler
 
         private Type ResolveTypeNode(ExpressionNode expr)
         {
-
             if (expr.Type is Type tt)
             {
                 System.Console.WriteLine("Type is: " + tt);
-
                 return tt;
             }
 
