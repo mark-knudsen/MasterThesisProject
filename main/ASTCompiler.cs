@@ -342,6 +342,7 @@ namespace MyCompiler
     {
         public List<ExpressionNodeExpr> Elements { get; }
         public Type ElementType { get; set; }
+        public uint? Capacity {get; set; }
 
         public ArrayNodeExpr(List<ExpressionNodeExpr> elements)
         {
@@ -451,10 +452,8 @@ namespace MyCompiler
             }
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-            => visitor.VisitReadCsvExpr(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitReadCsvExpr(this);
     }
-
 
     public class ToCsvNodeExpr : ExpressionNodeExpr
     {
@@ -819,119 +818,6 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
-    }
-
-    public class DataframeNodeExpr2 : ExpressionNodeExpr
-    {
-        public ArrayNodeExpr Columns { get; private set; }
-        public ArrayNodeExpr Rows { get; private set; } // array of RecordNodeExpr
-        public List<Type> DataTypes { get; private set; } = new List<Type>();
-
-        public DataframeNodeExpr2(List<ExpressionNodeExpr> args)
-        {
-            for (int i = 0; i < args?.Count; i++)
-            {
-                System.Console.WriteLine("hi");
-                var currentArg = args[i];
-
-                // 1. Check if it's a Named Argument (columns=... or data=...)
-                if (currentArg is NamedArgumentNodeExpr named)
-                {
-                    // Extract the actual value (e.g. the ArrayNodeExpr) from the wrapper
-                    var actualValue = named.Value as ArrayNodeExpr;
-
-                    if (named.Name == "columns")
-                    {
-                        Columns = actualValue;
-                    }
-                    else if (named.Name == "data" || named.Name == "rows")
-                    {
-                        Rows = actualValue;
-                        foreach (var item in actualValue.Elements)
-                        {
-                            DataTypes.Add(item.Type);
-                        }
-                    }
-                    else if (named.Name == "type")
-                    {
-                        System.Console.WriteLine("1");
-                        foreach (var item in actualValue.Elements)
-                        {
-                            DataTypes.Add(item.Type);
-                        }
-                    }
-                    else if (string.IsNullOrEmpty(named.Name))
-                    {
-                        // This handles positional arguments that got wrapped 
-                        // by the 'arg' rule but have no name string
-                        if (i == 0) Columns = actualValue;
-                        else if (i == 1)
-                        {
-                            Rows = actualValue;
-                            foreach (var item in actualValue.Elements)
-                            {
-                                DataTypes.Add(item.Type);
-                            }
-                        }
-                    }
-                }
-                // 2. Check if it's a raw ArrayNodeExpr (Direct positional)
-                else if (currentArg is ArrayNodeExpr array)
-                {
-                    if (i == 0) Columns = array;
-                    else if (i == 1)
-                    {
-                        System.Console.WriteLine("have array node");
-                        Rows = array;
-                        foreach (var item in array.Elements)
-                        {
-                            DataTypes.Add(item.Type);
-                        }
-                    }
-                }
-            }
-
-            if (Columns == null) throw new Exception("dataframe requires 'columns' array");
-            if (Rows == null && DataTypes.Count == 0) throw new Exception("dataframe requires data or data type");
-
-            var columns = Columns.Elements.Select(f => (f as StringNodeExpr).Value).ToList();
-
-            System.Console.WriteLine("yo:" + string.Join(", ", columns.Select((n, i) => $"{n}: {columns[i]}")));
-
-            if (Rows == null) System.Console.WriteLine("rows is null");
-            System.Console.WriteLine("yo:" + (Rows?.Elements[0] as RecordNodeExpr)?.Type);
-
-            var records = new List<RecordField>();
-
-            for (int i = 0; i < columns.Count; i++)
-            {
-
-                records.Add(new RecordField() { Label = columns[i], Value = Rows?.Elements[i], Type = DataTypes[i] });
-            }
-            System.Console.WriteLine("yo:" + DataTypes[0]);
-
-            var recordType = new RecordType(records);
-
-            Type = new DataframeType(columns, DataTypes, recordType);
-        }
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-        {
-            throw new NotImplementedException();
-        }
-
-        // public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframeExpr(this);
-    }
-
-    public class RecordField2
-    {
-        public string Label { get; set; }
-
-        // Used during codegen
-        public ExpressionNodeExpr Value { get; set; }
-
-        // Filled during typechecking
-        public Type Type { get; set; }
     }
 
     public class ColumnsNodeExpr : ExpressionNodeExpr

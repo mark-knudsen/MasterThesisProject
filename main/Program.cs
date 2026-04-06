@@ -43,7 +43,7 @@ namespace MyCompiler
                 KeepRunning = true;
 
 #if LINUX
-                bool multipleLines = true;
+                bool multipleLines = false;
                 string exitText = "e";
 #else
                 bool multipleLines = false;
