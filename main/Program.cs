@@ -32,7 +32,11 @@ namespace MyCompiler
 
         public static void Main(string[] args)
         {
-            
+            // Force the entire application to use the dot as a decimal separator
+            CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+
+
             try
             {
                 Console.WriteLine("--- AST Compiler Shell ---");
