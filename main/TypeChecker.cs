@@ -582,7 +582,6 @@ namespace MyCompiler
                     new ArrayNode(new List<ExpressionNode>()), // empty rows
                     new ArrayNode(dfType.DataTypes.Select(t => new StringNode(t.ToString()) as ExpressionNode).ToList()) // types
                 });
-                resultDf.HasIndex = true;
 
                 Visit(new AssignNode("__where_result", resultDf));
             }
@@ -698,8 +697,6 @@ namespace MyCompiler
             }
         }
 
-
-
         public Type VisitReadCsv(ReadCsvNode expr)
         {
             // Debug to console
@@ -757,11 +754,13 @@ namespace MyCompiler
             return voidType;
         }
 
-
         public Type VisitAdd(AddNode expr)
         {
             var arrayType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
+
+            System.Console.WriteLine("our add type: " + addType);
+            System.Console.WriteLine("our add expr type: " + expr.AddExpression.Type);
 
             // check if the array and the node are of the same type
 
@@ -983,29 +982,6 @@ namespace MyCompiler
             // 1. Extract and Normalize Columns
             var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToList();
 
-            // 2. If no index, inject it into the AST immediately
-            if (!columnNames.Contains("index"))
-            {
-                expr.Columns.Elements.Insert(0, new StringNode("index"));
-                columnNames.Insert(0, "index");
-
-                if (expr.Rows != null)
-                {
-                    for (int i = 0; i < expr.Rows.Elements.Count; i++)
-                    {
-                        if (expr.Rows.Elements[i] is RecordNode record)
-                        {
-                            record.Fields.Insert(0, new RecordField
-                            {
-                                Label = "index",
-                                Value = new NumberNode(i)
-                            });
-                        }
-                    }
-                }
-                expr.HasIndex = true;
-            }
-
             // 3. Now determine types based on the ALREADY MODIFIED columns
             List<Type> columnTypes = new List<Type>();
             if (expr.Rows != null && expr.Rows.Elements.Count > 0)
@@ -1038,9 +1014,6 @@ namespace MyCompiler
                 {
                     Console.WriteLine("the column names at ctor: " + item);
                 }
-
-                System.Console.WriteLine("do we have index?: " + expr.HasIndex);
-                //columnTypes.Insert(0, new IntType());
 
                 foreach (var item in columnTypes)
                 {

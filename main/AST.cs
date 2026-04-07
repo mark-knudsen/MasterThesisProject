@@ -686,10 +686,6 @@ namespace MyCompiler
         public ArrayNode Columns { get; set; }
         public ArrayNode Rows { get; set; }
         public ArrayNode DataTypes { get; set; }
-
-        // Internal flag to prevent double index injection
-        public bool HasIndex { get; set; } = false;
-
         public DataframeNode(List<ExpressionNode> args)
         {
             ArrayNode columns = null;

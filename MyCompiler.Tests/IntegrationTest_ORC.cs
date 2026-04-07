@@ -3,6 +3,13 @@ using System.Diagnostics;
 using System.IO;
 using Xunit;
 
+using System;
+using System.IO;
+using System.Text;
+using LLVMSharp;
+using LLVMSharp.Interop;
+using System.Globalization;
+
 namespace MyCompiler;
 
 public class CompilerIntegrationTestORC
@@ -13,6 +20,35 @@ public class CompilerIntegrationTestORC
     // to generate the actual executable
     // bash: clang -target x86_64-linux-gnu -o output_executable output_actual_orc.ll
     // bash: ./output_executable
+
+    [Fact]
+    public void Test_Dataframe_Print()
+    {
+        string input = "x=dataframe([\"name\", \"age\"], [{name: \"dan\", age: 30}, {name: \"alice\", age: 25}]); x";
+
+        var output = new StringWriter();
+        Console.SetOut(output);
+
+        var result = CompilerFacade.Execute(input);
+
+        string text = output.ToString();
+
+        Assert.Contains("Dataframe (2 rows):", text);
+        Assert.Contains("name", text);
+        Assert.Contains("age", text);
+        Assert.Contains("dan", text);
+        Assert.Contains("alice", text);
+    }
+
+    [Theory]
+    [InlineData("2+2", 4)]
+    [InlineData("true", true)]
+    [InlineData("\"harry\"", "harry")]
+    public void TestCompiler_ReturnsValues(string input, object expected)
+    {
+        var result = CompilerFacade.Execute(input);
+        Assert.Equal(expected, result);
+    }
 
     [Theory]
     [InlineData("2+2", "", "Result: 4")]

@@ -7,6 +7,22 @@ using System.Globalization;
 
 namespace MyCompiler
 {
+
+    public static class CompilerFacade
+    {
+        public static object Execute(string input, bool debug = false)
+        {
+            using var stream = new MemoryStream(Encoding.UTF8.GetBytes(input));
+            var scanner = new Scanner(stream);
+            var parser = new Parser(scanner);
+
+            if (!parser.Parse() || parser.RootNode == null)
+                throw new Exception("Parse failed");
+
+            ICompiler compiler = new CompilerOrc();
+            return compiler.Run(parser.RootNode, debug);
+        }
+    }
     public class Program
     {
         public static StringBuilder OutputBuffer = new();
