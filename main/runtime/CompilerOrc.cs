@@ -1837,13 +1837,13 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({name: "Hary potter2", age: 301})
         } // x=dataframe(["name", "age"], type=[string, int])
 
-
-// x=record({name: "Hary potter", age: 30, rating: 10.5585})  
-         //  for(i=0; i<100000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-        public LLVMValueRef VisitWhere(WhereNode expr)
+        //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
+        //  x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
+        //  for(i=0; i<500 000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 50)
         {
             var srcVar = "__where_src";
-            var resultVar = "__where_result";
+            var resultVar = "__where_result"; // 10 000 002
             var iVar = "__where_i";
 
             var name = (expr.SourceExpr as IdNode).Name;
