@@ -1837,17 +1837,44 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({name: "Hary potter2", age: 301})
         } // x=dataframe(["name", "age"], type=[string, int])
 
-        //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
+        //  x=record({name: "Hary potter", age: 30, rating: 10.5585})  
+        //  for(i=0; i<100000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
         //  x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
-        //  for(i=0; i<500 000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        //  x.where(d => d.age > 20)
+        //  x.map(d => d.age + 10)
+        //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
+
         public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 50)
+        {
+
+            var sourceType = expr.SourceExpr.Type;
+
+            Console.WriteLine("semantic type of array being indexed: " + sourceType);
+
+            var program = new SequenceNode();
+
+            // Handle source array type and different element types
+            if (sourceType is ArrayType arrType)
+            {
+                program = WhereForArray(sourceType, expr);
+            }
+            else if (sourceType is DataframeType recType)
+            {
+                // Call a helper that defines what VisitWhereDataframe do now!
+                program = WhereForDataframe(sourceType, expr);
+
+            }
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequence(program);
+        }
+
+        public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         {
             var srcVar = "__where_src";
             var resultVar = "__where_result"; // 10 000 002
             var iVar = "__where_i";
-
-            var name = (expr.SourceExpr as IdNode).Name;
-            var sourceType = _context.Get(name).Type;
 
             if (sourceType is not DataframeType dfType)
                 throw new Exception("Where only supports dataframe");
@@ -1913,11 +1940,65 @@ namespace MyCompiler
             program.Statements.Add(resultAssign);
             program.Statements.Add(loop);
             program.Statements.Add(new IdNode(resultVar));
-
-            PerformSemanticAnalysis(program);
-
-            return VisitSequence(program);
+            return program;
         }
+
+        public SequenceNode WhereForArray(Type sourceType, WhereNode expr)
+        {
+            // Cast here so we can access ElementType
+            var arrType = (ArrayType)sourceType;
+            var elementType = arrType.ElementType;
+
+            var srcVarName = "__where_src";
+            var resultVarName = "__where_result";
+            var indexVarName = "__where_i";
+
+            if (elementType is not IntType && elementType is not FloatType &&
+                elementType is not StringType && elementType is not BoolType)
+                throw new Exception("Unsupported array element type: " + elementType);
+
+            var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
+
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+            var resultAssign = new AssignNode(resultVarName, resultArray);
+
+            // Create the initialization node
+            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
+
+            var loopCond = new ComparisonNode(
+                new IdNode(indexVarName),
+                "<",
+                new LengthNode(new IdNode(srcVarName))
+            );
+
+            var loopStep = new IncrementNode(indexVarName);
+            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
+
+            // CRITICAL: Ensure ReplaceIterator handles LogicalOpNodes!
+            ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+            var addNode = new AddNode(new IdNode(resultVarName), currentElement);
+
+            var ifBody = new SequenceNode();
+            ifBody.Statements.Add(addNode);
+            var ifNode = new IfNode(ifCond, ifBody);
+
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(ifNode);
+
+            // Pass the AssignNode (indexInit) here
+            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
+
+            var program = new SequenceNode();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNode(resultVarName));
+
+            return program;
+        }
+
+
 
         public LLVMValueRef VisitMap(MapNode expr)
         {
@@ -2349,6 +2430,17 @@ namespace MyCompiler
                 newUn.SetType(un.Type);
                 return newUn;
             }
+            // 9. Logical Operations (and, or)
+            if (node is LogicalOpNode log)
+            {
+                var newLog = new LogicalOpNode(
+                    ReplaceIterator(log.Left, iteratorName, replacement),
+                    log.Operator, // or log.Op depending on your property name
+                    ReplaceIterator(log.Right, iteratorName, replacement)
+                );
+                newLog.SetType(log.Type);
+                return newLog;
+            }
 
             return node;
         }
@@ -2411,7 +2503,7 @@ namespace MyCompiler
         public LLVMValueRef VisitIndex(IndexNode expr)
         {
             var ctx = _module.Context;
-            var i64 = ctx.Int64Type; 
+            var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var func = _builder.InsertBlock.Parent;
@@ -2497,7 +2589,7 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-            var i8PtrPtr = LLVMTypeRef.CreatePointer(i8Ptr, 0); 
+            var i8PtrPtr = LLVMTypeRef.CreatePointer(i8Ptr, 0);
 
             var dfType = GetOrCreateDataframeType();
             var arrayType = GetOrCreateArrayType();
@@ -2637,7 +2729,7 @@ namespace MyCompiler
             // 5. Return dataframe (so chaining works)
             return dfPtr;
         }
-       
+
         private void ExecuteArrayAddition(LLVMValueRef headerPtr, LLVMValueRef valueToAdd, Type elementType)
         {
             var ctx = _module.Context;
@@ -4024,7 +4116,9 @@ namespace MyCompiler
 m
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
-
+        
+        df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
+        
             record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         */
     }
