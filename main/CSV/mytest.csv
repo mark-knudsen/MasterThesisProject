@@ -1,4 +1,3 @@
-index,name,age,hasJob,savings
 0,Bob,23,true,230500
 1,Alice,23,true,100500.55
 2,John,87,false,1209000.02
