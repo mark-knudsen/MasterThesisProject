@@ -1837,16 +1837,14 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({name: "Hary potter2", age: 301})
         } // x=dataframe(["name", "age"], type=[string, int])
 
-
         //  x=record({name: "Hary potter", age: 30, rating: 10.5585})  
         //  for(i=0; i<100000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-        // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
-        // x.where(d => d.age > 20)
-        // x.map(d => d.age + 10)
-        // x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
+        //  x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
+        //  x.where(d => d.age > 20)
+        //  x.map(d => d.age + 10)
+        //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
 
-
-        public LLVMValueRef VisitWhere(WhereNode expr)
+        public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 50)
         {
 
             var sourceType = expr.SourceExpr.Type;
@@ -1875,7 +1873,7 @@ namespace MyCompiler
         public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         {
             var srcVar = "__where_src";
-            var resultVar = "__where_result";
+            var resultVar = "__where_result"; // 10 000 002
             var iVar = "__where_i";
 
             if (sourceType is not DataframeType dfType)

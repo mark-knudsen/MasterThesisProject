@@ -688,6 +688,7 @@ namespace MyCompiler
         public ArrayNode DataTypes { get; set; }
         public DataframeNode(List<ExpressionNode> args)
         {
+            System.Console.WriteLine("ctor");
             ArrayNode columns = null;
             ArrayNode rows = null;
             ArrayNode types = null;
