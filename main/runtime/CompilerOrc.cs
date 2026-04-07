@@ -12,6 +12,7 @@ using Microsoft.VisualBasic;
 using System.Runtime.CompilerServices;
 using System.Xml.Schema;
 using System.Text;
+using System.Reflection.Metadata.Ecma335;
 
 namespace MyCompiler
 {
@@ -2002,65 +2003,169 @@ namespace MyCompiler
 
         public LLVMValueRef VisitMap(MapNode expr)
         {
-            var arrayType = (ArrayType)expr.SourceExpr.Type;
-            var resultType = (ArrayType)expr.Type;
-            var intType = new IntType();
+            var sourceType = expr.SourceExpr.Type;
+
+            SequenceNode program;
+            if (sourceType is ArrayType)
+            {
+                Console.WriteLine("ARRAY.........................................................................");
+                program = MapForArray(sourceType, expr);
+            }
+            else if (sourceType is DataframeType)
+            {
+                Console.WriteLine("DATAFRAME.....................................................................");
+                program = MapForDataframe(sourceType, expr); // This helper handles Dataframe result types
+            }
+            else
+            {
+                throw new Exception($"Cannot call map on {sourceType}");
+            }
+
+            PerformSemanticAnalysis(program);
+            return VisitSequence(program);
+        }
+
+        public SequenceNode MapForArray(Type sourceType, MapNode expr)
+        {
+            var arrType = (ArrayType)sourceType;
+
+            // Use 'as' or check type before casting to avoid the crash
+            if (expr.SourceExpr.Type is not ArrayType resultArrType)
+                throw new Exception($"Map on Array expected to return ArrayType, but got {expr.Type}");
 
             var srcVarName = "__map_src";
             var resultVarName = "__map_result";
             var indexVarName = "__map_i";
 
-            // 1. Inject internal variables into context for the duration of the map
-            _context = _context.Add(srcVarName, default, null!, arrayType);
-            _context = _context.Add(resultVarName, default, null!, resultType);
-            _context = _context.Add(indexVarName, default, null!, intType);
-
-            // Helper to create typed IDs
-            IdNode TypedId(string name, Type type)
+            // Use the element type from the RESOLVED result type
+            var emptyResultArray = new ArrayNode(new List<ExpressionNode>())
             {
-                var id = new IdNode(name);
-                id.SetType(type);
-                return id;
-            }
+                ElementType = resultArrType.ElementType
+            };
 
-            // 2. Build the Loop AST
-            var srcAssign = new AssignNode(srcVarName, new CopyArrayNode(expr.SourceExpr));
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+            var resultAssign = new AssignNode(resultVarName, emptyResultArray);
+            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
 
-            // Create an empty array of the same length for results
-            var resultAssign = new AssignNode(resultVarName, new CopyArrayNode(TypedId(srcVarName, arrayType)));
-            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
-
-            var loopCond = new ComparisonNode(TypedId(indexVarName, intType), "<", new LengthNode(TypedId(srcVarName, arrayType)));
+            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
             var loopStep = new IncrementNode(indexVarName);
 
-            // Access the current element in the source array
-            var currentElement = new IndexNode(TypedId(srcVarName, arrayType), TypedId(indexVarName, intType));
-            currentElement.SetType(arrayType.ElementType);
+            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
-            // Replace all instances of the iterator (e.g., "$row") with the actual array index access
-            var mapExpr = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
+            // Transform element
+            var mappedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
 
-            // Assign the result of the transformation into the new array
-            var indexAssignNode = new IndexAssignNode(TypedId(resultVarName, resultType), TypedId(indexVarName, intType), mapExpr);
+            // Use .add() for dynamic growth, same as 'where'
+            var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
+
             var loopBody = new SequenceNode();
+            loopBody.Statements.Add(addNode);
 
-            loopBody.Statements.Add(indexAssignNode);
+            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
 
-            var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
-
-            // 3. Execute the Loop AST
             var program = new SequenceNode();
-
             program.Statements.Add(srcAssign);
             program.Statements.Add(resultAssign);
             program.Statements.Add(forLoop);
             program.Statements.Add(new IdNode(resultVarName));
 
-            // Perform semantic checks if you have them
-            PerformSemanticAnalysis(program);
-
-            return VisitSequence(program);
+            return program;
         }
+        public SequenceNode MapForDataframe(Type sourceType, MapNode expr)
+        {
+            var dfType = (DataframeType)sourceType;
+
+            var srcVar = "__map_src";
+            var resultVar = "__map_result";
+            var iVar = "__map_i";
+
+            ExpressionNode resultConstructor;
+
+            // 1. Determine if we are building a new Dataframe or a simple Array
+            if (expr.Type is DataframeType resDfType)
+            {
+                // Case: User returned a Record -> Result is a Dataframe
+                var columnsExprs = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+                var typeExprs = resDfType.DataTypes.Select(t =>
+                {
+                    if (t is IntType) return (ExpressionNode)new NumberNode(0);
+                    if (t is FloatType) return (ExpressionNode)new FloatNode(0);
+                    return (ExpressionNode)new StringNode("");
+                }).ToList();
+
+                resultConstructor = new DataframeNode(new List<ExpressionNode> {
+            new NamedArgumentNode("columns", new ArrayNode(columnsExprs)),
+            new NamedArgumentNode("type", new ArrayNode(typeExprs))
+        });
+                resultConstructor.SetType(resDfType);
+            }
+            else if (expr.Type is ArrayType resArrType)
+            {
+                // Case: User returned a primitive (like x.age + 10) -> Result is an Array
+                resultConstructor = new ArrayNode(new List<ExpressionNode>())
+                {
+                    ElementType = resArrType.ElementType
+                };
+                resultConstructor.SetType(resArrType);
+            }
+            else
+            {
+                throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
+            }
+
+            // 2. Synthesize Assignments
+            var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
+            var resultAssign = new AssignNode(resultVar, resultConstructor);
+            var indexInit = new AssignNode(iVar, new NumberNode(0));
+
+            // 3. Loop Logic (Generic for both results)
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            var step = new IncrementNode(iVar);
+
+            // Access the Row from source: src[i]
+            var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+
+            // Transform: Replace 'x' with the row access
+            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, current);
+
+            // 4. Append to result (AddNode handles both Array.add and Dataframe.add)
+            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
+
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(addNode);
+
+            var loop = new ForLoopNode(indexInit, cond, step, loopBody);
+
+            // 5. Assemble
+            var program = new SequenceNode();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(loop);
+            program.Statements.Add(new IdNode(resultVar));
+
+            return program;
+        }
+
+
+
+
+
+        /* Pseudo code:
+
+        dfcopy = df.copy;
+        for(i=0; i< dfcopy.length; i++)
+        {
+            dfcopy[i].age = dfcopy[i].age + 10;
+        }
+
+        return dfcopy;
+
+        */
+
+
+
+
+
 
         public LLVMValueRef VisitCopy(CopyNode expr)
         {

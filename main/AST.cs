@@ -273,26 +273,26 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparison(this);
     }
 
-    public class ArrayNode : ExpressionNode
-    {
-        public List<ExpressionNode> Elements { get; }
-        public Type ElementType { get; set; }
-        public uint? Capacity { get; set; }
-
-        public ArrayNode(List<ExpressionNode> elements)
+        public class ArrayNode : ExpressionNode
         {
-            Elements = elements;
+            public List<ExpressionNode> Elements { get; }
+            public Type ElementType { get; set; }
+            public uint? Capacity { get; set; }
 
-            if (elements.Count > 0)
-                ElementType = elements[0].Type; // infer type from first element
-            else
-                ElementType = new IntType();
+            public ArrayNode(List<ExpressionNode> elements)
+            {
+                Elements = elements;
 
-            Type = new ArrayType(ElementType);
+                if (elements.Count > 0)
+                    ElementType = elements[0].Type; // infer type from first element
+                else
+                    ElementType = new IntType();
+
+                Type = new ArrayType(ElementType);
+            }
+
+            public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
         }
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
-    }
 
     public class CopyArrayNode : CopyNode
     {

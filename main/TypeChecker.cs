@@ -687,7 +687,24 @@ namespace MyCompiler
                 var bodyType = Visit(expr.Assignment);
 
                 // 4. The result of a Map is always an Array of whatever the body returns
-                var resultType = new ArrayType(bodyType);
+                //var resultType = new ArrayType(bodyType);
+
+
+                Type resultType;
+
+                // NEW LOGIC HERE:
+                // If the map transformation results in a Record, we produce a Dataframe.
+                // Otherwise (like mapping to a list of strings), we produce an Array.
+                if (bodyType is RecordType recType)
+                {
+                    // Create a Dataframe type based on the record's schema
+                    resultType = sourceType;
+                }
+                else
+                {
+                    resultType = new ArrayType(bodyType);
+                }
+
                 expr.SetType(resultType);
                 return resultType;
             }
@@ -924,7 +941,7 @@ namespace MyCompiler
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type recordSourceType = Visit(expr.IdRecord);
 
-            System.Console.WriteLine("idrecord: " +expr.IdField + " type: "+ expr.IdRecord.Type);
+            System.Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
 
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;
