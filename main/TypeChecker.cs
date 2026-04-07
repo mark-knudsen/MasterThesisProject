@@ -566,6 +566,12 @@ namespace MyCompiler
                 Visit(new AssignNode(expr.IteratorId.Name, rowRecord));
 
                 // Create empty result dataframe with the same schema (including index)
+
+                foreach (var item in dfType.ColumnNames) // it shoulw have the index
+                {
+                    System.Console.WriteLine("item in where" + item);
+                }
+
                 if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
                     throw new Exception("Dataframe has duplicate column names");
 
@@ -576,6 +582,7 @@ namespace MyCompiler
                     new ArrayNode(new List<ExpressionNode>()), // empty rows
                     new ArrayNode(dfType.DataTypes.Select(t => new StringNode(t.ToString()) as ExpressionNode).ToList()) // types
                 });
+                resultDf.HasIndex = true;
 
                 Visit(new AssignNode("__where_result", resultDf));
             }
@@ -918,6 +925,8 @@ namespace MyCompiler
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type recordSourceType = Visit(expr.IdRecord);
 
+            System.Console.WriteLine("idrecord: " +expr.IdField + " type: "+ expr.IdRecord.Type);
+
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;
 
@@ -932,14 +941,10 @@ namespace MyCompiler
                     resolvedFieldType = field.Value?.Type ?? field.Type;
                 }
                 else
-                {
                     throw new Exception($"Field '{expr.IdField}' not found in record.");
-                }
             }
             else
-            {
                 throw new Exception($"Cannot access field '{expr.IdField}' on non-record type: {recordSourceType}");
-            }
 
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 
@@ -955,14 +960,6 @@ namespace MyCompiler
             expr.SetType(new VoidType());
             return expr.Type;
         }
-
-        // Old code - try use generic copy now!
-        // public Type VisitCopyRecord(CopyRecordNode expr)
-        // {
-        //     Visit(expr.Source);
-        //     expr.SetType(expr.Source.Type);
-        //     return expr.Type;
-        // }
 
         public Type VisitAddField(AddFieldNode expr)
         {
@@ -981,16 +978,14 @@ namespace MyCompiler
 
         public Type VisitDataframe(DataframeNode expr)
         {
+            // List<Type> columnTypes;
+            RecordType rowType = new RecordType(new List<RecordField>());
             // 1. Extract and Normalize Columns
-            var columnNames = expr.Columns.Elements
-                .OfType<StringNode>()
-                .Select(c => c.Value)
-                .ToList();
+            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToList();
 
-            // Ensure index is present in the AST and name list
-            if (!expr.HasIndex)
+            // 2. If no index, inject it into the AST immediately
+            if (!columnNames.Contains("index"))
             {
-                // Insert into the actual AST so Code Gen sees it
                 expr.Columns.Elements.Insert(0, new StringNode("index"));
                 columnNames.Insert(0, "index");
 
@@ -1000,14 +995,10 @@ namespace MyCompiler
                     {
                         if (expr.Rows.Elements[i] is RecordNode record)
                         {
-                            var indexNode = new NumberNode(i);
-                            // CRITICAL: Type check the injected node immediately
-                            Visit(indexNode);
-
                             record.Fields.Insert(0, new RecordField
                             {
                                 Label = "index",
-                                Value = indexNode
+                                Value = new NumberNode(i)
                             });
                         }
                     }
@@ -1015,30 +1006,17 @@ namespace MyCompiler
                 expr.HasIndex = true;
             }
 
-            // 2. Determine Types
-            List<Type> columnTypes;
-            RecordType rowType;
-
+            // 3. Now determine types based on the ALREADY MODIFIED columns
+            List<Type> columnTypes = new List<Type>();
             if (expr.Rows != null && expr.Rows.Elements.Count > 0)
             {
-                // Infer from first row
-                var firstRow = (RecordNode)expr.Rows.Elements[0];
-                // This Visit call will now see the 'index' field we inserted
-                var inferredRowType = Visit(firstRow) as RecordType;
-
-                columnTypes = new List<Type>();
-                var finalFields = new List<RecordField>();
-
-                foreach (var col in columnNames)
+                var inferredRowType = Visit(expr.Rows.Elements[0]) as RecordType;
+                foreach (var name in columnNames)
                 {
-                    var field = inferredRowType.RecordFields.FirstOrDefault(f => f.Label == col);
-                    if (field == null) throw new Exception($"Column '{col}' missing in row.");
-
-                    columnTypes.Add(field.Value.Type);
-                    System.Console.WriteLine("yoooo: " + field.Value.Type);
-                    finalFields.Add(field);
+                    var field = inferredRowType.RecordFields.FirstOrDefault(f => f.Label == name);
+                    columnTypes.Add(field?.Type ?? new IntType()); // Default index to Int
                 }
-                rowType = new RecordType(finalFields);
+                rowType = inferredRowType;
             }
             else
             {
@@ -1052,11 +1030,25 @@ namespace MyCompiler
 
                 columnTypes = expr.DataTypes.Elements.Select(e => ResolveTypeNode(e)).ToList();
                 // Prepend index type to match the columnNames insertion
-                columnTypes.Insert(0, new IntType());
+                foreach (var item in columnTypes)
+                {
+                    Console.WriteLine("the datatypes at ctor: " + item);
+                }
+                foreach (var item in columnNames)
+                {
+                    Console.WriteLine("the column names at ctor: " + item);
+                }
+
+                System.Console.WriteLine("do we have index?: " + expr.HasIndex);
+                //columnTypes.Insert(0, new IntType());
 
                 foreach (var item in columnTypes)
                 {
                     Console.WriteLine("the datatypes at ctor: " + item);
+                }
+                foreach (var item in columnNames)
+                {
+                    Console.WriteLine("the column names at ctor: " + item);
                 }
 
                 rowType = new RecordType(columnNames.Select((name, i) => new RecordField
@@ -1066,7 +1058,7 @@ namespace MyCompiler
                 }).ToList());
             }
 
-            var dfType = new DataframeType(columnNames, columnTypes, rowType);
+            var dfType = new DataframeType(columnNames, columnTypes, rowType); // Create actual type, we don't need to assign the rowtype?
             expr.SetType(dfType);
             return dfType;
         }
