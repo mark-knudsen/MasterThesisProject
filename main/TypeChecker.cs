@@ -50,9 +50,8 @@ namespace MyCompiler
                 IndexAssignNode idxa => VisitIndexAssign(idxa),
                 WhereNode whe => VisitWhere(whe),
                 MapNode map => VisitMap(map),
-                ReadCsvNode read => VisitReadCsv(read),
-
-                ToCsvNode tocsv => VisitToCsv(tocsv),
+                ReadCsvNode readCsv => VisitReadCsv(readCsv),
+                ToCsvNode toCsv => VisitToCsv(toCsv),
                 AddNode add => VisitAdd(add),
                 AddRangeNode addr => VisitAddRange(addr),
                 RemoveNode remo => VisitRemove(remo),
@@ -62,8 +61,6 @@ namespace MyCompiler
                 MaxNode max => VisitMax(max),
                 MeanNode mean => VisitMean(mean),
                 SumNode sum => VisitSum(sum),
-                //FunctionDefNode fdef => VisitFunctionDef(fdef),
-                //FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNode rnd => VisitRound(rnd),
                 FloatNode flt => VisitFloat(flt),
                 RecordNode rec => VisitRecord(rec),
@@ -75,10 +72,12 @@ namespace MyCompiler
                 DataframeNode df => VisitDataframe(df),
                 ColumnsNode cols => VisitColumns(cols),
                 ShowDataframeNode showdf => VisitShowDataframe(showdf),
-                //InternalDataframeFieldNode interDFField => VisitInternalDataframeField(interDFField),
-                //PropertyAccessNode propAccecc => VisitPropertyAccess(propAccecc),
+                ILocNode iloc => VisitILoc(iloc),
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
+
+                //FunctionDefNode fdef => VisitFunctionDef(fdef),
+                //FunctionCallNode fcall => VisitFunctionCall(fcall),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -477,7 +476,7 @@ namespace MyCompiler
                 if (entry?.Type is ArrayType arrType)
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
-                    inferred = dfType.RowType;
+                    throw new Exception($"Wrong index syntax for dataframe, use iloc or loc instead!");
             }
             // else if (expr.SourceExpression is ArrayNode arrayLiteral)
             // {
@@ -1089,8 +1088,18 @@ namespace MyCompiler
         }
         public Type VisitTypeLiteral(TypeLiteralNode expr)
         {
+
             return ResolveType(expr.TypeNode); // Just return the wrapped type
 
+        }
+        public Type VisitILoc(ILocNode expr)
+        {
+            Visit(expr.SourceExpression);
+            Visit(expr.IndexExpression);
+
+            expr.SetType(new RecordType((expr.SourceExpression.Type as DataframeType).RowType.RecordFields));
+
+            return expr.Type;
         }
 
         // public Type VisitFunctionDef(FunctionDefNode node)

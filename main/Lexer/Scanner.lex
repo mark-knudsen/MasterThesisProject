@@ -53,6 +53,8 @@
 "addField"      { return (int)Tokens.ADDFIELD; }
 "removeField"   { return (int)Tokens.REMOVEFIELD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
+"iloc"          { return (int)Tokens.ILOC; }
+"loc"           { return (int)Tokens.LOC; }
 "columns"       { return (int)Tokens.COLUMNS; }
 "show"          { return (int)Tokens.SHOW; }
 

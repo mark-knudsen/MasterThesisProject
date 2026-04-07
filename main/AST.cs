@@ -887,5 +887,18 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitTypeLiteral(this);
     }
 
+    public class ILocNode: ExpressionNode
+    {
+        public ExpressionNode SourceExpression { get; }
+        public ExpressionNode IndexExpression { get; }
+
+        public ILocNode(ExpressionNode sourceExpr, ExpressionNode indexExpr)
+        {
+            SourceExpression = sourceExpr;
+            IndexExpression = indexExpr;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitILoc(this);
+    }
 }
 

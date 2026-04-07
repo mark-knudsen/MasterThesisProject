@@ -21,7 +21,6 @@ namespace MyCompiler
         Type VisitForLoop(ForLoopNode expr);
         Type VisitForEachLoop(ForEachLoopNode expr);
         Type VisitArray(ArrayNode expr);
-        //Type VisitCopyArray(CopyArrayNodeExpr expr);
         Type VisitIndex(IndexNode expr);
         Type VisitIndexAssign(IndexAssignNode expr);
         Type VisitAdd(AddNode expr);
@@ -40,11 +39,11 @@ namespace MyCompiler
         Type VisitRecord(RecordNode expr);
         Type VisitRecordField(RecordFieldNode expr);
         Type VisitRecordFieldAssign(RecordFieldAssignNode expr);
-        //Type VisitCopyRecord(CopyRecordNode expr);
         Type VisitCopy(CopyNode expr);
         Type VisitAddField(AddFieldNode expr);
         Type VisitRemoveField(RemoveFieldNode expr);
         Type VisitDataframe(DataframeNode expr);
+        Type VisitILoc(ILocNode expr);
         Type VisitShowDataframe(ShowDataframeNode expr);
         Type VisitColumns(ColumnsNode expr);
         Type VisitNamedArgument(NamedArgumentNode expr);

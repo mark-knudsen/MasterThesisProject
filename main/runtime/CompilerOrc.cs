@@ -2560,14 +2560,135 @@ namespace MyCompiler
                     _ => rawValue
                 };
             }
-            else if (sourceType is DataframeType)
-            {
-                var val = HandleDataframeIndexing(headerPtr, indexVal, expr);
+            // else if (sourceType is DataframeType)
+            // {
+            //     var val = HandleDataframeIndexing(headerPtr, indexVal, expr);
 
-                return _builder.BuildBitCast(val, i8Ptr);
-            }
+            //     return _builder.BuildBitCast(val, i8Ptr);
+            // }
 
             return default;
+        }
+
+        public LLVMValueRef VisitILoc(ILocNode expr)
+        {
+
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var i8PtrPtr = LLVMTypeRef.CreatePointer(i8Ptr, 0); // i8**
+
+            // 1. Visit Array (Header Pointer) and Index
+            var headerPtr = Visit(expr.SourceExpression);
+            var indexVal = Visit(expr.IndexExpression);
+
+            Console.WriteLine("Indexing dataframe (NO RUNTIME WRAP)");
+
+            // --- Load rows pointer ---
+            var dfType = _module.GetTypeByName("dataframe");
+            if (dfType.Handle == IntPtr.Zero)
+            {
+                dfType = _module.Context.CreateNamedStruct("dataframe");
+                dfType.StructSetBody(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            }
+
+            var rowsPtrPtr = _builder.BuildStructGEP2(dfType, headerPtr, 1, "rows_ptr_ptr");
+            var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsPtrPtr, "rows_ptr");
+
+            // ArrayObject = { i64 length, i64 capacity, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            var arrayPtrType = LLVMTypeRef.CreatePointer(arrayStructType, 0);
+            var rowsHeaderPtr = _builder.BuildBitCast(rowsPtr, arrayPtrType, "rows_header_ptr");
+
+            var lengthPtr = _builder.BuildStructGEP2(arrayStructType, rowsHeaderPtr, 0, "len_ptr");
+            var length = _builder.BuildLoad2(i64, lengthPtr, "len");
+
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, rowsHeaderPtr, 2, "data_ptr_ptr");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data_ptr");
+
+            // 🔥 CRITICAL: cast to i8**
+            var typedDataPtr = _builder.BuildBitCast(dataPtr, i8PtrPtr, "typed_data");
+
+            // --- Blocks ---
+            var function = _builder.InsertBlock.Parent;
+
+            var entryBlock = _builder.InsertBlock;
+            var loopBlock = ctx.AppendBasicBlock(function, "loop");
+            var bodyBlock = ctx.AppendBasicBlock(function, "loop_body");
+            var continueBlock = ctx.AppendBasicBlock(function, "continue");
+            var foundBlock = ctx.AppendBasicBlock(function, "found");
+            var endBlock = ctx.AppendBasicBlock(function, "end");
+
+            // result = null
+            var resultAlloca = _builder.BuildAlloca(i8Ptr, "result");
+            _builder.BuildStore(LLVMValueRef.CreateConstNull(i8Ptr), resultAlloca);
+
+            _builder.BuildBr(loopBlock);
+
+            // --- LOOP ---
+            _builder.PositionAtEnd(loopBlock);
+
+            var indexPhi = _builder.BuildPhi(i64, "i");
+            indexPhi.AddIncoming(
+                new[] { LLVMValueRef.CreateConstInt(i64, 0) },
+                new[] { entryBlock },
+                1
+            );
+
+            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, indexPhi, length, "cond");
+            _builder.BuildCondBr(cond, bodyBlock, endBlock);
+
+            // --- BODY ---
+            _builder.PositionAtEnd(bodyBlock);
+
+            // rows[i]
+            var elemPtr = _builder.BuildGEP2(i8Ptr, typedDataPtr, new[] { indexPhi }, "elem_ptr");
+            var recordPtr = _builder.BuildLoad2(i8Ptr, elemPtr, "record");
+
+            // 🔥 Cast record → i8**
+            var typedRecord = _builder.BuildBitCast(recordPtr, i8PtrPtr, "typed_record");
+
+            // record[0]
+            var zero = LLVMValueRef.CreateConstInt(i64, 0);
+            var fieldPtr = _builder.BuildGEP2(i8Ptr, typedRecord, new[] { zero }, "field0_ptr");
+            var fieldValPtr = _builder.BuildLoad2(i8Ptr, fieldPtr, "field0");
+
+            // load index (i64)
+            var i64Ptr = LLVMTypeRef.CreatePointer(i64, 0);
+            var castPtr = _builder.BuildBitCast(fieldValPtr, i64Ptr, "cast");
+            var fieldVal = _builder.BuildLoad2(i64, castPtr, "index_val");
+            fieldVal.SetAlignment(8);
+
+            // compare
+            var cmp = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, fieldVal, indexVal, "cmp");
+            _builder.BuildCondBr(cmp, foundBlock, continueBlock);
+
+            // --- FOUND ---
+            _builder.PositionAtEnd(foundBlock);
+            _builder.BuildStore(recordPtr, resultAlloca);
+            _builder.BuildBr(endBlock);
+
+            // --- CONTINUE ---
+            _builder.PositionAtEnd(continueBlock);
+
+            var next = _builder.BuildAdd(indexPhi, LLVMValueRef.CreateConstInt(i64, 1), "next");
+
+            indexPhi.AddIncoming(
+                new[] { next },
+                new[] { continueBlock },
+                1
+            );
+
+            _builder.BuildBr(loopBlock);
+
+            // --- END ---
+            _builder.PositionAtEnd(endBlock);
+
+            var result = _builder.BuildLoad2(i8Ptr, resultAlloca, "result_val");
+
+            // 🚀 RETURN RAW POINTER (no wrapping!)
+            return result;
         }
 
         private LLVMValueRef HandleDataframeIndexing(
@@ -4391,11 +4512,13 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0));
         }
 
+
+
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
         to_csv(df, "CSV/mytest.csv")
-m
+
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
 
@@ -4404,7 +4527,7 @@ m
         r = record({name: "harry", age: 23, hasJob: true, savings: 10000.10})
         
         foreach(item in df) {item.name = "Bob"}
-        foreach(item in df) {if(item.name = "Tom") item.name = "Bobby"}
+        foreach(item in df) {if(item.name == "Tom") item.name = "Bobby"}
         df2.show(["age","index", "Name"])
         */
     }
