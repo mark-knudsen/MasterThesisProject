@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 07/04/2026 17:30:12>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 08/04/2026 11:42:00>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 07/04/2026 17:55:30
+//  DateTime: 08/04/2026 11:51:46
 // ==========================================================================
 
 
@@ -15,6 +15,7 @@
     public object obj; 
     public bool boolVal;
     public double fval;
+    public MyCompiler.Type type; 
     public MyCompiler.Node node; // Add this to hold AST pieces
     public MyCompiler.ExpressionNode expr; // Single expression
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list

@@ -626,7 +626,7 @@ namespace MyCompiler
             // 2. Inject 'x' into the context with the correct type (Primitive or Record)
             _context = _context.Add(expr.IteratorId.Name, default, null!, elementType);
 
-            try
+            try // there should not be an empty try catch in the type checker
             {
                 // Visit the iterator ID to ensure it's registered
                 Visit(expr.IteratorId);
@@ -753,11 +753,10 @@ namespace MyCompiler
             {
                 foreach (var item in arrayNode.Elements)
                 {
-                    if(item.)
+                    //if((item as RecordType).fi)
                 }
-                arrayNode.Elements[0]
+               // arrayNode.Elements[0]
             }
-
 
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
@@ -884,7 +883,7 @@ namespace MyCompiler
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type recordSourceType = Visit(expr.IdRecord);
 
-            System.Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
+            Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
 
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;

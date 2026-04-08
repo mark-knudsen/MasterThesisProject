@@ -1,210 +1,172 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@x = external global ptr
-@str = private unnamed_addr constant [10 x i8] c"voldemort\00", align 1
-@str.1 = private unnamed_addr constant [11 x i8] c"dumbledore\00", align 1
-@str.2 = private unnamed_addr constant [7 x i8] c"MERLIN\00", align 1
-@str.3 = private unnamed_addr constant [10 x i8] c"voldemort\00", align 1
-@str.4 = private unnamed_addr constant [11 x i8] c"dumbledore\00", align 1
-@str.5 = private unnamed_addr constant [7 x i8] c"MERLIN\00", align 1
+%dataframe = type { ptr, ptr, ptr }
+%array = type { i64, i64, ptr }
 
-define ptr @main_1() {
+@x = external global ptr
+@__where_src = external global ptr, align 8
+@str = private unnamed_addr constant [5 x i8] c"name\00", align 1
+@str.1 = private unnamed_addr constant [4 x i8] c"age\00", align 1
+@__where_result = external global ptr, align 8
+@__where_i = external global i64, align 8
+
+define ptr @main_34() {
 entry:
   %x_load = load ptr, ptr @x, align 8
+  store ptr %x_load, ptr @__where_src, align 8
   %arr_header = call ptr @malloc(i64 24)
-  %arr_data = call ptr @malloc(i64 48)
+  %arr_data = call ptr @malloc(i64 32)
   %0 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 0
-  store i64 3, ptr %0, align 4
+  store i64 2, ptr %0, align 4
   %1 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 1
-  store i64 6, ptr %1, align 4
+  store i64 4, ptr %1, align 4
   %2 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 2
   store ptr %arr_data, ptr %2, align 8
-  %record_buffer = call ptr @malloc(i64 24)
-  %field_mem = call ptr @malloc(i64 8)
-  %cast = bitcast ptr %field_mem to ptr
-  store i64 5, ptr %cast, align 4
-  %field_ptr = getelementptr ptr, ptr %record_buffer, i64 0
-  store ptr %field_mem, ptr %field_ptr, align 8
-  %field_ptr1 = getelementptr ptr, ptr %record_buffer, i64 1
-  store ptr @str, ptr %field_ptr1, align 8
-  %field_mem2 = call ptr @malloc(i64 8)
-  %cast3 = bitcast ptr %field_mem2 to ptr
-  store i64 80, ptr %cast3, align 4
-  %field_ptr4 = getelementptr ptr, ptr %record_buffer, i64 2
-  store ptr %field_mem2, ptr %field_ptr4, align 8
-  %val_to_ptr = bitcast ptr %record_buffer to ptr
   %elem_ptr = getelementptr ptr, ptr %arr_data, i64 0
-  store ptr %val_to_ptr, ptr %elem_ptr, align 8
-  %record_buffer5 = call ptr @malloc(i64 24)
-  %field_mem6 = call ptr @malloc(i64 8)
-  %cast7 = bitcast ptr %field_mem6 to ptr
-  store i64 6, ptr %cast7, align 4
-  %field_ptr8 = getelementptr ptr, ptr %record_buffer5, i64 0
-  store ptr %field_mem6, ptr %field_ptr8, align 8
-  %field_ptr9 = getelementptr ptr, ptr %record_buffer5, i64 1
-  store ptr @str.1, ptr %field_ptr9, align 8
-  %field_mem10 = call ptr @malloc(i64 8)
-  %cast11 = bitcast ptr %field_mem10 to ptr
-  store i64 70, ptr %cast11, align 4
-  %field_ptr12 = getelementptr ptr, ptr %record_buffer5, i64 2
-  store ptr %field_mem10, ptr %field_ptr12, align 8
-  %val_to_ptr13 = bitcast ptr %record_buffer5 to ptr
-  %elem_ptr14 = getelementptr ptr, ptr %arr_data, i64 1
-  store ptr %val_to_ptr13, ptr %elem_ptr14, align 8
-  %record_buffer15 = call ptr @malloc(i64 24)
-  %field_mem16 = call ptr @malloc(i64 8)
-  %cast17 = bitcast ptr %field_mem16 to ptr
-  store i64 7, ptr %cast17, align 4
-  %field_ptr18 = getelementptr ptr, ptr %record_buffer15, i64 0
-  store ptr %field_mem16, ptr %field_ptr18, align 8
-  %field_ptr19 = getelementptr ptr, ptr %record_buffer15, i64 1
-  store ptr @str.2, ptr %field_ptr19, align 8
-  %field_mem20 = call ptr @malloc(i64 8)
-  %cast21 = bitcast ptr %field_mem20 to ptr
-  store i64 101, ptr %cast21, align 4
-  %field_ptr22 = getelementptr ptr, ptr %record_buffer15, i64 2
-  store ptr %field_mem20, ptr %field_ptr22, align 8
-  %val_to_ptr23 = bitcast ptr %record_buffer15 to ptr
-  %elem_ptr24 = getelementptr ptr, ptr %arr_data, i64 2
-  store ptr %val_to_ptr23, ptr %elem_ptr24, align 8
-  %x_load25 = load ptr, ptr @x, align 8
-  %record_buffer26 = call ptr @malloc(i64 24)
-  %field_mem27 = call ptr @malloc(i64 8)
-  %cast28 = bitcast ptr %field_mem27 to ptr
-  store i64 5, ptr %cast28, align 4
-  %field_ptr29 = getelementptr ptr, ptr %record_buffer26, i64 0
-  store ptr %field_mem27, ptr %field_ptr29, align 8
-  %field_ptr30 = getelementptr ptr, ptr %record_buffer26, i64 1
-  store ptr @str.3, ptr %field_ptr30, align 8
-  %field_mem31 = call ptr @malloc(i64 8)
-  %cast32 = bitcast ptr %field_mem31 to ptr
-  store i64 80, ptr %cast32, align 4
-  %field_ptr33 = getelementptr ptr, ptr %record_buffer26, i64 2
-  store ptr %field_mem31, ptr %field_ptr33, align 8
-  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %x_load25, i32 0, i32 1
-  %rows_array = load ptr, ptr %rows_field, align 8
-  %val_to_ptr34 = bitcast ptr %record_buffer26 to ptr
-  %len_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
-  %cap_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
-  %data_ptr_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
-  %len = load i64, ptr %len_ptr, align 4
-  %cap = load i64, ptr %cap_ptr, align 4
+  store ptr @str, ptr %elem_ptr, align 8
+  %elem_ptr1 = getelementptr ptr, ptr %arr_data, i64 1
+  store ptr @str.1, ptr %elem_ptr1, align 8
+  %arr_header2 = call ptr @malloc(i64 24)
+  %arr_data3 = call ptr @malloc(i64 32)
+  %3 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header2, i32 0, i32 0
+  store i64 0, ptr %3, align 4
+  %4 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header2, i32 0, i32 1
+  store i64 4, ptr %4, align 4
+  %5 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header2, i32 0, i32 2
+  store ptr %arr_data3, ptr %5, align 8
+  %arr_header4 = call ptr @malloc(i64 24)
+  %arr_data5 = call ptr @malloc(i64 32)
+  %6 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header4, i32 0, i32 0
+  store i64 2, ptr %6, align 4
+  %7 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header4, i32 0, i32 1
+  store i64 4, ptr %7, align 4
+  %8 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header4, i32 0, i32 2
+  store ptr %arr_data5, ptr %8, align 8
+  %elem_ptr6 = getelementptr ptr, ptr %arr_data5, i64 0
+  store ptr bitcast (i64 4 to ptr), ptr %elem_ptr6, align 8
+  %elem_ptr7 = getelementptr ptr, ptr %arr_data5, i64 1
+  store ptr bitcast (i64 1 to ptr), ptr %elem_ptr7, align 8
+  %df = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
+  %9 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 0
+  store ptr %arr_header, ptr %9, align 8
+  %10 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 1
+  store ptr %arr_header2, ptr %10, align 8
+  %11 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 2
+  store ptr %arr_header4, ptr %11, align 8
+  store ptr %df, ptr @__where_result, align 8
+  store i64 0, ptr @__where_i, align 8
+  br label %for.cond
+
+for.cond:                                         ; preds = %for.step, %entry
+  %__where_i_load = load i64, ptr @__where_i, align 8
+  %__where_src_load = load ptr, ptr @__where_src, align 8
+  %rows_ptr_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_src_load, i32 0, i32 1
+  %rows_ptr = load ptr, ptr %rows_ptr_field, align 8
+  %rows_array_ptr = bitcast ptr %rows_ptr to ptr
+  %rows_length_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array_ptr, i32 0, i32 0
+  %rows_length = load i64, ptr %rows_length_ptr, align 8
+  %icmp_tmp = icmp slt i64 %__where_i_load, %rows_length
+  br i1 %icmp_tmp, label %for.body, label %for.end
+
+for.body:                                         ; preds = %for.cond
+  %__where_src_load8 = load ptr, ptr @__where_src, align 8
+  %__where_i_load9 = load i64, ptr @__where_i, align 8
+  %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %__where_src_load8, i32 0, i32 1
+  %rows = load ptr, ptr %rows_ptr_ptr, align 8
+  %data_ptr_ptr = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 2
   %data_ptr = load ptr, ptr %data_ptr_ptr, align 8
-  %is_full = icmp uge i64 %len, %cap
-  br i1 %is_full, label %grow, label %add_cont
+  %len_ptr = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 0
+  %len = load i64, ptr %len_ptr, align 4
+  %in_bounds = icmp ult i64 %__where_i_load9, %len
+  br i1 %in_bounds, label %idx_ok, label %idx_err
 
-grow:                                             ; preds = %entry
-  %3 = icmp eq i64 %cap, 0
-  %4 = mul i64 %cap, 2
-  %new_cap = select i1 %3, i64 4, i64 %4
-  %new_byte_size = mul i64 %new_cap, 8
-  %realloc_ptr = call ptr @realloc(ptr %data_ptr, i64 %new_byte_size)
-  store i64 %new_cap, ptr %cap_ptr, align 4
-  store ptr %realloc_ptr, ptr %data_ptr_ptr, align 8
-  br label %add_cont
+for.step:                                         ; preds = %ifcont
+  %inc_load = load i64, ptr @__where_i, align 4
+  %inc_add = add i64 %inc_load, 1
+  store i64 %inc_add, ptr @__where_i, align 8
+  br label %for.cond
 
-add_cont:                                         ; preds = %grow, %entry
-  %final_data_ptr = phi ptr [ %data_ptr, %entry ], [ %realloc_ptr, %grow ]
-  %target_ptr = getelementptr ptr, ptr %final_data_ptr, i64 %len
-  store ptr %val_to_ptr34, ptr %target_ptr, align 8
-  %next_len = add i64 %len, 1
-  store i64 %next_len, ptr %len_ptr, align 4
-  %x_load35 = load ptr, ptr @x, align 8
-  %record_buffer36 = call ptr @malloc(i64 24)
-  %field_mem37 = call ptr @malloc(i64 8)
-  %cast38 = bitcast ptr %field_mem37 to ptr
-  store i64 6, ptr %cast38, align 4
-  %field_ptr39 = getelementptr ptr, ptr %record_buffer36, i64 0
-  store ptr %field_mem37, ptr %field_ptr39, align 8
-  %field_ptr40 = getelementptr ptr, ptr %record_buffer36, i64 1
-  store ptr @str.4, ptr %field_ptr40, align 8
-  %field_mem41 = call ptr @malloc(i64 8)
-  %cast42 = bitcast ptr %field_mem41 to ptr
-  store i64 70, ptr %cast42, align 4
-  %field_ptr43 = getelementptr ptr, ptr %record_buffer36, i64 2
-  store ptr %field_mem41, ptr %field_ptr43, align 8
-  %rows_field44 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %x_load35, i32 0, i32 1
-  %rows_array45 = load ptr, ptr %rows_field44, align 8
-  %val_to_ptr46 = bitcast ptr %record_buffer36 to ptr
-  %len_ptr47 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array45, i32 0, i32 0
-  %cap_ptr48 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array45, i32 0, i32 1
-  %data_ptr_ptr49 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array45, i32 0, i32 2
-  %len50 = load i64, ptr %len_ptr47, align 4
-  %cap51 = load i64, ptr %cap_ptr48, align 4
-  %data_ptr52 = load ptr, ptr %data_ptr_ptr49, align 8
-  %is_full53 = icmp uge i64 %len50, %cap51
-  br i1 %is_full53, label %grow54, label %add_cont55
-
-grow54:                                           ; preds = %add_cont
-  %5 = icmp eq i64 %cap51, 0
-  %6 = mul i64 %cap51, 2
-  %new_cap56 = select i1 %5, i64 4, i64 %6
-  %new_byte_size57 = mul i64 %new_cap56, 8
-  %realloc_ptr58 = call ptr @realloc(ptr %data_ptr52, i64 %new_byte_size57)
-  store i64 %new_cap56, ptr %cap_ptr48, align 4
-  store ptr %realloc_ptr58, ptr %data_ptr_ptr49, align 8
-  br label %add_cont55
-
-add_cont55:                                       ; preds = %grow54, %add_cont
-  %final_data_ptr59 = phi ptr [ %data_ptr52, %add_cont ], [ %realloc_ptr58, %grow54 ]
-  %target_ptr60 = getelementptr ptr, ptr %final_data_ptr59, i64 %len50
-  store ptr %val_to_ptr46, ptr %target_ptr60, align 8
-  %next_len61 = add i64 %len50, 1
-  store i64 %next_len61, ptr %len_ptr47, align 4
-  %x_load62 = load ptr, ptr @x, align 8
-  %record_buffer63 = call ptr @malloc(i64 24)
-  %field_mem64 = call ptr @malloc(i64 8)
-  %cast65 = bitcast ptr %field_mem64 to ptr
-  store i64 7, ptr %cast65, align 4
-  %field_ptr66 = getelementptr ptr, ptr %record_buffer63, i64 0
-  store ptr %field_mem64, ptr %field_ptr66, align 8
-  %field_ptr67 = getelementptr ptr, ptr %record_buffer63, i64 1
-  store ptr @str.5, ptr %field_ptr67, align 8
-  %field_mem68 = call ptr @malloc(i64 8)
-  %cast69 = bitcast ptr %field_mem68 to ptr
-  store i64 101, ptr %cast69, align 4
-  %field_ptr70 = getelementptr ptr, ptr %record_buffer63, i64 2
-  store ptr %field_mem68, ptr %field_ptr70, align 8
-  %rows_field71 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %x_load62, i32 0, i32 1
-  %rows_array72 = load ptr, ptr %rows_field71, align 8
-  %val_to_ptr73 = bitcast ptr %record_buffer63 to ptr
-  %len_ptr74 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array72, i32 0, i32 0
-  %cap_ptr75 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array72, i32 0, i32 1
-  %data_ptr_ptr76 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array72, i32 0, i32 2
-  %len77 = load i64, ptr %len_ptr74, align 4
-  %cap78 = load i64, ptr %cap_ptr75, align 4
-  %data_ptr79 = load ptr, ptr %data_ptr_ptr76, align 8
-  %is_full80 = icmp uge i64 %len77, %cap78
-  br i1 %is_full80, label %grow81, label %add_cont82
-
-grow81:                                           ; preds = %add_cont55
-  %7 = icmp eq i64 %cap78, 0
-  %8 = mul i64 %cap78, 2
-  %new_cap83 = select i1 %7, i64 4, i64 %8
-  %new_byte_size84 = mul i64 %new_cap83, 8
-  %realloc_ptr85 = call ptr @realloc(ptr %data_ptr79, i64 %new_byte_size84)
-  store i64 %new_cap83, ptr %cap_ptr75, align 4
-  store ptr %realloc_ptr85, ptr %data_ptr_ptr76, align 8
-  br label %add_cont82
-
-add_cont82:                                       ; preds = %grow81, %add_cont55
-  %final_data_ptr86 = phi ptr [ %data_ptr79, %add_cont55 ], [ %realloc_ptr85, %grow81 ]
-  %target_ptr87 = getelementptr ptr, ptr %final_data_ptr86, i64 %len77
-  store ptr %val_to_ptr73, ptr %target_ptr87, align 8
-  %next_len88 = add i64 %len77, 1
-  store i64 %next_len88, ptr %len_ptr74, align 4
+for.end:                                          ; preds = %for.cond
+  %__where_result_load29 = load ptr, ptr @__where_result, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i16, [6 x i8], ptr }, ptr %runtime_cast, i32 0, i32 0
   store i16 7, ptr %tag_ptr, align 8
-  %data_ptr89 = getelementptr inbounds nuw { i16, [6 x i8], ptr }, ptr %runtime_cast, i32 0, i32 2
-  store ptr %x_load62, ptr %data_ptr89, align 8
+  %data_ptr30 = getelementptr inbounds nuw { i16, [6 x i8], ptr }, ptr %runtime_cast, i32 0, i32 2
+  store ptr %__where_result_load29, ptr %data_ptr30, align 8
   ret ptr %runtime_obj
+
+idx_ok:                                           ; preds = %for.body
+  %elem_ptr10 = getelementptr ptr, ptr %data_ptr, i64 %__where_i_load9
+  %record = load ptr, ptr %elem_ptr10, align 8
+  %ptr_age = getelementptr ptr, ptr %record, i64 1
+  %load_age_ptr = load ptr, ptr %ptr_age, align 8
+  %val_age = load i64, ptr %load_age_ptr, align 4
+  %icmp_tmp11 = icmp sgt i64 %val_age, 90
+  br i1 %icmp_tmp11, label %then, label %else
+
+idx_err:                                          ; preds = %for.body
+  ret ptr null
+
+then:                                             ; preds = %idx_ok
+  %__where_result_load = load ptr, ptr @__where_result, align 8
+  %__where_src_load12 = load ptr, ptr @__where_src, align 8
+  %__where_i_load13 = load i64, ptr @__where_i, align 8
+  %rows_ptr_ptr14 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load12, i32 0, i32 1
+  %rows15 = load ptr, ptr %rows_ptr_ptr14, align 8
+  %data_ptr_ptr16 = getelementptr inbounds nuw %array, ptr %rows15, i32 0, i32 2
+  %data_ptr17 = load ptr, ptr %data_ptr_ptr16, align 8
+  %len_ptr18 = getelementptr inbounds nuw %array, ptr %rows15, i32 0, i32 0
+  %len19 = load i64, ptr %len_ptr18, align 4
+  %in_bounds20 = icmp ult i64 %__where_i_load13, %len19
+  br i1 %in_bounds20, label %idx_ok21, label %idx_err22
+
+else:                                             ; preds = %idx_ok
+  br label %ifcont
+
+ifcont:                                           ; preds = %else, %add_cont
+  %iftmp = phi ptr [ %__where_result_load, %add_cont ], [ 0.000000e+00, %else ]
+  br label %for.step
+
+idx_ok21:                                         ; preds = %then
+  %elem_ptr23 = getelementptr ptr, ptr %data_ptr17, i64 %__where_i_load13
+  %record24 = load ptr, ptr %elem_ptr23, align 8
+  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_result_load, i32 0, i32 1
+  %rows_array = load ptr, ptr %rows_field, align 8
+  %len_ptr25 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
+  %cap_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
+  %data_ptr_ptr26 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
+  %len27 = load i64, ptr %len_ptr25, align 4
+  %cap = load i64, ptr %cap_ptr, align 4
+  %data_ptr28 = load ptr, ptr %data_ptr_ptr26, align 8
+  %is_full = icmp uge i64 %len27, %cap
+  br i1 %is_full, label %grow, label %add_cont
+
+idx_err22:                                        ; preds = %then
+  ret ptr null
+
+grow:                                             ; preds = %idx_ok21
+  %12 = icmp eq i64 %cap, 0
+  %13 = mul i64 %cap, 2
+  %new_cap = select i1 %12, i64 4, i64 %13
+  %new_byte_size = mul i64 %new_cap, 8
+  %realloc_ptr = call ptr @realloc(ptr %data_ptr28, i64 %new_byte_size)
+  store i64 %new_cap, ptr %cap_ptr, align 4
+  store ptr %realloc_ptr, ptr %data_ptr_ptr26, align 8
+  br label %add_cont
+
+add_cont:                                         ; preds = %grow, %idx_ok21
+  %final_data_ptr = phi ptr [ %data_ptr28, %idx_ok21 ], [ %realloc_ptr, %grow ]
+  %target_ptr = getelementptr ptr, ptr %final_data_ptr, i64 %len27
+  store ptr %record24, ptr %target_ptr, align 8
+  %next_len = add i64 %len27, 1
+  store i64 %next_len, ptr %len_ptr25, align 4
+  br label %ifcont
 }
 
 declare i32 @printf(ptr, ...)
 
-declare ptr @malloc(i64)
+declare noalias ptr @malloc(i64)
 
 declare ptr @realloc(ptr, i64)

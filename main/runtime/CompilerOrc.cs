@@ -1844,7 +1844,6 @@ namespace MyCompiler
         //  x.map(d => d.age + 10)
         //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
         
-        //  for(i=0; i<500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
         //  for(i=0; i<520000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
         public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 90)
         {
