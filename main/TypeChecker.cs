@@ -86,38 +86,34 @@ namespace MyCompiler
 
         public Type VisitForEachLoop(ForEachLoopNode expr)
         {
-            // 1. Check the array expression to ensure it's actually an array
-            Type arrayType = Visit(expr.Array);
-            if (arrayType is not ArrayType)
-            {
-                throw new Exception("Foreach target must be an array.");
-            }
+            var collectionType = Visit(expr.Array);
+            RecordType rowType = null;
 
-            // 2. Determine the element type (e.g., MyType.Float for [12, 200])
-            Type elementType = null; // Default
-            if (expr.Array is ArrayNode arrayNode)
-            {
-                elementType = arrayNode.ElementType ?? new FloatType();
-            }
-            else if (expr.Array is IdNode idNode)
-            {
-                var entry = _context.Get(idNode.Name);
-                elementType = entry?.ElementType ?? new FloatType();
-            }
+            // Determine the type of 'item'
+            if (collectionType is DataframeType df) rowType = df.RowType;
+            else if (collectionType is ArrayType arr && arr.ElementType is RecordType rec) rowType = rec;
 
-            // arr = ["a", "b", "c"];
-            // arr = [1, 2, 3];
-            // arr = [true, false, false];
+            if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
+
+            //_context = _context.Add(expr.Iterator.Name, null, rowType);
+            var testEntry = _context.Get(expr.Iterator.Name);
+            Console.WriteLine($"[DEBUG] Internal Check: Found '{expr.Iterator.Name}'? " + (testEntry != null));
 
 
-            // 3. Register the iterator variable (e.g., 'item') in the context
-            // This allows the Body to know 'item' is a Float/String
-            _context = _context.Add(expr.Iterator.Name, default, elementType);
+            // CRITICAL: Push the context so 'item' exists for the body
+            var oldContext = _context;
 
-            // 4. Check the body
+            // Use named arguments to be 100% safe
+            _context = _context.Add(
+                name: expr.Iterator.Name,
+                value: default,
+                _value: null!,
+                type: rowType // Make sure it hits the 4th parameter!
+            );
+
             Visit(expr.Body);
-
-            return new VoidType(); // Loops don't return a value
+            _context = oldContext;
+            return new VoidType();
         }
 
         public Type VisitNumber(NumberNode expr)
@@ -772,7 +768,7 @@ namespace MyCompiler
                 {
                     //if((item as RecordType).fi)
                 }
-               // arrayNode.Elements[0]
+                // arrayNode.Elements[0]
             }
 
             expr.SetType(expr.SourceExpression.Type);

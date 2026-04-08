@@ -1033,59 +1033,98 @@ namespace MyCompiler
         public LLVMValueRef VisitForEachLoop(ForEachLoopNode expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // Array pointer and length
-            var arrayPtr = Visit(expr.Array);
-            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+            // Save the parent context to restore later (scoping 'item')
+            var oldCtx = _context;
 
-            // Stack-local iterator
-            var elementType = ((ArrayType)expr.Array.Type).ElementType;
-            var iteratorAlloc = _builder.BuildAlloca(GetLLVMType(elementType), expr.Iterator.Name);
+            // 1. Get the Array/Dataframe Header
+            var sourcePtr = Visit(expr.Array);
+            LLVMValueRef arrayHeaderPtr;
 
-            // Add to context
+            if (expr.Array.Type is DataframeType)
+            {
+                // Dataframe struct: { ptr columns, ptr rows, ptr types }
+                // We want the 'rows' array at index 1
+                var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+                var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 1, "df_rows_ptr");
+                arrayHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_array_header");
+            }
+            else
+            {
+                arrayHeaderPtr = sourcePtr;
+            }
+
+            // 2. Load Metadata from Array Header { i64 len, i64 cap, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            var lenPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 0, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(i64, lenPtr, "array_len");
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 2, "data_ptr_ptr");
+            var dataBuffer = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data_buffer");
+
+            // 3. Setup Iterator Variable Scoping
+            Type elementType;
+            if (expr.Array.Type is DataframeType df) elementType = df.RowType;
+            else elementType = ((ArrayType)expr.Array.Type).ElementType;
+
+            // Create the 'alloca' for the iterator (e.g., 'item')
+            var iteratorAlloc = _builder.BuildAlloca(i8Ptr, expr.Iterator.Name);
+            // Add to a new context so 'item' is visible to Visit(expr.Body)
             _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType);
 
-            // Loop blocks
+            // 4. Create Basic Blocks
             var condBlock = func.AppendBasicBlock("foreach.cond");
             var bodyBlock = func.AppendBasicBlock("foreach.body");
+            var nextBlock = func.AppendBasicBlock("foreach.next");
             var endBlock = func.AppendBasicBlock("foreach.end");
 
-            // Counter
-            var counterAlloc = _builder.BuildAlloca(ctx.Int64Type, "foreach_counter");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), counterAlloc);
+            // 5. Initialize Counter
+            var counterAlloc = _builder.BuildAlloca(i64, "foreach_counter");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), counterAlloc);
             _builder.BuildBr(condBlock);
 
-            // Condition
+            // 6. Condition Block
             _builder.PositionAtEnd(condBlock);
-            var curIdx = _builder.BuildLoad2(ctx.Int64Type, counterAlloc, "cur_idx");
-            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
-            _builder.BuildCondBr(cond, bodyBlock, endBlock);
+            var curIdx = _builder.BuildLoad2(i64, counterAlloc, "cur_idx");
+            var loopTest = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
+            _builder.BuildCondBr(loopTest, bodyBlock, endBlock);
 
-            // Body
+            // 7. Body Block
             _builder.PositionAtEnd(bodyBlock);
-            var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var memIdx = _builder.BuildAdd(curIdx, two64, "mem_idx");
 
-            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { memIdx }, "elem_ptr");
-            var elementVal = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "elem_val");
+            // --- CRITICAL: Load current element into 'item' BEFORE visiting body ---
+            var elemPtr = _builder.BuildGEP2(i8Ptr, dataBuffer, new[] { curIdx }, "elem_ptr");
+            var elemVal = _builder.BuildLoad2(i8Ptr, elemPtr, "elem_val");
+            _builder.BuildStore(elemVal, iteratorAlloc);
 
-            // Store into stack-local iterator
-            _builder.BuildStore(elementVal, iteratorAlloc);
-
+            // Now visit the statements inside the loop
             Visit(expr.Body);
 
-            // Increment counter
-            var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
-            var nextIdx = _builder.BuildAdd(curIdx, one64, "next_idx");
+            // Only branch to next if the body doesn't already have a terminator (like a return)
+            if (_builder.InsertBlock.Terminator.Handle == IntPtr.Zero)
+            {
+                _builder.BuildBr(nextBlock);
+            }
+
+            // 8. Next Block (Increment)
+            _builder.PositionAtEnd(nextBlock);
+            var idxToInc = _builder.BuildLoad2(i64, counterAlloc, "idx_to_inc");
+            var nextIdx = _builder.BuildAdd(idxToInc, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             _builder.BuildStore(nextIdx, counterAlloc);
             _builder.BuildBr(condBlock);
 
+            // 9. End Block
             _builder.PositionAtEnd(endBlock);
+
+            // Restore original context (item goes out of scope)
+            _context = oldCtx;
+
+            // Return a dummy value (or a void-like object)
             return default;
         }
+
         public LLVMValueRef VisitIncrement(IncrementNode expr)
         {
             // 1. Get the pointer
@@ -1844,7 +1883,7 @@ namespace MyCompiler
         //  x.where(d => d.age > 20)
         //  x.map(d => d.age + 10)
         //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
-        
+
         //  for(i=0; i<520000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
         public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 90)
         {
@@ -2084,10 +2123,10 @@ namespace MyCompiler
                     return (ExpressionNode)new StringNode("");
                 }).ToList();
 
-                resultConstructor = new DataframeNode(new List<ExpressionNode> {
-            new NamedArgumentNode("columns", new ArrayNode(columnsExprs)),
-            new NamedArgumentNode("type", new ArrayNode(typeExprs))
-        });
+                resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
+                    new NamedArgumentNode("columns", new ArrayNode(columnsExprs)),
+                    new NamedArgumentNode("type", new ArrayNode(typeExprs))
+                });
                 resultConstructor.SetType(resDfType);
             }
             else if (expr.Type is ArrayType resArrType)
