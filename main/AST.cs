@@ -665,7 +665,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveField(this);
     }
 
-
     public class NamedArgumentNode : ExpressionNode
     {
         public string Name { get; }
@@ -682,13 +681,12 @@ namespace MyCompiler
 
     public class DataframeNode : ExpressionNode
     {
-        // Change these from ArrayNode to ExpressionNode
-        public ArrayNode Columns { get; set; }
-        public ArrayNode Rows { get; set; }
-        public ArrayNode DataTypes { get; set; }
-        public DataframeNode(List<ExpressionNode> args)
+        public ArrayNode Columns { get; }
+        public ArrayNode Rows { get; }
+        public ArrayNode DataTypes { get; }
+
+        public DataframeNode(List<NamedArgumentNode> args)
         {
-            System.Console.WriteLine("ctor");
             ArrayNode columns = null;
             ArrayNode rows = null;
             ArrayNode types = null;
@@ -697,43 +695,51 @@ namespace MyCompiler
 
             foreach (var arg in args)
             {
+                // ALWAYS unwrap if NamedArgumentNode
                 if (arg is NamedArgumentNode named)
                 {
                     if (named.Value is not ArrayNode value)
-                        throw new Exception("Dataframe named arguments must be arrays.");
+                        throw new Exception("Dataframe arguments must be arrays.");
 
-                    switch (named.Name)
+                    if (named.Name != null)
                     {
-                        case "columns": columns = value; break;
-                        case "rows":
-                        case "data": rows = value; break;
-                        case "types":
-                        case "type": types = value; break;
-                        default:
-                            throw new Exception($"Unknown dataframe argument '{named.Name}'");
+                        // --- Named arguments ---
+                        switch (named.Name)
+                        {
+                            case "columns": columns = value; break;
+                            case "rows":
+                            case "data": rows = value; break;
+                            case "types":
+                            case "type": types = value; break;
+                            default:
+                                throw new Exception($"Unknown dataframe argument '{named.Name}'");
+                        }
                     }
-                }
-                else if (arg is ArrayNode array)
-                {
-                    // Positional arguments
-                    switch (positionalIndex)
+                    else
                     {
-                        case 0: columns = array; break;
-                        case 1: rows = array; break;
-                        case 2: types = array; break;
-                        default:
-                            throw new Exception("Too many positional arguments for dataframe");
+                        // --- Positional arguments ---
+                        switch (positionalIndex)
+                        {
+                            case 0: columns = value; break;
+                            case 1: rows = value; break;
+                            case 2: types = value; break;
+                            default:
+                                throw new Exception("Too many positional arguments for dataframe");
+                        }
+                        positionalIndex++;
                     }
-                    positionalIndex++;
                 }
                 else
-                    throw new Exception("Dataframe arguments must be arrays or named arguments");
+                {
+                    throw new Exception("Unexpected argument type in dataframe");
+                }
             }
 
             Columns = columns ?? throw new Exception("Dataframe requires 'columns'");
             Rows = rows ?? new ArrayNode(new List<ExpressionNode>());
             DataTypes = types;
         }
+
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
 
@@ -777,6 +783,7 @@ namespace MyCompiler
         {
             TypeNode = typeNode;
         }
+
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitTypeLiteral(this);
     }
 }

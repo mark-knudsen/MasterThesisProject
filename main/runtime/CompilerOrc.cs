@@ -1835,7 +1835,7 @@ namespace MyCompiler
         public LLVMValueRef VisitPrint(PrintNode expr) // x.addRange([{index: 5, name: "voldemort", age: 80}, {index: 6, name: "dumbledore", age: 70}, {index: 7, name: "MERLIN", age: 101}])
         {
             var valueToPrint = Visit(expr.Expression);
-            return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({name: "Hary potter2", age: 301})
+            return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({name: "Hary potter2", age: 201})
         } // x=dataframe(["name", "age"], type=[string, int])
 
         //  x=record({name: "Hary potter", age: 30, rating: 10.5585})  
@@ -1844,27 +1844,18 @@ namespace MyCompiler
         //  x.where(d => d.age > 20)
         //  x.map(d => d.age + 10)
         //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
-
-        public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 50)
+        
+        //  for(i=0; i<520000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 90)
         {
-
             var sourceType = expr.SourceExpr.Type;
-
-            Console.WriteLine("semantic type of array being indexed: " + sourceType);
-
             var program = new SequenceNode();
 
             // Handle source array type and different element types
             if (sourceType is ArrayType arrType)
-            {
                 program = WhereForArray(sourceType, expr);
-            }
             else if (sourceType is DataframeType recType)
-            {
-                // Call a helper that defines what VisitWhereDataframe do now!
                 program = WhereForDataframe(sourceType, expr);
-
-            }
 
             PerformSemanticAnalysis(program);
 
@@ -1897,7 +1888,7 @@ namespace MyCompiler
 
             var typeArray = new ArrayNode(types);
 
-            var resultDf = new DataframeNode(new List<ExpressionNode>
+            var resultDf = new DataframeNode(new List<NamedArgumentNode>
             {
                 new NamedArgumentNode("columns", columnsArray),
                 new NamedArgumentNode("type", typeArray)
@@ -2549,8 +2540,6 @@ namespace MyCompiler
 
             return node;
         }
-
-
 
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
@@ -4101,7 +4090,6 @@ namespace MyCompiler
             return recordPtr;
         }
 
-
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
             var ctx = _module.Context;
@@ -4166,8 +4154,6 @@ namespace MyCompiler
             return colPtr;
         }
 
-
-
         private List<object> ExtractRecord(IntPtr recordPtr, RecordType recordType)
         {
             var result = new List<object>();
@@ -4205,7 +4191,6 @@ namespace MyCompiler
             }
             return result;
         }
-
 
         public LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr)
         {

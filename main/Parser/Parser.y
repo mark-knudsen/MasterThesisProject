@@ -115,9 +115,9 @@ Assignment
     | ID LBRACKET expr RBRACKET ASSIGN expr    
     {
         string idName = (string)$1;
-        var idExpr = new IdNode(idName);
+        var id = new IdNode(idName);
         
-        $$ = new IndexAssignNode(idExpr, $3 as ExpressionNode, $6 as ExpressionNode);    
+        $$ = new IndexAssignNode(id, $3 as ExpressionNode, $6 as ExpressionNode);    
     }
     
     | expr DOT ID ASSIGN expr
@@ -145,7 +145,6 @@ expr
     | NULL_LITERAL        { $$ = new NullNode(); }
     | Type                { $$ = new TypeLiteralNode($1 as TypeNode); }
     
-
     | ID                  { $$ = new IdNode((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNode($3 as ExpressionNode); }
@@ -175,9 +174,9 @@ expr
     { 
         // Cast $1 to string so the IdNode constructor accepts it
         string idName = (string)$1;
-        var idExpr = new IdNode(idName); 
+        var id = new IdNode(idName); 
         
-        $$ = new IndexNode(idExpr, $3 as ExpressionNode); 
+        $$ = new IndexNode(id, $3 as ExpressionNode); 
     }
     | LPAREN expr RPAREN  { $$ = $2; }
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); }
@@ -237,7 +236,8 @@ expr
     | DATAFRAME LPAREN arg_list RPAREN
     {
         // Make sure you have: using System.Linq; at the top of your parser file
-        $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList());
+         $$ = new DataframeNode($3.Cast<NamedArgumentNode>().ToList());
+        /* $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList()); */
     }
 
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); }
