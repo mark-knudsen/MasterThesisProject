@@ -565,22 +565,27 @@ namespace MyCompiler
                 var rowRecord = new RecordNode(rowFields);
                 Visit(new AssignNode(expr.IteratorId.Name, rowRecord));
 
-                // Create empty result dataframe with the same schema (including index)
-
-                foreach (var item in dfType.ColumnNames) // it shoulw have the index
-                {
-                    System.Console.WriteLine("item in where" + item);
-                }
-
                 if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
                     throw new Exception("Dataframe has duplicate column names");
 
                 // --- Create empty result dataframe with same schema (no index duplication) ---
-                var resultDf = new DataframeNode(new List<ExpressionNode>
+                var resultDf = new DataframeNode(new List<NamedArgumentNode>
                 {
-                    new ArrayNode(dfType.ColumnNames.Select(n => new StringNode(n) as ExpressionNode).ToList()), // columns
-                    new ArrayNode(new List<ExpressionNode>()), // empty rows
-                    new ArrayNode(dfType.DataTypes.Select(t => new StringNode(t.ToString()) as ExpressionNode).ToList()) // types
+                    new NamedArgumentNode("columns",
+                        new ArrayNode(dfType.ColumnNames
+                            .Select(n => new StringNode(n) as ExpressionNode)
+                            .ToList())
+                    ),
+
+                    new NamedArgumentNode("rows",
+                        new ArrayNode(new List<ExpressionNode>())
+                    ),
+
+                    new NamedArgumentNode("type",
+                        new ArrayNode(dfType.DataTypes
+                            .Select(t => new StringNode(t.ToString()) as ExpressionNode)
+                            .ToList())
+                    )
                 });
 
                 Visit(new AssignNode("__where_result", resultDf));
@@ -592,62 +597,6 @@ namespace MyCompiler
                 throw new Exception("where condition must return bool");
 
             // Set the type of the Where expression to match source
-            expr.SetType(expr.SourceExpr.Type);
-            return expr.Type;
-        }
-
-        public Type VisitWhere2(WhereNode expr)
-        {
-            var arrayType = Visit(expr.SourceExpr);
-
-            Console.WriteLine("we got source: " + expr.SourceExpr.Type);
-
-            // we need to assign the lambda value and give it the specific type
-
-            if (arrayType is ArrayType arrType)
-            {
-                if (arrType.ElementType is StringType)
-                    Visit(new AssignNode(expr.IteratorId.Name, new StringNode("")));
-                else if (arrType.ElementType is BoolType)
-                    Visit(new AssignNode(expr.IteratorId.Name, new BooleanNode(false)));
-                else
-                    Visit(new AssignNode(expr.IteratorId.Name, new NumberNode(0)));
-            }
-            else if (arrayType is DataframeType dfType)
-            {
-                var recordArguments = new List<NamedArgumentNode>();
-                for (int i = 0; i < dfType.ColumnNames.Count; i++)
-                {
-                    if (dfType.DataTypes[i] is StringType)
-                        recordArguments.Add(new NamedArgumentNode(dfType.ColumnNames[i], new StringNode("")));
-                    else if (dfType.DataTypes[i] is BoolType)
-                        recordArguments.Add(new NamedArgumentNode(dfType.ColumnNames[i], new BooleanNode(false)));
-                    else
-                        recordArguments.Add(new NamedArgumentNode(dfType.ColumnNames[i], new NumberNode(0)));
-                }
-
-                var record = new RecordNode(recordArguments);
-
-                Visit(new AssignNode(expr.IteratorId.Name, record));
-            }
-            else
-                throw new Exception("where can only be used on arrays and dataframes");
-
-            Visit(expr.IteratorId);
-
-            Console.WriteLine("array type: " + arrayType);
-
-            var condType = Visit(expr.Condition);
-            Console.WriteLine("we got comparison: " + condType);
-
-            if (arrayType is not ArrayType && arrayType is not DataframeType)
-                throw new Exception("where can only be used on arrays and dataframes");
-
-            // 5. Check condition
-            if (condType is not BoolType)
-                throw new Exception("where condition must return bool");
-
-            // 2. Determine element type (adjust depending on your language)
             expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
@@ -759,11 +708,6 @@ namespace MyCompiler
             var arrayType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
 
-            System.Console.WriteLine("our add type: " + addType);
-            System.Console.WriteLine("our add expr type: " + expr.AddExpression.Type);
-
-            // check if the array and the node are of the same type
-
             if (arrayType is DataframeType dfType)
             {
                 if (addType is not RecordType recType)
@@ -773,10 +717,8 @@ namespace MyCompiler
                 var dfColumns = dfType.ColumnNames;
                 var recFields = recType.RecordFields.Select(f => f.Label).ToList();
 
-                if (_debug) Console.WriteLine("df columns: " + string.Join(", ", dfColumns));
-                if (_debug) Console.WriteLine("rec fields: " + string.Join(", ", recFields));
-
-                //recType.RecordFields.Insert(0, new RecordField("index", new NumberNode(0)) { Type = new IntType() });
+                if (dfColumns.Count != recType.RecordFields.Count)
+                    throw new Exception("Record fields count must match the dataframe columns count");
 
                 if (!dfColumns.All(col => recFields.Contains(col)))
                     throw new Exception("Record fields do not match dataframe columns");
@@ -797,8 +739,26 @@ namespace MyCompiler
 
         public Type VisitAddRange(AddRangeNode expr)
         {
+            //  if (dfColumns.Count != ((expr.SourceExpression as ArrayNode).Elements[0] as RecordType).RecordFields.Count)
+            //     throw new Exception("Record fields count must match the dataframe columns count");
+
+            // does addRange have a list of addnodes? it doesn't seem to call them tough
+            // we can't now if the amount of fields are the ame as the amount of columns in the record thoug
+
             Visit(expr.SourceExpression);
             Visit(expr.AddRangeExpression);
+
+            System.Console.WriteLine("The add range type " + expr.AddRangeExpression.Type);
+            if (expr.AddRangeExpression is ArrayNode arrayNode)
+            {
+                foreach (var item in arrayNode.Elements)
+                {
+                    if(item.)
+                }
+                arrayNode.Elements[0]
+            }
+
+
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
@@ -924,7 +884,7 @@ namespace MyCompiler
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type recordSourceType = Visit(expr.IdRecord);
 
-            System.Console.WriteLine("idrecord: " +expr.IdField + " type: "+ expr.IdRecord.Type);
+            System.Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
 
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;
@@ -999,9 +959,6 @@ namespace MyCompiler
                 // Explicit types for empty dataframe
                 if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
 
-                System.Console.WriteLine("datatypes" + expr.DataTypes.Elements.Count);
-                System.Console.WriteLine("datatypes" + expr.DataTypes.Elements[0]);
-
                 Visit(expr.DataTypes);
 
                 columnTypes = expr.DataTypes.Elements.Select(e => ResolveTypeNode(e)).ToList();
@@ -1036,17 +993,17 @@ namespace MyCompiler
             return dfType;
         }
 
-        private Type ResolveTypeNode(ExpressionNode expr)
+        private Type ResolveTypeNode(ExpressionNode expr) // FIX, might be redundant
         {
             if (expr.Type is Type tt)
             {
-                System.Console.WriteLine("Type is: " + tt);
+                Console.WriteLine("Type is: " + tt);
                 return tt;
             }
 
             if (expr is TypeLiteralNode t)
             {
-                System.Console.WriteLine("it is typeliteral");
+                Console.WriteLine("it is typeliteral");
                 return t.TypeNode.Name switch
                 {
                     "int" => new IntType(),
@@ -1142,7 +1099,6 @@ namespace MyCompiler
         public Type VisitTypeLiteral(TypeLiteralNode expr)
         {
             return ResolveType(expr.TypeNode); // Just return the wrapped type
-
         }
     }
 }

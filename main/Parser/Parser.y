@@ -1,9 +1,12 @@
+%namespace MyCompiler
+%output=Parser.cs
+%visibility internal
+
 %union { 
     public object obj; 
     public bool boolVal;
     public double fval;
-    public MyCompiler.Type type; 
-    public MyCompiler.Node node; // AST nodes
+    public MyCompiler.Node node; // Add this to hold AST pieces
     public MyCompiler.ExpressionNode expr; // Single expression
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list
     public List<MyCompiler.NamedArgumentNode> arglist; // for arg_list
@@ -34,7 +37,7 @@
 %left PLUS MINUS
 %left MULT DIV
 %left DOT
-%left LBRACKET /* high priority for indexing */
+%left LBRACKET /* Add this to give indexing high priority */
 
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
@@ -111,9 +114,9 @@ Assignment
     | ID LBRACKET expr RBRACKET ASSIGN expr    
     {
         string idName = (string)$1;
-        var idExpr = new IdNode(idName);
+        var id = new IdNode(idName);
         
-        $$ = new IndexAssignNode(idExpr, $3 as ExpressionNode, $6 as ExpressionNode);    
+        $$ = new IndexAssignNode(id, $3 as ExpressionNode, $6 as ExpressionNode);    
     }
     
     | expr DOT ID ASSIGN expr
@@ -141,7 +144,6 @@ expr
     | NULL_LITERAL        { $$ = new NullNode(); }
     | Type                { $$ = new TypeLiteralNode($1 as TypeNode); }
     
-
     | ID                  { $$ = new IdNode((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNode($3 as ExpressionNode); }
@@ -171,9 +173,9 @@ expr
     { 
         // Cast $1 to string so the IdNode constructor accepts it
         string idName = (string)$1;
-        var idExpr = new IdNode(idName); 
+        var id = new IdNode(idName); 
         
-        $$ = new IndexNode(idExpr, $3 as ExpressionNode); 
+        $$ = new IndexNode(id, $3 as ExpressionNode); 
     }
     | LPAREN expr RPAREN  { $$ = $2; }
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); }
@@ -229,17 +231,12 @@ expr
                                               { $$ = new AddFieldNode($1 as ExpressionNode, (string)$5, $7 as ExpressionNode); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNode($1 as ExpressionNode, (string)$5); }
     
-    DATAFRAME LPAREN arg_list RPAREN
-        { 
-            // Cast each argument to ExpressionNode for AST constructor
-            $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList()); 
-        }
-    | ID LBRACKET expr RBRACKET 
-        { $$ = new IndexNode(new IdNode((string)$1), $3 as ExpressionNode); }
-    | expr DOT ID %prec LOWER_THAN_LPAREN
-        { $$ = new RecordFieldNode($1 as ExpressionNode, (string)$3); }
-    | LPAREN expr RPAREN { $$ = $2; }
-
+    /* dataframe(columns=[...], data=[...]) */
+    | DATAFRAME LPAREN arg_list RPAREN
+    {
+        // Make sure you have: using System.Linq; at the top of your parser file
+        $$ = new DataframeNode($3.Cast<NamedArgumentNode>().ToList());
+    }
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); }
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
     ;
@@ -250,32 +247,17 @@ params
     | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
     ;
 
-/* Each argument can now be:
-   - Named (ID = expr or ID: expr)
-   - Positional (just expr)
-*/
+arg_list
+    : arg                  { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
+    | arg_list COMMA arg   { ((List<NamedArgumentNode>)$1).Add($3 as NamedArgumentNode); $$ = $1; }
+    ;
 
 arg
-    : ID ASSIGN expr %prec LOWER_THAN_LPAREN
-        { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
-    | ID COLON expr
-        { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
-    | COLUMNS ASSIGN expr
-        { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
-    | COLUMNS COLON expr
-        { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
-    | expr
-        { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
-    ;
-
-arg_list
-    : /* empty */ { $$ = new List<NamedArgumentNode>(); }
-    | arg_list_nonempty { $$ = $1; }
-    ;
-
-arg_list_nonempty
-    : arg { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
-    | arg_list_nonempty COMMA arg { ((List<NamedArgumentNode>)$1).Add($3 as NamedArgumentNode); $$ = $1; }
+    : ID ASSIGN expr      { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
+    | ID COLON expr       { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
+    | COLUMNS ASSIGN expr { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
+    | COLUMNS COLON expr  { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
+    | expr                { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
     ;
 %%
 
