@@ -217,6 +217,14 @@ expr
         $$ = new ReadCsvNode(args); 
     }
 
+    | READCSV LPAREN expr RPAREN 
+    { 
+        // Force the creation of a list with exactly TWO elements
+        var args = new List<ExpressionNode>();
+        args.Add($3 as ExpressionNode); // This should be the String/Path
+        $$ = new ReadCsvNode(args); 
+    }
+
     | TOCSV LPAREN expr COMMA expr RPAREN 
         { $$ = new ToCsvNode($3 as ExpressionNode, $5 as ExpressionNode); }
 

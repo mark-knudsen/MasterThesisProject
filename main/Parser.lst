@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 08/04/2026 11:42:00>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 09/04/2026 13:07:49>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 08/04/2026 11:51:46
+//  DateTime: 09/04/2026 23:21:20
 // ==========================================================================
 
 
@@ -225,6 +225,14 @@ expr
         var args = new List<ExpressionNode>();
         args.Add($3 as ExpressionNode); // This should be the Record/Schema
         args.Add($5 as ExpressionNode); // This should be the String/Path
+        $$ = new ReadCsvNode(args); 
+    }
+
+    | READCSV LPAREN expr RPAREN 
+    { 
+        // Force the creation of a list with exactly TWO elements
+        var args = new List<ExpressionNode>();
+        args.Add($3 as ExpressionNode); // This should be the String/Path
         $$ = new ReadCsvNode(args); 
     }
 

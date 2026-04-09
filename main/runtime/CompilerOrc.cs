@@ -51,34 +51,55 @@ namespace MyCompiler
         None = 0
     }
 
-    public static class LanguageRuntime
+    static class Native
     {
-        // Import the same malloc your LLVM code uses (msvcrt on Windows, libc on Linux/macOS)
+#if LINUX
+        [DllImport("libc.so.6", CallingConvention = CallingConvention.Cdecl)]
+        public static extern IntPtr malloc(IntPtr size);
+
+        [DllImport("libc.so.6", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void free(IntPtr ptr);
+
+#else
         [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
         public static extern IntPtr malloc(IntPtr size);
 
+        [DllImport("msvcrt.dll", CallingConvention = CallingConvention.Cdecl)]
+        public static extern void free(IntPtr ptr);
+#endif
+    }
+
+    public static class LanguageRuntime
+    {
         public static IntPtr ReadCsvInternal(IntPtr pathPtr, IntPtr schemaPtr)
         {
             string path = Marshal.PtrToStringAnsi(pathPtr);
-            string schema = Marshal.PtrToStringAnsi(schemaPtr);
+            if (!File.Exists(path))
+            {
+                Console.WriteLine("no file in internale");
+                return IntPtr.Zero;
+            }
 
-            if (!File.Exists(path)) return IntPtr.Zero;
+            if (schemaPtr == IntPtr.Zero)
+                throw new Exception("no scheme");
+
+            string schema = Marshal.PtrToStringAnsi((nint)schemaPtr);
 
             var lines = File.ReadAllLines(path).Skip(1).ToArray();
             int rowCount = lines.Length;
 
             // --- THE NATIVE WAY ---
             // 1. Allocate Array Header { i64, i64, ptr } (24 bytes)
-            IntPtr rowsArrayHeader = malloc((IntPtr)24);
+            IntPtr rowsArrayHeader = Native.malloc((IntPtr)24);
 
             // 2. Allocate Data Buffer (rowCount * 8 bytes)
-            IntPtr rowsDataBuffer = malloc((IntPtr)(rowCount * 8));
+            IntPtr rowsDataBuffer = Native.malloc((IntPtr)(rowCount * 8));
 
             for (int i = 0; i < rowCount; i++)
             {
                 string[] parts = lines[i].Split(',');
                 // Allocate Record Buffer
-                IntPtr recordBuffer = malloc((IntPtr)(parts.Length * 8));
+                IntPtr recordBuffer = Native.malloc((IntPtr)(parts.Length * 8));
 
                 for (int col = 0; col < parts.Length; col++)
                 {
@@ -86,7 +107,7 @@ namespace MyCompiler
                     string rawValue = parts[col].Trim();
 
                     // Allocate value box (8 bytes)
-                    IntPtr valuePtr = malloc((IntPtr)8);
+                    IntPtr valuePtr = Native.malloc((IntPtr)8);
 
                     if (typeCode == 'I')
                     {
@@ -112,14 +133,16 @@ namespace MyCompiler
                         bool val = rawValue.ToLower() == "true" || rawValue == "1";
                         Marshal.WriteInt64(valuePtr, val ? 1 : 0);
                     }
-                    else
-                    { // String
+                    else if (typeCode == 'S')
+                    { 
                       // Strings are tricky; StringToHGlobalAnsi uses Marshal's heap.
                       // For a 100% "Real" IR way, you'd malloc + strcpy here too.
                         IntPtr strPtr = Marshal.StringToHGlobalAnsi(rawValue);
-                        malloc((IntPtr)8); // dummy to match your previous logic if needed
+                        Native.malloc((IntPtr)8); // dummy to match your previous logic if needed
                         valuePtr = strPtr;
                     }
+                    else
+                        throw new Exception("Invalid data type: " + typeCode);
                     Marshal.WriteIntPtr(recordBuffer, col * 8, valuePtr);
                 }
                 Marshal.WriteIntPtr(rowsDataBuffer, i * 8, recordBuffer);
@@ -131,13 +154,12 @@ namespace MyCompiler
             Marshal.WriteIntPtr(rowsArrayHeader, 16, rowsDataBuffer);
 
             // 3. Wrap in RuntimeValue { i64 tag, ptr data } (16 bytes)
-            IntPtr runtimeBox = malloc((IntPtr)16);
+            IntPtr runtimeBox = Native.malloc((IntPtr)16);
             Marshal.WriteInt64(runtimeBox, 0, 7); // Tag 7 = Dataframe
             Marshal.WriteIntPtr(runtimeBox, 8, rowsArrayHeader);
 
             return runtimeBox;
         }
-
 
         public static void ToCsvInternal(IntPtr dfPtr, IntPtr pathPtr)
         {
@@ -205,29 +227,6 @@ namespace MyCompiler
             }
             Console.WriteLine($"--- C# Runtime: CSV saved to {path} ---");
         }
-
-        public static void EnsureCapacityInternal(IntPtr arrayHeaderPtr)
-        {
-            long len = Marshal.ReadInt64(arrayHeaderPtr, 0);
-            long cap = Marshal.ReadInt64(arrayHeaderPtr, 8);
-
-            if (len >= cap)
-            {
-                long newCap = cap == 0 ? 4 : cap * 2;
-                IntPtr oldData = Marshal.ReadIntPtr(arrayHeaderPtr, 16);
-
-                // Use C# to handle the resizing logic
-                IntPtr newData = Marshal.AllocHGlobal((int)(newCap * 8));
-                // Copy old data to new data
-                unsafe { Buffer.MemoryCopy((void*)oldData, (void*)newData, newCap * 8, len * 8); }
-
-                Marshal.WriteInt64(arrayHeaderPtr, 8, newCap);
-                Marshal.WriteIntPtr(arrayHeaderPtr, 16, newData);
-                // Note: You might want to free oldData here, 
-                // but be careful if it came from a constant
-            }
-        }
-
     }
 
     public unsafe class CompilerOrc : IExpressionVisitor, ICompiler
@@ -258,9 +257,12 @@ namespace MyCompiler
         private delegate IntPtr MainDelegate();
 
         private ReadCsvDelegate _readCsvDelegate;
+        private LLVMTypeRef _readCsvInternalType;
         private ToCsvDelegate _toCsvDelegate;
-        public delegate IntPtr ReadCsvDelegate(IntPtr path, IntPtr schema);
+        public delegate IntPtr ReadCsvDelegate(IntPtr pathPtr, IntPtr schemaPtr);
         public delegate void ToCsvDelegate(IntPtr data, IntPtr path);
+        Stopwatch sw;
+        void StartStopWatch() => sw = Stopwatch.StartNew();
 
         public CompilerOrc()
         {
@@ -280,6 +282,14 @@ namespace MyCompiler
             // Declare malloc and other required functions
             DeclareValueStruct();
             SetupCsvFunctions();
+        }
+        void StopStopWatch()
+        {
+            sw.Stop();
+            Console.WriteLine("\n--- Execution Stats ---");
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
         }
 
         private unsafe void RegisterNativeFunc(LLVMOrcOpaqueJITDylib* dylib, string name, IntPtr fnAddr)
@@ -410,13 +420,7 @@ namespace MyCompiler
 
         // TODO: add functionality
 
-        // show a smaller dataframe from an existing one like x.show(["name", "age"])
-        // get the columns back as an array
-        // get size of dataframe
-        // get record from dataframe
-        // if you then have record you can also get the field
-
-        // later add min, max, mean, sum & map/where
+        // add to df? min, max, mean, sum 
 
         // Problems
 
@@ -498,18 +502,14 @@ namespace MyCompiler
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
             // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
-            // Stopwatch sw = Stopwatch.StartNew();
+            Stopwatch sw = Stopwatch.StartNew();
 
             var tempResult = delegateResult();
             if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
-            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
 
-            // Print execution stats - uncomment if you want to see the stats for each command, but it can be a bit much
-            // sw.Stop();
-            // Console.WriteLine("\n--- Execution Stats ---");
-            // Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
-            // Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
-            // Console.WriteLine("------------------------\n");
+            // StartStopWatch();
+            RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
+            // StopStopWatch();
 
             switch ((ValueTag)result.tag)
             {
@@ -538,7 +538,7 @@ namespace MyCompiler
                 case ValueTag.Record:
                     if (_debug) Console.WriteLine("return Record");
 
-                    if (prediction is RecordType recType) // record(["name", "age"],["dan", 100]) 
+                    if (prediction is RecordType recType) 
                     {
                         return HandleRecord(result.data, recType);
                     }
@@ -551,8 +551,7 @@ namespace MyCompiler
                         return HandleDataframe(result.data, dfType);
                     }
 
-                    return "Dataframe display error";
-
+                    return "Dataframe display error"; // it says void type so why does it end up here?
 
                 case ValueTag.None:
                     if (_debug) Console.WriteLine("return none");
@@ -561,9 +560,6 @@ namespace MyCompiler
 
             return result;
         }
-
-        // record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
-        // record([ "full_name", "age_in_moons", "is_active_wizard", "power_level_index",  "assigned_house", "patronus_form","wand_core_material", "academic_gpa", "has_invisibility_cloak", "quidditch_position", "total_gold_galleons", "last_sighting_coordinates"],["Harry James Potter",12456,true,98.7742,"Gryffindor","Stag","Phoenix Feather",3.85,true,"Seeker",45200.50,"51.5074° N, 0.1278° W"])
 
         private string HandleArray(IntPtr arrayObjPtr, Type type)
         {
@@ -574,8 +570,8 @@ namespace MyCompiler
             var elements = new List<object>();
             var stride = (elementType is BoolType) ? 1 : 8;
 
-            Console.WriteLine("Array length: " + array.length);
-            Console.WriteLine("Array capacity: " + array.capacity);
+            if (_debug) Console.WriteLine("Array length: " + array.length);
+            if (_debug) Console.WriteLine("Array capacity: " + array.capacity);
 
             for (long i = 0; i < array.length; i++)
             {
@@ -662,7 +658,6 @@ namespace MyCompiler
         {
             var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
 
-
             var elementType = type.ElementType;
             var result = new List<string>(); // Add first column for index
 
@@ -681,8 +676,7 @@ namespace MyCompiler
             return result;
         }
 
-
-        private string HandleDataframe(IntPtr ptr, DataframeType type)
+        private string HandleDataframe(IntPtr ptr, DataframeType type) // it is this func that takes a bunch of time to run, the display part is slow
         {
             if (ptr == IntPtr.Zero) return "dataframe(null)";
             var dfObj = Marshal.PtrToStructure<DataframeObject>(ptr);
@@ -691,32 +685,41 @@ namespace MyCompiler
             var columnNames = ExtractArray(dfObj.columns, new ArrayType(new StringType()));
 
             // 2. Get Tags (The 'dataTypes' header in your %dataframe struct)
-            var tagsHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.dataTypes);
-            List<long> colTags = new List<long>();
-            for (long i = 0; i < tagsHeader.length; i++)
+            var dataTypeHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.dataTypes); // it used new List<long>(); but the tag is int16, is that not a waste?
+            List<Int16> colTags = new List<Int16>();
+            for (long i = 0; i < dataTypeHeader.length; i++)
             {
                 // Read each tag (i64) from the tags array
-                colTags.Add(Marshal.ReadInt64(IntPtr.Add(tagsHeader.data, (int)(i * 8))));
+                colTags.Add(Marshal.ReadInt16(IntPtr.Add(dataTypeHeader.data, (Int16)(i * 8))));
             }
 
             // 3. Get Rows
-            var rowsArray = Marshal.PtrToStructure<ArrayObject>(dfObj.rows);
+            var rowsHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.rows);
             var rowsData = new List<List<object>>();
-            for (long r = 0; r < rowsArray.length; r++)
+
+            var columnsHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.columns);
+            for (long r = 0; r < rowsHeader.length; r++)
             {
-                IntPtr recordPtr = Marshal.ReadIntPtr(IntPtr.Add(rowsArray.data, (int)(r * 8)));
+                IntPtr recordPtr = Marshal.ReadIntPtr(IntPtr.Add(rowsHeader.data, (int)(r * 8)));
                 // This returns a list of IntPtrs (pointers to the boxed values)
                 rowsData.Add(ExtractRecord(recordPtr, type.RowType));
             }
 
+            // if (_debug) Console.WriteLine("dataType capacity: " + dataTypeHeader.capacity);
+            // if (_debug) Console.WriteLine("dataType length: " + dataTypeHeader.length);
+            // if (_debug) Console.WriteLine("rows capacity: " + rowsHeader.capacity);
+            // if (_debug) Console.WriteLine("rows length: " + rowsHeader.length);
+            // if (_debug) Console.WriteLine("columns capacity: " + columnsHeader.capacity);
+            // if (_debug) Console.WriteLine("columns length: " + columnsHeader.length);
+
             return FormatTable(columnNames, rowsData, colTags);
         }
 
-        private string FormatTable(List<string> columnNames, List<List<object>> rows, List<long> colTypes)
+        private string FormatTable(List<string> columnNames, List<List<object>> rows, List<Int16> colTypes)
         {
             int colCount = columnNames.Count;
             var colWidths = new int[colCount];
-            var tags = colTypes ?? new List<long>();
+            var tags = colTypes ?? new List<Int16>();
             while (tags.Count < colCount) tags.Insert(0, 0); // Handle 'index' column padding
 
             string GetStringValue(object v, int colIndex)
@@ -807,11 +810,11 @@ namespace MyCompiler
         {
             if (type == null)
             {
-                Console.WriteLine("CRITICAL: GetTypeByTag received a NULL type!");
+                if (_debug) Console.WriteLine("CRITICAL: GetTypeByTag received a NULL type!");
                 return (int)ValueTag.None;
             }
 
-            Console.WriteLine($"Resolving Tag for: {type.GetType().Name}");
+            if (_debug) Console.WriteLine($"Resolving Tag for: {type.GetType().Name}");
 
             return type switch
             {
@@ -825,6 +828,7 @@ namespace MyCompiler
                 _ => (Int16)ValueTag.None
             };
         }
+
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
             var ctx = _module.Context;
@@ -837,31 +841,13 @@ namespace MyCompiler
             // --- THE FIX: Define with Padding ---
             // { i16, [6 x i8], i8* }
             var paddingType = LLVMTypeRef.CreateArray(i8, 6);
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, paddingType, i8Ptr }, false);
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, paddingType, i8Ptr }, false); // why is this necessary? 
 
             // --- THE SHIELD ---
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
             if (value.TypeOf == boxTypePtr)
             {
                 return value;
-            }
-
-            // --- NULL TYPE RECOVERY ---
-            if (type == null || type is VoidType)
-            {
-                // Check the LLVM value itself. In LLVM 20, if we can't rely on ToString(),
-                // we rely on the fact that we just passed a Dataframe pointer.
-
-                // Check if the value we are boxing is specifically our newly created df_ptr
-                if (value.Name.Contains("df_ptr"))
-                {
-                    type = new DataframeType(new List<string>(), new List<Type>(), null);
-                }
-                else
-                {
-                    Console.WriteLine("Warning: BoxValue received a null/void type. Defaulting to None.");
-                    type = new VoidType();
-                }
             }
 
             int tag = GetTypeByTag(type);
@@ -1634,17 +1620,6 @@ namespace MyCompiler
             return value;
         }
 
-        // Simple helper to map your AST types to Tags
-        private short GetTagForType(Type type)
-        {
-            if (type is IntType) return (short)ValueTag.Int;
-            if (type is FloatType) return (short)ValueTag.Float;
-            if (type is StringType) return (short)ValueTag.String;
-            if (type is ArrayType) return (short)ValueTag.Array;
-            if (type is RecordType) return (short)ValueTag.Record;
-            return (short)ValueTag.None;
-        }
-
         public LLVMValueRef VisitRandom(RandomNode expr)
         {
             var llvmCtx = _module.Context;
@@ -1831,21 +1806,36 @@ namespace MyCompiler
                 "printf_call");
         }
 
-        public LLVMValueRef VisitPrint(PrintNode expr) // x.addRange([{index: 5, name: "voldemort", age: 80}, {index: 6, name: "dumbledore", age: 70}, {index: 7, name: "MERLIN", age: 101}])
+        public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
-            return AddImplicitPrint(valueToPrint, expr.Expression.Type); // x.add({name: "Hary potter2", age: 201})
-        } // x=dataframe(["name", "age"], type=[string, int])
+            return AddImplicitPrint(valueToPrint, expr.Expression.Type);
+        }
+        // x=dataframe(["name", "age"], type=[string, int])
+        // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
 
-        //  x=record({name: "Hary potter", age: 30, rating: 10.5585})  
-        //  for(i=0; i<100000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-        //  x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
-        //  x.where(d => d.age > 20)
-        //  x.map(d => d.age + 10)
-        //  x=record({name: "Hary potter", age: 30, rating: 10.5585}) 
-        
-        //  for(i=0; i<520000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-        public LLVMValueRef VisitWhere(WhereNode expr) // x.where(d=> d.age > 90)
+        // x=record({name: "Hary potter", age: 30, rating: 10.5585})  
+
+        // x.add({name: "Hary potter2", age: 201})
+        // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
+
+        // for(i=0; i<520000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        // for(i=0; i<550000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        // this below can't do random inside addRange "Cannot perform + on int and"
+        // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
+
+        // x.where(d => d.age > 20)
+        // x.map(d => d.age + 10)
+
+        // x.where(d=> d.age > 90)  
+        // x.where(d=> d > 9).where(z=> z < 93)
+        // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
+        // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
+
+        //  x=read_csv("test.csv") 
+        //  x=read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "test.csv") 
+
+        public LLVMValueRef VisitWhere(WhereNode expr)
         {
             var sourceType = expr.SourceExpr.Type;
             var program = new SequenceNode();
@@ -2256,13 +2246,6 @@ namespace MyCompiler
             _builder.PositionAtEnd(exitBlock);
         }
 
-
-        // public LLVMValueRef VisitCopyRecord(CopyRecordNode expr)
-        // {
-        //     return VisitCopy(expr);
-        // }
-
-
         public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
         {
             // Temp variable names
@@ -2281,11 +2264,6 @@ namespace MyCompiler
                 "<",
                 new LengthNode(new IdNode(srcVarName))
             );
-
-            // x=[1,2,3]
-            // newX = x;
-            // for (i=0; i<x.length; i++)
-            // newX[i] = newX[i] + 2
 
             // 4. i++
             var loopStep = new IncrementNode(indexVarName);
@@ -2454,8 +2432,8 @@ namespace MyCompiler
             var headerRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "arr_header");
 
             // 2. Data Buffer
-            var capacity = count > 0 ? count * 2 : 4;
-            if (expr.Capacity != null) capacity = (uint)expr.Capacity * 2;
+            var capacity = count > 0 ? count * 20000 : 100;
+            if (expr.Capacity != null) capacity = (uint)expr.Capacity * 20000;
             var dataSize = LLVMValueRef.CreateConstInt(i64, (ulong)capacity * (ulong)stride);
             var dataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { dataSize }, "arr_data");
 
@@ -2556,7 +2534,7 @@ namespace MyCompiler
                     FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
                     IntType => _builder.BuildPtrToInt(rawValue, i64),
                     BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
-                    RecordType => _builder.BuildBitCast(rawValue, i8Ptr), // it did not have for record type before, but it still worked
+                    RecordType => _builder.BuildBitCast(rawValue, i8Ptr), 
                     DataframeType => _builder.BuildBitCast(rawValue, i8Ptr),
                     NullType => _builder.BuildTrunc(rawValue, i8Ptr),
                     _ => rawValue
@@ -2662,7 +2640,7 @@ namespace MyCompiler
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
                 DataframeType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Dataframes are pointers
                 RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                _ => throw new Exception($"Unsupported type: {type}") // it doesn't have a type? how?
+                _ => throw new Exception($"Unsupported type: {type}")
             };
         }
 
@@ -2760,7 +2738,7 @@ namespace MyCompiler
 
             var zero = LLVMValueRef.CreateConstInt(i64, 0);
             var four = LLVMValueRef.CreateConstInt(i64, 4);
-            var two = LLVMValueRef.CreateConstInt(i64, 2);
+            var two = LLVMValueRef.CreateConstInt(i64, 1000);
 
             var newCap = _builder.BuildSelect(
                 _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, zero),
@@ -3561,33 +3539,87 @@ namespace MyCompiler
 
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {
-            // 1. Visit the path (The CSV string)
             var pathValue = Visit(expr.FileNameExpr);
 
-            // 2. Cast the Schema expression to a RecordNode
-            // This fixes the CS1503 conversion errors
-            var schemaRecord = (RecordNode)expr.SchemaExpr;
+            // This will now always be populated by the Type Checker
+            RecordNode recordSchema = (RecordNode)expr.SchemaExpr;
 
-            // 3. Convert Schema AST to "ISIBF" string
-            var schemaString = GetSchemaString(schemaRecord);
+            string schemaString = GetSchemaString(recordSchema);
             var schemaValue = _builder.BuildGlobalStringPtr(schemaString, "csv_schema_code");
 
-            // 4. Call the C# Runtime to get the Rows pointer
             var readCsvFn = GetOrDeclareReadCsvInternal();
-            var boxedResult = _builder.BuildCall2(_readCsvInternalType, readCsvFn,
-                                new[] { pathValue, schemaValue }, "csv_boxed_res");
+            var boxedResult = _builder.BuildCall2(_readCsvInternalType, readCsvFn, new[] { pathValue, schemaValue }, "csv_boxed_res");
 
-            // Unbox the Rows Array Pointer { i64 tag, ptr data } from the RuntimeValue
+            // 4. Unbox the Rows Array Pointer { i64 tag, ptr data } from the RuntimeValue
             var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { ctx.Int16Type, i8Ptr }, false);
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { ctx.Int16Type, i8Ptr }, false); // call a func that creates runtime value type
 
             var dataPtrAddr = _builder.BuildStructGEP2(runtimeValueType, boxedResult, 1, "unbox_ptr");
             var rawRowsPtr = _builder.BuildLoad2(i8Ptr, dataPtrAddr, "raw_rows_ptr");
 
-            // 5. REUSE: Finalize the Dataframe Construction
-            // Passing the casted schemaRecord and the pointer we got from C#
-            return BuildDataframeInternal(schemaRecord, rawRowsPtr);
+            // 5. Construct the DataFrame using the inferred or provided RecordNode
+            return BuildDataframeInternal(recordSchema, rawRowsPtr);
+        }
+
+        // Helper: Build a RecordNode from CSV (first line + type inference)
+        public static RecordNode BuildRecordNodeFromCsv(string path) // This should absolutely be a helper function in a helper class
+        {
+            var allLines = File.ReadAllLines(path);
+            if (allLines.Length == 0) return null;
+
+            var columnNames = allLines[0].Split(',').Select(s => s.Trim()).ToArray();
+            var dataLines = allLines.Skip(1).ToArray();
+            string[] firstRowParts = dataLines.Length > 0 ? dataLines[0].Split(',') : columnNames.Select(_ => "").ToArray();
+
+            var fields = new List<RecordField>();
+            for (int i = 0; i < columnNames.Length; i++)
+            {
+                char typeCode;
+                string rawValue = firstRowParts[i].Trim();
+
+                if (long.TryParse(rawValue, out _))
+                    typeCode = 'I';
+                else if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    typeCode = 'F';
+                else if (rawValue.Equals("true", StringComparison.OrdinalIgnoreCase) || rawValue.Equals("false", StringComparison.OrdinalIgnoreCase))
+                    typeCode = 'B';
+                else
+                    typeCode = 'S';
+
+                fields.Add(new RecordField
+                {
+                    Label = columnNames[i],
+                    Value = typeCode switch
+                    {
+                        'I' => new NumberNode(0),
+                        'F' => new FloatNode(0.0),
+                        'B' => new BooleanNode(true),
+                        'S' => new StringNode(""),
+                        _ => new StringNode("")
+                    },
+                    Type = typeCode switch
+                    {
+                        'I' => new IntType(),
+                        'F' => new FloatType(),
+                        'B' => new BoolType(),
+                        'S' => new StringType(),
+                        _ => new StringType()
+                    }
+                });
+            }
+
+            var recordNode = new RecordNode(new List<NamedArgumentNode>()) { Fields = fields };
+
+            return recordNode;
+        }
+
+        // Optional: get the constant string value at compile-time
+        private string GetConstantString(ExpressionNode expr)
+        {
+            if (expr is StringNode sn)
+                return sn.Value;
+            throw new InvalidOperationException("Not a stringNode: " + expr.Type);
         }
 
         // Move your dataframe construction logic into this helper
@@ -3697,15 +3729,31 @@ namespace MyCompiler
                 // Example based on your log: Field index resolved to int
                 var type = field.Type;
 
-                if (type is IntType) sb.Append('I');
-                else if (type is FloatType) sb.Append('F');
-                else if (type is BoolType) sb.Append('B');
-                else if (type is StringType) sb.Append('S');
+                switch (type)
+                {
+                    case IntType:
+                        sb.Append('I');
+                        break;
+
+                    case FloatType:
+                        sb.Append('F');
+                        break;
+
+                    case BoolType:
+                        sb.Append('B');
+                        break;
+
+                    case StringType:
+                        sb.Append('S');
+                        break;
+
+                    default:
+                        throw new Exception("Invalid type in schema: " + type);
+                }
             }
             return sb.ToString();
         }
 
-        private LLVMTypeRef _readCsvInternalType;
         private LLVMValueRef GetOrDeclareReadCsvInternal()
         {
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
@@ -3940,7 +3988,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(loopEnd);
         }
 
-        // Internal helper to build a new record from unboxed values
+        // Internal helper to build a new record from unboxed values, what does this mean?
         private LLVMValueRef BuildRecordFromValues(RecordType type, List<LLVMValueRef> values)
         {
             var ctx = _module.Context;
