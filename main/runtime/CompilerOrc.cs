@@ -4248,6 +4248,8 @@ m
         
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         
+        df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
+
             record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
         */
     }
