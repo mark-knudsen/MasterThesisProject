@@ -2108,30 +2108,31 @@ namespace MyCompiler
             var srcVar = "__map_src";
             var resultVar = "__map_result";
             var iVar = "__map_i";
+            var lenVar = "__map_len";
+            var rowVar = "__current_row";
 
             ExpressionNode resultConstructor;
 
             // 1. Determine if we are building a new Dataframe or a simple Array
             if (expr.Type is DataframeType resDfType)
             {
-                // Case: User returned a Record -> Result is a Dataframe
                 var column = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
                 var type = resDfType.DataTypes.Select(t =>
                 {
                     if (t is IntType) return (ExpressionNode)new NumberNode(0);
                     if (t is FloatType) return (ExpressionNode)new FloatNode(0);
+                    if (t is BoolType) return (ExpressionNode)new BooleanNode(false);
                     return (ExpressionNode)new StringNode("");
                 }).ToList();
 
                 resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                    new NamedArgumentNode("columns", new ArrayNode(column)),
-                    new NamedArgumentNode("type", new ArrayNode(type))
-                });
+            new NamedArgumentNode("columns", new ArrayNode(column)),
+            new NamedArgumentNode("type", new ArrayNode(type))
+        });
                 resultConstructor.SetType(resDfType);
             }
             else if (expr.Type is ArrayType resArrType)
             {
-                // Case: User returned a primitive (like x.age + 10) -> Result is an Array
                 resultConstructor = new ArrayNode(new List<ExpressionNode>())
                 {
                     ElementType = resArrType.ElementType
@@ -2143,33 +2144,43 @@ namespace MyCompiler
                 throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
             }
 
-            // 2. Synthesize Assignments
+            // 2. Synthesize Assignments & Setup
             var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
             var resultAssign = new AssignNode(resultVar, resultConstructor);
             var indexInit = new AssignNode(iVar, new NumberNode(0));
 
-            // 3. Loop Logic (Generic for both results)
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            // Optimization: Cache the length outside the loop
+            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
+
+            // 3. Loop Logic
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
             var step = new IncrementNode(iVar);
 
-            // Access the Row from source: src[i]
-            var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-
-            // Transform: Replace 'x' with the row access
-            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, current);
-
-            // 4. Append to result (AddNode handles both Array.add and Dataframe.add)
-            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
-
             var loopBody = new SequenceNode();
+
+            // Optimization: Access the Row once and store it in a variable
+            // This row variable must have the RecordType of the source dataframe
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            var rowAssign = new AssignNode(rowVar, rowAccess);
+            loopBody.Statements.Add(rowAssign);
+
+            // Transform: Replace 'x' with the ID of the row variable, NOT the indexing expression
+            var rowIdReference = new IdNode(rowVar);
+            rowIdReference.SetType(dfType.RowType); // Crucial for field resolution
+
+            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowIdReference);
+
+            // 4. Append to result
+            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
             loopBody.Statements.Add(addNode);
 
             var loop = new ForLoopNode(indexInit, cond, step, loopBody);
 
-            // 5. Assemble
+            // 5. Assemble final program
             var program = new SequenceNode();
             program.Statements.Add(srcAssign);
             program.Statements.Add(resultAssign);
+            program.Statements.Add(lenAssign); // Added length caching
             program.Statements.Add(loop);
             program.Statements.Add(new IdNode(resultVar));
 
@@ -2177,8 +2188,16 @@ namespace MyCompiler
         }
 
 
+        /*
 
+        Final Verdict: 
+        You have a working, type-safe, compiled Dataframe engine.
+        You've solved the hardest part (the JIT/Compilation logic). 
+        To reach "blazing fast" speeds, your next step would be the 
+        "Flattening" we discussed earlier—storing the i64 directly 
+        in the record_buffer instead of malloc-ing a separate box for it.
 
+        */
 
         /* Pseudo code:
 
