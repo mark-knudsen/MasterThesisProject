@@ -83,6 +83,8 @@ Statement
     
     | FOREACH LPAREN ID IN expr RPAREN LBRACE StatementList RBRACE
         { $$ = new ForEachLoopNode(new IdNode((string)$3), $5 as ExpressionNode, $8 ); }
+    | FOREACH LPAREN ID IN expr RPAREN StatementList
+        { $$ = new ForEachLoopNode(new IdNode((string)$3), $5 as ExpressionNode, $7 ); }
     ;
 
 Type
@@ -219,7 +221,6 @@ expr
 
     | READCSV LPAREN expr RPAREN 
     { 
-        // Force the creation of a list with exactly TWO elements
         var args = new List<ExpressionNode>();
         args.Add($3 as ExpressionNode); // This should be the String/Path
         $$ = new ReadCsvNode(args); 

@@ -67,7 +67,7 @@ namespace MyCompiler
 
     public class DataframeType : Type
     {
-        public List<string> ColumnNames { get; }
+        public List<string> ColumnNames { get; } // should be IReadOnlyList? be immutable
         public List<Type> DataTypes { get; }
         public RecordType RowType { get; }
 

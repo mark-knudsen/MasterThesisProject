@@ -283,9 +283,11 @@ namespace MyCompiler
             DeclareValueStruct();
             SetupCsvFunctions();
         }
-        void StopStopWatch()
+        void StopStopWatch(string testName = null)
         {
             sw.Stop();
+            if (testName is not null)
+                Console.WriteLine("\nStop watch time for " + testName);
             Console.WriteLine("\n--- Execution Stats ---");
             Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
@@ -539,19 +541,17 @@ namespace MyCompiler
                     if (_debug) Console.WriteLine("return Record");
 
                     if (prediction is RecordType recType) 
-                    {
                         return HandleRecord(result.data, recType);
-                    }
-                    return "Record Failure";
+                    
+                    throw new Exception("Run time object failed for tag record");
+
                 case ValueTag.Dataframe:
                     if (_debug) Console.WriteLine("return Dataframe");
 
                     if (prediction is DataframeType dfType)
-                    {
                         return HandleDataframe(result.data, dfType);
-                    }
-
-                    return "Dataframe display error"; // it says void type so why does it end up here?
+                    
+                    throw new Exception("Run time object failed for tag dataframe");
 
                 case ValueTag.None:
                     if (_debug) Console.WriteLine("return none");
@@ -1018,59 +1018,98 @@ namespace MyCompiler
         public LLVMValueRef VisitForEachLoop(ForEachLoopNode expr)
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // Array pointer and length
-            var arrayPtr = Visit(expr.Array);
-            var zero = LLVMValueRef.CreateConstInt(ctx.Int32Type, 0);
-            var lenPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { zero }, "len_ptr");
-            var arrayLen = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "array_len");
+            // Save the parent context to restore later (scoping 'item')
+            var oldCtx = _context;
 
-            // Stack-local iterator
-            var elementType = ((ArrayType)expr.Array.Type).ElementType;
-            var iteratorAlloc = _builder.BuildAlloca(GetLLVMType(elementType), expr.Iterator.Name);
+            // 1. Get the Array/Dataframe Header
+            var sourcePtr = Visit(expr.Source);
+            LLVMValueRef arrayHeaderPtr;
 
-            // Add to context
-            _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType);
+            if (expr.Source.Type is DataframeType)
+            {
+                // Dataframe struct: { ptr columns, ptr rows, ptr types }
+                // We want the 'rows' array at index 1
+                var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+                var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 1, "df_rows_ptr");
+                arrayHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_array_header");
+            }
+            else
+            {
+                arrayHeaderPtr = sourcePtr;
+            }
 
-            // Loop blocks
+            // 2. Load Metadata from Array Header { i64 len, i64 cap, i8* data }
+            var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            var lenPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 0, "len_ptr");
+            var arrayLen = _builder.BuildLoad2(i64, lenPtr, "array_len");
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayStructType, arrayHeaderPtr, 2, "data_ptr_ptr");
+            var dataBuffer = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data_buffer");
+
+            // 3. Setup Iterator Variable Scoping
+            Type elementType;
+            if (expr.Source.Type is DataframeType df) elementType = df.RowType;
+            else elementType = ((ArrayType)expr.Source.Type).ElementType;
+
+            // Create the 'alloca' for the iterator (e.g., 'item')
+            var iteratorAlloc = _builder.BuildAlloca(i8Ptr, expr.Iterator.Name);
+            // Add to a new context so 'item' is visible to Visit(expr.Body)
+            _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType); // unsure if context.add should be called in any visit in code gen
+
+            // 4. Create Basic Blocks
             var condBlock = func.AppendBasicBlock("foreach.cond");
             var bodyBlock = func.AppendBasicBlock("foreach.body");
+            var nextBlock = func.AppendBasicBlock("foreach.next");
             var endBlock = func.AppendBasicBlock("foreach.end");
 
-            // Counter
-            var counterAlloc = _builder.BuildAlloca(ctx.Int64Type, "foreach_counter");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, 0), counterAlloc);
+            // 5. Initialize Counter
+            var counterAlloc = _builder.BuildAlloca(i64, "foreach_counter");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), counterAlloc);
             _builder.BuildBr(condBlock);
 
-            // Condition
+            // 6. Condition Block
             _builder.PositionAtEnd(condBlock);
-            var curIdx = _builder.BuildLoad2(ctx.Int64Type, counterAlloc, "cur_idx");
-            var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
-            _builder.BuildCondBr(cond, bodyBlock, endBlock);
+            var curIdx = _builder.BuildLoad2(i64, counterAlloc, "cur_idx");
+            var loopTest = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, curIdx, arrayLen, "foreach_test");
+            _builder.BuildCondBr(loopTest, bodyBlock, endBlock);
 
-            // Body
+            // 7. Body Block
             _builder.PositionAtEnd(bodyBlock);
-            var two64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 2);
-            var memIdx = _builder.BuildAdd(curIdx, two64, "mem_idx");
 
-            var elementPtr = _builder.BuildGEP2(ctx.Int64Type, arrayPtr, new[] { memIdx }, "elem_ptr");
-            var elementVal = _builder.BuildLoad2(ctx.Int64Type, elementPtr, "elem_val");
+            // --- CRITICAL: Load current element into 'item' BEFORE visiting body ---
+            var elemPtr = _builder.BuildGEP2(i8Ptr, dataBuffer, new[] { curIdx }, "elem_ptr");
+            var elemVal = _builder.BuildLoad2(i8Ptr, elemPtr, "elem_val");
+            _builder.BuildStore(elemVal, iteratorAlloc);
 
-            // Store into stack-local iterator
-            _builder.BuildStore(elementVal, iteratorAlloc);
-
+            // Now visit the statements inside the loop
             Visit(expr.Body);
 
-            // Increment counter
-            var one64 = LLVMValueRef.CreateConstInt(ctx.Int64Type, 1);
-            var nextIdx = _builder.BuildAdd(curIdx, one64, "next_idx");
+            // Only branch to next if the body doesn't already have a terminator (like a return)
+            if (_builder.InsertBlock.Terminator.Handle == IntPtr.Zero)
+            {
+                _builder.BuildBr(nextBlock);
+            }
+
+            // 8. Next Block (Increment)
+            _builder.PositionAtEnd(nextBlock);
+            var idxToInc = _builder.BuildLoad2(i64, counterAlloc, "idx_to_inc");
+            var nextIdx = _builder.BuildAdd(idxToInc, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             _builder.BuildStore(nextIdx, counterAlloc);
             _builder.BuildBr(condBlock);
 
+            // 9. End Block
             _builder.PositionAtEnd(endBlock);
+
+            // Restore original context (item goes out of scope)
+            _context = oldCtx;
+
+            // Return a dummy value (or a void-like object)
             return default;
         }
+
         public LLVMValueRef VisitIncrement(IncrementNode expr)
         {
             // 1. Get the pointer
@@ -1832,8 +1871,8 @@ namespace MyCompiler
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
 
-        //  x=read_csv("test.csv") 
-        //  x=read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "test.csv") 
+        // x=read_csv("CSV/test.csv") 
+        // x=read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/test.csv") 
 
         public LLVMValueRef VisitWhere(WhereNode expr)
         {
@@ -1841,9 +1880,9 @@ namespace MyCompiler
             var program = new SequenceNode();
 
             // Handle source array type and different element types
-            if (sourceType is ArrayType arrType)
+            if (sourceType is ArrayType)
                 program = WhereForArray(sourceType, expr);
-            else if (sourceType is DataframeType recType)
+            else if (sourceType is DataframeType)
                 program = WhereForDataframe(sourceType, expr);
 
             PerformSemanticAnalysis(program);
@@ -1979,8 +2018,6 @@ namespace MyCompiler
             return program;
         }
 
-
-
         public LLVMValueRef VisitMap(MapNode expr)
         {
             var arrayType = (ArrayType)expr.SourceExpr.Type;
@@ -1993,7 +2030,7 @@ namespace MyCompiler
 
             // 1. Inject internal variables into context for the duration of the map
             _context = _context.Add(srcVarName, default, null!, arrayType);
-            _context = _context.Add(resultVarName, default, null!, resultType);
+            _context = _context.Add(resultVarName, default, null!, resultType); // we don't do this for where, so why does map have to do it?
             _context = _context.Add(indexVarName, default, null!, intType);
 
             // Helper to create typed IDs
@@ -3562,58 +3599,6 @@ namespace MyCompiler
             return BuildDataframeInternal(recordSchema, rawRowsPtr);
         }
 
-        // Helper: Build a RecordNode from CSV (first line + type inference)
-        public static RecordNode BuildRecordNodeFromCsv(string path) // This should absolutely be a helper function in a helper class
-        {
-            var allLines = File.ReadAllLines(path);
-            if (allLines.Length == 0) return null;
-
-            var columnNames = allLines[0].Split(',').Select(s => s.Trim()).ToArray();
-            var dataLines = allLines.Skip(1).ToArray();
-            string[] firstRowParts = dataLines.Length > 0 ? dataLines[0].Split(',') : columnNames.Select(_ => "").ToArray();
-
-            var fields = new List<RecordField>();
-            for (int i = 0; i < columnNames.Length; i++)
-            {
-                char typeCode;
-                string rawValue = firstRowParts[i].Trim();
-
-                if (long.TryParse(rawValue, out _))
-                    typeCode = 'I';
-                else if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out _))
-                    typeCode = 'F';
-                else if (rawValue.Equals("true", StringComparison.OrdinalIgnoreCase) || rawValue.Equals("false", StringComparison.OrdinalIgnoreCase))
-                    typeCode = 'B';
-                else
-                    typeCode = 'S';
-
-                fields.Add(new RecordField
-                {
-                    Label = columnNames[i],
-                    Value = typeCode switch
-                    {
-                        'I' => new NumberNode(0),
-                        'F' => new FloatNode(0.0),
-                        'B' => new BooleanNode(true),
-                        'S' => new StringNode(""),
-                        _ => new StringNode("")
-                    },
-                    Type = typeCode switch
-                    {
-                        'I' => new IntType(),
-                        'F' => new FloatType(),
-                        'B' => new BoolType(),
-                        'S' => new StringType(),
-                        _ => new StringType()
-                    }
-                });
-            }
-
-            var recordNode = new RecordNode(new List<NamedArgumentNode>()) { Fields = fields };
-
-            return recordNode;
-        }
-
         // Optional: get the constant string value at compile-time
         private string GetConstantString(ExpressionNode expr)
         {
@@ -3903,7 +3888,7 @@ namespace MyCompiler
                 _builder.BuildStore(oldRecordPtr, itSlot);
 
                 // Update context so RecordFieldNode knows where to look
-                _context = _context.Add("$row", itSlot, null!, sourceType.RowType);
+                _context = _context.Add("$row", itSlot, null!, sourceType.RowType); // unsure again about the context.add in code gen
                 var rowId = new IdNode("$row");
                 rowId.SetType(sourceType.RowType);
 
