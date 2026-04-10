@@ -2115,8 +2115,8 @@ namespace MyCompiler
             if (expr.Type is DataframeType resDfType)
             {
                 // Case: User returned a Record -> Result is a Dataframe
-                var columnsExprs = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-                var typeExprs = resDfType.DataTypes.Select(t =>
+                var column = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+                var type = resDfType.DataTypes.Select(t =>
                 {
                     if (t is IntType) return (ExpressionNode)new NumberNode(0);
                     if (t is FloatType) return (ExpressionNode)new FloatNode(0);
@@ -2124,8 +2124,8 @@ namespace MyCompiler
                 }).ToList();
 
                 resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                    new NamedArgumentNode("columns", new ArrayNode(columnsExprs)),
-                    new NamedArgumentNode("type", new ArrayNode(typeExprs))
+                    new NamedArgumentNode("columns", new ArrayNode(column)),
+                    new NamedArgumentNode("type", new ArrayNode(type))
                 });
                 resultConstructor.SetType(resDfType);
             }
