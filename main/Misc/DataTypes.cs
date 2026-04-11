@@ -46,9 +46,9 @@ namespace MyCompiler
 
     public class RecordType : Type
     {
-        public List<RecordField> RecordFields { get; }
+        public IReadOnlyList<RecordField> RecordFields { get; }
 
-        public RecordType(List<RecordField> recordFields)
+        public RecordType(IReadOnlyList<RecordField> recordFields)
         {
             RecordFields = recordFields;
         }
@@ -67,11 +67,11 @@ namespace MyCompiler
 
     public class DataframeType : Type
     {
-        public List<string> ColumnNames { get; } // should be IReadOnlyList? be immutable
-        public List<Type> DataTypes { get; }
+        public IReadOnlyList<string> ColumnNames { get; } 
+        public IReadOnlyList<Type> DataTypes { get; }
         public RecordType RowType { get; }
 
-        public DataframeType(List<string> columns, List<Type> types, RecordType rowType)
+        public DataframeType(IReadOnlyList<string> columns, IReadOnlyList<Type> types, RecordType rowType)
         {
             ColumnNames = columns;
             DataTypes = types;

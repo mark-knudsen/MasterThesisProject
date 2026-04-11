@@ -181,7 +181,7 @@ expr
         $$ = new IndexNode(id, $3 as ExpressionNode); 
     }
     | LPAREN expr RPAREN  { $$ = $2; }
-    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); }
+    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); } // should add and remove be expressions
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNode($1 as ExpressionNode, $5 as ExpressionNode); }
     | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNode($1 as ExpressionNode, $5 as ExpressionNode); }
     | expr DOT REMOVERANGE LPAREN expr RPAREN    { $$ = new RemoveRangeNode($1 as ExpressionNode, $5 as ExpressionNode); }

@@ -134,9 +134,9 @@ namespace MyCompiler
                         Marshal.WriteInt64(valuePtr, val ? 1 : 0);
                     }
                     else if (typeCode == 'S')
-                    { 
-                      // Strings are tricky; StringToHGlobalAnsi uses Marshal's heap.
-                      // For a 100% "Real" IR way, you'd malloc + strcpy here too.
+                    {
+                        // Strings are tricky; StringToHGlobalAnsi uses Marshal's heap.
+                        // For a 100% "Real" IR way, you'd malloc + strcpy here too.
                         IntPtr strPtr = Marshal.StringToHGlobalAnsi(rawValue);
                         Native.malloc((IntPtr)8); // dummy to match your previous logic if needed
                         valuePtr = strPtr;
@@ -540,9 +540,9 @@ namespace MyCompiler
                 case ValueTag.Record:
                     if (_debug) Console.WriteLine("return Record");
 
-                    if (prediction is RecordType recType) 
+                    if (prediction is RecordType recType)
                         return HandleRecord(result.data, recType);
-                    
+
                     throw new Exception("Run time object failed for tag record");
 
                 case ValueTag.Dataframe:
@@ -550,7 +550,7 @@ namespace MyCompiler
 
                     if (prediction is DataframeType dfType)
                         return HandleDataframe(result.data, dfType);
-                    
+
                     throw new Exception("Run time object failed for tag dataframe");
 
                 case ValueTag.None:
@@ -676,6 +676,8 @@ namespace MyCompiler
             return result;
         }
 
+        int printMaxLineCount = 100;
+
         private string HandleDataframe(IntPtr ptr, DataframeType type) // it is this func that takes a bunch of time to run, the display part is slow
         {
             if (ptr == IntPtr.Zero) return "dataframe(null)";
@@ -698,7 +700,7 @@ namespace MyCompiler
             var rowsData = new List<List<object>>();
 
             var columnsHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.columns);
-            for (long r = 0; r < rowsHeader.length; r++)
+            for (long r = 0; r < rowsHeader.length; r++)  // we should just check the length and if it is very long then only display the head and tale
             {
                 IntPtr recordPtr = Marshal.ReadIntPtr(IntPtr.Add(rowsHeader.data, (int)(r * 8)));
                 // This returns a list of IntPtrs (pointers to the boxed values)
@@ -717,42 +719,59 @@ namespace MyCompiler
 
         private string FormatTable(List<string> columnNames, List<List<object>> rows, List<Int16> colTypes)
         {
-            int colCount = columnNames.Count;
+            int rowCount = rows.Count;
+
+            var allColumnNames = new List<string> { "" };
+            allColumnNames.AddRange(columnNames);
+
+            int colCount = allColumnNames.Count;
+
+            var tags = colTypes != null
+                ? new List<Int16> { -1 }.Concat(colTypes).ToList()
+                : new List<Int16> { -1 };
+
+            while (tags.Count < colCount)
+                tags.Add(-1);
+
             var colWidths = new int[colCount];
-            var tags = colTypes ?? new List<Int16>();
-            while (tags.Count < colCount) tags.Insert(0, 0); // Handle 'index' column padding
 
-            string GetStringValue(object v, int colIndex)
+            string GetStringValue(object v, int colIndex, int rowIndex)
             {
-                if (v == null) return "null";
+                // INDEX COLUMN (virtual)
+                if (colIndex == 0)
+                    return rowIndex.ToString();
 
-                // v is usually the IntPtr from ExtractRecord
+                if (v == null)
+                    return "null";
+
                 IntPtr ptr = (v is IntPtr p) ? p : IntPtr.Zero;
-                if (ptr == IntPtr.Zero) return v.ToString();
+                if (ptr == IntPtr.Zero)
+                    return v.ToString();
 
-                // Use the tag provided by the LLVM-generated tags array
-                long tag = colIndex < tags.Count ? tags[colIndex] : -1;
+                long tag = (colIndex - 1) < tags.Count ? tags[colIndex - 1] : -1;
 
                 try
                 {
                     switch (tag)
                     {
-                        case 0: // Index (Int)
-                        case 1: // Int
-                            if (ptr == IntPtr.Zero) return "0"; // Handle raw 0
+                        case 0: // Int (or index fallback)
+                        case 1:
                             return Marshal.ReadInt64(ptr).ToString();
-                        case 2: // Float (Double)
+
+                        case 2: // Float
                             byte[] bytes = new byte[8];
                             Marshal.Copy(ptr, bytes, 0, 8);
-                            return BitConverter.ToDouble(bytes, 0).ToString(CultureInfo.InvariantCulture);
+                            return BitConverter.ToDouble(bytes, 0)
+                                .ToString(CultureInfo.InvariantCulture);
+
                         case 3: // Bool
                             return Marshal.ReadByte(ptr) != 0 ? "True" : "False";
+
                         case 4: // String
-                                // ptr is the address of the pointer to the string. 
-                                // We must dereference it once to get the actual char* address.
                             IntPtr actualStringAddr = Marshal.ReadIntPtr(ptr);
                             if (actualStringAddr == IntPtr.Zero) return "";
                             return Marshal.PtrToStringAnsi(actualStringAddr) ?? "";
+
                         default:
                             return "???";
                     }
@@ -763,47 +782,76 @@ namespace MyCompiler
                 }
             }
 
-            // 1. Calculate Widths
             for (int c = 0; c < colCount; c++)
             {
-                colWidths[c] = columnNames[c].Length;
-                foreach (var row in rows)
+                colWidths[c] = allColumnNames[c].Length;
+
+                for (int r = 0; r < rowCount; r++)
                 {
-                    string s = GetStringValue(row[c], c);
-                    if (s.Length > colWidths[c]) colWidths[c] = s.Length;
+                    string s = GetStringValue(
+                        c == 0 ? null : rows[r][c - 1],
+                        c,
+                        r
+                    );
+
+                    if (s.Length > colWidths[c])
+                        colWidths[c] = s.Length;
                 }
             }
 
-            // 2. Row Selection (Head/Tail)
-            int rowCount = rows.Count;
             var rowIndices = new List<int>();
-            if (rowCount <= 10) for (int i = 0; i < rowCount; i++) rowIndices.Add(i);
+
+            if (rowCount <= 10)
+            {
+                for (int i = 0; i < rowCount; i++)
+                    rowIndices.Add(i);
+            }
             else
             {
-                for (int i = 0; i < 5; i++) rowIndices.Add(i);
+                for (int i = 0; i < 5; i++)
+                    rowIndices.Add(i);
+
                 rowIndices.Add(-1);
-                for (int i = rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
+
+                for (int i = rowCount - 5; i < rowCount; i++)
+                    rowIndices.Add(i);
             }
 
-            // 3. Formatting
             string FormatRow(List<string> data) =>
                 string.Join(" | ", data.Select((val, i) => val.PadRight(colWidths[i])));
 
             string sep = string.Join("-+-", colWidths.Select(w => new string('-', w)));
-            var lines = new List<string> { FormatRow(columnNames), sep };
+
+            var lines = new List<string>
+            {
+                FormatRow(allColumnNames),
+                sep
+            };
 
             foreach (var r in rowIndices)
             {
                 if (r == -1)
                 {
-                    lines.Add(string.Join(" | ", colWidths.Select(w => "...".PadRight(w))));
+                    lines.Add(string.Join(" | ",
+                        colWidths.Select(w => "...".PadRight(w))));
                     continue;
                 }
-                var rowStrings = rows[r].Select((v, i) => GetStringValue(v, i)).ToList();
+
+                var rowStrings = new List<string>();
+
+                for (int c = 0; c < colCount; c++)
+                {
+                    if (c == 0)
+                        rowStrings.Add(r.ToString());
+                    else
+                        rowStrings.Add(GetStringValue(rows[r][c - 1], c, r));
+                }
+
                 lines.Add(FormatRow(rowStrings));
             }
 
-            return "\nDataframe (" + rowCount + " rows):\n" + string.Join("\n", lines.Select(l => "  " + l));
+            return "\nDataframe (" + rowCount + " rows):\n" +
+                   string.Join("\n", lines.Select(l => "  " + l));
         }
 
         private int GetTypeByTag(Type type)
@@ -1518,7 +1566,6 @@ namespace MyCompiler
                 new[] { i8Ptr, i8Ptr, ctx.Int64Type },
                 false
             );
-
 
             var fn = _module.GetNamedFunction("memmove");
             if (fn.Handle != IntPtr.Zero)
@@ -2571,7 +2618,7 @@ namespace MyCompiler
                     FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
                     IntType => _builder.BuildPtrToInt(rawValue, i64),
                     BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
-                    RecordType => _builder.BuildBitCast(rawValue, i8Ptr), 
+                    RecordType => _builder.BuildBitCast(rawValue, i8Ptr),
                     DataframeType => _builder.BuildBitCast(rawValue, i8Ptr),
                     NullType => _builder.BuildTrunc(rawValue, i8Ptr),
                     _ => rawValue
@@ -2700,7 +2747,8 @@ namespace MyCompiler
         {
             var headerPtr = Visit(expr.SourceExpression);
             ExecuteArrayAddition(headerPtr, Visit(expr.AddExpression), expr.AddExpression.Type);
-            return headerPtr;
+
+            return headerPtr; // calling x.add x.length    the return type is none which is the add's type
         }
 
         public LLVMValueRef AddToDataframe(AddNode expr, DataframeType dfType)
@@ -3434,7 +3482,7 @@ namespace MyCompiler
             return (fieldPtr, i8Ptr);
         }
 
-        private int GetFieldIndex(string name, List<RecordField> Fields)
+        private int GetFieldIndex(string name, IReadOnlyList<RecordField> Fields)
         {
             for (int i = 0; i < Fields.Count; i++)
             {
@@ -3555,24 +3603,25 @@ namespace MyCompiler
             _builder.BuildCall2(toCsvFnType, toCsvFn, new[] { dfCast, pathValue }, "");
 
             // 6. Return a "None/Null" RuntimeObject as the expression result
-            return GenerateNoneResponse();
+            //return GenerateNoneResponse(); // can't we just return default?
+            return default;
         }
 
         // Helper to return a null/none RuntimeValue { i64 0, ptr null }
-        private LLVMValueRef GenerateNoneResponse()
-        {
-            var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+        // private LLVMValueRef GenerateNoneResponse() // this is what boxValue already does
+        // {
+        //     var ctx = _module.Context;
+        //     var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            var runtimeObj = _builder.BuildMalloc(_runtimeValueType, "none_obj");
-            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 0, "tag_ptr");
-            var dataPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
+        //     var runtimeObj = _builder.BuildMalloc(_runtimeValueType, "none_obj");
+        //     var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 0, "tag_ptr");
+        //     var dataPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
 
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, 0), tagPtr); // Tag 0 = None
-            _builder.BuildStore(LLVMValueRef.CreateConstNull(i8Ptr), dataPtr);
+        //     _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, 0), tagPtr); // Tag 0 = None
+        //     _builder.BuildStore(LLVMValueRef.CreateConstNull(i8Ptr), dataPtr);
 
-            return runtimeObj;
-        }
+        //     return runtimeObj;
+        // }
 
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {

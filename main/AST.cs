@@ -409,7 +409,7 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new ArrayType(SourceExpression.Type);
+            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAdd(this);

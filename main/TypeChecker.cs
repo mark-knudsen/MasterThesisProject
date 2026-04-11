@@ -410,7 +410,7 @@ namespace MyCompiler
 
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNode expr)
-        { 
+        {
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
@@ -597,12 +597,14 @@ namespace MyCompiler
         // Helper: Build a RecordNode from CSV (first line + type inference)
         public static RecordNode BuildRecordNodeFromCsv(string path)
         {
-            var allLines = File.ReadAllLines(path);
-            if (allLines.Length == 0) return null;
+            using var reader = new StreamReader(path);
+            var columnNames = reader.ReadLine().Split(',').Select(s => s.Trim()).ToArray();
+            var dataLines = reader.ReadLine();
 
-            var columnNames = allLines[0].Split(',').Select(s => s.Trim()).ToArray();
-            var dataLines = allLines.Skip(1).ToArray();
-            string[] firstRowParts = dataLines.Length > 0 ? dataLines[0].Split(',') : columnNames.Select(_ => "").ToArray();
+            if (columnNames.Length == 0 || dataLines.Length == 0)
+                throw new Exception("File does not have any data");
+
+            string[] firstRowParts = dataLines.Length > 0 ? dataLines.Split(',') : columnNames.Select(_ => "").ToArray();
 
             var fields = new List<RecordField>();
             for (int i = 0; i < columnNames.Length; i++)
@@ -713,7 +715,7 @@ namespace MyCompiler
 
                 // Check if the record fields match the dataframe columns
                 var dfColumns = dfType.ColumnNames;
-                var recFields = recType.RecordFields.Select(f => f.Label).ToList();
+                var recFields = recType.RecordFields.Select(f => f.Label).ToArray();
 
                 if (dfColumns.Count != recType.RecordFields.Count)
                     throw new Exception("Record fields count must match the dataframe columns count");
@@ -731,7 +733,7 @@ namespace MyCompiler
             else
                 throw new Exception("Add can only be used on arrays and dataframes");
 
-            expr.SetType(expr.SourceExpression.Type);
+            expr.SetType(new VoidType());
             return expr.Type;
         }
 
@@ -778,7 +780,7 @@ namespace MyCompiler
 
         static void ValidType(Type arrayElementType)
         {
-            if (arrayElementType is not (IntType or  FloatType))
+            if (arrayElementType is not (IntType or FloatType))
                 throw new Exception($"Can't find valid aggregation value for {arrayElementType.GetType().Name}");
         }
 
@@ -918,7 +920,7 @@ namespace MyCompiler
             // List<Type> columnTypes;
             RecordType rowType = new RecordType(new List<RecordField>());
             // 1. Extract and Normalize Columns
-            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToList();
+            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToArray();
 
             // 3. Now determine types based on the ALREADY MODIFIED columns
             List<Type> columnTypes = new List<Type>();
@@ -997,6 +999,16 @@ namespace MyCompiler
             return valType;
         }
 
+        int IndexOf(IReadOnlyList<string> list, string value)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] == value)
+                    return i;
+            }
+            return -1;
+        }
+
         public Type VisitShowDataframe(ShowDataframeNode expr)
         {
             // 1. Resolve the source Dataframe
@@ -1021,7 +1033,7 @@ namespace MyCompiler
                     string name = strNode.Value;
 
                     // Find the index of this column in the source dataframe
-                    int idx = sourceType.ColumnNames.IndexOf(name);
+                    int idx = IndexOf(sourceType.ColumnNames, name);
                     if (idx < 0)
                         throw new Exception($"Column '{name}' not found in dataframe. Available: {string.Join(", ", sourceType.ColumnNames)}");
 
