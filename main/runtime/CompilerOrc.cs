@@ -3602,26 +3602,9 @@ namespace MyCompiler
 
             _builder.BuildCall2(toCsvFnType, toCsvFn, new[] { dfCast, pathValue }, "");
 
-            // 6. Return a "None/Null" RuntimeObject as the expression result
-            //return GenerateNoneResponse(); // can't we just return default?
+            // 6. Return a "None/Null"
             return default;
         }
-
-        // Helper to return a null/none RuntimeValue { i64 0, ptr null }
-        // private LLVMValueRef GenerateNoneResponse() // this is what boxValue already does
-        // {
-        //     var ctx = _module.Context;
-        //     var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-
-        //     var runtimeObj = _builder.BuildMalloc(_runtimeValueType, "none_obj");
-        //     var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 0, "tag_ptr");
-        //     var dataPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
-
-        //     _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int16Type, 0), tagPtr); // Tag 0 = None
-        //     _builder.BuildStore(LLVMValueRef.CreateConstNull(i8Ptr), dataPtr);
-
-        //     return runtimeObj;
-        // }
 
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {
