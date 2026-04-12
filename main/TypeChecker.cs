@@ -291,19 +291,16 @@ namespace MyCompiler
 
         public Type VisitIncrement(IncrementNode expr)
         {
-            var entry = _context.Get(expr.Id);
-            if (entry == null) throw new Exception($"Variable {expr.Id} not defined");
-
-            expr.SetType(entry.Type);
+            var idType = Visit(expr.Id);
+            expr.SetType(idType);
+            System.Console.WriteLine($"[DEBUG] IncrementNode: After setting type, variable '{(expr.Id as IdNode).Name}' has type {expr.Type}");
             return expr.Type;
         }
 
         public Type VisitDecrement(DecrementNode expr)
         {
-            var entry = _context.Get(expr.Id);
-            if (entry == null) throw new Exception($"Variable {expr.Id} not defined");
-
-            expr.SetType(entry.Type);
+            var idType = Visit(expr.Id);
+            expr.SetType(idType);
             return expr.Type;
         }
 

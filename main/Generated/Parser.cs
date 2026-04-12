@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 12-04-2026 17:01:58
-// Input file <Parser/Parser.y - 12-04-2026 14:11:16>
+// DateTime: 12-04-2026 18:55:56
+// Input file <Parser/Parser.y - 12-04-2026 17:21:28>
 
 // options: lines gplex
 
@@ -66,11 +66,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 12-04-2026 14:11:16
+  // Verbatim content from Parser/Parser.y - 12-04-2026 17:21:28
 #line 55 "Parser/Parser.y"
     public MyCompiler.Node RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 12-04-2026 14:11:16
+  // End verbatim content from Parser/Parser.y - 12-04-2026 17:21:28
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -546,12 +546,12 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         break;
       case 25: // Assignment -> ID, INC
 #line 114 "Parser/Parser.y"
-                          { CurrentSemanticValue.node = new IncrementNode((string)ValueStack[ValueStack.Depth-2].obj); }
+                          { CurrentSemanticValue.node = new IncrementNode(new IdNode((string)ValueStack[ValueStack.Depth-2].obj)); }
 #line default
         break;
       case 26: // Assignment -> ID, DECR
 #line 115 "Parser/Parser.y"
-                          { CurrentSemanticValue.node = new DecrementNode((string)ValueStack[ValueStack.Depth-2].obj); }
+                          { CurrentSemanticValue.node = new DecrementNode(new IdNode((string)ValueStack[ValueStack.Depth-2].obj)); }
 #line default
         break;
       case 27: // Assignment -> ID, LBRACKET, expr, RBRACKET, ASSIGN, expr

@@ -111,8 +111,8 @@ Assignment
         var sub = new BinaryOpNode(id, "-", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, sub); 
     }
-    | ID INC              { $$ = new IncrementNode((string)$1); }
-    | ID DECR             { $$ = new DecrementNode((string)$1); }
+    | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
+    | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }
 
     | ID LBRACKET expr RBRACKET ASSIGN expr    
     {
