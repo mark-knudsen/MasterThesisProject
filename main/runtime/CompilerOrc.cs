@@ -918,35 +918,41 @@ namespace MyCompiler
             };
         }
 
+        LLVMTypeRef _arrayStruct;
+        LLVMTypeRef _dataframeStruct;
+
         LLVMTypeRef CreateRunTimeValueType()
         {
+            if (_runtimeValueType.Handle != 0) return _runtimeValueType;
             var ctx = _module.Context;
             var i16 = ctx.Int16Type;
 
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            return LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
+            return _runtimeValueType;
         }
 
         LLVMTypeRef CreateArrayStruct()
         {
+            if (_arrayStruct.Handle != 0) return _arrayStruct;
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
 
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-            return LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false); // if it is just the type, then do we only need to create one?
+            _arrayStruct = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false); // if it is just the type, then do we only need to create one?
+            return _arrayStruct;
         }
 
         LLVMTypeRef CreateDataframeStruct()
         {
+            if (_dataframeStruct.Handle != 0) return _dataframeStruct;
             var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
 
-            return default;
-
-            // var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-            // return LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false); // if it is just the type, then do we only need to create one?
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            _dataframeStruct = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false); // if it is just the type, then do we only need to create one?
+            return _dataframeStruct;
         }
 
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
@@ -1150,7 +1156,7 @@ namespace MyCompiler
             {
                 // Dataframe struct: { ptr columns, ptr rows, ptr types }
                 // We want the 'rows' array at index 1
-                var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+                var dfStructType = CreateDataframeStruct();
                 var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 1, "df_rows_ptr");
                 arrayHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_array_header");
             }
@@ -2238,7 +2244,7 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // The Dataframe struct layout: { ptr cols, ptr rows, ptr types }
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfStructType = CreateDataframeStruct();
 
             // 1. Allocate the NEW Dataframe header container
             var newDfPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
@@ -2827,7 +2833,7 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // dataframe struct: { cols, rows, types }
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfStructType = CreateDataframeStruct();
 
             // 1. Get dataframe pointer
             var dfPtr = Visit(expr.SourceExpression);
@@ -3040,7 +3046,7 @@ namespace MyCompiler
             else if (expr.ArrayExpression.Type is DataframeType)
             {
                 // Dataframe struct: { columns ptr, rows ptr, datatypes ptr }
-                var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+                var dfStructType = CreateDataframeStruct();
 
                 // Step 1: get pointer to the 'rows' field
                 var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 1, "rows_ptr_field");
@@ -3072,7 +3078,7 @@ namespace MyCompiler
             if (expr.DataframeExpression.Type is DataframeType)
             {
                 // Dataframe struct: { columns ptr, rows ptr, datatypes ptr }
-                var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+                var dfStructType = CreateDataframeStruct();
 
                 // Step 1: get pointer to the 'columns' field
                 var columnsFieldPtr = _builder.BuildStructGEP2(dfStructType, sourcePtr, 0, "columns_ptr_field");
@@ -3712,7 +3718,7 @@ namespace MyCompiler
         private LLVMValueRef BuildDataframeInternal(RecordNode schema, LLVMValueRef rowsPtr)
         {
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfStructType = CreateDataframeStruct();
 
             // Use your existing helpers for these (ensure these methods exist in your class)
             var colNamesArray = GenerateColumnNamesArray(schema);
@@ -3960,7 +3966,7 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            var dfStructType = CreateDataframeStruct();
             var arrayStructType = CreateArrayStruct();
 
             // 1. Source Data
