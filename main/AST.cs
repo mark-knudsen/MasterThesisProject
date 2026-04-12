@@ -409,7 +409,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAdd(this);
@@ -424,7 +423,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             AddRangeExpression = addRangeExpression;
-            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddRange(this);
@@ -439,7 +437,6 @@ namespace MyCompiler
         {
             SourceExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemove(this);
@@ -454,7 +451,6 @@ namespace MyCompiler
         {
             SourceExpression = arrayExpr;
             RemoveRangeExpression = removeRangeExpression;
-            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveRange(this);

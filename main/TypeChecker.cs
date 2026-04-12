@@ -733,7 +733,7 @@ namespace MyCompiler
             else
                 throw new Exception("Add can only be used on arrays and dataframes");
 
-            expr.SetType(new VoidType());
+            expr.SetType(arrayType);
             return expr.Type;
         }
 
