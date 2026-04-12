@@ -433,17 +433,20 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNode expr)
         {
-            Visit(expr.SourceExpression);
+            // 1. Visit children first to resolve their types
+            Type sourceType = Visit(expr.SourceExpression);
             Visit(expr.IndexExpression);
 
-            Type inferred = new IntType();
-            if (expr.SourceExpression is IdNode idNode)
+            Type inferred = new IntType(); // Default
+
+            if (sourceType is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
-                    inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
-                else if (entry?.Type is DataframeType dfType)
-                    inferred = dfType.RowType;
+                inferred = arrType.ElementType;
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                // Use the RowType we carefully built in VisitDataframe
+                inferred = dfType.RowType;
             }
 
             expr.SetType(inferred);
