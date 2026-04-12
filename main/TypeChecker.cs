@@ -1,5 +1,3 @@
-using System.ComponentModel.Design;
-
 namespace MyCompiler
 {
     public class TypeChecker : ITypeVisitor
@@ -86,7 +84,7 @@ namespace MyCompiler
 
         public Type VisitForEachLoop(ForEachLoopNode expr)
         {
-            var collectionType = Visit(expr.Array);
+            var collectionType = Visit(expr.Source);
             RecordType rowType = null;
 
             // Determine the type of 'item'
@@ -99,6 +97,9 @@ namespace MyCompiler
             var testEntry = _context.Get(expr.Iterator.Name);
             Console.WriteLine($"[DEBUG] Internal Check: Found '{expr.Iterator.Name}'? " + (testEntry != null));
 
+            //_context = _context.Add(expr.Iterator.Name, null, rowType);
+            //var testEntry = _context.Get(expr.Iterator.Name);
+            //if (_debug) Console.WriteLine($"[DEBUG] Internal Check: Found '{expr.Iterator.Name}'? " + (testEntry != null));
 
             // CRITICAL: Push the context so 'item' exists for the body
             var oldContext = _context;
@@ -142,8 +143,6 @@ namespace MyCompiler
         public Type VisitId(IdNode expr)
         {
             var entry = _context.Get(expr.Name);
-            // if(_debug) Console.WriteLine(" we looking at id: " + expr.Name + " and its type is " + entry?.Type);
-            // if(_debug) Console.WriteLine("id type: " + entry.Type); // prof we can get records type at type check time
 
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
@@ -167,8 +166,7 @@ namespace MyCompiler
                 if (isLeftNum && isRightNum)
                 {
                     // If both are Int, result is Int. If any is Float, promote to Float.
-                    Type resultType = (leftType is FloatType || rightType is FloatType)
-                                        ? new FloatType() : new IntType();
+                    Type resultType = (leftType is FloatType || rightType is FloatType) ? new FloatType() : new IntType();
                     expr.SetType(resultType);
                     return expr.Type;
                 }
@@ -296,10 +294,7 @@ namespace MyCompiler
             var entry = _context.Get(expr.Id);
             if (entry == null) throw new Exception($"Variable {expr.Id} not defined");
 
-            // FIX: Change entry.Value.Type to entry.Type
-            var type = entry.Type;
-
-            expr.SetType(type);
+            expr.SetType(entry.Type);
             return expr.Type;
         }
 
@@ -308,10 +303,7 @@ namespace MyCompiler
             var entry = _context.Get(expr.Id);
             if (entry == null) throw new Exception($"Variable {expr.Id} not defined");
 
-            // FIX: Change entry.Value.Type to entry.Type
-            var type = entry.Type;
-
-            expr.SetType(type);
+            expr.SetType(entry.Type);
             return expr.Type;
         }
 
@@ -334,8 +326,8 @@ namespace MyCompiler
 
         public Type VisitRandom(RandomNode expr)
         {
-            // var valueTypeMin = Visit(expr.MinValue); // I don't think visiting these does anything
-            // var valueTypeMax = Visit(expr.MaxValue);
+            Visit(expr.MinValue);
+            Visit(expr.MaxValue);
 
             expr.SetType(new IntType());
             return expr.Type;
@@ -347,13 +339,10 @@ namespace MyCompiler
 
             // 1. Condition Check
             if (condType is not BoolType)
-                throw new Exception("If condition must be Bool: " + condType.ToString());
+                throw new Exception("If condition must be Bool: " + condType);
 
             // Use .Then and .Else to match your Node definition
             Type thenType = Visit(expr.ThenPart);
-            Console.WriteLine("Type: ", thenType.GetType());
-
-            Console.WriteLine("then type: " + thenType); // THIS IS WRONG DATAFRAME TYPE
 
             Type elseType = new VoidType();
             if (expr.ElsePart != null)
@@ -422,29 +411,16 @@ namespace MyCompiler
             return lastType;
         }
 
-        // Inside public class TypeChecker : ITypeVisitor
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNode expr)
         {
-            Type elementType = expr.ElementType;
-
             if (expr.Elements.Count > 0)
-            {
-                elementType = Visit(expr.Elements[0]);
-                expr.ElementType = elementType;
-            }
+                expr.ElementType = Visit(expr.Elements[0]);
 
-            var arrayType = new ArrayType(elementType);
+            var arrayType = new ArrayType(expr.ElementType);
             expr.SetType(arrayType);
             return expr.Type;
         }
-        // OLD Code - try using generic copy now!
-        // public Type VisitCopyArray(CopyArrayNode expr)
-        // {
-        //     var sourceArray = Visit(expr.Source);
-        //     expr.SetType(sourceArray as ArrayType);
-        //     return expr.Type;
-        // }
 
         public Type VisitCopy(CopyNode expr)
         {
@@ -461,7 +437,7 @@ namespace MyCompiler
             Visit(expr.IndexExpression);
 
             Type inferred = new IntType();
-            if (expr.SourceExpression is IdNode idNode) // In the parser whe instantiate the index with an IdNode, the rest of the code should never be true
+            if (expr.SourceExpression is IdNode idNode)
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
@@ -469,14 +445,6 @@ namespace MyCompiler
                 else if (entry?.Type is DataframeType dfType)
                     inferred = dfType.RowType;
             }
-            // else if (expr.SourceExpression is ArrayNode arrayLiteral)
-            // {
-            //     inferred = arrayLiteral.ElementType ?? new FloatType();
-            // }
-            // else if (expr.SourceExpression.Type is ArrayType arrayExprType)
-            // {
-            //     inferred = arrayExprType.ElementType;
-            // }
 
             expr.SetType(inferred);
             return expr.Type;
@@ -514,6 +482,18 @@ namespace MyCompiler
             return expr.Type;
         }
 
+        public ExpressionNode ResolveDataType(Type type)
+        {
+            return type switch
+            {
+                StringType => new StringNode(""),
+                BoolType => new BooleanNode(false),
+                IntType => new NumberNode(0),
+                FloatType => new FloatNode(0.0),
+                _ => throw new Exception("Unsupported array element type")
+            };
+        }
+
         public Type VisitWhere(WhereNode expr)
         {
             // Visit source expression
@@ -525,14 +505,7 @@ namespace MyCompiler
             // --- Create iterator variable ---
             if (sourceType is ArrayType arrType)
             {
-                ExpressionNode defaultVal = arrType.ElementType switch
-                {
-                    StringType => new StringNode(""),
-                    BoolType => new BooleanNode(false),
-                    IntType => new NumberNode(0),
-                    FloatType => new FloatNode(0.0),
-                    _ => throw new Exception("Unsupported array element type")
-                };
+                ExpressionNode defaultVal = ResolveDataType(arrType.ElementType);
 
                 Visit(new AssignNode(expr.IteratorId.Name, defaultVal));
             }
@@ -546,15 +519,7 @@ namespace MyCompiler
                     var colName = dfType.ColumnNames[i];
                     var colType = dfType.DataTypes[i];
 
-                    ExpressionNode defaultVal = colType switch
-                    {
-                        StringType => new StringNode(""),
-                        BoolType => new BooleanNode(false),
-                        IntType => new NumberNode(0),
-                        FloatType => new FloatNode(0.0),
-                        _ => throw new Exception("Unsupported column type in dataframe")
-                    };
-
+                    ExpressionNode defaultVal = ResolveDataType(colType);
                     rowFields.Add(new NamedArgumentNode(colName, defaultVal));
                 }
 
@@ -583,11 +548,8 @@ namespace MyCompiler
                             .ToList())
                     )
                 });
-
-                Visit(new AssignNode("__where_result", resultDf));
             }
 
-            // --- Type check condition ---
             var condType = Visit(expr.Condition);
             if (condType is not BoolType)
                 throw new Exception("where condition must return bool");
@@ -604,18 +566,11 @@ namespace MyCompiler
 
             // 1. Determine what the iterator 'x' represents
             if (sourceType is ArrayType arrayType)
-            {
                 elementType = arrayType.ElementType;
-            }
             else if (sourceType is DataframeType dfType)
-            {
-                // For dataframes, we iterate over the RowType (the Record)
                 elementType = dfType.RowType;
-            }
             else
-            {
                 throw new Exception("Map source must be an array or a dataframe.");
-            }
 
             var previousContext = _context;
 
@@ -659,15 +614,69 @@ namespace MyCompiler
             }
         }
 
+        // Helper: Build a RecordNode from CSV (first line + type inference)
+        public static RecordNode BuildRecordNodeFromCsv(string path)
+        {
+            using var reader = new StreamReader(path);
+            var columnNames = reader.ReadLine().Split(',').Select(s => s.Trim()).ToArray();
+            var dataLines = reader.ReadLine();
+
+            if (columnNames.Length == 0 || dataLines.Length == 0)
+                throw new Exception("File does not have any data");
+
+            string[] firstRowParts = dataLines.Length > 0 ? dataLines.Split(',') : columnNames.Select(_ => "").ToArray();
+
+            var fields = new List<RecordField>();
+            for (int i = 0; i < columnNames.Length; i++)
+            {
+                char typeCode;
+                string rawValue = firstRowParts[i].Trim();
+
+                if (long.TryParse(rawValue, out _))
+                    typeCode = 'I';
+                else if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out _))
+                    typeCode = 'F';
+                else if (rawValue.Equals("true", StringComparison.OrdinalIgnoreCase) || rawValue.Equals("false", StringComparison.OrdinalIgnoreCase))
+                    typeCode = 'B';
+                else
+                    typeCode = 'S';
+
+                fields.Add(new RecordField
+                {
+                    Label = columnNames[i],
+                    Value = typeCode switch
+                    {
+                        'I' => new NumberNode(0),
+                        'F' => new FloatNode(0.0),
+                        'B' => new BooleanNode(true),
+                        'S' => new StringNode(""),
+                        _ => new StringNode("")
+                    },
+                    Type = typeCode switch
+                    {
+                        'I' => new IntType(),
+                        'F' => new FloatType(),
+                        'B' => new BoolType(),
+                        'S' => new StringType(),
+                        _ => new StringType()
+                    }
+                });
+            }
+
+            var recordNode = new RecordNode(new List<NamedArgumentNode>()) { Fields = fields };
+
+            return recordNode;
+        }
+
         public Type VisitReadCsv(ReadCsvNode expr)
         {
-            // Debug to console
-            Console.WriteLine($"TypeChecking ReadCsv: Path is {expr.FileNameExpr?.GetType().Name}, Schema is {expr.SchemaExpr?.GetType().Name}");
-
             Visit(expr.FileNameExpr);
 
             if (expr.SchemaExpr == null)
-                throw new Exception("read_csv requires a schema.");
+            {
+                string path = (expr.FileNameExpr as StringNode).Value;
+                expr.SchemaExpr = BuildRecordNodeFromCsv(path);
+            }
 
             Type schemaType = Visit(expr.SchemaExpr);
 
@@ -686,10 +695,8 @@ namespace MyCompiler
                 return dfType;
             }
 
-            // If we reach here, the schema wasn't a record
             throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
         }
-
 
         public Type VisitToCsv(ToCsvNode expr)
         {
@@ -698,13 +705,13 @@ namespace MyCompiler
             Type pathType = Visit(expr.FileNameExpr);
 
             // 2. Semantic Check: Is the first argument actually a Dataframe?
-            if (!(exprType is DataframeType))
+            if (exprType is not DataframeType)
             {
                 throw new Exception($"to_csv() error: First argument must be a Dataframe, but got {exprType?.GetType().Name}");
             }
 
             // 3. Semantic Check: Is the second argument a String?
-            if (!(pathType is StringType))
+            if (pathType is not StringType)
             {
                 throw new Exception($"to_csv() error: Second argument must be a String (file path), but got {pathType?.GetType().Name}");
             }
@@ -724,11 +731,11 @@ namespace MyCompiler
             if (arrayType is DataframeType dfType)
             {
                 if (addType is not RecordType recType)
-                    throw new Exception("add can only add records to dataframes");
+                    throw new Exception("Add can only add records to dataframes");
 
                 // Check if the record fields match the dataframe columns
                 var dfColumns = dfType.ColumnNames;
-                var recFields = recType.RecordFields.Select(f => f.Label).ToList();
+                var recFields = recType.RecordFields.Select(f => f.Label).ToArray();
 
                 if (dfColumns.Count != recType.RecordFields.Count)
                     throw new Exception("Record fields count must match the dataframe columns count");
@@ -744,31 +751,24 @@ namespace MyCompiler
                     throw new Exception($"Can't add {addType} value to a {arrayElementType} array");
             }
             else
-                throw new Exception("add can only be used on arrays and dataframes");
+                throw new Exception("Add can only be used on arrays and dataframes");
 
-            expr.SetType(expr.SourceExpression.Type);
+            expr.SetType(new VoidType());
             return expr.Type;
         }
 
         public Type VisitAddRange(AddRangeNode expr)
         {
-            //  if (dfColumns.Count != ((expr.SourceExpression as ArrayNode).Elements[0] as RecordType).RecordFields.Count)
-            //     throw new Exception("Record fields count must match the dataframe columns count");
-
-            // does addRange have a list of addnodes? it doesn't seem to call them tough
-            // we can't now if the amount of fields are the ame as the amount of columns in the record thoug
-
             Visit(expr.SourceExpression);
             Visit(expr.AddRangeExpression);
 
-            System.Console.WriteLine("The add range type " + expr.AddRangeExpression.Type);
             if (expr.AddRangeExpression is ArrayNode arrayNode)
             {
                 foreach (var item in arrayNode.Elements)
                 {
-                    //if((item as RecordType).fi)
+                    if ((item.Type as RecordType).RecordFields.Count != (expr.SourceExpression as ArrayNode).Elements.Count)
+                        throw new Exception("Not all records has fields equal to the amount of columns in the dataframe");
                 }
-                // arrayNode.Elements[0]
             }
 
             expr.SetType(expr.SourceExpression.Type);
@@ -800,8 +800,8 @@ namespace MyCompiler
 
         static void ValidType(Type arrayElementType)
         {
-            if (arrayElementType is StringType or BoolType or ArrayType)
-                throw new Exception($"Can't find minimum value for {arrayElementType.GetType().Name}");
+            if (arrayElementType is not (IntType or FloatType))
+                throw new Exception($"Can't find valid aggregation value for {arrayElementType.GetType().Name}");
         }
 
         public Type VisitMin(MinNode expr)
@@ -879,24 +879,12 @@ namespace MyCompiler
             return recordType;
         }
 
-        public Type ResolveType(TypeNode node)
-        {
-            return node.Name switch
-            {
-                "int" => new IntType(),
-                "float" => new FloatType(),
-                "string" => new StringType(),
-                "bool" => new BoolType(),
-                _ => throw new Exception($"Unknown type '{node.Name}'")
-            };
-        }
-
         public Type VisitRecordField(RecordFieldNode expr)
         {
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type recordSourceType = Visit(expr.IdRecord);
 
-            Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
+            if (_debug) Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
 
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;
@@ -952,7 +940,7 @@ namespace MyCompiler
             // List<Type> columnTypes;
             RecordType rowType = new RecordType(new List<RecordField>());
             // 1. Extract and Normalize Columns
-            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToList();
+            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToArray();
 
             // 3. Now determine types based on the ALREADY MODIFIED columns
             List<Type> columnTypes = new List<Type>();
@@ -973,25 +961,7 @@ namespace MyCompiler
 
                 Visit(expr.DataTypes);
 
-                columnTypes = expr.DataTypes.Elements.Select(e => ResolveTypeNode(e)).ToList();
-                // Prepend index type to match the columnNames insertion
-                foreach (var item in columnTypes)
-                {
-                    Console.WriteLine("the datatypes at ctor: " + item);
-                }
-                foreach (var item in columnNames)
-                {
-                    Console.WriteLine("the column names at ctor: " + item);
-                }
-
-                foreach (var item in columnTypes)
-                {
-                    Console.WriteLine("the datatypes at ctor: " + item);
-                }
-                foreach (var item in columnNames)
-                {
-                    Console.WriteLine("the column names at ctor: " + item);
-                }
+                columnTypes = expr.DataTypes.Elements.Select(e => ResolveType(e)).ToList();
 
                 rowType = new RecordType(columnNames.Select((name, i) => new RecordField
                 {
@@ -1000,30 +970,38 @@ namespace MyCompiler
                 }).ToList());
             }
 
-            var dfType = new DataframeType(columnNames, columnTypes, rowType); // Create actual type, we don't need to assign the rowtype?
+            var dfType = new DataframeType(columnNames, columnTypes, rowType);
             expr.SetType(dfType);
             return dfType;
         }
 
-        private Type ResolveTypeNode(ExpressionNode expr) // FIX, might be redundant
+        private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
         {
-            if (expr.Type is Type tt)
+            if (expr.Type is Type type)
+                return type;
+
+            if (expr is TypeNode typeNod)
             {
-                Console.WriteLine("Type is: " + tt);
-                return tt;
+                return typeNod.Name switch
+                {
+                    "int" => new IntType(),
+                    "float" => new FloatType(),
+                    "string" => new StringType(),
+                    "bool" => new BoolType(),
+                    _ => throw new Exception($"Unknown type '{typeNod.Name}'")
+                };
             }
 
-            if (expr is TypeLiteralNode t)
+            if (expr is TypeLiteralNode typeLit)
             {
-                Console.WriteLine("it is typeliteral");
-                return t.TypeNode.Name switch
+                return typeLit.TypeNode.Name switch
                 {
                     "int" => new IntType(),
                     "float" => new FloatType(),
                     "bool" => new BoolType(),
                     "string" => new StringType(),
                     "dataframe" => new DataframeType(new List<string>(), new List<Type>(), new RecordType(new List<RecordField>())),
-                    _ => throw new Exception($"Unknown type '{t.TypeNode.Name}'")
+                    _ => throw new Exception($"Unknown type '{typeLit.TypeNode.Name}'")
                 };
             }
 
@@ -1039,6 +1017,16 @@ namespace MyCompiler
             expr.SetType(valType);
 
             return valType;
+        }
+
+        int IndexOf(IReadOnlyList<string> list, string value)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] == value)
+                    return i;
+            }
+            return -1;
         }
 
         public Type VisitShowDataframe(ShowDataframeNode expr)
@@ -1065,7 +1053,7 @@ namespace MyCompiler
                     string name = strNode.Value;
 
                     // Find the index of this column in the source dataframe
-                    int idx = sourceType.ColumnNames.IndexOf(name);
+                    int idx = IndexOf(sourceType.ColumnNames, name);
                     if (idx < 0)
                         throw new Exception($"Column '{name}' not found in dataframe. Available: {string.Join(", ", sourceType.ColumnNames)}");
 
@@ -1086,9 +1074,7 @@ namespace MyCompiler
                     });
                 }
                 else
-                {
                     throw new Exception("Show columns must be string literals (e.g., \"name\")");
-                }
             }
 
             // 4. Create the new RowType (a subset of the original record)
@@ -1110,7 +1096,7 @@ namespace MyCompiler
         }
         public Type VisitTypeLiteral(TypeLiteralNode expr)
         {
-            return ResolveType(expr.TypeNode); // Just return the wrapped type
+            return ResolveType(expr); // Just return the wrapped type
         }
     }
 }

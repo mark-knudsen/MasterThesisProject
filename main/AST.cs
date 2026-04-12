@@ -83,7 +83,7 @@ namespace MyCompiler
     // Represents a single number (e.g., 10)
     public class NumberNode : ExpressionNode
     {
-        public int Value { get; set; }
+        public int Value { get; }
 
         public NumberNode(int value)
         {
@@ -96,7 +96,7 @@ namespace MyCompiler
     // Represents a string (e.g., "Hello")
     public class StringNode : ExpressionNode
     {
-        public string Value { get; set; }
+        public string Value { get; }
         public StringNode(string value)
         {
             Value = value;
@@ -132,7 +132,7 @@ namespace MyCompiler
     // Represents a variable name (e.g., x)
     public class IdNode : ExpressionNode
     {
-        public string Name { get; set; }
+        public string Name { get; }
         public IdNode(string name) => Name = name;
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitId(this);
     }
@@ -140,9 +140,9 @@ namespace MyCompiler
     // Represents a math operation (e.g., 10 + 20)
     public class BinaryOpNode : ExpressionNode
     {
-        public ExpressionNode Left { get; set; }
-        public string Operator { get; set; }
-        public ExpressionNode Right { get; set; }
+        public ExpressionNode Left { get; }
+        public string Operator { get; }
+        public ExpressionNode Right { get; }
         public BinaryOpNode(ExpressionNode left, string op, ExpressionNode right)
         {
             Left = left;
@@ -154,9 +154,9 @@ namespace MyCompiler
 
     public class LogicalOpNode : ExpressionNode
     {
-        public ExpressionNode Left { get; set; }
-        public string Operator { get; set; }
-        public ExpressionNode Right { get; set; }
+        public ExpressionNode Left { get; }
+        public string Operator { get; }
+        public ExpressionNode Right { get; }
         public LogicalOpNode(ExpressionNode left, string op, ExpressionNode right)
         {
             Left = left;
@@ -169,8 +169,8 @@ namespace MyCompiler
     // Represents an assignment (e.g., x = 10)
     public class AssignNode : StatementNode
     {
-        public string Id { get; set; }  // ID = expr  -->   x = 10 
-        public ExpressionNode Expression { get; set; }
+        public string Id { get; }  // ID = expr  -->   x = 10 
+        public ExpressionNode Expression { get;}
         public AssignNode(string id, ExpressionNode expr)
         {
             Id = id; Expression = expr;
@@ -180,7 +180,7 @@ namespace MyCompiler
 
     public class IncrementNode : StatementNode
     {
-        public string Id { get; set; }
+        public string Id { get; }
         public IncrementNode(string id)
         {
             Id = id;
@@ -189,7 +189,7 @@ namespace MyCompiler
     }
     public class DecrementNode : StatementNode
     {
-        public string Id { get; set; }
+        public string Id { get; }
         public DecrementNode(string id)
         {
             Id = id;
@@ -208,10 +208,9 @@ namespace MyCompiler
     // IF statement
     public class IfNode : StatementNode
     {
-        public ExpressionNode Condition;
-        public Node ThenPart;
-        public Node ElsePart;
-
+        public ExpressionNode Condition { get; }
+        public Node ThenPart { get; }
+        public Node ElsePart { get; }
         public IfNode(ExpressionNode cond, Node thenP, Node elseP = null)
         {
             Condition = cond;
@@ -224,10 +223,9 @@ namespace MyCompiler
 
     public class ForLoopNode : StatementNode
     {
-        public StatementNode Initialization;   // for(x=0;x<5;x++)x
-
-        public ExpressionNode Condition;
-        public StatementNode Step;
+        public StatementNode Initialization { get; }   // for(x=0;x<5;x++)x
+        public ExpressionNode Condition { get; }
+        public StatementNode Step { get; }
         public Node Body; // Changed from ExpressionNode
 
         public ForLoopNode(StatementNode init, ExpressionNode cond, StatementNode step, Node body)
@@ -243,13 +241,13 @@ namespace MyCompiler
     public class ForEachLoopNode : StatementNode
     {
         public IdNode Iterator { get; }      // e.g., "item"
-        public ExpressionNode Array { get; } // e.g., "arr"
+        public ExpressionNode Source { get; } // e.g., "arr"
         public Node Body { get; }
 
-        public ForEachLoopNode(IdNode iterator, ExpressionNode array, Node body)
+        public ForEachLoopNode(IdNode iterator, ExpressionNode source, Node body)
         {
             Iterator = iterator;
-            Array = array;
+            Source = source;
             Body = body;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForEachLoop(this);
@@ -257,10 +255,9 @@ namespace MyCompiler
 
     public class ComparisonNode : ExpressionNode
     {
-        public ExpressionNode Left;
-        public string Operator { get; set; }
-
-        public ExpressionNode Right;
+        public ExpressionNode Left { get; }
+        public string Operator { get; }
+        public ExpressionNode Right { get; }
 
         public ComparisonNode(ExpressionNode left, string op, ExpressionNode right)
         {
@@ -277,7 +274,7 @@ namespace MyCompiler
         {
             public List<ExpressionNode> Elements { get; }
             public Type ElementType { get; set; }
-            public uint? Capacity { get; set; }
+            public uint? Capacity { get; }
 
             public ArrayNode(List<ExpressionNode> elements)
             {
@@ -335,9 +332,9 @@ namespace MyCompiler
 
     public class WhereNode : ExpressionNode
     {
-        public IdNode IteratorId;
-        public ExpressionNode SourceExpr;
-        public ExpressionNode Condition;
+        public IdNode IteratorId { get; }
+        public ExpressionNode SourceExpr { get; }
+        public ExpressionNode Condition { get; }
 
         public WhereNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode condition)
         {
@@ -351,9 +348,9 @@ namespace MyCompiler
 
     public class MapNode : ExpressionNode
     {
-        public IdNode IteratorId;
-        public ExpressionNode SourceExpr;
-        public ExpressionNode Assignment;
+        public IdNode IteratorId { get; }
+        public ExpressionNode SourceExpr { get; }
+        public ExpressionNode Assignment { get; }
 
         public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode assignment)
         {
@@ -368,7 +365,7 @@ namespace MyCompiler
     public class ReadCsvNode : ExpressionNode
     {
         public ExpressionNode SchemaExpr { get; set; }
-        public ExpressionNode FileNameExpr { get; set; }
+        public ExpressionNode FileNameExpr { get; }
 
         public ReadCsvNode(List<ExpressionNode> args)
         {
@@ -391,8 +388,8 @@ namespace MyCompiler
 
     public class ToCsvNode : ExpressionNode
     {
-        public ExpressionNode Expression { get; set; }   // e.g., variable or object
-        public ExpressionNode FileNameExpr { get; set; } // expression producing string
+        public ExpressionNode Expression { get; }   // e.g., variable or object
+        public ExpressionNode FileNameExpr { get; } // expression producing string
 
         public ToCsvNode(ExpressionNode expr, ExpressionNode fileNameExpr)
         {
@@ -412,7 +409,7 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new ArrayType(SourceExpression.Type);
+            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAdd(this);
@@ -555,7 +552,7 @@ namespace MyCompiler
 
     public class RecordNode : ExpressionNode
     {
-        public List<RecordField> Fields { get; } = new List<RecordField>();
+        public List<RecordField> Fields { get; set; } = new List<RecordField>();
         public List<Type> ElementTypes { get; } = new List<Type>();
 
         public RecordNode(List<NamedArgumentNode> valuesArray)
@@ -745,7 +742,7 @@ namespace MyCompiler
 
     public class ColumnsNode : ExpressionNode
     {
-        public ExpressionNode DataframeExpression { get; private set; }
+        public ExpressionNode DataframeExpression { get; }
 
         public ColumnsNode(ExpressionNode dataframeExpr)
         {
@@ -756,8 +753,8 @@ namespace MyCompiler
 
     public class ShowDataframeNode : ExpressionNode
     {
-        public ExpressionNode Source { get; private set; }
-        public List<ExpressionNode> Columns { get; private set; }
+        public ExpressionNode Source { get; }
+        public List<ExpressionNode> Columns { get; }
 
         public ShowDataframeNode(ExpressionNode source, List<ExpressionNode> columns)
         {
