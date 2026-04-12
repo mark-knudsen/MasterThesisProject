@@ -180,17 +180,18 @@ namespace MyCompiler
 
     public class IncrementNode : StatementNode
     {
-        public string Id { get; }
-        public IncrementNode(string id)
+        public ExpressionNode Id { get; }
+        public IncrementNode(ExpressionNode id)
         {
             Id = id;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIncrement(this);
     }
+
     public class DecrementNode : StatementNode
     {
-        public string Id { get; }
-        public DecrementNode(string id)
+        public ExpressionNode Id { get; }
+        public DecrementNode(ExpressionNode id)
         {
             Id = id;
         }

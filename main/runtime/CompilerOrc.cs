@@ -1190,64 +1190,91 @@ namespace MyCompiler
 
         public LLVMValueRef VisitIncrement(IncrementNode expr)
         {
-            // 1. Get the pointer
-            LLVMValueRef global = _module.GetNamedGlobal(expr.Id);
-            if (global.Handle == IntPtr.Zero)
-                throw new Exception($"Variable {expr.Id} not found.");
+            var idNode = (IdNode)expr.Id;
+            string varName = idNode.Name;
 
-            // 2. Identify the type (handle both Int64 and Double)
-            // We check the Global's type or default to Int64 for loop indices
-            LLVMTypeRef type = _module.Context.Int64Type;
-            var entry = _context.Get(expr.Id);
-            if (entry != null && entry.Type is FloatType)
+            // 1. GET THE POINTER (Address), NOT THE VALUE
+            // We look for the global variable directly.
+            LLVMValueRef variablePtr = _module.GetNamedGlobal(varName);
+
+            // If it's not in the current module, declare it as extern (same as your VisitAssign logic)
+            if (variablePtr.Handle == IntPtr.Zero)
             {
-                type = _module.Context.DoubleType;
+                if (_definedGlobals.Contains(varName))
+                {
+                    variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
+                    variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                    variablePtr.SetAlignment(8);
+                }
+                else
+                {
+                    throw new Exception($"Variable {varName} not defined.");
+                }
             }
 
-            var oldValue = _builder.BuildLoad2(type, global, "inc_load");
+            // 2. LOAD the current value manually using the pointer
+            var llvmType = GetLLVMType(expr.Id.Type);
+            var currentValue = _builder.BuildLoad2(llvmType, variablePtr, "x_load");
+            currentValue.SetAlignment(8);
 
+            // 3. MATH
             LLVMValueRef newValue;
-            // Check the LLVM Kind instead of expr.Type to be safe
-            if (type.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+            if (llvmType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
             {
-                newValue = _builder.BuildFAdd(oldValue, LLVMValueRef.CreateConstReal(type, 1.0), "inc_add");
+                newValue = _builder.BuildFAdd(currentValue, LLVMValueRef.CreateConstReal(llvmType, 1.0), "inc_add");
             }
             else
             {
-                // Default to Integer Add
-                newValue = _builder.BuildAdd(oldValue, LLVMValueRef.CreateConstInt(type, 1, false), "inc_add");
+                newValue = _builder.BuildAdd(currentValue, LLVMValueRef.CreateConstInt(llvmType, 1, false), "inc_add");
             }
 
-            _builder.BuildStore(newValue, global).SetAlignment(8);
+            // 4. STORE back into the POINTER
+            _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
+
             return newValue;
         }
 
+
         public LLVMValueRef VisitDecrement(DecrementNode expr)
         {
-            LLVMValueRef global = _module.GetNamedGlobal(expr.Id);
-            if (global.Handle == IntPtr.Zero)
-                throw new Exception($"Variable {expr.Id} not found.");
+            var idNode = (IdNode)expr.Id;
+            string varName = idNode.Name;
 
-            LLVMTypeRef type = _module.Context.Int64Type;
-            var entry = _context.Get(expr.Id);
-            if (entry != null && entry.Type is FloatType)
+            // 1. GET THE POINTER (Address), NOT THE VALUE
+            // We look for the global variable directly.
+            LLVMValueRef variablePtr = _module.GetNamedGlobal(varName);
+
+            // If it's not in the current module, declare it as extern (same as your VisitAssign logic)
+            if (variablePtr.Handle == IntPtr.Zero)
             {
-                type = _module.Context.DoubleType;
+                if (_definedGlobals.Contains(varName))
+                {
+                    variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
+                    variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                    variablePtr.SetAlignment(8);
+                }
+                else
+                {
+                    throw new Exception($"Variable {varName} not defined.");
+                }
             }
 
-            var oldValue = _builder.BuildLoad2(type, global, "dec_load");
+            // 2. LOAD the current value manually using the pointer
+            var llvmType = GetLLVMType(expr.Id.Type);
+            var currentValue = _builder.BuildLoad2(llvmType, variablePtr, "x_load");
+            currentValue.SetAlignment(8);
 
             LLVMValueRef newValue;
-            if (type.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
+            if (llvmType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
             {
-                newValue = _builder.BuildFSub(oldValue, LLVMValueRef.CreateConstReal(type, 1.0), "dec_sub");
+                newValue = _builder.BuildFSub(currentValue, LLVMValueRef.CreateConstReal(llvmType, 1.0), "dec_sub");
             }
             else
             {
-                newValue = _builder.BuildSub(oldValue, LLVMValueRef.CreateConstInt(type, 1, false), "dec_sub");
+                newValue = _builder.BuildSub(currentValue, LLVMValueRef.CreateConstInt(llvmType, 1, false), "dec_sub");
             }
 
-            _builder.BuildStore(newValue, global).SetAlignment(8);
+            _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
             return newValue;
         }
 
@@ -2011,7 +2038,7 @@ namespace MyCompiler
                 new LengthNode(new IdNode(srcVar))
             );
 
-            var step = new IncrementNode(iVar);
+            var step = new IncrementNode(new IdNode(iVar));
 
             // --- Correct row access ---
             var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
@@ -2068,7 +2095,7 @@ namespace MyCompiler
                 new LengthNode(new IdNode(srcVarName))
             );
 
-            var loopStep = new IncrementNode(indexVarName);
+            var loopStep = new IncrementNode(new IdNode(indexVarName));
             var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
             // CRITICAL: Ensure ReplaceIterator handles LogicalOpNodes!
@@ -2142,7 +2169,7 @@ namespace MyCompiler
             var indexInit = new AssignNode(indexVarName, new NumberNode(0));
 
             var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
-            var loopStep = new IncrementNode(indexVarName);
+            var loopStep = new IncrementNode(new IdNode(indexVarName));
 
             var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
@@ -2218,7 +2245,7 @@ namespace MyCompiler
 
             // 3. Loop Logic
             var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
-            var step = new IncrementNode(iVar);
+            var step = new IncrementNode(new IdNode(iVar));
 
             var loopBody = new SequenceNode();
 
@@ -2503,7 +2530,7 @@ namespace MyCompiler
             );
 
             // 4. i++
-            var loopStep = new IncrementNode(indexVarName);
+            var loopStep = new IncrementNode(new IdNode(indexVarName));
 
             // 5. src[i]
             var currentElement = new IndexNode(
@@ -3293,7 +3320,7 @@ namespace MyCompiler
             );
 
             // Loop step: i++
-            var loopStep = new IncrementNode(indexVar);
+            var loopStep = new IncrementNode(new IdNode(indexVar));
 
             // Current element: array[i]
             var currentElement = new IndexNode(new IdNode(arrayVar), new IdNode(indexVar));
@@ -3344,7 +3371,7 @@ namespace MyCompiler
                 new LengthNode(new IdNode(arrayVar))
             );
 
-            var loopStep = new IncrementNode(indexVar);
+            var loopStep = new IncrementNode(new IdNode(indexVar));
             var currentElement = new IndexNode(new IdNode(arrayVar), new IdNode(indexVar));
 
             // Update max if current element > max
@@ -3386,7 +3413,7 @@ namespace MyCompiler
                 new LengthNode(new IdNode(arrayVar))
             );
 
-            var loopStep = new IncrementNode(indexVar);
+            var loopStep = new IncrementNode(new IdNode(indexVar));
             var currentElement = new IndexNode(new IdNode(arrayVar), new IdNode(indexVar));
 
             // sum += currentElement
@@ -3432,7 +3459,7 @@ namespace MyCompiler
                 new LengthNode(new IdNode(arrayVar))
             );
 
-            var loopStep = new IncrementNode(indexVar);
+            var loopStep = new IncrementNode(new IdNode(indexVar));
             var currentElement = new IndexNode(new IdNode(arrayVar), new IdNode(indexVar));
 
             // sum += currentElement
