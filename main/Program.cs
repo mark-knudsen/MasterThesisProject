@@ -4,6 +4,7 @@ using System.Text;
 using LLVMSharp;
 using LLVMSharp.Interop;
 using System.Globalization;
+using System.Diagnostics;
 
 namespace MyCompiler
 {
@@ -26,6 +27,8 @@ namespace MyCompiler
     public class Program
     {
         public static StringBuilder OutputBuffer = new();
+        static Stopwatch sw;
+        static void StartStopWatch() => sw = Stopwatch.StartNew();
 
         // public static int ManagedPrint(int value)
         // {
@@ -54,13 +57,14 @@ namespace MyCompiler
 
             try
             {
+
                 Console.WriteLine("--- AST Compiler Shell ---");
 
                 ICompiler compiler = new CompilerOrc();
-                bool KeepRunning;
+                bool KeepRunning = true;
                 //bool Debug = args.Length > 0 && args[0] == "True";
                 bool Debug = true;
-                KeepRunning = true;
+                bool useStopWatch = false;
 
 #if LINUX
                 bool multipleLines = true;
@@ -75,6 +79,7 @@ namespace MyCompiler
                 // Multi-line input loop with Shift + Enter detection
                 do
                 {
+
                     Console.ForegroundColor = ConsoleColor.Gray;
                     Console.Write("> "); // Prompt for input
 
@@ -233,8 +238,22 @@ namespace MyCompiler
                         continue;
                     }
 
+                    if (userInput.ToString() == "stopwatch")
+                    {
+                        useStopWatch = !useStopWatch;
+                        if (useStopWatch)
+                            Console.WriteLine("\n stopwatch on");
+                        else
+                            Console.WriteLine("\n stopwatch off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+
                     try
                     {
+                        if (useStopWatch) StartStopWatch();
+
                         // Process the input (parse and generate IR)
                         using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(userInput.ToString())))
                         {
@@ -260,7 +279,7 @@ namespace MyCompiler
                                 try
                                 {
                                     // Now if this crashes, the console is already back to Gray/Default
-                                    object result = compiler.Run(parser.RootNode, Debug);
+                                    object result = compiler.Run(parser.RootNode, Debug, useStopWatch);
 
                                     // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
                                     if (result == null)
@@ -287,6 +306,8 @@ namespace MyCompiler
                                 }
                             }
                         }
+
+                        if (useStopWatch) StopStopWatch("Ran the full stack");
                     }
                     catch (Exception ex)
                     {
@@ -298,6 +319,7 @@ namespace MyCompiler
                     // Clear input for the next round
                     userInput.Clear();
                     Console.ForegroundColor = ConsoleColor.Gray;
+
                 } while (KeepRunning);
 
             }
@@ -307,6 +329,7 @@ namespace MyCompiler
                 Console.ResetColor();
             }
         }
+
 
         static void PrintNode(Node node, int indent)
         {
@@ -515,5 +538,19 @@ namespace MyCompiler
                     break;
             }
         }
+
+        static void StopStopWatch(string testName = null)
+        {
+            sw.Stop();
+            if (testName is not null)
+                Console.WriteLine("\n--- Execution Stats - " + testName + " ---");
+            else
+                Console.WriteLine("\n--- Execution Stats ---");
+
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
+        }
+
     }
 }

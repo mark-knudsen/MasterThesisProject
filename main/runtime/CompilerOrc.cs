@@ -242,6 +242,7 @@ namespace MyCompiler
         private string _funcName;
         private int _replCounter = 0;
         private bool _debug = true;
+        private bool _stopwatch = false;
         LLVMTypeRef _memmoveType;
         LLVMTypeRef _reallocType;
         private Type _lastType; // Store the type of the last expression for auto-printing
@@ -287,8 +288,10 @@ namespace MyCompiler
         {
             sw.Stop();
             if (testName is not null)
-                Console.WriteLine("\nStop watch time for " + testName);
-            Console.WriteLine("\n--- Execution Stats ---");
+                Console.WriteLine("\n--- Execution Stats - " + testName + " ---");
+            else
+                Console.WriteLine("\n--- Execution Stats ---");
+
             Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
@@ -468,9 +471,10 @@ namespace MyCompiler
             _builder = builder;
         }
 
-        public object Run(Node expr, bool debug = false)
+        public object Run(Node expr, bool debug = false, bool useStopWatch = false)
         {
             _debug = debug;
+            _stopwatch = useStopWatch;
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
@@ -478,7 +482,10 @@ namespace MyCompiler
             DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
+
+            if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
+            if (_stopwatch) StopStopWatch("Ran codegen");
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
@@ -503,15 +510,12 @@ namespace MyCompiler
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
 
-            // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
-            Stopwatch sw = Stopwatch.StartNew();
-
             var tempResult = delegateResult();
             if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
 
-            // StartStopWatch();
+            if (_stopwatch) StartStopWatch();
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
-            // StopStopWatch();
+            if (_stopwatch) StopStopWatch("Ran compiler");
 
             switch ((ValueTag)result.tag)
             {
@@ -586,7 +590,7 @@ namespace MyCompiler
                     // Read exactly 1 byte
                     elements.Add(Marshal.ReadByte(elemPtr) != 0);
                 else if (elementType is StringType)
-                    elements.Add(Marshal.PtrToStringAnsi(Marshal.ReadIntPtr(elemPtr)));
+                    elements.Add("\"" + Marshal.PtrToStringAnsi(Marshal.ReadIntPtr(elemPtr)) + "\"");
                 else if (elementType is RecordType recType)
                     elements.Add(HandleRecord(Marshal.ReadIntPtr(elemPtr), recType));
                 else if (elementType is ArrayType arrType)
@@ -4162,6 +4166,9 @@ namespace MyCompiler
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
+        df = read_csv("Fire_Prediction_2023_Bolivia_encoded_small.csv")
+
+        
         to_csv(df, "CSV/mytest.csv")
 m
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
