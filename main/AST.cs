@@ -170,7 +170,7 @@ namespace MyCompiler
     public class AssignNode : StatementNode
     {
         public string Id { get; }  // ID = expr  -->   x = 10 
-        public ExpressionNode Expression { get;}
+        public ExpressionNode Expression { get; }
         public AssignNode(string id, ExpressionNode expr)
         {
             Id = id; Expression = expr;
@@ -270,26 +270,26 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparison(this);
     }
 
-        public class ArrayNode : ExpressionNode
+    public class ArrayNode : ExpressionNode
+    {
+        public List<ExpressionNode> Elements { get; }
+        public Type ElementType { get; set; }
+        public uint? Capacity { get; }
+
+        public ArrayNode(List<ExpressionNode> elements)
         {
-            public List<ExpressionNode> Elements { get; }
-            public Type ElementType { get; set; }
-            public uint? Capacity { get; }
+            Elements = elements;
 
-            public ArrayNode(List<ExpressionNode> elements)
-            {
-                Elements = elements;
+            if (elements.Count > 0)
+                ElementType = elements[0].Type; // infer type from first element
+            else
+                ElementType = new IntType();
 
-                if (elements.Count > 0)
-                    ElementType = elements[0].Type; // infer type from first element
-                else
-                    ElementType = new IntType();
-
-                Type = new ArrayType(ElementType);
-            }
-
-            public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
+            Type = new ArrayType(ElementType);
         }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
+    }
 
     public class CopyArrayNode : CopyNode
     {
@@ -409,7 +409,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAdd(this);
@@ -439,7 +438,6 @@ namespace MyCompiler
         {
             SourceExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemove(this);

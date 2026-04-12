@@ -13,6 +13,7 @@ using System.Runtime.CompilerServices;
 using System.Xml.Schema;
 using System.Text;
 using System.Reflection.Metadata.Ecma335;
+using System.Data;
 
 namespace MyCompiler
 {
@@ -2882,8 +2883,7 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAdd(AddNode expr)
         {
-            var name = (expr.SourceExpression as IdNode).Name;
-            var sourceType = _context.Get(name).Type;
+            var sourceType = expr.SourceExpression.Type;
 
             if (_debug) Console.WriteLine("semantic type of array being indexed: " + sourceType);
 
@@ -3040,6 +3040,22 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRemove(RemoveNode expr)
         {
+            var sourceType = expr.SourceExpression.Type;
+
+            if (_debug) Console.WriteLine("semantic type of array being indexed: " + sourceType);
+
+            if (sourceType is ArrayType arrayType)
+                return RemoveFromArray(expr, arrayType);
+            else if (sourceType is DataframeType dfType)
+                return RemoveFromDataframe(expr, dfType); // Pass the type along
+
+            throw new Exception("Remove operation is only supported on arrays and dataframes");
+        }
+
+
+        public LLVMValueRef RemoveFromArray(RemoveNode expr, ArrayType arrayType)
+        {
+
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
@@ -3052,7 +3068,7 @@ namespace MyCompiler
             var indexVal = Visit(expr.RemoveExpression);
 
             // 1. Determine if this is a packed (boolean) array
-            bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
+            bool isBool = arrayType.ElementType is BoolType;
 
             // This is the CRITICAL part:
             // If bool, we tell GEP the elements are 1-byte (i8).
@@ -3084,6 +3100,68 @@ namespace MyCompiler
             _builder.BuildStore(newLen, lenFieldPtr);
 
             return headerPtr;
+        }
+
+
+        public LLVMValueRef RemoveFromDataframe(RemoveNode expr, DataframeType dfType)
+        {
+
+
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 1. Define the Dataframe and Array Header Types
+            // Dataframe: { ptr cols, ptr rows, ptr types }
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            // Array Header: { i64 len, i64 cap, i8* data }
+            var arrayHeaderType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+            // 2. Get the Dataframe pointer and the index to remove
+            var dfPtr = Visit(expr.SourceExpression);
+            var indexVal = Visit(expr.RemoveExpression);
+
+            // 3. Access df->rows (index 1 in the Dataframe struct)
+            var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "df_rows_field");
+            var rowsHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_header_ptr");
+
+            // 4. Access the fields inside the rows array header
+            var lenPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 0, "rows_len_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 2, "rows_data_ptr_ptr");
+
+            var currentLen = _builder.BuildLoad2(i64, lenPtr, "current_len");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+            // 5. Calculate Move logic (same as RemoveFromArray)
+            // We are moving pointers (Records), so stride is 8 bytes
+            var gepStrideType = i8Ptr;
+            var strideSize = LLVMValueRef.CreateConstInt(i64, 8);
+
+            // Destination: where the removed element is
+            var dstPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { indexVal }, "dst_ptr");
+
+            // Source: the element immediately after
+            var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
+            var srcPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { nextIdx }, "src_ptr");
+
+            // Bytes to move: (length - index - 1) * 8
+            var numElementsToMove = _builder.BuildSub(
+                _builder.BuildSub(currentLen, indexVal),
+                LLVMValueRef.CreateConstInt(i64, 1)
+            );
+            var bytesToMove = _builder.BuildMul(numElementsToMove, strideSize, "bytes_to_move");
+
+            // 6. Execute Memmove
+            var memmoveFunc = GetOrDeclareMemmove();
+            // Signature: void memmove(void* dst, void* src, i64 len)
+            _builder.BuildCall2(_memmoveType, memmoveFunc, new[] { dstPtr, srcPtr, bytesToMove }, "");
+
+            // 7. Update the length of the rows array
+            var newLen = _builder.BuildSub(currentLen, LLVMValueRef.CreateConstInt(i64, 1));
+            _builder.BuildStore(newLen, lenPtr);
+
+            // Return the dataframe pointer (standard for chaining/assignments)
+            return dfPtr;
         }
 
         public LLVMValueRef VisitRemoveRange(RemoveRangeNode expr)
