@@ -65,6 +65,8 @@ namespace MyCompiler
                 //bool Debug = args.Length > 0 && args[0] == "True";
                 bool Debug = true;
                 bool useStopWatch = false;
+                bool showAllColumns = false;
+                bool showAllRows = false;
 
 #if LINUX
                 bool multipleLines = true;
@@ -250,6 +252,42 @@ namespace MyCompiler
                         continue;
                     }
 
+                    if (userInput.ToString() == "allcolumns")
+                    {
+                        showAllColumns = !showAllColumns;
+                        if (showAllColumns)
+                            Console.WriteLine("\n show all columns on");
+                        else
+                            Console.WriteLine("\n show all columns off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+                    if (userInput.ToString() == "allrows")
+                    {
+                        showAllRows = !showAllRows;
+                        if (showAllRows)
+                            Console.WriteLine("\n show all rows on");
+                        else
+                            Console.WriteLine("\n show all rows off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+                    if (userInput.ToString() == "showall")
+                    {
+                        showAllColumns = !showAllColumns;
+                        showAllRows = !showAllRows;
+                        if (showAllColumns && showAllRows)
+                            Console.WriteLine("\n show all columns and rows on");
+                        else
+                            Console.WriteLine("\n show all columns and rows off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+
+
                     try
                     {
                         if (useStopWatch) StartStopWatch();
@@ -279,7 +317,7 @@ namespace MyCompiler
                                 try
                                 {
                                     // Now if this crashes, the console is already back to Gray/Default
-                                    object result = compiler.Run(parser.RootNode, Debug, useStopWatch);
+                                    object result = compiler.Run(parser.RootNode, Debug, useStopWatch, showAllColumns, showAllRows);
 
                                     // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
                                     if (result == null)

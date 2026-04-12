@@ -21,7 +21,7 @@
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD ADDFIELD REMOVEFIELD WHERE MAP FUNC ADD ADDRANGE 
-%token DATAFRAME SHOW 
+%token DATAFRAME SHOW
 
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
 
@@ -239,14 +239,16 @@ expr
     | expr DOT COPY                           { $$ = new CopyNode($1 as ExpressionNode); }
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
                                               { $$ = new AddFieldNode($1 as ExpressionNode, (string)$5, $7 as ExpressionNode); }
-    | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNode($1 as ExpressionNode, (string)$5); }
+    | expr DOT REMOVEFIELD LPAREN ID RPAREN   { $$ = new RemoveFieldNode($1 as ExpressionNode, (string)$5); }
     
     /* dataframe(columns=[...], data=[...]) */
     | DATAFRAME LPAREN arg_list RPAREN
     {
         // Make sure you have: using System.Linq; at the top of your parser file
-        $$ = new DataframeNode($3.Cast<NamedArgumentNode>().ToList());
+         $$ = new DataframeNode($3.Cast<NamedArgumentNode>().ToList());
+        /* $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList()); */
     }
+
     | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); }
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
     ;

@@ -12,6 +12,8 @@ using Microsoft.VisualBasic;
 using System.Runtime.CompilerServices;
 using System.Xml.Schema;
 using System.Text;
+using System.Reflection.Metadata.Ecma335;
+using System.Data;
 
 namespace MyCompiler
 {
@@ -243,6 +245,8 @@ namespace MyCompiler
         private int _replCounter = 0;
         private bool _debug = true;
         private bool _stopwatch = false;
+        private bool _showAllColumns = false;
+        private bool _showAllRows = false;
         LLVMTypeRef _memmoveType;
         LLVMTypeRef _reallocType;
         private Type _lastType; // Store the type of the last expression for auto-printing
@@ -471,10 +475,13 @@ namespace MyCompiler
             _builder = builder;
         }
 
-        public object Run(Node expr, bool debug = false, bool useStopWatch = false)
+        public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
             _debug = debug;
             _stopwatch = useStopWatch;
+
+            _showAllColumns = showAllColumns;
+            _showAllRows = showAllRows;
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
@@ -615,7 +622,9 @@ namespace MyCompiler
             {
                 var rec = record.RecordFields[i];
                 string label = rec.Label;
-                Type recType = rec.Value.Type;
+
+                Type recType = rec.Type;
+                //Console.WriteLine($"label: {label}, type: {recType}");
 
                 IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
                 IntPtr ptr = Marshal.ReadIntPtr(fieldLocation);
@@ -680,183 +689,200 @@ namespace MyCompiler
             return result;
         }
 
-        int printMaxLineCount = 100;
+        int _maxRowCount = 50;
 
-        private string HandleDataframe(IntPtr ptr, DataframeType type) // it is this func that takes a bunch of time to run, the display part is slow
+        private string HandleDataframe(IntPtr ptr, DataframeType type)
         {
             if (ptr == IntPtr.Zero) return "dataframe(null)";
             var dfObj = Marshal.PtrToStructure<DataframeObject>(ptr);
 
-            // 1. Get Column Names
+            // 1. Get Column Names (Always needed)
             var columnNames = ExtractArray(dfObj.columns, new ArrayType(new StringType()));
 
-            // 2. Get Tags (The 'dataTypes' header in your %dataframe struct)
-            var dataTypeHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.dataTypes); // it used new List<long>(); but the tag is int16, is that not a waste?
+            // 2. Get Tags (Optimized to read only what we need)
+            var dataTypeHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.dataTypes);
             List<Int16> colTags = new List<Int16>();
             for (long i = 0; i < dataTypeHeader.length; i++)
             {
-                // Read each tag (i64) from the tags array
-                colTags.Add(Marshal.ReadInt16(IntPtr.Add(dataTypeHeader.data, (Int16)(i * 8))));
+                // tags are stored as i64 in your memory layout, so we add i * 8
+                colTags.Add(Marshal.ReadInt16(IntPtr.Add(dataTypeHeader.data, (int)(i * 8))));
             }
 
-            // 3. Get Rows
+            // 3. Optimized Row Extraction
             var rowsHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.rows);
-            var rowsData = new List<List<object>>();
+            long rowCount = rowsHeader.length;
 
-            var columnsHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.columns);
-            for (long r = 0; r < rowsHeader.length; r++)  // we should just check the length and if it is very long then only display the head and tale
+            // Key Optimization: Create a Dictionary to store ONLY the rows we need
+            // Key = original index, Value = the extracted record data
+            var sparseRows = new Dictionary<int, List<object>>();
+
+            // Determine which indices we need based on your display rules
+            var indicesToExtract = new List<int>();
+            if (_showAllRows || rowCount <= _maxRowCount)
             {
-                IntPtr recordPtr = Marshal.ReadIntPtr(IntPtr.Add(rowsHeader.data, (int)(r * 8)));
-                // This returns a list of IntPtrs (pointers to the boxed values)
-                rowsData.Add(ExtractRecord(recordPtr, type.RowType));
+                for (int i = 0; i < rowCount; i++) indicesToExtract.Add(i);
+            }
+            else
+            {
+                for (int i = 0; i < 5; i++) indicesToExtract.Add(i); // Head
+                for (int i = (int)rowCount - 5; i < rowCount; i++) indicesToExtract.Add(i); // Tail
             }
 
-            // if (_debug) Console.WriteLine("dataType capacity: " + dataTypeHeader.capacity);
-            // if (_debug) Console.WriteLine("dataType length: " + dataTypeHeader.length);
-            // if (_debug) Console.WriteLine("rows capacity: " + rowsHeader.capacity);
-            // if (_debug) Console.WriteLine("rows length: " + rowsHeader.length);
-            // if (_debug) Console.WriteLine("columns capacity: " + columnsHeader.capacity);
-            // if (_debug) Console.WriteLine("columns length: " + columnsHeader.length);
+            // Extract only the necessary records from memory
+            foreach (int r in indicesToExtract)
+            {
+                IntPtr recordPtr = Marshal.ReadIntPtr(IntPtr.Add(rowsHeader.data, r * 8));
+                sparseRows[r] = ExtractRecord(recordPtr, type.RowType);
+            }
 
-            return FormatTable(columnNames, rowsData, colTags);
+            // Pass the sparse dictionary and the total count to the formatter
+            return FormatTable(columnNames, sparseRows, colTags, (int)rowCount);
         }
 
-        private string FormatTable(List<string> columnNames, List<List<object>> rows, List<Int16> colTypes)
+        private string FormatTable(List<string> columnNames, Dictionary<int, List<object>> rows, List<Int16> colTypes, int rowCount)
         {
-            int rowCount = rows.Count;
+            bool showAllColumns = _showAllColumns;
+            bool showAllRows = _showAllRows;
 
-            var allColumnNames = new List<string> { "" };
+            var allColumnNames = new List<string> { "" }; // Index column at 0
             allColumnNames.AddRange(columnNames);
+            int totalCols = allColumnNames.Count;
 
-            int colCount = allColumnNames.Count;
+            // --- 1. Determine which column indices to show ---
+            var colIndices = new List<int>();
+            if (showAllColumns || totalCols <= 10)
+            {
+                for (int i = 0; i < totalCols; i++) colIndices.Add(i);
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++) colIndices.Add(i); // Index + first 3
+                colIndices.Add(-1); // Horizontal "..." separator
+                for (int i = totalCols - 3; i < totalCols; i++) colIndices.Add(i);
+            }
 
+            // --- 2. Build mapping for tags (aligned with colIndices) ---
             var tags = colTypes != null
                 ? new List<Int16> { -1 }.Concat(colTypes).ToList()
                 : new List<Int16> { -1 };
+            while (tags.Count < totalCols) tags.Add(-1);
 
-            while (tags.Count < colCount)
-                tags.Add(-1);
-
-            var colWidths = new int[colCount];
-
+            // Helper for value retrieval
             string GetStringValue(object v, int colIndex, int rowIndex)
             {
-                // INDEX COLUMN (virtual)
-                if (colIndex == 0)
-                    return rowIndex.ToString();
-
-                if (v == null)
-                    return "null";
+                if (colIndex == 0) return rowIndex.ToString();
+                if (v == null) return "null";
 
                 IntPtr ptr = (v is IntPtr p) ? p : IntPtr.Zero;
-                if (ptr == IntPtr.Zero)
-                    return v.ToString();
+                if (ptr == IntPtr.Zero) return v.ToString();
 
-                long tag = (colIndex - 1) < tags.Count ? tags[colIndex - 1] : -1;
-
+                int tag = tags[colIndex];
                 try
                 {
                     switch (tag)
                     {
-                        case 0: // Int (or index fallback)
-                        case 1:
-                            return Marshal.ReadInt64(ptr).ToString();
-
-                        case 2: // Float
+                        case 0: case 1: return Marshal.ReadInt64(ptr).ToString();
+                        case 2:
                             byte[] bytes = new byte[8];
                             Marshal.Copy(ptr, bytes, 0, 8);
-                            return BitConverter.ToDouble(bytes, 0)
-                                .ToString(CultureInfo.InvariantCulture);
-
-                        case 3: // Bool
-                            return Marshal.ReadByte(ptr) != 0 ? "True" : "False";
-
-                        case 4: // String
-                            IntPtr actualStringAddr = Marshal.ReadIntPtr(ptr);
-                            if (actualStringAddr == IntPtr.Zero) return "";
-                            return Marshal.PtrToStringAnsi(actualStringAddr) ?? "";
-
-                        default:
-                            return "???";
+                            return BitConverter.ToDouble(bytes, 0).ToString(CultureInfo.InvariantCulture);
+                        case 3: return Marshal.ReadByte(ptr) != 0 ? "True" : "False";
+                        case 4:
+                            IntPtr sAddr = Marshal.ReadIntPtr(ptr);
+                            return sAddr == IntPtr.Zero ? "" : Marshal.PtrToStringAnsi(sAddr);
+                        default: return "???";
                     }
                 }
-                catch
-                {
-                    return "ERR";
-                }
+                catch { return "ERR"; }
             }
 
-            for (int c = 0; c < colCount; c++)
+            // --- 3. Calculate Widths using only extracted rows ---
+            var colWidths = new Dictionary<int, int>();
+            foreach (var c in colIndices)
             {
-                colWidths[c] = allColumnNames[c].Length;
+                if (c == -1) { colWidths[c] = 3; continue; }
 
-                for (int r = 0; r < rowCount; r++)
+                int maxWidth = allColumnNames[c].Length;
+
+                // Ensure index column fits the largest row number AND the "..." ellipsis
+                if (c == 0)
                 {
-                    string s = GetStringValue(
-                        c == 0 ? null : rows[r][c - 1],
-                        c,
-                        r
-                    );
-
-                    if (s.Length > colWidths[c])
-                        colWidths[c] = s.Length;
+                    // Change is here: added Math.Max(3, ...)
+                    maxWidth = Math.Max(3, Math.Max(maxWidth, rowCount.ToString().Length));
                 }
+
+                foreach (var kvp in rows)
+                {
+                    string s = GetStringValue(c == 0 ? null : kvp.Value[c - 1], c, kvp.Key);
+                    if (s.Length > maxWidth) maxWidth = s.Length;
+                    if (maxWidth >= 30) break;
+                }
+                colWidths[c] = Math.Min(maxWidth, 30);
             }
 
+            // --- 4. Determine which row indices to display ---
             var rowIndices = new List<int>();
-
-            if (rowCount <= 10)
+            if (showAllRows || rowCount <= _maxRowCount)
             {
-                for (int i = 0; i < rowCount; i++)
-                    rowIndices.Add(i);
+                for (int i = 0; i < rowCount; i++) rowIndices.Add(i);
             }
             else
             {
-                for (int i = 0; i < 5; i++)
-                    rowIndices.Add(i);
-
-                rowIndices.Add(-1);
-
-                for (int i = rowCount - 5; i < rowCount; i++)
-                    rowIndices.Add(i);
+                for (int i = 0; i < 5; i++) rowIndices.Add(i);
+                rowIndices.Add(-1); // Vertical "..."
+                for (int i = rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
             }
 
-            string FormatRow(List<string> data) =>
-                string.Join(" | ", data.Select((val, i) => val.PadRight(colWidths[i])));
-
-            string sep = string.Join("-+-", colWidths.Select(w => new string('-', w)));
-
-            var lines = new List<string>
+            // --- 5. Formatting Helper ---
+            string BuildLine(Func<int, string> contentProvider)
             {
-                FormatRow(allColumnNames),
-                sep
-            };
+                var parts = new List<string>();
+                foreach (var c in colIndices)
+                {
+                    // Get the raw value
+                    string val = (c == -1) ? "..." : contentProvider(c);
 
+                    // PAD RIGHT to the calculated width
+                    parts.Add(val.PadRight(colWidths[c]));
+                }
+                return string.Join(" | ", parts);
+            }
+
+            // --- 6. Assemble Table ---
+            var lines = new List<string>();
+
+            // Header
+            lines.Add(BuildLine(c => allColumnNames[c]));
+
+            // Separator - FIX: Use the same join structure as BuildLine
+            // Instead of manual string.Join, we mirror the " | " spacing
+            var separatorParts = colIndices.Select(c => new string('-', colWidths[c]));
+            lines.Add(string.Join("-+-", separatorParts));
+
+            // Data Rows
             foreach (var r in rowIndices)
             {
                 if (r == -1)
                 {
-                    lines.Add(string.Join(" | ",
-                        colWidths.Select(w => "...".PadRight(w))));
+                    // This now works perfectly because BuildLine handles the padding for column 0
+                    lines.Add(BuildLine(c => "..."));
                     continue;
                 }
 
-                var rowStrings = new List<string>();
-
-                for (int c = 0; c < colCount; c++)
+                if (rows.ContainsKey(r))
                 {
-                    if (c == 0)
-                        rowStrings.Add(r.ToString());
-                    else
-                        rowStrings.Add(GetStringValue(rows[r][c - 1], c, r));
+                    lines.Add(BuildLine(c =>
+                    {
+                        if (c == 0) return r.ToString();
+                        return GetStringValue(rows[r][c - 1], c, r);
+                    }));
                 }
-
-                lines.Add(FormatRow(rowStrings));
             }
 
-            return "\nDataframe (" + rowCount + " rows):\n" +
-                   string.Join("\n", lines.Select(l => "  " + l));
+            return $"\nDataframe ({rowCount} rows, {totalCols - 1} columns):\n" +
+                   string.Join("\n", lines.Select(l => "   " + l));
         }
+
 
         private int GetTypeByTag(Type type)
         {
@@ -1109,7 +1135,7 @@ namespace MyCompiler
             // Create the 'alloca' for the iterator (e.g., 'item')
             var iteratorAlloc = _builder.BuildAlloca(i8Ptr, expr.Iterator.Name);
             // Add to a new context so 'item' is visible to Visit(expr.Body)
-            _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType); // unsure if context.add should be called in any visit in code gen
+            _context = _context.Add(expr.Iterator.Name, iteratorAlloc, null, elementType);
 
             // 4. Create Basic Blocks
             var condBlock = func.AppendBasicBlock("foreach.cond");
@@ -2071,65 +2097,188 @@ namespace MyCompiler
 
         public LLVMValueRef VisitMap(MapNode expr)
         {
-            var arrayType = (ArrayType)expr.SourceExpr.Type;
-            var resultType = (ArrayType)expr.Type;
-            var intType = new IntType();
+            var sourceType = expr.SourceExpr.Type;
+
+            SequenceNode program;
+            if (sourceType is ArrayType)
+            {
+                Console.WriteLine("ARRAY.........................................................................");
+                program = MapForArray(sourceType, expr);
+            }
+            else if (sourceType is DataframeType)
+            {
+                Console.WriteLine("DATAFRAME.....................................................................");
+                program = MapForDataframe(sourceType, expr); // This helper handles Dataframe result types
+            }
+            else
+            {
+                throw new Exception($"Cannot call map on {sourceType}");
+            }
+
+            PerformSemanticAnalysis(program);
+            return VisitSequence(program);
+        }
+
+        public SequenceNode MapForArray(Type sourceType, MapNode expr)
+        {
+            var arrType = (ArrayType)sourceType;
+
+            // Use 'as' or check type before casting to avoid the crash
+            if (expr.SourceExpr.Type is not ArrayType resultArrType)
+                throw new Exception($"Map on Array expected to return ArrayType, but got {expr.Type}");
 
             var srcVarName = "__map_src";
             var resultVarName = "__map_result";
             var indexVarName = "__map_i";
 
-            // 1. Inject internal variables into context for the duration of the map
-            _context = _context.Add(srcVarName, default, null!, arrayType);
-            _context = _context.Add(resultVarName, default, null!, resultType); // we don't do this for where, so why does map have to do it?
-            _context = _context.Add(indexVarName, default, null!, intType);
-
-            // Helper to create typed IDs
-            IdNode TypedId(string name, Type type)
+            // Use the element type from the RESOLVED result type
+            var emptyResultArray = new ArrayNode(new List<ExpressionNode>())
             {
-                var id = new IdNode(name);
-                id.SetType(type);
-                return id;
-            }
+                ElementType = resultArrType.ElementType
+            };
 
-            // 2. Build the Loop AST
-            var srcAssign = new AssignNode(srcVarName, new CopyArrayNode(expr.SourceExpr));
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+            var resultAssign = new AssignNode(resultVarName, emptyResultArray);
+            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
 
-            // Create an empty array of the same length for results
-            var resultAssign = new AssignNode(resultVarName, new CopyArrayNode(TypedId(srcVarName, arrayType)));
-            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
-
-            var loopCond = new ComparisonNode(TypedId(indexVarName, intType), "<", new LengthNode(TypedId(srcVarName, arrayType)));
+            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
             var loopStep = new IncrementNode(indexVarName);
 
-            // Access the current element in the source array
-            var currentElement = new IndexNode(TypedId(srcVarName, arrayType), TypedId(indexVarName, intType));
-            currentElement.SetType(arrayType.ElementType);
+            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
-            // Replace all instances of the iterator (e.g., "$row") with the actual array index access
-            var mapExpr = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
+            // Transform element
+            var mappedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
 
-            // Assign the result of the transformation into the new array
-            var indexAssignNode = new IndexAssignNode(TypedId(resultVarName, resultType), TypedId(indexVarName, intType), mapExpr);
+            // Use .add() for dynamic growth, same as 'where'
+            var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
+
             var loopBody = new SequenceNode();
+            loopBody.Statements.Add(addNode);
 
-            loopBody.Statements.Add(indexAssignNode);
+            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
 
-            var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
-
-            // 3. Execute the Loop AST
             var program = new SequenceNode();
-
             program.Statements.Add(srcAssign);
             program.Statements.Add(resultAssign);
             program.Statements.Add(forLoop);
             program.Statements.Add(new IdNode(resultVarName));
 
-            // Perform semantic checks if you have them
-            PerformSemanticAnalysis(program);
-
-            return VisitSequence(program);
+            return program;
         }
+        public SequenceNode MapForDataframe(Type sourceType, MapNode expr)
+        {
+            var dfType = (DataframeType)sourceType;
+
+            var srcVar = "__map_src";
+            var resultVar = "__map_result";
+            var iVar = "__map_i";
+            var lenVar = "__map_len";
+            var rowVar = "__current_row";
+
+            ExpressionNode resultConstructor;
+
+            // 1. Determine if we are building a new Dataframe or a simple Array
+            if (expr.Type is DataframeType resDfType)
+            {
+                var column = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+                var type = resDfType.DataTypes.Select(t =>
+                {
+                    if (t is IntType) return (ExpressionNode)new NumberNode(0);
+                    if (t is FloatType) return (ExpressionNode)new FloatNode(0);
+                    if (t is BoolType) return (ExpressionNode)new BooleanNode(false);
+                    return (ExpressionNode)new StringNode("");
+                }).ToList();
+
+                resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
+            new NamedArgumentNode("columns", new ArrayNode(column)),
+            new NamedArgumentNode("type", new ArrayNode(type))
+        });
+                resultConstructor.SetType(resDfType);
+            }
+            else if (expr.Type is ArrayType resArrType)
+            {
+                resultConstructor = new ArrayNode(new List<ExpressionNode>())
+                {
+                    ElementType = resArrType.ElementType
+                };
+                resultConstructor.SetType(resArrType);
+            }
+            else
+            {
+                throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
+            }
+
+            // 2. Synthesize Assignments & Setup
+            var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
+            var resultAssign = new AssignNode(resultVar, resultConstructor);
+            var indexInit = new AssignNode(iVar, new NumberNode(0));
+
+            // Optimization: Cache the length outside the loop
+            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
+
+            // 3. Loop Logic
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
+            var step = new IncrementNode(iVar);
+
+            var loopBody = new SequenceNode();
+
+            // Optimization: Access the Row once and store it in a variable
+            // This row variable must have the RecordType of the source dataframe
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            var rowAssign = new AssignNode(rowVar, rowAccess);
+            loopBody.Statements.Add(rowAssign);
+
+            // Transform: Replace 'x' with the ID of the row variable, NOT the indexing expression
+            var rowIdReference = new IdNode(rowVar);
+            rowIdReference.SetType(dfType.RowType); // Crucial for field resolution
+
+            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowIdReference);
+
+            // 4. Append to result
+            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
+            loopBody.Statements.Add(addNode);
+
+            var loop = new ForLoopNode(indexInit, cond, step, loopBody);
+
+            // 5. Assemble final program
+            var program = new SequenceNode();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(lenAssign); // Added length caching
+            program.Statements.Add(loop);
+            program.Statements.Add(new IdNode(resultVar));
+
+            return program;
+        }
+
+
+        /*
+
+        Final Verdict: 
+        You have a working, type-safe, compiled Dataframe engine.
+        You've solved the hardest part (the JIT/Compilation logic). 
+        To reach "blazing fast" speeds, your next step would be the 
+        "Flattening" we discussed earlier—storing the i64 directly 
+        in the record_buffer instead of malloc-ing a separate box for it.
+
+        */
+
+        /* Pseudo code:
+
+        dfcopy = df.copy;
+        for(i=0; i< dfcopy.length; i++)
+        {
+            dfcopy[i].age = dfcopy[i].age + 10;
+        }
+
+        return dfcopy;
+
+        */
+
+
+
+
+
 
         public LLVMValueRef VisitCopy(CopyNode expr)
         {
@@ -2567,8 +2716,8 @@ namespace MyCompiler
             var headerPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            var name = (expr.SourceExpression as IdNode).Name;
-            var sourceType = _context.Get(name).Type;
+            // 2. Use the type from the node, not the context lookup
+            var sourceType = expr.SourceExpression.Type;
 
             if (sourceType is ArrayType)
             {
@@ -2734,8 +2883,7 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAdd(AddNode expr)
         {
-            var name = (expr.SourceExpression as IdNode).Name;
-            var sourceType = _context.Get(name).Type;
+            var sourceType = expr.SourceExpression.Type;
 
             if (_debug) Console.WriteLine("semantic type of array being indexed: " + sourceType);
 
@@ -2892,6 +3040,22 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRemove(RemoveNode expr)
         {
+            var sourceType = expr.SourceExpression.Type;
+
+            if (_debug) Console.WriteLine("semantic type of array being indexed: " + sourceType);
+
+            if (sourceType is ArrayType arrayType)
+                return RemoveFromArray(expr, arrayType);
+            else if (sourceType is DataframeType dfType)
+                return RemoveFromDataframe(expr, dfType); // Pass the type along
+
+            throw new Exception("Remove operation is only supported on arrays and dataframes");
+        }
+
+
+        public LLVMValueRef RemoveFromArray(RemoveNode expr, ArrayType arrayType)
+        {
+
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
@@ -2904,7 +3068,7 @@ namespace MyCompiler
             var indexVal = Visit(expr.RemoveExpression);
 
             // 1. Determine if this is a packed (boolean) array
-            bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
+            bool isBool = arrayType.ElementType is BoolType;
 
             // This is the CRITICAL part:
             // If bool, we tell GEP the elements are 1-byte (i8).
@@ -2936,6 +3100,68 @@ namespace MyCompiler
             _builder.BuildStore(newLen, lenFieldPtr);
 
             return headerPtr;
+        }
+
+
+        public LLVMValueRef RemoveFromDataframe(RemoveNode expr, DataframeType dfType)
+        {
+
+
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 1. Define the Dataframe and Array Header Types
+            // Dataframe: { ptr cols, ptr rows, ptr types }
+            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+            // Array Header: { i64 len, i64 cap, i8* data }
+            var arrayHeaderType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+            // 2. Get the Dataframe pointer and the index to remove
+            var dfPtr = Visit(expr.SourceExpression);
+            var indexVal = Visit(expr.RemoveExpression);
+
+            // 3. Access df->rows (index 1 in the Dataframe struct)
+            var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "df_rows_field");
+            var rowsHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_header_ptr");
+
+            // 4. Access the fields inside the rows array header
+            var lenPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 0, "rows_len_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 2, "rows_data_ptr_ptr");
+
+            var currentLen = _builder.BuildLoad2(i64, lenPtr, "current_len");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+            // 5. Calculate Move logic (same as RemoveFromArray)
+            // We are moving pointers (Records), so stride is 8 bytes
+            var gepStrideType = i8Ptr;
+            var strideSize = LLVMValueRef.CreateConstInt(i64, 8);
+
+            // Destination: where the removed element is
+            var dstPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { indexVal }, "dst_ptr");
+
+            // Source: the element immediately after
+            var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
+            var srcPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { nextIdx }, "src_ptr");
+
+            // Bytes to move: (length - index - 1) * 8
+            var numElementsToMove = _builder.BuildSub(
+                _builder.BuildSub(currentLen, indexVal),
+                LLVMValueRef.CreateConstInt(i64, 1)
+            );
+            var bytesToMove = _builder.BuildMul(numElementsToMove, strideSize, "bytes_to_move");
+
+            // 6. Execute Memmove
+            var memmoveFunc = GetOrDeclareMemmove();
+            // Signature: void memmove(void* dst, void* src, i64 len)
+            _builder.BuildCall2(_memmoveType, memmoveFunc, new[] { dstPtr, srcPtr, bytesToMove }, "");
+
+            // 7. Update the length of the rows array
+            var newLen = _builder.BuildSub(currentLen, LLVMValueRef.CreateConstInt(i64, 1));
+            _builder.BuildStore(newLen, lenPtr);
+
+            // Return the dataframe pointer (standard for chaining/assignments)
+            return dfPtr;
         }
 
         public LLVMValueRef VisitRemoveRange(RemoveRangeNode expr)
@@ -3444,23 +3670,33 @@ namespace MyCompiler
 
             return buffer;
         }
-
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
-            Console.WriteLine("Visiting record field assign");
+            // Use the helper to get the address of the slot in the record
+            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
 
-            var (fieldPtr, fieldType) = GetFieldPointer(expr.IdRecord, expr.IdField);
+            var newValue = Visit(expr.AssignExpression);
 
-            var value = Visit(expr.AssignExpression);
+            // Get type info for boxing logic
+            var recType = (RecordType)expr.IdRecord.Type;
+            var fieldDef = recType.RecordFields.First(f => f.Label == expr.IdField);
 
-            // Optional: type check (recommended)
-            if (value.TypeOf != fieldType)
-                throw new Exception($"Cannot assign to record field '{expr.IdField}': type mismatch");
+            if (fieldDef.Type is IntType or FloatType or BoolType)
+            {
+                // Primitives are boxed: load the pointer to the box, then store the value
+                var boxPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), fieldSlotPtr, "box_ptr");
+                var castBoxPtr = _builder.BuildBitCast(boxPtr, LLVMTypeRef.CreatePointer(newValue.TypeOf, 0));
+                _builder.BuildStore(newValue, castBoxPtr);
+            }
+            else
+            {
+                // Strings/Records: Store the pointer directly in the slot
+                _builder.BuildStore(newValue, fieldSlotPtr);
+            }
 
-            _builder.BuildStore(value, fieldPtr);
-
-            return value;
+            return newValue;
         }
+
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
@@ -4166,17 +4402,24 @@ namespace MyCompiler
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
-        df = read_csv("Fire_Prediction_2023_Bolivia_encoded_small.csv")
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
         
         to_csv(df, "CSV/mytest.csv")
-m
+
+        df2 = dataframe(columns=["name", "age"],type=[string, int])         
+        
         df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         
-        df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
-        
-            record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+        df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
+
+        record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+
+        foreach(item in df3) { item.age = item.age + 10 }
+
+        arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
+         for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
         */
     }
 }

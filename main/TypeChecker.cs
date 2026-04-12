@@ -85,23 +85,27 @@ namespace MyCompiler
         public Type VisitForEachLoop(ForEachLoopNode expr)
         {
             var collectionType = Visit(expr.Source);
-            Type rowType = null;
+            RecordType rowType = null;
 
             // Determine the type of 'item'
             if (collectionType is DataframeType df) rowType = df.RowType;
-            else if (collectionType is ArrayType arr) rowType = arr;
+            else if (collectionType is ArrayType arr && arr.ElementType is RecordType rec) rowType = rec;
 
             if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
+
+            //_context = _context.Add(expr.Iterator.Name, null, rowType);
+            var testEntry = _context.Get(expr.Iterator.Name);
+            Console.WriteLine($"[DEBUG] Internal Check: Found '{expr.Iterator.Name}'? " + (testEntry != null));
 
             //_context = _context.Add(expr.Iterator.Name, null, rowType);
             //var testEntry = _context.Get(expr.Iterator.Name);
             //if (_debug) Console.WriteLine($"[DEBUG] Internal Check: Found '{expr.Iterator.Name}'? " + (testEntry != null));
 
             // CRITICAL: Push the context so 'item' exists for the body
-            //var oldContext = _context;
+            var oldContext = _context;
 
             // Use named arguments to be 100% safe
-            _context = _context.Add(      // should we really be calling _context.add in this case? Should it have an assign node instead?
+            _context = _context.Add(
                 name: expr.Iterator.Name,
                 value: default,
                 _value: null!,
@@ -109,8 +113,7 @@ namespace MyCompiler
             );
 
             Visit(expr.Body);
-            Visit(expr.Iterator);
-            // _context = oldContext; // why are we assigning it to the old context? wont it then lose the newly added value? works without oldContext
+            _context = oldContext;
             return new VoidType();
         }
 
@@ -430,17 +433,20 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNode expr)
         {
-            Visit(expr.SourceExpression);
+            // 1. Visit children first to resolve their types
+            Type sourceType = Visit(expr.SourceExpression);
             Visit(expr.IndexExpression);
 
-            Type inferred = new IntType();
-            if (expr.SourceExpression is IdNode idNode)
+            Type inferred = new IntType(); // Default
+
+            if (sourceType is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
-                    inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
-                else if (entry?.Type is DataframeType dfType)
-                    inferred = dfType.RowType;
+                inferred = arrType.ElementType;
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                // Use the RowType we carefully built in VisitDataframe
+                inferred = dfType.RowType;
             }
 
             expr.SetType(inferred);
@@ -584,7 +590,24 @@ namespace MyCompiler
                 var bodyType = Visit(expr.Assignment);
 
                 // 4. The result of a Map is always an Array of whatever the body returns
-                var resultType = new ArrayType(bodyType);
+                //var resultType = new ArrayType(bodyType);
+
+
+                Type resultType;
+
+                // NEW LOGIC HERE:
+                // If the map transformation results in a Record, we produce a Dataframe.
+                // Otherwise (like mapping to a list of strings), we produce an Array.
+                if (bodyType is RecordType recType)
+                {
+                    // Create a Dataframe type based on the record's schema
+                    resultType = sourceType;
+                }
+                else
+                {
+                    resultType = new ArrayType(bodyType);
+                }
+
                 expr.SetType(resultType);
                 return resultType;
             }

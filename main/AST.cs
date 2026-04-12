@@ -170,7 +170,7 @@ namespace MyCompiler
     public class AssignNode : StatementNode
     {
         public string Id { get; }  // ID = expr  -->   x = 10 
-        public ExpressionNode Expression { get;}
+        public ExpressionNode Expression { get; }
         public AssignNode(string id, ExpressionNode expr)
         {
             Id = id; Expression = expr;
@@ -409,7 +409,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             AddExpression = addExpression;
-            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAdd(this);
@@ -439,7 +438,6 @@ namespace MyCompiler
         {
             SourceExpression = arrayExpr;
             RemoveExpression = removeExpression;
-            Type = new ArrayType(SourceExpression.Type);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemove(this);
