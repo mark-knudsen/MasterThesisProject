@@ -354,9 +354,13 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i16 = ctx.Int16Type;
+            var i8 = ctx.Int8Type;
 
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
+            // _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, i8Ptr }, false);
+
+            var paddingType = LLVMTypeRef.CreateArray(i8, 6); // something is wrong here, it needs the padding for some reason. It should just be able to use the existing _runtimeValueType
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, paddingType, i8Ptr }, false); // why is this necessary? 
             return _runtimeValueType;
         }
 
@@ -445,9 +449,9 @@ namespace MyCompiler
             return new VoidType();
         }
 
-        // TODO: add functionality
+        // TODO: 
 
-        // add to df? min, max, mean, sum 
+        // get column of dataframe as array
 
         // Problems
 
@@ -776,7 +780,7 @@ namespace MyCompiler
                 if (ptr == IntPtr.Zero)
                     return v.ToString();
 
-                long tag = (colIndex - 1) < tags.Count ? tags[colIndex - 1] : -1;
+                Int16 tag = (short)((colIndex - 1) < tags.Count ? tags[colIndex - 1] : -1);
 
                 try
                 {
@@ -952,11 +956,6 @@ namespace MyCompiler
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var mallocFunc = GetOrDeclareMalloc();
 
-            // --- THE FIX: Define with Padding ---
-            // { i16, [6 x i8], i8* }
-            var paddingType = LLVMTypeRef.CreateArray(i8, 6); // something is wrong here, it needs the padding for some reason. It should just be able to use the existing _runtimeValueType
-            var runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i16, paddingType, i8Ptr }, false); // why is this necessary? 
-
             // --- THE SHIELD ---
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
             if (value.TypeOf == boxTypePtr)
@@ -1011,18 +1010,19 @@ namespace MyCompiler
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
 
-            var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(runtimeValueType, 0), "runtime_cast");
+            var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeValueType, 0), "runtime_cast");
 
             // Store tag
-            var tagPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 0, "tag_ptr");
+            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 0, "tag_ptr");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr).SetAlignment(8);
 
             // Store data
-            var dataFieldPtr = _builder.BuildStructGEP2(runtimeValueType, obj, 2, "data_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 2, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr).SetAlignment(8);
 
             return objRaw;
         }
+
 
         private ExpressionNode GetProgramResult(Node expr)
         {
@@ -1237,6 +1237,7 @@ namespace MyCompiler
             }
 
             var oldValue = _builder.BuildLoad2(type, global, "inc_load");
+            oldValue.SetAlignment(8);
 
             LLVMValueRef newValue;
             // Check the LLVM Kind instead of expr.Type to be safe
@@ -1711,6 +1712,7 @@ namespace MyCompiler
             // Return a null pointer of type i8*
             return LLVMValueRef.CreateConstPointerNull(i8Ptr);
         }
+
         public LLVMValueRef VisitAssign(AssignNode expr)
         {
             if (_debug) Console.WriteLine($"visiting assignment: {expr.Id}");
@@ -1770,10 +1772,11 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRandom(RandomNode expr)
         {
-            var llvmCtx = _module.Context;
-            var i64 = llvmCtx.Int64Type;
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var doubleType = ctx.DoubleType;
 
-            // 1. Get or declare rand()
+            // 1. Ensure rand() exists
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
@@ -1781,56 +1784,231 @@ namespace MyCompiler
                 randFunc = _module.AddFunction("rand", randType);
             }
 
-            var randValue = _builder.BuildCall2(
+            var randCall = _builder.BuildCall2(
                 LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>()),
-                randFunc, Array.Empty<LLVMValueRef>(), "randcall");
+                randFunc,
+                Array.Empty<LLVMValueRef>(),
+                "rand"
+            );
 
-            if (expr.MinValue != null && expr.MaxValue != null)
+            // =========================
+            // CASE 1: INTEGER RANDOM
+            // =========================
+            if (expr.Type is IntType)
             {
-                var minVal = Visit(expr.MinValue);
-                var maxVal = Visit(expr.MaxValue);
+                var min = Visit(expr.MinValue);
+                var max = Visit(expr.MaxValue);
 
-                // Ensure we are working with Integers for rand math
-                if (minVal.TypeOf == _module.Context.DoubleType) minVal = _builder.BuildFPToSI(minVal, i64, "min_i");
-                if (maxVal.TypeOf == _module.Context.DoubleType) maxVal = _builder.BuildFPToSI(maxVal, i64, "max_i");
+                if (min.TypeOf == doubleType)
+                    min = _builder.BuildFPToSI(min, i64, "min_i");
 
-                // --- THE "VISIT IF" STYLE ---
+                if (max.TypeOf == doubleType)
+                    max = _builder.BuildFPToSI(max, i64, "max_i");
+
                 var func = _builder.InsertBlock.Parent;
-                var thenBB = func.AppendBasicBlock("rand.correct"); // min <= max
-                var elseBB = func.AppendBasicBlock("rand.swap");    // min > max
-                var mergeBB = func.AppendBasicBlock("rand.cont");
 
-                // Create a local variable to store the result (since blocks can't "return")
-                var resultPtr = _builder.BuildAlloca(i64, "rand_result_ptr");
+                var thenBB = func.AppendBasicBlock("rand.int.ok");
+                var elseBB = func.AppendBasicBlock("rand.int.swap");
+                var mergeBB = func.AppendBasicBlock("rand.int.merge");
 
-                var cond = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLE, minVal, maxVal, "order_check");
+                var cond = _builder.BuildICmp(
+                    LLVMIntPredicate.LLVMIntSLE,
+                    min,
+                    max,
+                    "order_ok"
+                );
+
                 _builder.BuildCondBr(cond, thenBB, elseBB);
 
-                // "Then" Part (Correct Order)
+                // ---- THEN: min <= max ----
                 _builder.PositionAtEnd(thenBB);
-                var diff1 = _builder.BuildSub(maxVal, minVal, "diff1");
-                var range1 = _builder.BuildAdd(diff1, LLVMValueRef.CreateConstInt(i64, 1), "range1");
-                var res1 = _builder.BuildAdd(_builder.BuildSRem(randValue, range1, "mod1"), minVal, "res1");
-                _builder.BuildStore(res1, resultPtr).SetAlignment(8); // res1 is i64, requires 8-byte alignment
+
+                var range1 = _builder.BuildAdd(
+                    _builder.BuildSub(max, min),
+                    LLVMValueRef.CreateConstInt(i64, 1),
+                    "range1"
+                );
+
+                var mod1 = _builder.BuildSRem(randCall, range1, "mod1");
+                var res1 = _builder.BuildAdd(mod1, min, "res1");
 
                 _builder.BuildBr(mergeBB);
 
-                // "Else" Part (Wrong Order - Swap logic)
+                // capture block AFTER building instructions
+                var thenEnd = _builder.InsertBlock;
+
+                // ---- ELSE: min > max ----
                 _builder.PositionAtEnd(elseBB);
-                var diff2 = _builder.BuildSub(minVal, maxVal, "diff2"); // again this says i64 -99
-                var range2 = _builder.BuildAdd(diff2, LLVMValueRef.CreateConstInt(i64, 1), "range2");
-                var res2 = _builder.BuildAdd(_builder.BuildSRem(randValue, range2, "mod2"), maxVal, "res2");
-                _builder.BuildStore(res2, resultPtr).SetAlignment(8);
+
+                var range2 = _builder.BuildAdd(
+                    _builder.BuildSub(min, max),
+                    LLVMValueRef.CreateConstInt(i64, 1),
+                    "range2"
+                );
+
+                var mod2 = _builder.BuildSRem(randCall, range2, "mod2");
+                var res2 = _builder.BuildAdd(mod2, max, "res2");
 
                 _builder.BuildBr(mergeBB);
 
-                // Merge
+                var elseEnd = _builder.InsertBlock;
+
+                // ---- MERGE ----
                 _builder.PositionAtEnd(mergeBB);
-                var finalInt = _builder.BuildLoad2(i64, resultPtr, "final_rand_int");
-                return _builder.BuildSIToFP(finalInt, _module.Context.Int64Type, "final_rand_dbl");
+
+                var phi = _builder.BuildPhi(i64, "rand_int");
+
+                phi.AddIncoming(
+                    new[] { res1, res2 },
+                    new[] { thenEnd, elseEnd },
+                    2
+                );
+
+                return phi;
             }
 
-            return _builder.BuildSIToFP(randValue, _module.Context.Int64Type, "rand_simple");
+            // =========================
+            // CASE 2: FLOAT RANDOM
+            // =========================
+            else if (expr.Type is FloatType)
+            {
+                var min = Visit(expr.MinValue);
+                var max = Visit(expr.MaxValue);
+
+                if (min.TypeOf == i64)
+                    min = _builder.BuildSIToFP(min, doubleType, "min_f");
+
+                if (max.TypeOf == i64)
+                    max = _builder.BuildSIToFP(max, doubleType, "max_f");
+
+                // rand -> double
+                var randFp = _builder.BuildSIToFP(randCall, doubleType, "rand_fp");
+
+                // normalize to [0,1]
+                var randMax = LLVMValueRef.CreateConstReal(doubleType, (double)int.MaxValue);
+                var normalized = _builder.BuildFDiv(randFp, randMax, "norm");
+
+                var range = _builder.BuildFSub(max, min, "range");
+                var scaled = _builder.BuildFMul(normalized, range, "scaled");
+                var result = _builder.BuildFAdd(scaled, min, "rand_float");
+
+                return result;
+            }
+
+            throw new Exception("Random only supports int or float ranges");
+        }
+
+        public LLVMValueRef VisitRandom2(RandomNode expr)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var doubleType = ctx.DoubleType;
+
+            // 1. Ensure rand() exists
+            var randFunc = _module.GetNamedFunction("rand");
+            if (randFunc.Handle == IntPtr.Zero)
+            {
+                var randType = LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>(), false);
+                randFunc = _module.AddFunction("rand", randType);
+            }
+
+            var randCall = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(i64, Array.Empty<LLVMTypeRef>()),
+                randFunc,
+                Array.Empty<LLVMValueRef>(),
+                "rand"
+            );
+
+            // CASE 1: INTEGER RANDOM
+            if (expr.Type is IntType)
+            {
+                var min = Visit(expr.MinValue);
+                var max = Visit(expr.MaxValue);
+
+                if (min.TypeOf == doubleType)
+                    min = _builder.BuildFPToSI(min, i64, "min_i");
+
+                if (max.TypeOf == doubleType)
+                    max = _builder.BuildFPToSI(max, i64, "max_i");
+
+                var func = _builder.InsertBlock.Parent;
+                var thenBB = func.AppendBasicBlock("rand.int.ok");
+                var elseBB = func.AppendBasicBlock("rand.int.swap");
+                var mergeBB = func.AppendBasicBlock("rand.int.merge");
+
+                var resultPtr = _builder.BuildAlloca(i64, "rand_int");
+                resultPtr.SetAlignment(8);
+
+                var cond = _builder.BuildICmp(
+                    LLVMIntPredicate.LLVMIntSLE,
+                    min,
+                    max,
+                    "order_ok"
+                );
+
+                _builder.BuildCondBr(cond, thenBB, elseBB);
+
+                // ---- then ----
+                _builder.PositionAtEnd(thenBB);
+                var range1 = _builder.BuildAdd(
+                    _builder.BuildSub(max, min),
+                    LLVMValueRef.CreateConstInt(i64, 1),
+                    "range1"
+                );
+
+                var mod1 = _builder.BuildSRem(randCall, range1, "mod1");
+                var res1 = _builder.BuildAdd(mod1, min, "res1");
+                _builder.BuildStore(res1, resultPtr).SetAlignment(8);
+                _builder.BuildBr(mergeBB);
+
+                // ---- else ----
+                _builder.PositionAtEnd(elseBB);
+                var range2 = _builder.BuildAdd(
+                    _builder.BuildSub(min, max),
+                    LLVMValueRef.CreateConstInt(i64, 1),
+                    "range2"
+                );
+
+                var mod2 = _builder.BuildSRem(randCall, range2, "mod2");
+                var res2 = _builder.BuildAdd(mod2, max, "res2");
+                _builder.BuildStore(res2, resultPtr).SetAlignment(8);
+                _builder.BuildBr(mergeBB);
+
+                // ---- merge ----
+                _builder.PositionAtEnd(mergeBB);
+                var finalInt = _builder.BuildLoad2(i64, resultPtr, "rand_int_final");
+                finalInt.SetAlignment(8);
+
+                return finalInt;
+            }
+
+            // CASE 2: FLOAT RANDOM (UNIFORM DISTRIBUTION)
+            else if (expr.Type is FloatType)
+            {
+                var min = Visit(expr.MinValue);
+                var max = Visit(expr.MaxValue);
+
+                if (min.TypeOf == i64)
+                    min = _builder.BuildSIToFP(min, doubleType, "min_f");
+
+                if (max.TypeOf == i64)
+                    max = _builder.BuildSIToFP(max, doubleType, "max_f");
+
+                // rand -> float
+                var randFp = _builder.BuildSIToFP(randCall, doubleType, "rand_fp");
+
+                // IMPORTANT: normalize using RAND_MAX
+                var randMax = LLVMValueRef.CreateConstReal(doubleType, int.MaxValue);
+                var normalized = _builder.BuildFDiv(randFp, randMax, "norm");
+
+                var range = _builder.BuildFSub(max, min, "range");
+                var scaled = _builder.BuildFMul(normalized, range, "scaled");
+                var result = _builder.BuildFAdd(scaled, min, "rand_float");
+
+                return result;
+            }
+
+            throw new Exception("Random only supports int or float ranges");
         }
 
         private LLVMValueRef AddImplicitPrint(LLVMValueRef valueToPrint, Type type)
@@ -1959,6 +2137,7 @@ namespace MyCompiler
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
+        // x=dataframe(["name", "age"], type=[string, float])
         // x=dataframe(["name", "age"], type=[string, int])
         // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
 
@@ -1967,14 +2146,12 @@ namespace MyCompiler
         // x.add({name: "Hary potter2", age: 201})
         // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
-        // for(i=0; i<520000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-        // for(i=0; i<550000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        // for(i=0; i<5200000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) 
+        // for(i=0; i<5000000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) // 5 million
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
-        // x.where(d => d.age > 20)
         // x.map(d => d.age + 10)
-
         // x.where(d=> d.age > 90)  
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
@@ -2259,34 +2436,62 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i8 = ctx.Int8Type;
+
+            // i8*  (field type)
+            var slotType = LLVMTypeRef.CreatePointer(i8, 0);
+
+            // i8** (array of fields)
+            var slotArrayType = LLVMTypeRef.CreatePointer(slotType, 0);
+
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 1. Allocate the new record buffer (exactly like VisitRecord)
             var numFields = (ulong)recordType.RecordFields.Count;
-            var newRecordBuffer = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, numFields * 8) }, "record_copy_buffer");
+
+            // 1. Allocate raw buffer for new record (numFields * 8 bytes)
+            var newRecordBuffer = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, numFields * (ulong)IntPtr.Size) },
+                "record_copy_buffer"
+            );
+
+            // 2. Cast BOTH source and destination to i8**
+            var srcBuffer = _builder.BuildBitCast(recordPtr, slotArrayType, "src_slots");
+            var dstBuffer = _builder.BuildBitCast(newRecordBuffer, slotArrayType, "dst_slots");
 
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var fieldType = recordType.RecordFields[i].Type;
                 var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
 
-                // 2. Get the address of the pointer in the OLD record
-                var srcSlotPtr = _builder.BuildGEP2(i8Ptr, recordPtr, new[] { index }, "src_slot");
-                // Load the pointer stored there
-                var storedPtr = _builder.BuildLoad2(i8Ptr, srcSlotPtr, "stored_ptr");
+                // 3. Get pointer to field slot in source
+                var srcSlotPtr = _builder.BuildGEP2(
+                    slotType,   // element type = i8*
+                    srcBuffer,  // i8**
+                    new[] { index },
+                    "src_slot"
+                );
 
-                // 3. Perform the Deep Copy
-                // Note: For Primitives, your architecture stores a POINTER to the value.
-                // We must handle that inside EmitDeepCopy or here.
+                // 4. Load stored pointer (i8*)
+                var storedPtr = _builder.BuildLoad2(slotType, srcSlotPtr, "stored_ptr");
+
+                // 5. Deep copy the value
                 var copiedValuePtr = EmitDeepCopy(storedPtr, fieldType);
 
-                // 4. Store the new pointer into the NEW record
-                var dstSlotPtr = _builder.BuildGEP2(i8Ptr, newRecordBuffer, new[] { index }, "dst_slot");
+                // 6. Get pointer to destination slot
+                var dstSlotPtr = _builder.BuildGEP2(
+                    slotType,
+                    dstBuffer,
+                    new[] { index },
+                    "dst_slot"
+                );
+
+                // 7. Store copied pointer
                 _builder.BuildStore(copiedValuePtr, dstSlotPtr);
             }
 
+            // 8. Return raw buffer (external representation = i8*)
             return newRecordBuffer;
         }
 
@@ -2578,7 +2783,6 @@ namespace MyCompiler
             if (type is ArrayType)
                 return 24; // len, cap, data*
             throw new Exception("Unknown type for struct size calculation: " + type);
-
         }
 
         public LLVMValueRef VisitArray(ArrayNode expr)
@@ -2599,11 +2803,13 @@ namespace MyCompiler
             bool isRefType = IsReferenceType(expr.ElementType);
 
             // 2. Compute sizes using elementType
-            uint elementSize = GetTypeSize(expr.ElementType);
+            uint elementSize = IsReferenceType(expr.ElementType)
+            ? (uint)IntPtr.Size   // 8 bytes
+            : GetTypeSize(expr.ElementType);
 
-            uint capacity = count > 0 ? count * 200 : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
+            uint capacity = count > 0 ? Math.Min(count * 20, uint.MaxValue) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
             if (expr.Capacity != null)
-                capacity = (uint)expr.Capacity * 200;
+                capacity = Math.Min(count * 20, uint.MaxValue);
 
             uint totalSize = elementSize * capacity;
 
@@ -2762,6 +2968,61 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+            var dfType = GetOrCreateDataframeType();
+            var arrayType = GetOrCreateArrayType();
+
+            // --- 1. Get rows array struct pointer ---
+            var rowsPtrPtr = _builder.BuildStructGEP2(dfType, dataframePtr, 1, "rows_ptr_ptr");
+            var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsPtrPtr, "rows");
+
+            // --- 2. Access array metadata ---
+            var lenPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 0, "len_ptr");
+            var len = _builder.BuildLoad2(i64, lenPtr, "len");
+
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 2, "data_ptr_ptr");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
+
+            // --- 3. Bounds check ---
+            var inBounds = _builder.BuildICmp(
+                LLVMIntPredicate.LLVMIntULT,
+                indexValue,
+                len,
+                "in_bounds"
+            );
+
+            var func = _builder.InsertBlock.Parent;
+            var okBlock = ctx.AppendBasicBlock(func, "idx_ok");
+            var errBlock = ctx.AppendBasicBlock(func, "idx_err");
+
+            _builder.BuildCondBr(inBounds, okBlock, errBlock);
+
+            // --- ERROR ---
+            _builder.PositionAtEnd(errBlock);
+            var msg = _builder.BuildGlobalStringPtr("Index out of bounds\n", "err");
+            _builder.BuildCall2(_printfType, _printf, new[] { msg });
+            _builder.BuildUnreachable();
+
+            // --- OK ---
+            _builder.PositionAtEnd(okBlock);
+
+            // IMPORTANT: NO BITCAST
+            var elemPtr = _builder.BuildGEP2(
+                i8Ptr,
+                dataPtr,
+                new[] { indexValue },
+                "elem_ptr"
+            );
+
+            return _builder.BuildLoad2(i8Ptr, elemPtr, "record");
+        }
+
+        private LLVMValueRef DataframeIndex2(LLVMValueRef dataframePtr, LLVMValueRef indexValue)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var i8PtrPtr = LLVMTypeRef.CreatePointer(i8Ptr, 0);
 
             var dfType = GetOrCreateDataframeType();
@@ -2781,6 +3042,7 @@ namespace MyCompiler
 
             // --- 3. (Optional but recommended) bounds check ---
             var lenPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 0, "len_ptr");
+            lenPtr.SetAlignment(8); // might break
             var len = _builder.BuildLoad2(i64, lenPtr, "len");
 
             var inBounds = _builder.BuildICmp(
@@ -2907,9 +3169,7 @@ namespace MyCompiler
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            // --------------------------------------------------
-            // 1. Resolve LLVM element type
-            // --------------------------------------------------
+            // 1. Resolve types
             LLVMTypeRef llvmElementType = GetLLVMType(elementType);
 
             bool isReferenceType =
@@ -2920,20 +3180,20 @@ namespace MyCompiler
 
             var elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
 
-            // --------------------------------------------------
             // 2. Load array metadata
-            // --------------------------------------------------
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_ptr");
+            // lenPtr.SetAlignment(8);
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 1, "cap_ptr");
+            //capPtr.SetAlignment(8);
             var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_ptr_ptr");
 
             var length = _builder.BuildLoad2(i64, lenPtr, "len");
+            length.SetAlignment(8);
             var capacity = _builder.BuildLoad2(i64, capPtr, "cap");
+            capacity.SetAlignment(8);
             var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
 
-            // --------------------------------------------------
-            // 4. Check capacity
-            // --------------------------------------------------
+            // 3. Check capacity
             var isFull = _builder.BuildICmp(
                 LLVMIntPredicate.LLVMIntUGE,
                 length,
@@ -2942,15 +3202,16 @@ namespace MyCompiler
             );
 
             var function = _builder.InsertBlock.Parent;
+
             var growBlock = ctx.AppendBasicBlock(function, "grow");
             var contBlock = ctx.AppendBasicBlock(function, "cont");
+
+            // IMPORTANT: capture block BEFORE branching
             var entryBlock = _builder.InsertBlock;
 
             _builder.BuildCondBr(isFull, growBlock, contBlock);
 
-            // --------------------------------------------------
-            // 5. Grow
-            // --------------------------------------------------
+            // GROW BLOCK
             _builder.PositionAtEnd(growBlock);
 
             var zero = LLVMValueRef.CreateConstInt(i64, 0);
@@ -2964,13 +3225,13 @@ namespace MyCompiler
                 "new_cap"
             );
 
-            System.Console.WriteLine("our element type: " + elementType);
-
-            var elemSize = GetTypeSize(elementType);
+            uint elementSize = isReferenceType
+                ? (uint)IntPtr.Size
+                : GetTypeSize(elementType);
 
             var newByteSize = _builder.BuildMul(
                 newCap,
-                LLVMValueRef.CreateConstInt(i64, elemSize),
+                LLVMValueRef.CreateConstInt(i64, elementSize),
                 "bytes"
             );
 
@@ -2983,29 +3244,25 @@ namespace MyCompiler
                 "realloc"
             );
 
-            _builder.BuildStore(newCap, capPtr);
+            _builder.BuildStore(newCap, capPtr).SetAlignment(8);
             _builder.BuildStore(newRawDataPtr, dataPtrPtr);
 
             _builder.BuildBr(contBlock);
 
-            // --------------------------------------------------
-            // 6. Continue
-            // --------------------------------------------------
+            // CONT BLOCK
             _builder.PositionAtEnd(contBlock);
 
             var phi = _builder.BuildPhi(i8Ptr, "final_data_ptr");
 
             phi.AddIncoming(
                 new LLVMValueRef[] { rawDataPtr, newRawDataPtr },
-                new LLVMBasicBlockRef[] { entryBlock, growBlock }, 2
+                new LLVMBasicBlockRef[] { entryBlock, growBlock },
+                2
             );
 
             var finalTypedPtr = _builder.BuildBitCast(phi, elementPtrType);
 
-            // --------------------------------------------------
-            // 7. Store value (CRITICAL FIX)
-            // --------------------------------------------------
-
+            // 4. Compute target slot
             var targetPtr = _builder.BuildGEP2(
                 llvmElementType,
                 finalTypedPtr,
@@ -3013,31 +3270,24 @@ namespace MyCompiler
                 "target"
             );
 
+            // 5. Store value
             LLVMValueRef storedValue;
 
-            if (isReferenceType)
-            {
-                // references are already pointers → store directly
+            if (isReferenceType) // Already a pointer → just ensure type matches 
                 storedValue = _builder.BuildBitCast(valueToAdd, llvmElementType);
-            }
             else
-            {
-                // primitives → store directly (NO bitcast)
                 storedValue = valueToAdd;
-            }
 
             _builder.BuildStore(storedValue, targetPtr);
 
-            // --------------------------------------------------
-            // 8. Increment length
-            // --------------------------------------------------
+            // 6. Increment length
             var newLen = _builder.BuildAdd(
                 length,
                 LLVMValueRef.CreateConstInt(i64, 1),
                 "new_len"
             );
 
-            _builder.BuildStore(newLen, lenPtr);
+            _builder.BuildStore(newLen, lenPtr).SetAlignment(8);
         }
 
         public LLVMValueRef VisitAddRange(AddRangeNode expr)
@@ -3556,46 +3806,77 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+            var slotType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // i8*
+
+            var slotArrayType = LLVMTypeRef.CreatePointer(slotType, 0); // i8**
+
+
             var mallocFunc = GetOrDeclareMalloc();
 
             var numFields = (ulong)expr.Fields.Count;
-            // Each field is a pointer (8 bytes)
-            var buffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, numFields * 8) }, "record_buffer");
+
+            // Allocate raw memory
+            var rawBuffer = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, numFields * 8) },
+                "record_buffer"
+            );
+
+            // 👇 CRITICAL: cast to i8**
+            var buffer = _builder.BuildBitCast(rawBuffer, slotArrayType, "record_slots");
+
 
             for (int i = 0; i < expr.Fields.Count; i++)
             {
                 var val = Visit(expr.Fields[i].Value);
                 LLVMValueRef fieldPtr;
 
-                // CHECK LLVM TYPE: If it's a raw Int or Double, it MUST be boxed
-                bool isPrimitive = val.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
-                                   val.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind;
+                bool isPrimitive =
+                    val.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
+                    val.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind;
 
                 if (isPrimitive)
                 {
-                    // Allocate 8 bytes for the primitive value
-                    var mem = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "field_mem");
+                    var mem = _builder.BuildCall2(
+                        _mallocType,
+                        mallocFunc,
+                        new[] { LLVMValueRef.CreateConstInt(i64, 8) },
+                        "field_mem"
+                    );
 
-                    // Cast the malloc'd pointer to the correct type (e.g., i64* or double*) so we can store into it
-                    var castPtr = _builder.BuildBitCast(mem, LLVMTypeRef.CreatePointer(val.TypeOf, 0), "cast");
-                    _builder.BuildStore(val, castPtr);
+                    var castPtr = _builder.BuildBitCast(
+                        mem,
+                        LLVMTypeRef.CreatePointer(val.TypeOf, 0),
+                        "cast"
+                    );
+
+                    _builder.BuildStore(val, castPtr).SetAlignment(8);
 
                     fieldPtr = mem;
                 }
                 else
                 {
-                    // It's already a pointer (String, Array, another Record)
                     fieldPtr = _builder.BuildBitCast(val, i8Ptr, "to_i8ptr");
                 }
 
-                // Store the pointer (fieldPtr) into the record buffer
+                // ✅ NOW GEP IS CORRECT (step = 8 bytes)
                 var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-                var ptr = _builder.BuildGEP2(i8Ptr, buffer, new[] { index }, "field_ptr");
-                _builder.BuildStore(fieldPtr, ptr);
+
+                var slotPtr = _builder.BuildGEP2(
+                    slotType,   // NOT i8Ptr variable reused — must match exactly
+                    buffer,
+                    new[] { index },
+                    "field_ptr"
+                );
+
+                _builder.BuildStore(fieldPtr, slotPtr);
             }
 
-            return buffer;
+            return rawBuffer; // keep external representation as i8*
         }
 
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)

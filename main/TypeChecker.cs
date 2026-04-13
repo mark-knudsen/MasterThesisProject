@@ -323,10 +323,14 @@ namespace MyCompiler
 
         public Type VisitRandom(RandomNode expr)
         {
-            Visit(expr.MinValue);
-            Visit(expr.MaxValue);
+            Type minType = Visit(expr.MinValue);
+            Type maxType = Visit(expr.MaxValue);
 
-            expr.SetType(new IntType());
+            if(minType is FloatType || maxType is FloatType)
+                expr.SetType(new FloatType());
+            else
+                expr.SetType(new IntType());
+                
             return expr.Type;
         }
 
