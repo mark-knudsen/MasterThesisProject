@@ -326,11 +326,11 @@ namespace MyCompiler
             Type minType = Visit(expr.MinValue);
             Type maxType = Visit(expr.MaxValue);
 
-            if(minType is FloatType || maxType is FloatType)
+            if (minType is FloatType || maxType is FloatType)
                 expr.SetType(new FloatType());
             else
                 expr.SetType(new IntType());
-                
+
             return expr.Type;
         }
 
@@ -435,7 +435,7 @@ namespace MyCompiler
         public Type VisitIndex(IndexNode expr)
         {
             Visit(expr.SourceExpression);
-            Visit(expr.IndexExpression);
+            var indexType = Visit(expr.IndexExpression);
 
             Type inferred = new IntType();
             if (expr.SourceExpression is IdNode idNode)
@@ -444,7 +444,22 @@ namespace MyCompiler
                 if (entry?.Type is ArrayType arrType)
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
-                    inferred = dfType.RowType;
+                {
+                    if (indexType is StringType index)
+                    {
+                        Type d = new IntType();
+                        for (int i = 0; i < dfType.ColumnNames.Count; i++)
+                        {
+                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) d = dfType.DataTypes[i];
+                        }
+
+                        inferred = new ArrayType(d);
+                    }
+                    else
+                    {
+                        inferred = dfType.RowType;
+                    }
+                }
             }
 
             expr.SetType(inferred);
