@@ -2125,21 +2125,24 @@ namespace MyCompiler
         public LLVMValueRef VisitMap(MapNode expr)
         {
             var sourceType = expr.SourceExpr.Type;
-
             SequenceNode program;
-            if (sourceType is ArrayType)
+
+            // Check what the TYPE CHECKER said the result would be
+            if (expr.Type is DataframeType)
             {
-                Console.WriteLine("ARRAY.........................................................................");
-                program = MapForArray(sourceType, expr);
+                Console.WriteLine("DATAFRAME RESULT..............................................................");
+                program = MapForDataframe(sourceType, expr);
             }
-            else if (sourceType is DataframeType)
+            else if (expr.Type is ArrayType)
             {
-                Console.WriteLine("DATAFRAME.....................................................................");
-                program = MapForDataframe(sourceType, expr); // This helper handles Dataframe result types
+                Console.WriteLine("ARRAY RESULT..................................................................");
+                // MapForArray works perfectly even if the source is a Dataframe,
+                // because it just loops and performs the 'add' to a new array.
+                program = MapForArray(sourceType, expr);
             }
             else
             {
-                throw new Exception($"Cannot call map on {sourceType}");
+                throw new Exception($"Unsupported map result type: {expr.Type}");
             }
 
             PerformSemanticAnalysis(program);
@@ -2192,91 +2195,83 @@ namespace MyCompiler
 
             return program;
         }
+
+        private string InferFieldName(ExpressionNode node)
+        {
+            if (node is RecordFieldNode rf)
+                return rf.IdField;
+
+            if (node is BinaryOpNode bin)
+                return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
+
+            // If ReplaceIterator has already run, x.age becomes (resVar[i]).age
+            // This might appear as a RecordFieldNode where the IdRecord is an IndexNode
+            // Your existing RecordFieldNode logic above should handle this!
+
+            return null;
+        }
+
         public SequenceNode MapForDataframe(Type sourceType, MapNode expr)
         {
-            var dfType = (DataframeType)sourceType;
-
+            var program = new SequenceNode();
             var srcVar = "__map_src";
-            var resultVar = "__map_result";
+            var resVar = "__map_result";
             var iVar = "__map_i";
-            var lenVar = "__map_len";
-            var rowVar = "__current_row";
 
-            ExpressionNode resultConstructor;
+            // 1. Setup variables: src = original, res = deep copy of original
+            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
+            program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
-            // 1. Determine if we are building a new Dataframe or a simple Array
-            if (expr.Type is DataframeType resDfType)
+            // 2. Build the Loop Body
+            var loopBody = new SequenceNode();
+
+            // Access the row in the CLONED dataframe: x = resVar[i]
+            var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
+
+            // Replace the iterator 'x' in the assignment expression with the indexing logic
+            var transformation = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowAccess);
+
+            // 3. Handle the "Patching" (inside MapForDataframe)
+            if (transformation is RecordNode recordNode)
             {
-                var column = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-                var type = resDfType.DataTypes.Select(t =>
+                foreach (var field in recordNode.Fields)
                 {
-                    if (t is IntType) return (ExpressionNode)new NumberNode(0);
-                    if (t is FloatType) return (ExpressionNode)new FloatNode(0);
-                    if (t is BoolType) return (ExpressionNode)new BooleanNode(false);
-                    return (ExpressionNode)new StringNode("");
-                }).ToList();
+                    // Fix: If the label is empty (user wrote {x.age-10}), infer it from the value
+                    string label = string.IsNullOrEmpty(field.Label)
+                        ? InferFieldName(field.Value)
+                        : field.Label;
 
-                resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
-            new NamedArgumentNode("columns", new ArrayNode(column)),
-            new NamedArgumentNode("type", new ArrayNode(type))
-        });
-                resultConstructor.SetType(resDfType);
-            }
-            else if (expr.Type is ArrayType resArrType)
-            {
-                resultConstructor = new ArrayNode(new List<ExpressionNode>())
-                {
-                    ElementType = resArrType.ElementType
-                };
-                resultConstructor.SetType(resArrType);
+                    if (string.IsNullOrEmpty(label))
+                        throw new Exception("Could not infer column name for record field.");
+
+                    loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, label, field.Value));
+                }
             }
             else
             {
-                throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
+                // Fix: User wrote x.age - 10 directly
+                string targetField = InferFieldName(transformation);
+                if (string.IsNullOrEmpty(targetField))
+                    throw new Exception("Could not infer which column to update.");
+
+                loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, transformation));
             }
 
-            // 2. Synthesize Assignments & Setup
-            var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
-            var resultAssign = new AssignNode(resultVar, resultConstructor);
-            var indexInit = new AssignNode(iVar, new NumberNode(0));
-
-            // Optimization: Cache the length outside the loop
-            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
-
-            // 3. Loop Logic
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
+            // 4. Create the For Loop
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
             var step = new IncrementNode(new IdNode(iVar));
+            var loop = new ForLoopNode(null!, cond, step, loopBody);
 
-            var loopBody = new SequenceNode();
-
-            // Optimization: Access the Row once and store it in a variable
-            // This row variable must have the RecordType of the source dataframe
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-            var rowAssign = new AssignNode(rowVar, rowAccess);
-            loopBody.Statements.Add(rowAssign);
-
-            // Transform: Replace 'x' with the ID of the row variable, NOT the indexing expression
-            var rowIdReference = new IdNode(rowVar);
-            rowIdReference.SetType(dfType.RowType); // Crucial for field resolution
-
-            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowIdReference);
-
-            // 4. Append to result
-            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
-            loopBody.Statements.Add(addNode);
-
-            var loop = new ForLoopNode(indexInit, cond, step, loopBody);
-
-            // 5. Assemble final program
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(lenAssign); // Added length caching
             program.Statements.Add(loop);
-            program.Statements.Add(new IdNode(resultVar));
+
+            // The final result of the sequence is the cloned (and now modified) dataframe
+            program.Statements.Add(new IdNode(resVar));
 
             return program;
         }
+
+
 
 
         /*
@@ -4440,6 +4435,8 @@ namespace MyCompiler
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         
         df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
+        df2.map(x => { age: x.age - 10, name: "Harry" })
+        df2.map(x => x.age - 10)
 
         record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
 

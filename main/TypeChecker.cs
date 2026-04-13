@@ -562,43 +562,52 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-            Type elementType;
+            Type iteratorType;
 
-            // 1. Determine what the iterator 'x' represents
             if (sourceType is ArrayType arrayType)
-                elementType = arrayType.ElementType;
+                iteratorType = arrayType.ElementType;
             else if (sourceType is DataframeType dfType)
-                elementType = dfType.RowType;
+                iteratorType = dfType.RowType;
             else
                 throw new Exception("Map source must be an array or a dataframe.");
 
             var previousContext = _context;
+            _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
-            // 2. Inject 'x' into the context with the correct type (Primitive or Record)
-            _context = _context.Add(expr.IteratorId.Name, default, null!, elementType);
-
-            try // there should not be an empty try catch in the type checker
+            try
             {
-                // Visit the iterator ID to ensure it's registered
                 Visit(expr.IteratorId);
-
-                // 3. Visit the transformation (the lambda body)
-                // If x is a Record, x.name will now resolve correctly because x has RowType
                 var bodyType = Visit(expr.Assignment);
-
-                // 4. The result of a Map is always an Array of whatever the body returns
-                //var resultType = new ArrayType(bodyType);
-
-
                 Type resultType;
 
-                // NEW LOGIC HERE:
-                // If the map transformation results in a Record, we produce a Dataframe.
-                // Otherwise (like mapping to a list of strings), we produce an Array.
-                if (bodyType is RecordType recType)
+                if (sourceType is DataframeType sourceDf)
                 {
-                    // Create a Dataframe type based on the record's schema
-                    resultType = sourceType;
+                    string targetField = InferFieldName(expr.Assignment);
+
+                    if (targetField == null)
+                        throw new Exception("Could not infer column name. Use '{column: value}' syntax.");
+
+                    var newTypes = sourceDf.DataTypes.ToList();
+                    var newRowFields = new List<RecordField>();
+
+                    for (int i = 0; i < sourceDf.ColumnNames.Count; i++)
+                    {
+                        var colName = sourceDf.ColumnNames[i];
+                        Type colType = sourceDf.DataTypes[i];
+
+                        // If this is the column we inferred (e.g. "age"), update its type
+                        if (colName == targetField)
+                        {
+                            colType = (bodyType is RecordType rt)
+                                ? (rt.RecordFields.FirstOrDefault(f => f.Label == colName)?.Type ?? bodyType)
+                                : bodyType;
+                        }
+
+                        newTypes[i] = colType;
+                        newRowFields.Add(new RecordField { Label = colName, Type = colType });
+                    }
+
+                    resultType = new DataframeType(sourceDf.ColumnNames, newTypes, new RecordType(newRowFields));
                 }
                 else
                 {
@@ -612,6 +621,27 @@ namespace MyCompiler
             {
                 _context = previousContext;
             }
+        }
+
+        // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
+        private string InferFieldName(ExpressionNode node)
+        {
+            // Case 1: x.age
+            if (node is RecordFieldNode rf) return rf.IdField;
+
+            // Case 2: x.age - 10 (Binary operation)
+            if (node is BinaryOpNode bin)
+                return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
+
+            // Case 3: { age: x.age - 10 } (The user provided a label)
+            if (node is RecordNode rec && rec.Fields.Count > 0)
+            {
+                var firstField = rec.Fields[0];
+                if (!string.IsNullOrEmpty(firstField.Label)) return firstField.Label;
+                return InferFieldName(firstField.Value);
+            }
+
+            return null;
         }
 
         // Helper: Build a RecordNode from CSV (first line + type inference)
