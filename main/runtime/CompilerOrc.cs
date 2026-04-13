@@ -2232,25 +2232,38 @@ namespace MyCompiler
             // Replace the iterator 'x' in the assignment expression with the indexing logic
             var transformation = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowAccess);
 
-            // 3. Handle the "Patching" (inside MapForDataframe)
-            if (transformation is RecordNode recordNode)
+            // 3. Handle the "Patching"
+            // Cast to Node to allow checking against AssignNode/SequenceNode
+            var nodeRef = (Node)transformation;
+
+            if (nodeRef is RecordNode recordNode)
             {
                 foreach (var field in recordNode.Fields)
                 {
-                    // Fix: If the label is empty (user wrote {x.age-10}), infer it from the value
                     string label = string.IsNullOrEmpty(field.Label)
                         ? InferFieldName(field.Value)
                         : field.Label;
 
                     if (string.IsNullOrEmpty(label))
-                        throw new Exception("Could not infer column name for record field.");
+                        throw new Exception("Could not infer column name.");
 
                     loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, label, field.Value));
                 }
             }
+            else if (nodeRef is AssignNode assign)
+            {
+                // The user wrote: x => x.age = 10
+                // We add the assignment directly to the loop body
+                loopBody.Statements.Add(assign);
+            }
+            else if (nodeRef is SequenceNode seq)
+            {
+                // The user wrote: x => { x.age = 10; x.age }
+                loopBody.Statements.Add(seq);
+            }
             else
             {
-                // Fix: User wrote x.age - 10 directly
+                // Fallback: User wrote a pure expression like x.age - 10
                 string targetField = InferFieldName(transformation);
                 if (string.IsNullOrEmpty(targetField))
                     throw new Exception("Could not infer which column to update.");
@@ -4436,6 +4449,7 @@ namespace MyCompiler
         
         df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
         df2.map(x => { age: x.age - 10, name: "Harry" })
+         df2.map(x => { age: 10, name: x.name + "_2" })
         df2.map(x => x.age - 10)
 
         record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
