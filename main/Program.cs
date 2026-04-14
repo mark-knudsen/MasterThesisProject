@@ -57,7 +57,6 @@ namespace MyCompiler
 
             try
             {
-
                 Console.WriteLine("--- AST Compiler Shell ---");
 
                 ICompiler compiler = new CompilerOrc();
