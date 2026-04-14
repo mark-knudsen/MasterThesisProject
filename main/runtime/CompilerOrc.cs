@@ -4780,7 +4780,7 @@ namespace MyCompiler
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
-        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded.csv")
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
         
         to_csv(df, "CSV/mytest.csv")
@@ -4814,6 +4814,10 @@ namespace MyCompiler
         df.where(x => x.latitude > -18.0)
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
+
+        df.map(x => x.latitude - 100.0)
+        df.map(x => x.latitude - 100.0).map(x => x.longitude = 100.0)
+        df.map(x => x.latitude - 100.0, x.longitude = 100.0)
 
 */
 
