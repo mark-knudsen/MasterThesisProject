@@ -728,14 +728,13 @@ namespace MyCompiler
             // 1. Get Column Names (Always needed)
             var columnNames = ExtractArray(dfObj.columns, new ArrayType(new StringType()));
 
-            // 2. Get Tags (The 'dataTypes' header in your %dataframe struct)
+            // 2. Get Tags (Optimized to read only what we need)
             var dataTypeHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.dataTypes);
-            List<byte> colTypes = new List<byte>();
-
+            List<Int16> colTags = new List<Int16>();
             for (long i = 0; i < dataTypeHeader.length; i++)
             {
-                // Read each type (i64) from the type array
-                colTypes.Add(Marshal.ReadByte(IntPtr.Add(dataTypeHeader.data, (byte)(i * 8))));
+                // tags are stored as i64 in your memory layout, so we add i * 8
+                colTags.Add(Marshal.ReadInt16(IntPtr.Add(dataTypeHeader.data, (int)(i * 8))));
             }
 
             // 3. Optimized Row Extraction
@@ -765,10 +764,11 @@ namespace MyCompiler
                 sparseRows[r] = ExtractRecord(recordPtr, type.RowType);
             }
 
-            return FormatTable(columnNames, sparseRows, colTypes, rowCount);
+            // Pass the sparse dictionary and the total count to the formatter
+            return FormatTable(columnNames, sparseRows, colTags, (int)rowCount);
         }
 
-        private string FormatTable(List<string> columnNames, Dictionary<int, List<object>> rows, List<byte> colTypes, long rowCount)
+        private string FormatTable(List<string> columnNames, Dictionary<int, List<object>> rows, List<Int16> colTypes, int rowCount)
         {
             bool showAllColumns = _showAllColumns;
             bool showAllRows = _showAllRows;
@@ -790,26 +790,25 @@ namespace MyCompiler
                 for (int i = totalCols - 3; i < totalCols; i++) colIndices.Add(i);
             }
 
-            var types = colTypes != null
-                ? new List<byte> { 255 }.Concat(colTypes).ToList()
-                : new List<byte> { 255 };
+            // --- 2. Build mapping for tags (aligned with colIndices) ---
+            var tags = colTypes != null
+                ? new List<Int16> { -1 }.Concat(colTypes).ToList()
+                : new List<Int16> { -1 };
+            while (tags.Count < totalCols) tags.Add(-1);
 
-            while (types.Count < totalCols)
-                types.Add(255);
-
+            // Helper for value retrieval
             string GetStringValue(object v, int colIndex, int rowIndex)
             {
                 if (colIndex == 0) return rowIndex.ToString();
                 if (v == null) return "null";
 
                 IntPtr ptr = (v is IntPtr p) ? p : IntPtr.Zero;
-                if (ptr == IntPtr.Zero)
-                    return v.ToString();
+                if (ptr == IntPtr.Zero) return v.ToString();
 
-                byte type = (byte)((colIndex - 1) < types.Count ? types[colIndex - 1] : 255);
+                int tag = tags[colIndex];
                 try
                 {
-                    switch (type)
+                    switch (tag)
                     {
                         case 0: case 1: return Marshal.ReadInt64(ptr).ToString();
                         case 2:
@@ -913,6 +912,29 @@ namespace MyCompiler
                    string.Join("\n", lines.Select(l => "   " + l));
         }
 
+
+        private int GetTypeByTag(Type type)
+        {
+            if (type == null)
+            {
+                if (_debug) Console.WriteLine("CRITICAL: GetTypeByTag received a NULL type!");
+                return (int)ValueTag.None;
+            }
+
+            if (_debug) Console.WriteLine($"Resolving Tag for: {type.GetType().Name}");
+
+            return type switch
+            {
+                IntType => (Int16)ValueTag.Int,
+                FloatType => (Int16)ValueTag.Float,
+                BoolType => (Int16)ValueTag.Bool,
+                StringType => (Int16)ValueTag.String,
+                ArrayType => (Int16)ValueTag.Array,
+                RecordType => (Int16)ValueTag.Record,
+                DataframeType => (Int16)ValueTag.Dataframe,
+                _ => (Int16)ValueTag.None
+            };
+        }
         private List<object> ExtractRecord(IntPtr recordPtr, RecordType recordType)
         {
             var result = new List<object>();
@@ -951,28 +973,7 @@ namespace MyCompiler
             return result;
         }
 
-        private int GetTypeByTag(Type type)
-        {
-            if (type == null)
-            {
-                if (_debug) Console.WriteLine("CRITICAL: GetTypeByTag received a NULL type!");
-                return (int)ValueTag.None;
-            }
 
-            if (_debug) Console.WriteLine($"Resolving Tag for: {type.GetType().Name}");
-
-            return type switch
-            {
-                IntType => (Int16)ValueTag.Int,
-                FloatType => (Int16)ValueTag.Float,
-                BoolType => (Int16)ValueTag.Bool,
-                StringType => (Int16)ValueTag.String,
-                ArrayType => (Int16)ValueTag.Array,
-                RecordType => (Int16)ValueTag.Record,
-                DataframeType => (Int16)ValueTag.Dataframe,
-                _ => (Int16)ValueTag.None
-            };
-        }
 
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
@@ -2241,21 +2242,24 @@ namespace MyCompiler
         public LLVMValueRef VisitMap(MapNode expr)
         {
             var sourceType = expr.SourceExpr.Type;
-
             SequenceNode program;
-            if (sourceType is ArrayType)
+
+            // Check what the TYPE CHECKER said the result would be
+            if (expr.Type is DataframeType)
             {
-                Console.WriteLine("ARRAY.........................................................................");
-                program = MapForArray(expr);
+                Console.WriteLine("DATAFRAME RESULT..............................................................");
+                program = MapForDataframe(sourceType, expr);
             }
-            else if (sourceType is DataframeType)
+            else if (expr.Type is ArrayType)
             {
-                Console.WriteLine("DATAFRAME.....................................................................");
-                program = MapForDataframe(sourceType, expr); // This helper handles Dataframe result types
+                Console.WriteLine("ARRAY RESULT..................................................................");
+                // MapForArray works perfectly even if the source is a Dataframe,
+                // because it just loops and performs the 'add' to a new array.
+                program = MapForArray(expr);
             }
             else
             {
-                throw new Exception($"Cannot call map on {sourceType}");
+                throw new Exception($"Unsupported map result type: {expr.Type}");
             }
 
             PerformSemanticAnalysis(program);
@@ -2309,91 +2313,95 @@ namespace MyCompiler
             return program;
         }
 
+        private string InferFieldName(ExpressionNode node)
+        {
+            if (node is RecordFieldNode rf)
+                return rf.IdField;
+
+            if (node is BinaryOpNode bin)
+                return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
+
+            // If ReplaceIterator has already run, x.age becomes (resVar[i]).age
+            // This might appear as a RecordFieldNode where the IdRecord is an IndexNode
+            // Your existing RecordFieldNode logic above should handle this!
+
+            return null;
+        }
+
         public SequenceNode MapForDataframe(Type sourceType, MapNode expr)
         {
-            var dfType = (DataframeType)sourceType;
-
+            var program = new SequenceNode();
             var srcVar = "__map_src";
-            var resultVar = "__map_result";
+            var resVar = "__map_result";
             var iVar = "__map_i";
-            var lenVar = "__map_len";
-            var rowVar = "__current_row";
 
-            ExpressionNode resultConstructor;
+            // 1. Setup variables: src = original, res = deep copy of original
+            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
+            program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
-            // 1. Determine if we are building a new Dataframe or a simple Array
-            if (expr.Type is DataframeType resDfType)
+            // 2. Build the Loop Body
+            var loopBody = new SequenceNode();
+
+            // Access the row in the CLONED dataframe: x = resVar[i]
+            var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
+
+            // Replace the iterator 'x' in the assignment expression with the indexing logic
+            var transformation = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowAccess);
+
+            // 3. Handle the "Patching"
+            // Cast to Node to allow checking against AssignNode/SequenceNode
+            var nodeRef = (Node)transformation;
+
+            if (nodeRef is RecordNode recordNode)
             {
-                var column = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-                var type = resDfType.DataTypes.Select(t =>
+                foreach (var field in recordNode.Fields)
                 {
-                    if (t is IntType) return (ExpressionNode)new NumberNode(0);
-                    if (t is FloatType) return (ExpressionNode)new FloatNode(0);
-                    if (t is BoolType) return (ExpressionNode)new BooleanNode(false);
-                    return (ExpressionNode)new StringNode("");
-                }).ToList();
+                    string label = string.IsNullOrEmpty(field.Label)
+                        ? InferFieldName(field.Value)
+                        : field.Label;
 
-                resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                    new NamedArgumentNode("columns", new ArrayNode(column)),
-                    new NamedArgumentNode("type", new ArrayNode(type))
-                });
-                resultConstructor.SetType(resDfType);
+                    if (string.IsNullOrEmpty(label))
+                        throw new Exception("Could not infer column name.");
+
+                    loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, label, field.Value));
+                }
             }
-            else if (expr.Type is ArrayType resArrType)
+            else if (nodeRef is AssignNode assign)
             {
-                resultConstructor = new ArrayNode(new List<ExpressionNode>())
-                {
-                    ElementType = resArrType.ElementType
-                };
-                resultConstructor.SetType(resArrType);
+                // The user wrote: x => x.age = 10
+                // We add the assignment directly to the loop body
+                loopBody.Statements.Add(assign);
+            }
+            else if (nodeRef is SequenceNode seq)
+            {
+                // The user wrote: x => { x.age = 10; x.age }
+                loopBody.Statements.Add(seq);
             }
             else
             {
-                throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
+                // Fallback: User wrote a pure expression like x.age - 10
+                string targetField = InferFieldName(transformation);
+                if (string.IsNullOrEmpty(targetField))
+                    throw new Exception("Could not infer which column to update.");
+
+                loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, transformation));
             }
 
-            // 2. Synthesize Assignments & Setup
-            var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
-            var resultAssign = new AssignNode(resultVar, resultConstructor);
-            var indexInit = new AssignNode(iVar, new NumberNode(0));
-
-            // Optimization: Cache the length outside the loop
-            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
-
-            // 3. Loop Logic
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
+            // 4. Create the For Loop
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
             var step = new IncrementNode(new IdNode(iVar));
+            var loop = new ForLoopNode(null!, cond, step, loopBody);
 
-            var loopBody = new SequenceNode();
-
-            // Optimization: Access the Row once and store it in a variable
-            // This row variable must have the RecordType of the source dataframe
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-            var rowAssign = new AssignNode(rowVar, rowAccess);
-            loopBody.Statements.Add(rowAssign);
-
-            // Transform: Replace 'x' with the ID of the row variable, NOT the indexing expression
-            var rowIdReference = new IdNode(rowVar);
-            rowIdReference.SetType(dfType.RowType); // Crucial for field resolution
-
-            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowIdReference);
-
-            // 4. Append to result
-            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
-            loopBody.Statements.Add(addNode);
-
-            var loop = new ForLoopNode(indexInit, cond, step, loopBody);
-
-            // 5. Assemble final program
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(lenAssign); // Added length caching
             program.Statements.Add(loop);
-            program.Statements.Add(new IdNode(resultVar));
+
+            // The final result of the sequence is the cloned (and now modified) dataframe
+            program.Statements.Add(new IdNode(resVar));
 
             return program;
         }
+
+
 
 
         /*
@@ -2863,7 +2871,7 @@ namespace MyCompiler
             ? (uint)IntPtr.Size   // 8 bytes
             : GetTypeSize(expr.ElementType);
 
-            uint capacity = count > 0 ? Math.Min(count * 20, uint.MaxValue) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
+            uint capacity = count > 0 ? Math.Min(count * 200, uint.MaxValue) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
             if (expr.Capacity != null)
                 capacity = Math.Min(count * 20, uint.MaxValue);
 
@@ -4732,7 +4740,7 @@ namespace MyCompiler
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
-        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded.csv")
 
         
         to_csv(df, "CSV/mytest.csv")
@@ -4743,13 +4751,65 @@ namespace MyCompiler
         df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         
         df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
+        df2.map(x => { age: x.age - 10, name: "Harry" })
+        df2.map(x => { age: 10, name: x.name + "_2" })
+        df2.map(x => x.age - 10)
 
         record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
 
         foreach(item in df3) { item.age = item.age + 10 }
 
+        x = dataframe(columns=["name", "age"],type=[string, int])   
+        for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+
+
+        for(i=0; i < 5000000; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
+        
+        x.where(d=> d.age > 50)
+
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
          for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
-        */
+
+
+        df.where(x => x.latitude > -18.0)
+        df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
+        df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
+
+*/
+
+
+        /*
+                Performance test for our Language:
+                1) load in csv: around 11 seconds
+                2) For loop add 5,000,000 rows total around 7 million rows: 
+                    a) CodeGen time: 2.4462 ms
+                    b) Compiler time: 0.0032 ms
+                    c) Full stack: 7865 ms
+                3) where filtering:
+                    a) One where with one condition: around 0.128 seconds - [0.128, 0.166, 0.136, 0.129, 0.126, 0.133, 0.122, 0.131, 0.114, 0.137] avg 0.128 seconds
+                    b) Two where's with one condition each: around 0.185 seconds -  [0.212, 0.170, 0.199, 0.181, 0.186, 0.196, 0.145, 0.165, 0.192, 0.215] avg 0.185 seconds
+                    C) One where with two conditions: around 0.107 seconds - [0.120, 0.121, 0.108, 0.106, 0.107, 0.112, 0.092, 0.089, 0.109, 0.112] avg 0.107 seconds
+
+
+                Performance test for Python:
+                1) load in csv: around 11 seconds
+                2) For loop add 5,000,000 rows total around 7 million rows: 23.5 seconds
+                3) Direct filter test: 0.033 seconds - "df_direct = df[(df["latitude"] > -18.0) & (df["longitude"] < -69.0)]"
+                4) Query filter test:
+                    a) One where with one condition: around 0.228 seconds - [0.240, 0.218, 0.312, 0.225, 0.201, 0.213, 0.217, 0.250, 0.234, 0.200] avg 0.228 seconds
+                    b) Two where's with one condition each: around 0.254 seconds -  [0.236, 0.264, 0.223, 0.257, 0.303, 0.223, 0.242, 0.247, 0.254, 0.299] avg 0.254 seconds
+                    C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
+
+
+                Performance test for R:
+                1) load in csv: around 21.859 seconds
+                2) For loop add 100,000 rows total around 2 million rows (not much added!): 32 seconds - [36, 28, 27, 36, 30, 33, 32, 33, 34, 30] avg 32 seconds 
+                3) Query filter test:
+                    a) One where with one condition: around 0.228 seconds - [0.74 , 0.93, 0.70, 0.68, 0.57, 0.65, 0.67, 0.57, 0.71, 0.67 ] avg 0.74 seconds
+                    b) Two where's with one condition each: around 0.254 seconds -  [0.234 , 0.170, 0.130, 0.188, 0.121, 0.202, 0.160, 0.187, 0.177, 0.301 ] avg 0.187 seconds
+                    C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
+
+
+                */
     }
 }
