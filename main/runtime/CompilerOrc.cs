@@ -859,7 +859,7 @@ namespace MyCompiler
             {
                 for (int i = 0; i < 5; i++) rowIndices.Add(i);
                 rowIndices.Add(-1); // Vertical "..."
-                for (int i = rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
+                for (int i = (int)rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
             }
 
             // --- 5. Formatting Helper ---
