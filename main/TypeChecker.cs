@@ -323,10 +323,14 @@ namespace MyCompiler
 
         public Type VisitRandom(RandomNode expr)
         {
-            Visit(expr.MinValue);
-            Visit(expr.MaxValue);
+            Type minType = Visit(expr.MinValue);
+            Type maxType = Visit(expr.MaxValue);
 
-            expr.SetType(new IntType());
+            if (minType is FloatType || maxType is FloatType)
+                expr.SetType(new FloatType());
+            else
+                expr.SetType(new IntType());
+
             return expr.Type;
         }
 
@@ -432,18 +436,33 @@ namespace MyCompiler
         {
             // 1. Visit children first to resolve their types
             Type sourceType = Visit(expr.SourceExpression);
-            Visit(expr.IndexExpression);
+            Type indexType = Visit(expr.IndexExpression);
 
             Type inferred = new IntType(); // Default
 
-            if (sourceType is ArrayType arrType)
+            if (expr.SourceExpression is IdNode idNode)
             {
-                inferred = arrType.ElementType;
-            }
-            else if (sourceType is DataframeType dfType)
-            {
-                // Use the RowType we carefully built in VisitDataframe
-                inferred = dfType.RowType;
+                var entry = _context.Get(idNode.Name);
+                if (entry?.Type is ArrayType arrType)
+                    inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
+                else if (entry?.Type is DataframeType dfType)
+                {
+                    // if (indexType is StringType index)
+                    // {
+                    //     Type d = new IntType();
+                    //     for (int i = 0; i < dfType.ColumnNames.Count; i++)
+                    //     {
+                    //         if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) d = dfType.DataTypes[i];
+                    //     }
+
+                    //     inferred = new ArrayType(d);
+                    // }
+                    // else
+                    // {
+                    //     inferred = dfType.RowType;
+                    // }
+                         inferred = dfType.RowType;
+                }
             }
 
             expr.SetType(inferred);
@@ -783,7 +802,7 @@ namespace MyCompiler
             else
                 throw new Exception("Add can only be used on arrays and dataframes");
 
-            expr.SetType(new VoidType());
+            expr.SetType(arrayType);
             return expr.Type;
         }
 
