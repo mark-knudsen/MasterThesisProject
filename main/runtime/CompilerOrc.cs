@@ -765,12 +765,11 @@ namespace MyCompiler
                 sparseRows[r] = ExtractRecord(recordPtr, type.RowType);
             }
 
-            return FormatTable(columnNames, sparseRows, colTypes);
+            return FormatTable(columnNames, sparseRows, colTypes, rowCount);
         }
 
-        private string FormatTable(List<string> columnNames, Dictionary<int, List<object>> rows, List<byte> colTypes)
+        private string FormatTable(List<string> columnNames, Dictionary<int, List<object>> rows, List<byte> colTypes, long rowCount)
         {
-            int rowCount = rows.Count;
             bool showAllColumns = _showAllColumns;
             bool showAllRows = _showAllRows;
 
@@ -797,8 +796,6 @@ namespace MyCompiler
 
             while (types.Count < totalCols)
                 types.Add(255);
-
-            //var colWidths = new int[totalCols];
 
             string GetStringValue(object v, int colIndex, int rowIndex)
             {
@@ -863,7 +860,7 @@ namespace MyCompiler
             {
                 for (int i = 0; i < 5; i++) rowIndices.Add(i);
                 rowIndices.Add(-1); // Vertical "..."
-                for (int i = rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
+                for (int i = (int)rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
             }
 
             // --- 5. Formatting Helper ---
