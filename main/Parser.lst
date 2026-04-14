@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 12-04-2026 14:11:16>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 14/04/2026 08:23:27>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 12-04-2026 16:25:56
+//  DateTime: 14/04/2026 09:03:06
 // ==========================================================================
 
 
@@ -122,8 +122,8 @@ Assignment
         var sub = new BinaryOpNode(id, "-", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, sub); 
     }
-    | ID INC              { $$ = new IncrementNode((string)$1); }
-    | ID DECR             { $$ = new DecrementNode((string)$1); }
+    | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
+    | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }
 
     | ID LBRACKET expr RBRACKET ASSIGN expr    
     {
