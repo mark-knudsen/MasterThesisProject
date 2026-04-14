@@ -198,12 +198,12 @@ expr
             $7 as ExpressionNode
         );
     }
-    | expr DOT MAP LPAREN ID LAMBDA expr RPAREN
-    {
+    | expr DOT MAP LPAREN ID LAMBDA expr_list RPAREN   /* df.map(x => x.name+"_2", x.age + 10 )  */
+    {   
         $$ = new MapNode(
             new IdNode((string)$5),
             $1 as ExpressionNode,
-            $7 as ExpressionNode
+            $7 as List<ExpressionNode>
         );
     }
   

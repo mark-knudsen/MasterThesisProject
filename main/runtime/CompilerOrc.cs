@@ -2248,7 +2248,7 @@ namespace MyCompiler
             if (expr.Type is DataframeType)
             {
                 Console.WriteLine("DATAFRAME RESULT..............................................................");
-                program = MapForDataframe(sourceType, expr);
+                program = MapForDataframe(expr);
             }
             else if (expr.Type is ArrayType)
             {
@@ -2293,8 +2293,9 @@ namespace MyCompiler
 
             var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
+
             // Transform element
-            var mappedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
+            var mappedValue = ReplaceIterator(expr.Assignments[0], expr.IteratorId.Name, currentElement);
 
             // Use .add() for dynamic growth, same as 'where'
             var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
@@ -2328,7 +2329,7 @@ namespace MyCompiler
             return null;
         }
 
-        public SequenceNode MapForDataframe(Type sourceType, MapNode expr)
+        public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
             var srcVar = "__map_src";
@@ -2347,46 +2348,50 @@ namespace MyCompiler
             var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
 
             // Replace the iterator 'x' in the assignment expression with the indexing logic
-            var transformation = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowAccess);
-
-            // 3. Handle the "Patching"
-            // Cast to Node to allow checking against AssignNode/SequenceNode
-            var nodeRef = (Node)transformation;
-
-            if (nodeRef is RecordNode recordNode)
+            foreach (var assignment in expr.Assignments)
             {
-                foreach (var field in recordNode.Fields)
+                var transformation = ReplaceIterator(assignment, expr.IteratorId.Name, rowAccess);
+
+                // 3. Handle the "Patching"
+                // Cast to Node to allow checking against AssignNode/SequenceNode
+                var nodeRef = (Node)transformation;
+
+                if (nodeRef is RecordNode recordNode)
                 {
-                    string label = string.IsNullOrEmpty(field.Label)
-                        ? InferFieldName(field.Value)
-                        : field.Label;
+                    foreach (var field in recordNode.Fields)
+                    {
+                        string label = string.IsNullOrEmpty(field.Label)
+                            ? InferFieldName(field.Value)
+                            : field.Label;
 
-                    if (string.IsNullOrEmpty(label))
-                        throw new Exception("Could not infer column name.");
+                        if (string.IsNullOrEmpty(label))
+                            throw new Exception("Could not infer column name.");
 
-                    loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, label, field.Value));
+                        loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, label, field.Value));
+                    }
+                }
+                else if (nodeRef is AssignNode assign)
+                {
+                    // The user wrote: x => x.age = 10
+                    // We add the assignment directly to the loop body
+                    loopBody.Statements.Add(assign);
+                }
+                else if (nodeRef is SequenceNode seq)
+                {
+                    // The user wrote: x => { x.age = 10; x.age }
+                    loopBody.Statements.Add(seq);
+                }
+                else
+                {
+                    // Fallback: User wrote a pure expression like x.age - 10
+                    string targetField = InferFieldName(transformation);
+                    if (string.IsNullOrEmpty(targetField))
+                        throw new Exception("Could not infer which column to update.");
+
+                    loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, transformation));
                 }
             }
-            else if (nodeRef is AssignNode assign)
-            {
-                // The user wrote: x => x.age = 10
-                // We add the assignment directly to the loop body
-                loopBody.Statements.Add(assign);
-            }
-            else if (nodeRef is SequenceNode seq)
-            {
-                // The user wrote: x => { x.age = 10; x.age }
-                loopBody.Statements.Add(seq);
-            }
-            else
-            {
-                // Fallback: User wrote a pure expression like x.age - 10
-                string targetField = InferFieldName(transformation);
-                if (string.IsNullOrEmpty(targetField))
-                    throw new Exception("Could not infer which column to update.");
 
-                loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, transformation));
-            }
 
             // 4. Create the For Loop
             var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
@@ -2687,7 +2692,7 @@ namespace MyCompiler
 
             // 6. Replace iterator (d => ...) with actual element
             var mappedExpr = ReplaceIterator(
-                expr.Assignment,
+                expr.Assignments[0],
                 expr.IteratorId.Name,
                 currentElement
             );

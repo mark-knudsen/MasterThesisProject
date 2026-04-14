@@ -351,13 +351,15 @@ namespace MyCompiler
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public ExpressionNode Assignment { get; }
+        public List<ExpressionNode> Assignments { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode assignment)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<ExpressionNode> assignments)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
-            Assignment = assignment;
+            Assignments = assignments;
+
+            System.Console.WriteLine("AST: assignment count: " + Assignments.Count);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
