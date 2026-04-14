@@ -293,7 +293,7 @@ namespace MyCompiler
         {
             var idType = Visit(expr.Id);
             expr.SetType(idType);
-            System.Console.WriteLine($"[DEBUG] IncrementNode: After setting type, variable '{(expr.Id as IdNode).Name}' has type {expr.Type}");
+            //Console.WriteLine($"[DEBUG] IncrementNode: After setting type, variable '{(expr.Id as IdNode).Name}' has type {expr.Type}");
             return expr.Type;
         }
 
@@ -447,21 +447,18 @@ namespace MyCompiler
                     inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
                 {
-                    // if (indexType is StringType index)
-                    // {
-                    //     Type d = new IntType();
-                    //     for (int i = 0; i < dfType.ColumnNames.Count; i++)
-                    //     {
-                    //         if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) d = dfType.DataTypes[i];
-                    //     }
+                    if (indexType is StringType)
+                    {
+                        Type columnType = new IntType();
+                        for (int i = 0; i < dfType.ColumnNames.Count; i++)
+                        {
+                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
+                        }
 
-                    //     inferred = new ArrayType(d);
-                    // }
-                    // else
-                    // {
-                    //     inferred = dfType.RowType;
-                    // }
-                         inferred = dfType.RowType;
+                        inferred = new ArrayType(columnType);
+                    }
+                    else
+                        inferred = dfType.RowType;
                 }
             }
 
