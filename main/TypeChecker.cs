@@ -575,7 +575,7 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitMap(MapNode expr)   // arr.map(x=> x+1)    df.map(x => x.age + 10, x.name + " Smith")
+        public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
             Type iteratorType;
@@ -594,52 +594,52 @@ namespace MyCompiler
             {
                 Visit(expr.IteratorId);
 
-                Type resultType = new VoidType();
-                System.Console.WriteLine("assignment count: " + expr.Assignments.Count);
+                // Start with the current dataframe type (or a default)
+                Type resultType = sourceType;
+
                 foreach (var assignment in expr.Assignments)
                 {
+                    // 1. Visit the assignment to ensure internal types are set
                     var bodyType = Visit(assignment);
 
                     if (sourceType is DataframeType sourceDf)
                     {
-                        foreach (var item in expr.Assignments)
+                        // 2. Use the 'assignment' (Node) directly, don't cast to ExpressionNode
+                        string targetField = InferFieldName(assignment);
+
+                        if (targetField == null)
+                            throw new Exception("Could not infer column name. Use '{column: value}' syntax.");
+
+                        var currentDf = (DataframeType)resultType;
+                        var newTypes = currentDf.DataTypes.ToList();
+                        var newRowFields = new List<RecordField>();
+
+                        for (int i = 0; i < currentDf.ColumnNames.Count; i++)
                         {
-                            string targetField = InferFieldName(item);
+                            var colName = currentDf.ColumnNames[i];
+                            Type colType = currentDf.DataTypes[i];
 
-                            if (targetField == null)
-                                throw new Exception("Could not infer column name. Use '{column: value}' syntax.");
-
-                            var newTypes = sourceDf.DataTypes.ToList();
-                            var newRowFields = new List<RecordField>();
-
-                            for (int i = 0; i < sourceDf.ColumnNames.Count; i++)
+                            if (colName == targetField)
                             {
-                                var colName = sourceDf.ColumnNames[i];
-                                Type colType = sourceDf.DataTypes[i];
-
-                                // If this is the column we inferred (e.g. "age"), update its type
-                                if (colName == targetField)
-                                {
-                                    colType = (bodyType is RecordType rt)
-                                        ? (rt.RecordFields.FirstOrDefault(f => f.Label == colName)?.Type ?? bodyType)
-                                        : bodyType;
-                                }
-
-                                newTypes[i] = colType;
-                                newRowFields.Add(new RecordField { Label = colName, Type = colType });
+                                // Update the column type. 
+                                // If it's a statement (Void), we keep the original column type
+                                // If it's an expression, we use the expression's type
+                                colType = (bodyType is VoidType) ? colType : bodyType;
                             }
 
-                            resultType = new DataframeType(sourceDf.ColumnNames, newTypes, new RecordType(newRowFields));
+                            newTypes[i] = colType;
+                            newRowFields.Add(new RecordField { Label = colName, Type = colType });
                         }
 
+                        resultType = new DataframeType(currentDf.ColumnNames, newTypes, new RecordType(newRowFields));
                     }
                     else
                     {
                         resultType = new ArrayType(bodyType);
                     }
-
                 }
-                System.Console.WriteLine($"[DEBUG] Map inferred type: {resultType}");
+
+                //System.Console.WriteLine($"[DEBUG] Map inferred type: {resultType}");
                 expr.SetType(resultType);
                 return resultType;
             }
@@ -649,23 +649,21 @@ namespace MyCompiler
             }
         }
 
+
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
-        private string InferFieldName(ExpressionNode node)
+        private string InferFieldName(Node node)
         {
-            // Case 1: x.age
+            if (node == null) return null;
+
+            // Handle x.longitude = 100.0
+            if (node is RecordFieldAssignNode rfan) return rfan.IdField;
+
+            // Handle x.longitude
             if (node is RecordFieldNode rf) return rf.IdField;
 
-            // Case 2: x.age - 10 (Binary operation)
+            // Handle x.longitude + 1
             if (node is BinaryOpNode bin)
                 return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
-
-            // Case 3: { age: x.age - 10 } (The user provided a label)
-            if (node is RecordNode rec && rec.Fields.Count > 0)
-            {
-                var firstField = rec.Fields[0];
-                if (!string.IsNullOrEmpty(firstField.Label)) return firstField.Label;
-                return InferFieldName(firstField.Value);
-            }
 
             return null;
         }

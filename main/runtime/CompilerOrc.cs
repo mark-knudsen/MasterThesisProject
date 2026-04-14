@@ -2295,7 +2295,7 @@ namespace MyCompiler
 
 
             // Transform element
-            var mappedValue = ReplaceIterator(expr.Assignments[0], expr.IteratorId.Name, currentElement);
+            var mappedValue = ReplaceIterator(expr.Assignments[0] as ExpressionNode, expr.IteratorId.Name, currentElement);
 
             // Use .add() for dynamic growth, same as 'where'
             var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
@@ -2314,17 +2314,26 @@ namespace MyCompiler
             return program;
         }
 
-        private string InferFieldName(ExpressionNode node)
+        private string InferFieldName(Node node)
         {
+            if (node == null) return null;
+
+            // 1. Direct Assignment: x.longitude = 100.0
+            // This is crucial for the Type Checker and the Compiler to know the column name.
+            if (node is RecordFieldAssignNode rfan)
+                return rfan.IdField;
+
+            // 2. Property Access: x.longitude
             if (node is RecordFieldNode rf)
                 return rf.IdField;
 
+            // 3. Binary Operations: x.longitude - 100.0
             if (node is BinaryOpNode bin)
                 return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
 
-            // If ReplaceIterator has already run, x.age becomes (resVar[i]).age
-            // This might appear as a RecordFieldNode where the IdRecord is an IndexNode
-            // Your existing RecordFieldNode logic above should handle this!
+            // 4. Fallback for ID nodes if necessary
+            if (node is IdNode id)
+                return id.Name;
 
             return null;
         }
@@ -2336,75 +2345,47 @@ namespace MyCompiler
             var resVar = "__map_result";
             var iVar = "__map_i";
 
-            // 1. Setup variables: src = original, res = deep copy of original
+            // 1. Setup: result = copy(source)
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
             program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
             program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
-            // 2. Build the Loop Body
             var loopBody = new SequenceNode();
-
-            // Access the row in the CLONED dataframe: x = resVar[i]
+            // What 'x' becomes: __map_result[__map_i]
             var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
 
-            // Replace the iterator 'x' in the assignment expression with the indexing logic
-            foreach (var assignment in expr.Assignments)
+            foreach (var assignmentNode in expr.Assignments)
             {
-                var transformation = ReplaceIterator(assignment, expr.IteratorId.Name, rowAccess);
+                // Replace iterator 'x' in the original node (handles both Statement and Expression)
+                Node transformed = ReplaceIteratorInNode(assignmentNode, expr.IteratorId.Name, rowAccess);
 
-                // 3. Handle the "Patching"
-                // Cast to Node to allow checking against AssignNode/SequenceNode
-                var nodeRef = (Node)transformation;
-
-                if (nodeRef is RecordNode recordNode)
+                if (transformed is RecordFieldAssignNode rfan)
                 {
-                    foreach (var field in recordNode.Fields)
+                    // Case: x.longitude = 100.0 -> rowAccess.longitude = 100.0
+                    loopBody.Statements.Add(rfan);
+                }
+                else if (transformed is ExpressionNode en)
+                {
+                    // Case: x.longitude - 100.0 -> rowAccess.longitude = (rowAccess.longitude - 100.0)
+                    string targetField = InferFieldName(assignmentNode);
+                    if (targetField != null)
                     {
-                        string label = string.IsNullOrEmpty(field.Label)
-                            ? InferFieldName(field.Value)
-                            : field.Label;
-
-                        if (string.IsNullOrEmpty(label))
-                            throw new Exception("Could not infer column name.");
-
-                        loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, label, field.Value));
+                        loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, en));
                     }
-                }
-                else if (nodeRef is AssignNode assign)
-                {
-                    // The user wrote: x => x.age = 10
-                    // We add the assignment directly to the loop body
-                    loopBody.Statements.Add(assign);
-                }
-                else if (nodeRef is SequenceNode seq)
-                {
-                    // The user wrote: x => { x.age = 10; x.age }
-                    loopBody.Statements.Add(seq);
-                }
-                else
-                {
-                    // Fallback: User wrote a pure expression like x.age - 10
-                    string targetField = InferFieldName(transformation);
-                    if (string.IsNullOrEmpty(targetField))
-                        throw new Exception("Could not infer which column to update.");
-
-                    loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, transformation));
                 }
             }
 
-
-            // 4. Create the For Loop
+            // 2. Build the For Loop
             var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
             var step = new IncrementNode(new IdNode(iVar));
-            var loop = new ForLoopNode(null!, cond, step, loopBody);
+            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
-            program.Statements.Add(loop);
-
-            // The final result of the sequence is the cloned (and now modified) dataframe
+            // 3. The result of the sequence is the modified dataframe
             program.Statements.Add(new IdNode(resVar));
 
             return program;
         }
+
 
 
 
@@ -2431,8 +2412,6 @@ namespace MyCompiler
         return dfcopy;
 
         */
-
-
 
 
         public LLVMValueRef VisitCopy(CopyNode expr)
@@ -2692,7 +2671,7 @@ namespace MyCompiler
 
             // 6. Replace iterator (d => ...) with actual element
             var mappedExpr = ReplaceIterator(
-                expr.Assignments[0],
+                expr.Assignments[0] as ExpressionNode,
                 expr.IteratorId.Name,
                 currentElement
             );
@@ -2729,27 +2708,61 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
+
+
+        public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
+        {
+            if (node == null) return null;
+
+            // Handle Statements (Assignments that aren't ExpressionNodes)
+            if (node is RecordFieldAssignNode rfan)
+            {
+                var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
+                var newAssign = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
+                return new RecordFieldAssignNode(newRec, rfan.IdField, newAssign);
+            }
+
+            // Fall back to the expression replacer for everything else
+            if (node is ExpressionNode expr)
+            {
+                return ReplaceIterator(expr, iteratorName, replacement);
+            }
+
+            return node;
+        }
+
+
         public ExpressionNode ReplaceIterator(ExpressionNode node, string iteratorName, ExpressionNode replacement)
         {
             if (node == null) return null;
 
-            // 1. Base Case: The ID itself (e.g., $row)
+            // 1. Base Case: The ID itself (e.g., x)
             if (node is IdNode id && id.Name == iteratorName)
             {
                 return replacement;
             }
 
-            // 2. RecordFieldNode: This replaces PropertyAccessNode
-            // This handles $row.columnName
+            // 2. RecordFieldNode (Handles x.columnName)
             if (node is RecordFieldNode rf)
             {
                 var newSrc = ReplaceIterator(rf.IdRecord, iteratorName, replacement);
                 var newRf = new RecordFieldNode(newSrc, rf.IdField);
-                newRf.SetType(rf.Type); // Preserve the type found during initial analysis
+                newRf.SetType(rf.Type);
                 return newRf;
             }
 
-            // 3. NamedArgumentNode
+            // 3. IndexAssignNode (e.g., x[0] = 10) - Since this is an ExpressionNode in your AST
+            if (node is IndexAssignNode ian)
+            {
+                var newArr = ReplaceIterator(ian.ArrayExpression, iteratorName, replacement);
+                var newIdx = ReplaceIterator(ian.IndexExpression, iteratorName, replacement);
+                var newAss = ReplaceIterator(ian.AssignExpression, iteratorName, replacement);
+                var newNode = new IndexAssignNode(newArr, newIdx, newAss);
+                newNode.SetType(ian.Type);
+                return newNode;
+            }
+
+            // 4. NamedArgumentNode
             if (node is NamedArgumentNode arg)
             {
                 var newValue = ReplaceIterator(arg.Value, iteratorName, replacement);
@@ -2758,23 +2771,22 @@ namespace MyCompiler
                 return newArg;
             }
 
-            // 4. RecordNode
+            // 5. RecordNode
             if (node is RecordNode rec)
             {
-                var newFields = new List<NamedArgumentNode>();
-                foreach (var field in rec.Fields)
+                var newFields = rec.Fields.Select(f =>
                 {
-                    var newValue = ReplaceIterator(field.Value, iteratorName, replacement);
-                    var newField = new NamedArgumentNode(field.Label, newValue);
-                    newField.SetType(field.Type);
-                    newFields.Add(newField);
-                }
+                    var val = ReplaceIterator(f.Value, iteratorName, replacement);
+                    var argNode = new NamedArgumentNode(f.Label, val);
+                    argNode.SetType(f.Type);
+                    return argNode;
+                }).ToList();
                 var newRec = new RecordNode(newFields);
                 newRec.SetType(rec.Type);
                 return newRec;
             }
 
-            // 5. Comparison
+            // 6. Comparison
             if (node is ComparisonNode comp)
             {
                 var newComp = new ComparisonNode(
@@ -2786,7 +2798,7 @@ namespace MyCompiler
                 return newComp;
             }
 
-            // 6. Binary Operations
+            // 7. Binary Operations (Handles x.longitude - 100.0)
             if (node is BinaryOpNode bin)
             {
                 var newBin = new BinaryOpNode(
@@ -2798,7 +2810,7 @@ namespace MyCompiler
                 return newBin;
             }
 
-            // 7. Indexing
+            // 8. Indexing (Read access: x[0])
             if (node is IndexNode idx)
             {
                 var nSrc = ReplaceIterator(idx.SourceExpression, iteratorName, replacement);
@@ -2808,19 +2820,20 @@ namespace MyCompiler
                 return newNode;
             }
 
-            // 8. Unary
+            // 9. Unary
             if (node is UnaryOpNode un)
             {
                 var newUn = new UnaryOpNode(un.Operator, ReplaceIterator(un.Operand, iteratorName, replacement));
                 newUn.SetType(un.Type);
                 return newUn;
             }
-            // 9. Logical Operations (and, or)
+
+            // 10. Logical Operations
             if (node is LogicalOpNode log)
             {
                 var newLog = new LogicalOpNode(
                     ReplaceIterator(log.Left, iteratorName, replacement),
-                    log.Operator, // or log.Op depending on your property name
+                    log.Operator,
                     ReplaceIterator(log.Right, iteratorName, replacement)
                 );
                 newLog.SetType(log.Type);
@@ -2829,6 +2842,28 @@ namespace MyCompiler
 
             return node;
         }
+
+
+
+        public Node ReplaceIteratorInStatement(Node node, string iteratorName, ExpressionNode replacement)
+        {
+            if (node is RecordFieldAssignNode rfan)
+            {
+                var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
+                var newAssign = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
+                return new RecordFieldAssignNode(newRec, rfan.IdField, newAssign);
+            }
+
+            // If it's an expression (like IndexAssign or a BinaryOp), use the expression replacer
+            if (node is ExpressionNode expr)
+            {
+                return ReplaceIterator(expr, iteratorName, replacement);
+            }
+
+            return node;
+        }
+
+
 
         private bool IsReferenceType(Type t)
         {
