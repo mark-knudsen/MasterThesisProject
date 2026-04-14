@@ -151,10 +151,10 @@ expr
     | ID                  { $$ = new IdNode((string)$1); }
     | PRINT LPAREN expr RPAREN 
                           { $$ = new PrintNode($3 as ExpressionNode); }
-    | RANDOM LPAREN expr COMMA expr RPAREN    
-                          { $$ = new RandomNode($3 as ExpressionNode, $5 as ExpressionNode); }
-    | ROUND LPAREN expr COMMA expr RPAREN 
-                          { $$ = new RoundNode($3 as ExpressionNode, $5 as ExpressionNode); }
+    | RANDOM LPAREN expr_list RPAREN
+                          { $$ = new RandomNode($3 as List<ExpressionNode>); }
+    | ROUND LPAREN expr_list RPAREN
+                          { $$ = new RoundNode(($3 as List<ExpressionNode>)[0], ($3 as List<ExpressionNode>)[1]); }
     | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
     | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }

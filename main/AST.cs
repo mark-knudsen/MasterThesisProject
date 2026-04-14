@@ -43,14 +43,17 @@ namespace MyCompiler
     // Represents Random function
     public class RandomNode : ExpressionNode
     {
-        public ExpressionNode MinValue { get; set; }
-        public ExpressionNode MaxValue { get; set; }
+        public List<ExpressionNode> Arguments { get; }
 
-        public RandomNode(ExpressionNode minValue, ExpressionNode maxValue)
+        public RandomNode(List<ExpressionNode> args)
         {
-            MinValue = minValue;
-            MaxValue = maxValue;
+            Arguments = args;
         }
+
+        public ExpressionNode MinValue => Arguments[0];
+        public ExpressionNode MaxValue => Arguments[1];
+        public ExpressionNode? Decimals => Arguments.Count > 2 ? Arguments[2] : null;
+
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandom(this);
     }
 

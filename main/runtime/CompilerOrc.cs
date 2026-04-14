@@ -1824,11 +1824,14 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRandom(RandomNode expr)
         {
+            if (expr.Arguments.Count < 2 || expr.Arguments.Count > 3)
+                throw new Exception("random() expects 2 or 3 arguments");
+
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var doubleType = ctx.DoubleType;
 
-            // 1. Ensure rand() exists
+            // Ensure rand()
             var randFunc = _module.GetNamedFunction("rand");
             if (randFunc.Handle == IntPtr.Zero)
             {
@@ -1843,7 +1846,9 @@ namespace MyCompiler
                 "rand"
             );
 
+            // =========================
             // CASE 1: INTEGER RANDOM
+            // =========================
             if (expr.Type is IntType)
             {
                 var min = Visit(expr.MinValue);
@@ -1870,7 +1875,7 @@ namespace MyCompiler
 
                 _builder.BuildCondBr(cond, thenBB, elseBB);
 
-                // ---- THEN: min <= max ----
+                // THEN
                 _builder.PositionAtEnd(thenBB);
 
                 var range1 = _builder.BuildAdd(
@@ -1883,11 +1888,9 @@ namespace MyCompiler
                 var res1 = _builder.BuildAdd(mod1, min, "res1");
 
                 _builder.BuildBr(mergeBB);
-
-                // capture block AFTER building instructions
                 var thenEnd = _builder.InsertBlock;
 
-                // ---- ELSE: min > max ----
+                // ELSE
                 _builder.PositionAtEnd(elseBB);
 
                 var range2 = _builder.BuildAdd(
@@ -1900,10 +1903,9 @@ namespace MyCompiler
                 var res2 = _builder.BuildAdd(mod2, max, "res2");
 
                 _builder.BuildBr(mergeBB);
-
                 var elseEnd = _builder.InsertBlock;
 
-                // ---- MERGE ----
+                // MERGE
                 _builder.PositionAtEnd(mergeBB);
 
                 var phi = _builder.BuildPhi(i64, "rand_int");
@@ -1917,7 +1919,9 @@ namespace MyCompiler
                 return phi;
             }
 
+            // =========================
             // CASE 2: FLOAT RANDOM
+            // =========================
             else if (expr.Type is FloatType)
             {
                 var min = Visit(expr.MinValue);
@@ -1932,13 +1936,54 @@ namespace MyCompiler
                 // rand -> double
                 var randFp = _builder.BuildSIToFP(randCall, doubleType, "rand_fp");
 
-                // normalize to [0,1]
-                var randMax = LLVMValueRef.CreateConstReal(doubleType, (double)int.MaxValue);
+                var randMax = LLVMValueRef.CreateConstReal(doubleType, 32767.0);
+
                 var normalized = _builder.BuildFDiv(randFp, randMax, "norm");
 
                 var range = _builder.BuildFSub(max, min, "range");
                 var scaled = _builder.BuildFMul(normalized, range, "scaled");
                 var result = _builder.BuildFAdd(scaled, min, "rand_float");
+
+                // APPLY DECIMALS IF PRESENT
+                if (expr.Decimals != null)
+                {
+                    var decimals = EnsureFloat(Visit(expr.Decimals), expr.Decimals.Type);
+
+                    var powType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
+                    var roundType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
+
+                    var powFunc = _module.GetNamedFunction("pow");
+                    if (powFunc.Handle == IntPtr.Zero)
+                        powFunc = _module.AddFunction("pow", powType);
+
+                    var roundFunc = _module.GetNamedFunction("round");
+                    if (roundFunc.Handle == IntPtr.Zero)
+                        roundFunc = _module.AddFunction("round", roundType);
+
+                    // optional: force decimals to integer
+                    decimals = _builder.BuildFPToSI(decimals, i64, "dec_int");
+                    decimals = _builder.BuildSIToFP(decimals, doubleType, "dec_back");
+
+                    var ten = LLVMValueRef.CreateConstReal(doubleType, 10.0);
+
+                    var multiplier = _builder.BuildCall2(
+                        powType,
+                        powFunc,
+                        new[] { ten, decimals },
+                        "multiplier"
+                    );
+
+                    var temp = _builder.BuildFMul(result, multiplier, "temp");
+
+                    var roundedTemp = _builder.BuildCall2(
+                        roundType,
+                        roundFunc,
+                        new[] { temp },
+                        "roundedTemp"
+                    );
+
+                    result = _builder.BuildFDiv(roundedTemp, multiplier, "rounded_random");
+                }
 
                 return result;
             }

@@ -323,13 +323,34 @@ namespace MyCompiler
 
         public Type VisitRandom(RandomNode expr)
         {
+            if (expr.Arguments.Count < 2 || expr.Arguments.Count > 3)
+                throw new Exception("random() expects 2 or 3 arguments");
+
             Type minType = Visit(expr.MinValue);
             Type maxType = Visit(expr.MaxValue);
 
-            if (minType is FloatType || maxType is FloatType)
+            // If decimals argument exists, validate it
+            if (expr.Decimals != null)
+            {
+                Type decType = Visit(expr.Decimals);
+
+                if (!(decType is IntType || decType is FloatType))
+                    throw new Exception("random() decimals must be numeric");
+            }
+
+            // If decimals is present → ALWAYS float
+            if (expr.Decimals != null)
+            {
                 expr.SetType(new FloatType());
+            }
             else
-                expr.SetType(new IntType());
+            {
+                // Otherwise infer like before
+                if (minType is FloatType || maxType is FloatType)
+                    expr.SetType(new FloatType());
+                else
+                    expr.SetType(new IntType());
+            }
 
             return expr.Type;
         }
@@ -488,6 +509,11 @@ namespace MyCompiler
         public Type VisitRound(RoundNode expr)
         {
             Visit(expr.Value);
+            Type decType = Visit(expr.Decimals);
+
+            if (!(decType is IntType || decType is FloatType))
+                throw new Exception("round() decimals must be numeric");
+
             expr.SetType(new FloatType());
             return expr.Type;
         }
