@@ -52,7 +52,7 @@ namespace MyCompiler
 
         public ExpressionNode MinValue => Arguments[0];
         public ExpressionNode MaxValue => Arguments[1];
-        public ExpressionNode? Decimals => Arguments.Count > 2 ? Arguments[2] : null;
+        public ExpressionNode Decimals => Arguments.Count > 2 ? Arguments[2] : null;
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandom(this);
     }
