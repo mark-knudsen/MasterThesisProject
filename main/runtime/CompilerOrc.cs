@@ -2641,6 +2641,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(exitBlock);
         }
 
+        // Not used!
         public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
         {
             // Temp variable names
@@ -4525,11 +4526,13 @@ namespace MyCompiler
             return arrayType;
         }
 
+        // Not used!
         private LLVMTypeRef GetArrayPtrType()
         {
             return LLVMTypeRef.CreatePointer(GetOrCreateArrayType(), 0);
         }
 
+        // Not used!
         private LLVMTypeRef GetDataframePtrType()
         {
             return LLVMTypeRef.CreatePointer(GetOrCreateDataframeType(), 0);

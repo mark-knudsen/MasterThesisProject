@@ -285,6 +285,26 @@ namespace MyCompiler
                         userInput.Clear();
                         continue;
                     }
+                    if (userInput.ToString() == "help")
+                    {
+                        Console.WriteLine("\nAvailable commands:\n");
+
+                        Console.WriteLine("exit          - Exit the shell");
+                        Console.WriteLine("table         - Show variable table");
+                        Console.WriteLine("clearTable    - Clear variable table");
+                        Console.WriteLine("verbose       - Toggle verbose/debug mode");
+                        Console.WriteLine("multi lines   - Toggle multi-line input");
+                        Console.WriteLine("stopwatch     - Toggle execution timing");
+                        Console.WriteLine("allcolumns    - Toggle showing all columns");
+                        Console.WriteLine("allrows       - Toggle showing all rows");
+                        Console.WriteLine("showall       - Toggle all columns and rows");
+                        Console.WriteLine("help          - Show this help menu");
+
+                        Console.WriteLine(); // spacing
+
+                        userInput.Clear();
+                        continue;
+                    }
 
 
                     try
