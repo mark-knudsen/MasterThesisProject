@@ -6,7 +6,7 @@
     public object obj; 
     public bool boolVal;
     public double fval;
-    public MyCompiler.Type type; 
+    /* public MyCompiler.Type type; // Commented out, not used! */ 
     public MyCompiler.Node node; // Add this to hold AST pieces
     public MyCompiler.ExpressionNode expr; // Single expression
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list
@@ -43,7 +43,6 @@
 %type <node> Prog Statement StatementList Assignment
 %type <node> expr
 %type <expr> Type
-%type <obj> params  /* Use <obj> for lists */
 
 %type <expr> arg
 %type <exprList> expr_list
@@ -253,11 +252,6 @@ expr
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
     ;
 
-params
-    : /* empty */ { $$ = new List<string>(); }
-    | ID { var list = new List<string>(); list.Add((string)$1); $$ = list; }
-    | params COMMA ID { var list = (List<string>)$1; list.Add((string)$3); $$ = list; }
-    ;
 
 arg_list
     : arg                  { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }

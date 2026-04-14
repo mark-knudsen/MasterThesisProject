@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 13-04-2026 19:40:29
-// Input file <Parser/Parser.y - 13-04-2026 16:56:09>
+// DateTime: 14-04-2026 10:45:10
+// Input file <Parser/Parser.y - 14-04-2026 10:42:55>
 
 // options: lines gplex
 
@@ -37,7 +37,7 @@ internal struct ValueType
     public object obj; 
     public bool boolVal;
     public double fval;
-    public MyCompiler.Type type; 
+    /* public MyCompiler.Type type; // Commented out, not used! */ 
     public MyCompiler.Node node; // Add this to hold AST pieces
     public MyCompiler.ExpressionNode expr; // Single expression
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list
@@ -66,20 +66,20 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 13-04-2026 16:56:09
-#line 55 "Parser/Parser.y"
+  // Verbatim content from Parser/Parser.y - 14-04-2026 10:42:55
+#line 54 "Parser/Parser.y"
     public MyCompiler.Node RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 13-04-2026 16:56:09
+  // End verbatim content from Parser/Parser.y - 14-04-2026 10:42:55
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
 #pragma warning restore 649
-  private static Rule[] rules = new Rule[92];
+  private static Rule[] rules = new Rule[89];
   private static State[] states = new State[231];
   private static string[] nonTerms = new string[] {
-      "Prog", "Statement", "StatementList", "Assignment", "expr", "Type", "params", 
-      "arg", "expr_list", "arg_list", "$accept", };
+      "Prog", "Statement", "StatementList", "Assignment", "expr", "Type", "arg", 
+      "expr_list", "arg_list", "$accept", };
 
   static Parser() {
     states[0] = new State(new int[]{6,7,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215},new int[]{-1,1,-3,3,-2,224,-4,6,-5,189,-6,47});
@@ -160,19 +160,19 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     states[75] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,76,-6,47});
     states[76] = new State(new int[]{26,77,11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34});
     states[77] = new State(-42);
-    states[78] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,88,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,22,113},new int[]{-9,79,-10,126,-5,128,-6,47,-8,112});
+    states[78] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,88,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,22,113},new int[]{-8,79,-9,126,-5,128,-6,47,-7,112});
     states[79] = new State(new int[]{30,80,17,81});
     states[80] = new State(-55);
     states[81] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,82,-6,47});
     states[82] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-30,17,-30});
-    states[83] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-10,84,-8,112,-5,120,-6,47});
+    states[83] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-9,84,-7,112,-5,120,-6,47});
     states[84] = new State(new int[]{28,85,17,86});
     states[85] = new State(-56);
-    states[86] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-8,87,-5,120,-6,47});
-    states[87] = new State(-86);
+    states[86] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-7,87,-5,120,-6,47});
+    states[87] = new State(-83);
     states[88] = new State(new int[]{15,89,19,124,29,59,11,-39,12,-39,13,-39,14,-39,73,-39,74,-39,67,-39,68,-39,69,-39,70,-39,71,-39,72,-39,18,-39,30,-39,17,-39,28,-39,26,-39});
     states[89] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,90,-6,47});
-    states[90] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-87,17,-87,28,-87,26,-87});
+    states[90] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-84,17,-84,28,-84,26,-84});
     states[91] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,92,-6,47});
     states[92] = new State(new int[]{26,93,11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34});
     states[93] = new State(-59);
@@ -190,24 +190,24 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     states[105] = new State(-73);
     states[106] = new State(new int[]{25,107});
     states[107] = new State(new int[]{27,108});
-    states[108] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-10,109,-8,112,-5,120,-6,47});
+    states[108] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-9,109,-7,112,-5,120,-6,47});
     states[109] = new State(new int[]{28,110,17,86});
     states[110] = new State(new int[]{26,111});
     states[111] = new State(-74);
-    states[112] = new State(-85);
+    states[112] = new State(-82);
     states[113] = new State(new int[]{15,114,19,121});
     states[114] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,115,-6,47});
-    states[115] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-89,17,-89,28,-89,26,-89});
+    states[115] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-86,17,-86,28,-86,26,-86});
     states[116] = new State(new int[]{25,117});
-    states[117] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-10,118,-8,112,-5,120,-6,47});
+    states[117] = new State(new int[]{6,88,22,113,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-9,118,-7,112,-5,120,-6,47});
     states[118] = new State(new int[]{26,119,17,86});
     states[119] = new State(-79);
-    states[120] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,28,-91,17,-91,30,-91,26,-91});
+    states[120] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,28,-88,17,-88,30,-88,26,-88});
     states[121] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,122,-6,47});
-    states[122] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-90,17,-90,28,-90,26,-90});
+    states[122] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-87,17,-87,28,-87,26,-87});
     states[123] = new State(-72);
     states[124] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,125,-6,47});
-    states[125] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-88,17,-88,28,-88,26,-88});
+    states[125] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-85,17,-85,28,-85,26,-85});
     states[126] = new State(new int[]{30,127,17,86});
     states[127] = new State(-57);
     states[128] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,30,-29,17,-29});
@@ -254,7 +254,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     states[169] = new State(-78);
     states[170] = new State(new int[]{25,171});
     states[171] = new State(new int[]{29,172});
-    states[172] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-9,173,-5,176,-6,47});
+    states[172] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-8,173,-5,176,-6,47});
     states[173] = new State(new int[]{30,174,17,81});
     states[174] = new State(new int[]{26,175});
     states[175] = new State(-80);
@@ -292,7 +292,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     states[207] = new State(new int[]{26,208});
     states[208] = new State(new int[]{27,210,6,7,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215},new int[]{-2,209,-4,6,-5,189,-6,47});
     states[209] = new State(-11);
-    states[210] = new State(new int[]{6,225,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215,22,113},new int[]{-3,211,-10,84,-2,224,-4,6,-5,228,-6,47,-8,112});
+    states[210] = new State(new int[]{6,225,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215,22,113},new int[]{-3,211,-9,84,-2,224,-4,6,-5,228,-6,47,-7,112});
     states[211] = new State(new int[]{28,212,16,4,21,213});
     states[212] = new State(-12);
     states[213] = new State(new int[]{6,7,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215,16,-6,21,-6,3,-6,28,-6,32,-6},new int[]{-2,214,-4,6,-5,189,-6,47});
@@ -303,20 +303,20 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     states[218] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,219,-6,47});
     states[219] = new State(new int[]{26,220,11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34});
     states[220] = new State(new int[]{27,221,6,7,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215},new int[]{-3,229,-2,224,-4,6,-5,189,-6,47});
-    states[221] = new State(new int[]{6,225,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215,22,113},new int[]{-3,222,-10,84,-2,224,-4,6,-5,228,-6,47,-8,112});
+    states[221] = new State(new int[]{6,225,9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116,31,194,33,201,34,215,22,113},new int[]{-3,222,-9,84,-2,224,-4,6,-5,228,-6,47,-7,112});
     states[222] = new State(new int[]{28,223,16,4,21,213});
     states[223] = new State(-13);
     states[224] = new State(-3);
     states[225] = new State(new int[]{15,226,23,178,24,180,36,182,37,183,29,184,19,124,18,-39,11,-39,12,-39,13,-39,14,-39,73,-39,74,-39,67,-39,68,-39,69,-39,70,-39,71,-39,72,-39,28,-39,16,-39,21,-39,17,-39});
     states[226] = new State(new int[]{9,39,4,40,10,41,12,42,8,44,5,45,7,46,61,48,62,49,63,50,64,51,65,52,66,53,6,58,38,62,39,66,40,72,29,78,27,83,25,91,41,94,42,100,51,106,59,116},new int[]{-5,227,-6,47});
-    states[227] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,28,-22,16,-22,21,-22,17,-87});
-    states[228] = new State(new int[]{18,190,11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,28,-8,16,-8,21,-8,17,-91});
+    states[227] = new State(new int[]{11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,18,34,28,-22,16,-22,21,-22,17,-84});
+    states[228] = new State(new int[]{18,190,11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32,28,-8,16,-8,21,-8,17,-88});
     states[229] = new State(new int[]{16,4,21,213,3,-14,28,-14,32,-14});
     states[230] = new State(new int[]{18,190,11,10,12,12,13,14,14,16,73,18,74,20,67,22,68,24,69,26,70,28,71,30,72,32});
 
     for (int sNo = 0; sNo < states.Length; sNo++) states[sNo].number = sNo;
 
-    rules[1] = new Rule(-11, new int[]{-1,3});
+    rules[1] = new Rule(-10, new int[]{-1,3});
     rules[2] = new Rule(-1, new int[]{-3});
     rules[3] = new Rule(-3, new int[]{-2});
     rules[4] = new Rule(-3, new int[]{-3,16,-2});
@@ -344,8 +344,8 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     rules[26] = new Rule(-4, new int[]{6,37});
     rules[27] = new Rule(-4, new int[]{6,29,-5,30,15,-5});
     rules[28] = new Rule(-4, new int[]{-5,18,6,15,-5});
-    rules[29] = new Rule(-9, new int[]{-5});
-    rules[30] = new Rule(-9, new int[]{-9,17,-5});
+    rules[29] = new Rule(-8, new int[]{-5});
+    rules[30] = new Rule(-8, new int[]{-8,17,-5});
     rules[31] = new Rule(-5, new int[]{9});
     rules[32] = new Rule(-5, new int[]{4});
     rules[33] = new Rule(-5, new int[]{10});
@@ -370,9 +370,9 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     rules[52] = new Rule(-5, new int[]{-5,70,-5});
     rules[53] = new Rule(-5, new int[]{-5,71,-5});
     rules[54] = new Rule(-5, new int[]{-5,72,-5});
-    rules[55] = new Rule(-5, new int[]{29,-9,30});
-    rules[56] = new Rule(-5, new int[]{27,-10,28});
-    rules[57] = new Rule(-5, new int[]{29,-10,30});
+    rules[55] = new Rule(-5, new int[]{29,-8,30});
+    rules[56] = new Rule(-5, new int[]{27,-9,28});
+    rules[57] = new Rule(-5, new int[]{29,-9,30});
     rules[58] = new Rule(-5, new int[]{6,29,-5,30});
     rules[59] = new Rule(-5, new int[]{25,-5,26});
     rules[60] = new Rule(-5, new int[]{-5,18,57,25,-5,26});
@@ -389,24 +389,21 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     rules[71] = new Rule(-5, new int[]{41,25,-5,17,-5,26});
     rules[72] = new Rule(-5, new int[]{41,25,-5,26});
     rules[73] = new Rule(-5, new int[]{42,25,-5,17,-5,26});
-    rules[74] = new Rule(-5, new int[]{51,25,27,-10,28,26});
+    rules[74] = new Rule(-5, new int[]{51,25,27,-9,28,26});
     rules[75] = new Rule(-5, new int[]{-5,18,6});
     rules[76] = new Rule(-5, new int[]{-5,18,50});
     rules[77] = new Rule(-5, new int[]{-5,18,52,25,6,17,-5,26});
     rules[78] = new Rule(-5, new int[]{-5,18,53,25,6,26});
-    rules[79] = new Rule(-5, new int[]{59,25,-10,26});
-    rules[80] = new Rule(-5, new int[]{-5,18,60,25,29,-9,30,26});
+    rules[79] = new Rule(-5, new int[]{59,25,-9,26});
+    rules[80] = new Rule(-5, new int[]{-5,18,60,25,29,-8,30,26});
     rules[81] = new Rule(-5, new int[]{-5,18,22});
-    rules[82] = new Rule(-7, new int[]{});
-    rules[83] = new Rule(-7, new int[]{6});
-    rules[84] = new Rule(-7, new int[]{-7,17,6});
-    rules[85] = new Rule(-10, new int[]{-8});
-    rules[86] = new Rule(-10, new int[]{-10,17,-8});
-    rules[87] = new Rule(-8, new int[]{6,15,-5});
-    rules[88] = new Rule(-8, new int[]{6,19,-5});
-    rules[89] = new Rule(-8, new int[]{22,15,-5});
-    rules[90] = new Rule(-8, new int[]{22,19,-5});
-    rules[91] = new Rule(-8, new int[]{-5});
+    rules[82] = new Rule(-9, new int[]{-7});
+    rules[83] = new Rule(-9, new int[]{-9,17,-7});
+    rules[84] = new Rule(-7, new int[]{6,15,-5});
+    rules[85] = new Rule(-7, new int[]{6,19,-5});
+    rules[86] = new Rule(-7, new int[]{22,15,-5});
+    rules[87] = new Rule(-7, new int[]{22,19,-5});
+    rules[88] = new Rule(-7, new int[]{-5});
   }
 
   protected override void Initialize() {
@@ -422,110 +419,110 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
     switch (action)
     {
       case 2: // Prog -> StatementList
-#line 61 "Parser/Parser.y"
+#line 60 "Parser/Parser.y"
                     { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-1].node; RootNode = CurrentSemanticValue.node; }
 #line default
         break;
       case 3: // StatementList -> Statement
-#line 65 "Parser/Parser.y"
+#line 64 "Parser/Parser.y"
                 { CurrentSemanticValue.node = new SequenceNode(); ((SequenceNode)CurrentSemanticValue.node).Statements.Add(ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 4: // StatementList -> StatementList, SEMICOLON, Statement
-#line 66 "Parser/Parser.y"
+#line 65 "Parser/Parser.y"
                                         { ((SequenceNode)ValueStack[ValueStack.Depth-3].node).Statements.Add(ValueStack[ValueStack.Depth-1].node); CurrentSemanticValue.node = ValueStack[ValueStack.Depth-3].node; }
 #line default
         break;
       case 5: // StatementList -> StatementList, NEWLINE, Statement
-#line 67 "Parser/Parser.y"
+#line 66 "Parser/Parser.y"
                                       { ((SequenceNode)ValueStack[ValueStack.Depth-3].node).Statements.Add(ValueStack[ValueStack.Depth-1].node); CurrentSemanticValue.node = ValueStack[ValueStack.Depth-3].node; }
 #line default
         break;
       case 7: // Statement -> Assignment
-#line 73 "Parser/Parser.y"
+#line 72 "Parser/Parser.y"
                           { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-1].node; }
 #line default
         break;
       case 8: // Statement -> expr
-#line 74 "Parser/Parser.y"
+#line 73 "Parser/Parser.y"
                           { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-1].node; }
 #line default
         break;
       case 9: // Statement -> IF, LPAREN, expr, RPAREN, Statement
-#line 76 "Parser/Parser.y"
+#line 75 "Parser/Parser.y"
       { CurrentSemanticValue.node = new IfNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 10: // Statement -> IF, LPAREN, expr, RPAREN, Statement, ELSE, Statement
-#line 78 "Parser/Parser.y"
+#line 77 "Parser/Parser.y"
       { CurrentSemanticValue.node = new IfNode(ValueStack[ValueStack.Depth-5].node as ExpressionNode, ValueStack[ValueStack.Depth-3].node, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 11: // Statement -> FOR, LPAREN, Assignment, SEMICOLON, expr, SEMICOLON, Assignment, 
                //              RPAREN, Statement
-#line 80 "Parser/Parser.y"
+#line 79 "Parser/Parser.y"
       { CurrentSemanticValue.node = new ForLoopNode(ValueStack[ValueStack.Depth-7].node as StatementNode, ValueStack[ValueStack.Depth-5].node as ExpressionNode, ValueStack[ValueStack.Depth-3].node as StatementNode, ValueStack[ValueStack.Depth-1].node); }
 #line default
         break;
       case 12: // Statement -> FOR, LPAREN, Assignment, SEMICOLON, expr, SEMICOLON, Assignment, 
                //              RPAREN, LBRACE, StatementList, RBRACE
-#line 82 "Parser/Parser.y"
+#line 81 "Parser/Parser.y"
       { CurrentSemanticValue.node = new ForLoopNode(ValueStack[ValueStack.Depth-9].node as StatementNode, ValueStack[ValueStack.Depth-7].node as ExpressionNode, ValueStack[ValueStack.Depth-5].node as StatementNode, ValueStack[ValueStack.Depth-2].node); }
 #line default
         break;
       case 13: // Statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, LBRACE, StatementList, 
                //              RBRACE
-#line 85 "Parser/Parser.y"
+#line 84 "Parser/Parser.y"
         { CurrentSemanticValue.node = new ForEachLoopNode(new IdNode((string)ValueStack[ValueStack.Depth-7].obj), ValueStack[ValueStack.Depth-5].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node ); }
 #line default
         break;
       case 14: // Statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, StatementList
-#line 87 "Parser/Parser.y"
+#line 86 "Parser/Parser.y"
         { CurrentSemanticValue.node = new ForEachLoopNode(new IdNode((string)ValueStack[ValueStack.Depth-5].obj), ValueStack[ValueStack.Depth-3].node as ExpressionNode, ValueStack[ValueStack.Depth-1].node ); }
 #line default
         break;
       case 15: // Type -> INT
-#line 91 "Parser/Parser.y"
+#line 90 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("int"); }
 #line default
         break;
       case 16: // Type -> FLOAT
-#line 92 "Parser/Parser.y"
+#line 91 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("float"); }
 #line default
         break;
       case 17: // Type -> BOOL
-#line 93 "Parser/Parser.y"
+#line 92 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("bool"); }
 #line default
         break;
       case 18: // Type -> STRING
-#line 94 "Parser/Parser.y"
+#line 93 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("string"); }
 #line default
         break;
       case 19: // Type -> VOID
-#line 95 "Parser/Parser.y"
+#line 94 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("void"); }
 #line default
         break;
       case 20: // Type -> NULL
-#line 96 "Parser/Parser.y"
+#line 95 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("null"); }
 #line default
         break;
       case 21: // Type -> ARRAY, GT, Type, LT
-#line 97 "Parser/Parser.y"
+#line 96 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new TypeNode("array"); }
 #line default
         break;
       case 22: // Assignment -> ID, ASSIGN, expr
-#line 101 "Parser/Parser.y"
+#line 100 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new AssignNode((string)ValueStack[ValueStack.Depth-3].obj, ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 23: // Assignment -> ID, PLUS_ASSIGN, expr
-#line 102 "Parser/Parser.y"
+#line 101 "Parser/Parser.y"
                           { 
         // Sugar: x += 1  becomes  x = x + 1
         var id = new IdNode((string)ValueStack[ValueStack.Depth-3].obj);
@@ -535,7 +532,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 24: // Assignment -> ID, MINUS_ASSIGN, expr
-#line 108 "Parser/Parser.y"
+#line 107 "Parser/Parser.y"
                            { 
         // Sugar: x -= 1  becomes  x = x - 1
         var id = new IdNode((string)ValueStack[ValueStack.Depth-3].obj);
@@ -545,17 +542,17 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 25: // Assignment -> ID, INC
-#line 114 "Parser/Parser.y"
+#line 113 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new IncrementNode(new IdNode((string)ValueStack[ValueStack.Depth-2].obj)); }
 #line default
         break;
       case 26: // Assignment -> ID, DECR
-#line 115 "Parser/Parser.y"
+#line 114 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new DecrementNode(new IdNode((string)ValueStack[ValueStack.Depth-2].obj)); }
 #line default
         break;
       case 27: // Assignment -> ID, LBRACKET, expr, RBRACKET, ASSIGN, expr
-#line 118 "Parser/Parser.y"
+#line 117 "Parser/Parser.y"
     {
         string idName = (string)ValueStack[ValueStack.Depth-6].obj;
         var id = new IdNode(idName);
@@ -565,7 +562,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 28: // Assignment -> expr, DOT, ID, ASSIGN, expr
-#line 126 "Parser/Parser.y"
+#line 125 "Parser/Parser.y"
     {
         CurrentSemanticValue.node = new RecordFieldAssignNode(
             ValueStack[ValueStack.Depth-5].node as ExpressionNode,
@@ -576,152 +573,152 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 29: // expr_list -> expr
-#line 136 "Parser/Parser.y"
+#line 135 "Parser/Parser.y"
                             { CurrentSemanticValue.exprList = new List<ExpressionNode> { ValueStack[ValueStack.Depth-1].node as ExpressionNode }; }
 #line default
         break;
       case 30: // expr_list -> expr_list, COMMA, expr
-#line 137 "Parser/Parser.y"
+#line 136 "Parser/Parser.y"
                            { ((List<ExpressionNode>)ValueStack[ValueStack.Depth-3].exprList).Add(ValueStack[ValueStack.Depth-1].node as ExpressionNode); CurrentSemanticValue.exprList = ValueStack[ValueStack.Depth-3].exprList; }
 #line default
         break;
       case 31: // expr -> BOOL_LITERAL
-#line 141 "Parser/Parser.y"
+#line 140 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BooleanNode((bool)ValueStack[ValueStack.Depth-1].boolVal); }
 #line default
         break;
       case 32: // expr -> NUMBER
-#line 142 "Parser/Parser.y"
+#line 141 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new NumberNode((int)ValueStack[ValueStack.Depth-1].obj); }
 #line default
         break;
       case 33: // expr -> FLOAT_LITERAL
-#line 143 "Parser/Parser.y"
+#line 142 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new FloatNode(ValueStack[ValueStack.Depth-1].fval); }
 #line default
         break;
       case 34: // expr -> MINUS, expr
-#line 144 "Parser/Parser.y"
+#line 143 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new UnaryOpNode("-", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 35: // expr -> STRING_LITERAL
-#line 145 "Parser/Parser.y"
+#line 144 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new StringNode((string)ValueStack[ValueStack.Depth-1].obj); }
 #line default
         break;
       case 36: // expr -> STRING
-#line 146 "Parser/Parser.y"
+#line 145 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new TypeLiteralNode(new TypeNode("string")); }
 #line default
         break;
       case 37: // expr -> NULL_LITERAL
-#line 147 "Parser/Parser.y"
+#line 146 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new NullNode(); }
 #line default
         break;
       case 38: // expr -> Type
-#line 148 "Parser/Parser.y"
+#line 147 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new TypeLiteralNode(ValueStack[ValueStack.Depth-1].expr as TypeNode); }
 #line default
         break;
       case 39: // expr -> ID
-#line 150 "Parser/Parser.y"
+#line 149 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new IdNode((string)ValueStack[ValueStack.Depth-1].obj); }
 #line default
         break;
       case 40: // expr -> PRINT, LPAREN, expr, RPAREN
-#line 152 "Parser/Parser.y"
+#line 151 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new PrintNode(ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 41: // expr -> RANDOM, LPAREN, expr, COMMA, expr, RPAREN
-#line 154 "Parser/Parser.y"
+#line 153 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new RandomNode(ValueStack[ValueStack.Depth-4].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 42: // expr -> ROUND, LPAREN, expr, COMMA, expr, RPAREN
-#line 156 "Parser/Parser.y"
+#line 155 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new RoundNode(ValueStack[ValueStack.Depth-4].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 43: // expr -> expr, PLUS, expr
-#line 157 "Parser/Parser.y"
+#line 156 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "+", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 44: // expr -> expr, MINUS, expr
-#line 158 "Parser/Parser.y"
+#line 157 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "-", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 45: // expr -> expr, MULT, expr
-#line 159 "Parser/Parser.y"
+#line 158 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "*", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 46: // expr -> expr, DIV, expr
-#line 160 "Parser/Parser.y"
+#line 159 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new BinaryOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "/", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 47: // expr -> expr, LOGICAL_AND, expr
-#line 162 "Parser/Parser.y"
+#line 161 "Parser/Parser.y"
                             { CurrentSemanticValue.node = new LogicalOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "&&", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 48: // expr -> expr, LOGICAL_OR, expr
-#line 163 "Parser/Parser.y"
+#line 162 "Parser/Parser.y"
                             { CurrentSemanticValue.node = new LogicalOpNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "||", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 49: // expr -> expr, GE, expr
-#line 165 "Parser/Parser.y"
+#line 164 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, ">=", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 50: // expr -> expr, LE, expr
-#line 166 "Parser/Parser.y"
+#line 165 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "<=", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 51: // expr -> expr, EQ, expr
-#line 167 "Parser/Parser.y"
+#line 166 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "==", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 52: // expr -> expr, NE, expr
-#line 168 "Parser/Parser.y"
+#line 167 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "!=", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 53: // expr -> expr, GT, expr
-#line 169 "Parser/Parser.y"
+#line 168 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, ">", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 54: // expr -> expr, LT, expr
-#line 170 "Parser/Parser.y"
+#line 169 "Parser/Parser.y"
                           { CurrentSemanticValue.node = new ComparisonNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, "<", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
       case 55: // expr -> LBRACKET, expr_list, RBRACKET
-#line 172 "Parser/Parser.y"
+#line 171 "Parser/Parser.y"
                                   { CurrentSemanticValue.node = new ArrayNode(ValueStack[ValueStack.Depth-2].exprList as List<ExpressionNode>); }
 #line default
         break;
       case 56: // expr -> LBRACE, arg_list, RBRACE
-#line 173 "Parser/Parser.y"
+#line 172 "Parser/Parser.y"
                              { CurrentSemanticValue.node = new RecordNode(ValueStack[ValueStack.Depth-2].arglist as List<NamedArgumentNode>); }
 #line default
         break;
       case 57: // expr -> LBRACKET, arg_list, RBRACKET
-#line 174 "Parser/Parser.y"
+#line 173 "Parser/Parser.y"
                                  { CurrentSemanticValue.node = new RecordNode(ValueStack[ValueStack.Depth-2].arglist as List<NamedArgumentNode>); }
 #line default
         break;
       case 58: // expr -> ID, LBRACKET, expr, RBRACKET
-#line 176 "Parser/Parser.y"
+#line 175 "Parser/Parser.y"
     { 
         // Cast $1 to string so the IdNode constructor accepts it
         string idName = (string)ValueStack[ValueStack.Depth-4].obj;
@@ -732,57 +729,57 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 59: // expr -> LPAREN, expr, RPAREN
-#line 183 "Parser/Parser.y"
+#line 182 "Parser/Parser.y"
                           { CurrentSemanticValue.node = ValueStack[ValueStack.Depth-2].node; }
 #line default
         break;
       case 60: // expr -> expr, DOT, ADD, LPAREN, expr, RPAREN
-#line 184 "Parser/Parser.y"
+#line 183 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new AddNode(ValueStack[ValueStack.Depth-6].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 61: // expr -> expr, DOT, ADDRANGE, LPAREN, expr, RPAREN
-#line 185 "Parser/Parser.y"
+#line 184 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new AddRangeNode(ValueStack[ValueStack.Depth-6].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 62: // expr -> expr, DOT, REMOVE, LPAREN, expr, RPAREN
-#line 186 "Parser/Parser.y"
+#line 185 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new RemoveNode(ValueStack[ValueStack.Depth-6].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 63: // expr -> expr, DOT, REMOVERANGE, LPAREN, expr, RPAREN
-#line 187 "Parser/Parser.y"
+#line 186 "Parser/Parser.y"
                                                  { CurrentSemanticValue.node = new RemoveRangeNode(ValueStack[ValueStack.Depth-6].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 64: // expr -> expr, DOT, LENGTH
-#line 188 "Parser/Parser.y"
+#line 187 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new LengthNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
       case 65: // expr -> expr, DOT, MIN
-#line 189 "Parser/Parser.y"
+#line 188 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new MinNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
       case 66: // expr -> expr, DOT, MAX
-#line 190 "Parser/Parser.y"
+#line 189 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new MaxNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
       case 67: // expr -> expr, DOT, MEAN
-#line 191 "Parser/Parser.y"
+#line 190 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new MeanNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
       case 68: // expr -> expr, DOT, SUM
-#line 192 "Parser/Parser.y"
+#line 191 "Parser/Parser.y"
                                             { CurrentSemanticValue.node = new SumNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
       case 69: // expr -> expr, DOT, WHERE, LPAREN, ID, LAMBDA, expr, RPAREN
-#line 195 "Parser/Parser.y"
+#line 194 "Parser/Parser.y"
     {
         CurrentSemanticValue.node = new WhereNode(
             new IdNode((string)ValueStack[ValueStack.Depth-4].obj),
@@ -793,7 +790,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 70: // expr -> expr, DOT, MAP, LPAREN, ID, LAMBDA, expr, RPAREN
-#line 203 "Parser/Parser.y"
+#line 202 "Parser/Parser.y"
     {
         CurrentSemanticValue.node = new MapNode(
             new IdNode((string)ValueStack[ValueStack.Depth-4].obj),
@@ -804,7 +801,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 71: // expr -> READCSV, LPAREN, expr, COMMA, expr, RPAREN
-#line 214 "Parser/Parser.y"
+#line 213 "Parser/Parser.y"
     { 
         // Force the creation of a list with exactly TWO elements
         var args = new List<ExpressionNode>();
@@ -815,7 +812,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 72: // expr -> READCSV, LPAREN, expr, RPAREN
-#line 223 "Parser/Parser.y"
+#line 222 "Parser/Parser.y"
     { 
         var args = new List<ExpressionNode>();
         args.Add(ValueStack[ValueStack.Depth-2].node as ExpressionNode); // This should be the String/Path
@@ -824,39 +821,39 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 73: // expr -> TOCSV, LPAREN, expr, COMMA, expr, RPAREN
-#line 230 "Parser/Parser.y"
+#line 229 "Parser/Parser.y"
         { CurrentSemanticValue.node = new ToCsvNode(ValueStack[ValueStack.Depth-4].node as ExpressionNode, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 74: // expr -> RECORD, LPAREN, LBRACE, arg_list, RBRACE, RPAREN
-#line 232 "Parser/Parser.y"
+#line 231 "Parser/Parser.y"
                                                     { CurrentSemanticValue.node = new RecordNode(ValueStack[ValueStack.Depth-3].arglist as List<NamedArgumentNode>); }
 #line default
         break;
       case 75: // expr -> expr, DOT, ID
-#line 235 "Parser/Parser.y"
+#line 234 "Parser/Parser.y"
     {
         CurrentSemanticValue.node = new RecordFieldNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-1].obj);
     }
 #line default
         break;
       case 76: // expr -> expr, DOT, COPY
-#line 239 "Parser/Parser.y"
+#line 238 "Parser/Parser.y"
                                               { CurrentSemanticValue.node = new CopyNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
       case 77: // expr -> expr, DOT, ADDFIELD, LPAREN, ID, COMMA, expr, RPAREN
-#line 241 "Parser/Parser.y"
+#line 240 "Parser/Parser.y"
                                               { CurrentSemanticValue.node = new AddFieldNode(ValueStack[ValueStack.Depth-8].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-4].obj, ValueStack[ValueStack.Depth-2].node as ExpressionNode); }
 #line default
         break;
       case 78: // expr -> expr, DOT, REMOVEFIELD, LPAREN, ID, RPAREN
-#line 242 "Parser/Parser.y"
+#line 241 "Parser/Parser.y"
                                               { CurrentSemanticValue.node = new RemoveFieldNode(ValueStack[ValueStack.Depth-6].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-2].obj); }
 #line default
         break;
       case 79: // expr -> DATAFRAME, LPAREN, arg_list, RPAREN
-#line 246 "Parser/Parser.y"
+#line 245 "Parser/Parser.y"
     {
         // Make sure you have: using System.Linq; at the top of your parser file
          CurrentSemanticValue.node = new DataframeNode(ValueStack[ValueStack.Depth-2].arglist.Cast<NamedArgumentNode>().ToList());
@@ -865,62 +862,47 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 #line default
         break;
       case 80: // expr -> expr, DOT, SHOW, LPAREN, LBRACKET, expr_list, RBRACKET, RPAREN
-#line 252 "Parser/Parser.y"
+#line 251 "Parser/Parser.y"
                                                               { CurrentSemanticValue.node = new ShowDataframeNode(ValueStack[ValueStack.Depth-8].node as ExpressionNode, ValueStack[ValueStack.Depth-3].exprList as List<ExpressionNode>); }
 #line default
         break;
       case 81: // expr -> expr, DOT, COLUMNS
-#line 253 "Parser/Parser.y"
+#line 252 "Parser/Parser.y"
                                     { CurrentSemanticValue.node = new ColumnsNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode); }
 #line default
         break;
-      case 82: // params -> /* empty */
+      case 82: // arg_list -> arg
 #line 257 "Parser/Parser.y"
-                  { CurrentSemanticValue.obj = new List<string>(); }
-#line default
-        break;
-      case 83: // params -> ID
-#line 258 "Parser/Parser.y"
-         { var list = new List<string>(); list.Add((string)ValueStack[ValueStack.Depth-1].obj); CurrentSemanticValue.obj = list; }
-#line default
-        break;
-      case 84: // params -> params, COMMA, ID
-#line 259 "Parser/Parser.y"
-                      { var list = (List<string>)ValueStack[ValueStack.Depth-3].obj; list.Add((string)ValueStack[ValueStack.Depth-1].obj); CurrentSemanticValue.obj = list; }
-#line default
-        break;
-      case 85: // arg_list -> arg
-#line 263 "Parser/Parser.y"
                            { CurrentSemanticValue.arglist = new List<NamedArgumentNode> { ValueStack[ValueStack.Depth-1].expr as NamedArgumentNode }; }
 #line default
         break;
-      case 86: // arg_list -> arg_list, COMMA, arg
-#line 264 "Parser/Parser.y"
+      case 83: // arg_list -> arg_list, COMMA, arg
+#line 258 "Parser/Parser.y"
                            { ((List<NamedArgumentNode>)ValueStack[ValueStack.Depth-3].arglist).Add(ValueStack[ValueStack.Depth-1].expr as NamedArgumentNode); CurrentSemanticValue.arglist = ValueStack[ValueStack.Depth-3].arglist; }
 #line default
         break;
-      case 87: // arg -> ID, ASSIGN, expr
-#line 268 "Parser/Parser.y"
+      case 84: // arg -> ID, ASSIGN, expr
+#line 262 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new NamedArgumentNode((string)ValueStack[ValueStack.Depth-3].obj, ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
-      case 88: // arg -> ID, COLON, expr
-#line 269 "Parser/Parser.y"
+      case 85: // arg -> ID, COLON, expr
+#line 263 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new NamedArgumentNode((string)ValueStack[ValueStack.Depth-3].obj, ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
-      case 89: // arg -> COLUMNS, ASSIGN, expr
-#line 270 "Parser/Parser.y"
+      case 86: // arg -> COLUMNS, ASSIGN, expr
+#line 264 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new NamedArgumentNode("columns", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
-      case 90: // arg -> COLUMNS, COLON, expr
-#line 271 "Parser/Parser.y"
+      case 87: // arg -> COLUMNS, COLON, expr
+#line 265 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new NamedArgumentNode("columns", ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
-      case 91: // arg -> expr
-#line 272 "Parser/Parser.y"
+      case 88: // arg -> expr
+#line 266 "Parser/Parser.y"
                           { CurrentSemanticValue.expr = new NamedArgumentNode(null, ValueStack[ValueStack.Depth-1].node as ExpressionNode); }
 #line default
         break;
@@ -938,7 +920,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         return CharToString((char)terminal);
   }
 
-#line 275 "Parser/Parser.y"
+#line 269 "Parser/Parser.y"
 
 internal Parser(Scanner s) : base(s) { }
 #line default
