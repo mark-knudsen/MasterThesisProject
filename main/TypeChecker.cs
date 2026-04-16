@@ -181,6 +181,18 @@ namespace MyCompiler
                     }
                 }
 
+                if (expr.Operator == "+" && leftType is RecordType l && rightType is RecordType r) // the code inside might be wrong
+                {
+                    System.Console.WriteLine("they are both records"); // the if below is not true
+                    // We can only add records of the same type (same fields)
+                    if (l.RecordFields.Count == r.RecordFields.Count &&
+                        l.RecordFields.Select(f => f.Label).SequenceEqual(r.RecordFields.Select(f => f.Label)))
+                    {
+                        expr.SetType(leftType); // The result type is the same as the input record type
+                        return expr.Type; 
+                    }
+                }
+
                 throw new Exception($"Invalid operands {leftType} and {rightType} for +");
             }
 

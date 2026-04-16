@@ -1619,7 +1619,45 @@ namespace MyCompiler
                 };
             }
 
+            if (expr.Operator == "+" && leftType is RecordType l && rightType is RecordType r)
+            {
+                return BuildRecordMergeInline(expr, l, r);
+            }
+
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
+        }
+
+        public LLVMValueRef BuildRecordMergeInline(BinaryOpNode expr, RecordType lhsType, RecordType rhsType)
+        {
+            var mergedType = expr.Type as RecordType;
+
+            var values = new List<LLVMValueRef>();
+
+            var rhsFields = rhsType.RecordFields.ToDictionary(f => f.Label);
+
+            // 1. RHS fields override
+            foreach (var f in rhsType.RecordFields)
+            {
+                var val = Visit(((RecordNode)expr.Right).Fields
+                    .First(x => x.Label == f.Label).Value);
+
+                values.Add((val));
+            }
+
+            // 2. Add remaining LHS fields
+            foreach (var f in lhsType.RecordFields)
+            {
+                if (rhsFields.ContainsKey(f.Label))
+                    continue;
+
+                var fieldAccess = new RecordFieldNode(expr.Left, f.Label);
+                var val = VisitRecordField(fieldAccess);
+
+                values.Add((val));
+            }
+
+            // 3. Construct new record
+            return BuildRecordFromValues(expr.Type as RecordType, values); // the record type should be the combined one with all fields
         }
 
         public LLVMValueRef VisitLogicalOp(LogicalOpNode expr)
@@ -2140,6 +2178,14 @@ namespace MyCompiler
         // x=read_csv("CSV/test.csv") 
         // x=read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/test.csv") 
 
+        // addField and removeFields don't work, so we even have them? Could they do: r + {x: 5, y: 3} ?
+
+        // syntax 
+        // r + {x: 5, y: 3}                          // should return a record with added fields x and y
+        // x.map(d=> d.name + "Smith")               // should return an array
+        // x.map(d=> d + {x: 5, y: 3})               // should return a dataframe with added columns x and y
+        // x.map(d=> d + {name: d.name + "smith"})   // should return a dataframe with added columns x and y
+
         public LLVMValueRef VisitWhere(WhereNode expr)
         {
             var sourceType = expr.SourceExpr.Type;
@@ -2430,9 +2476,6 @@ namespace MyCompiler
 
             return program;
         }
-
-
-
 
 
         /*
@@ -2754,8 +2797,6 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
-
-
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
             if (node == null) return null;
@@ -2776,7 +2817,6 @@ namespace MyCompiler
 
             return node;
         }
-
 
         public ExpressionNode ReplaceIterator(ExpressionNode node, string iteratorName, ExpressionNode replacement)
         {
@@ -2888,28 +2928,6 @@ namespace MyCompiler
 
             return node;
         }
-
-
-
-        public Node ReplaceIteratorInStatement(Node node, string iteratorName, ExpressionNode replacement)
-        {
-            if (node is RecordFieldAssignNode rfan)
-            {
-                var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
-                var newAssign = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
-                return new RecordFieldAssignNode(newRec, rfan.IdField, newAssign);
-            }
-
-            // If it's an expression (like IndexAssign or a BinaryOp), use the expression replacer
-            if (node is ExpressionNode expr)
-            {
-                return ReplaceIterator(expr, iteratorName, replacement);
-            }
-
-            return node;
-        }
-
-
 
         private bool IsReferenceType(Type t)
         {
@@ -4122,7 +4140,6 @@ namespace MyCompiler
             // CRITICAL: cast to i8**
             var buffer = _builder.BuildBitCast(rawBuffer, slotArrayType, "record_slots");
 
-
             for (int i = 0; i < expr.Fields.Count; i++)
             {
                 var val = Visit(expr.Fields[i].Value);
@@ -4198,7 +4215,6 @@ namespace MyCompiler
 
             return newValue;
         }
-
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
