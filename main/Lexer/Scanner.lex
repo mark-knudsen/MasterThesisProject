@@ -50,8 +50,6 @@
 "sum"           { return (int)Tokens.SUM; }
 
 "record"        { return (int)Tokens.RECORD; }
-"addField"      { return (int)Tokens.ADDFIELD; }
-"removeField"   { return (int)Tokens.REMOVEFIELD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
 "columns"       { return (int)Tokens.COLUMNS; }
 "show"          { return (int)Tokens.SHOW; }

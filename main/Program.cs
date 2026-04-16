@@ -306,7 +306,6 @@ namespace MyCompiler
                         continue;
                     }
 
-
                     try
                     {
                         if (useStopWatch) StartStopWatch();
@@ -386,7 +385,6 @@ namespace MyCompiler
                 Console.ResetColor();
             }
         }
-
 
         static void PrintNode(Node node, int indent)
         {
@@ -502,18 +500,6 @@ namespace MyCompiler
                     PrintNode(idxAsgn.AssignExpression, indent + 2);
                     break;
 
-                // --- Field Modification (Dynamic) ---
-                case AddFieldNode af:
-                    Console.WriteLine($"{space}ADD FIELD '{af.FieldName}':");
-                    PrintNode(af.Record, indent + 1);
-                    PrintNode(af.Value, indent + 1);
-                    break;
-
-                case RemoveFieldNode rmf:
-                    Console.WriteLine($"{space}REMOVE FIELD '{rmf.FieldName}' from:");
-                    PrintNode(rmf.Record, indent + 1);
-                    break;
-
                 // --- Literals & Basic Nodes ---
                 case TypeLiteralNode t:
                     Console.WriteLine($"{space}Type Literal: {t.Type}");
@@ -612,6 +598,5 @@ namespace MyCompiler
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
         }
-
     }
 }

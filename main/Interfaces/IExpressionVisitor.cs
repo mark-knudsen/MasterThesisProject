@@ -25,7 +25,6 @@ namespace MyCompiler
         LLVMValueRef VisitForLoop(ForLoopNode expr);
         LLVMValueRef VisitForEachLoop(ForEachLoopNode expr);
         LLVMValueRef VisitArray(ArrayNode expr);
-        // LLVMValueRef VisitCopyArray(CopyArrayNode expr);
         LLVMValueRef VisitIndex(IndexNode expr);
         LLVMValueRef VisitIndexAssign(IndexAssignNode expr);
         LLVMValueRef VisitAdd(AddNode expr);
@@ -39,10 +38,9 @@ namespace MyCompiler
         LLVMValueRef VisitSum(SumNode expr);
         LLVMValueRef VisitWhere(WhereNode expr);
         LLVMValueRef VisitMap(MapNode expr);
+
         LLVMValueRef VisitReadCsv(ReadCsvNode expr);
-
         LLVMValueRef VisitToCsv(ToCsvNode expr);
-
 
         LLVMValueRef VisitRound(RoundNode expr);
         LLVMValueRef VisitRecord(RecordNode expr);
@@ -50,8 +48,6 @@ namespace MyCompiler
         LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr);
         //LLVMValueRef VisitCopyRecord(CopyRecordNode expr);
         LLVMValueRef VisitCopy(CopyNode expr);
-        LLVMValueRef VisitAddField(AddFieldNode expr);
-        LLVMValueRef VisitRemoveField(RemoveFieldNode expr);
         LLVMValueRef VisitDataframe(DataframeNode expr);
         LLVMValueRef VisitColumns(ColumnsNode expr);
         LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);

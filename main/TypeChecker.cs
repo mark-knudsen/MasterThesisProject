@@ -69,8 +69,6 @@ namespace MyCompiler
                 RecordFieldNode recf => VisitRecordField(recf),
                 RecordFieldAssignNode reca => VisitRecordFieldAssign(reca),
                 CopyNode cop => VisitCopy(cop),
-                AddFieldNode radd => VisitAddField(radd),
-                RemoveFieldNode rrem => VisitRemoveField(rrem),
                 DataframeNode df => VisitDataframe(df),
                 ColumnsNode cols => VisitColumns(cols),
                 ShowDataframeNode showdf => VisitShowDataframe(showdf),
@@ -181,16 +179,40 @@ namespace MyCompiler
                     }
                 }
 
-                if (expr.Operator == "+" && leftType is RecordType l && rightType is RecordType r) // the code inside might be wrong
+                if (leftType is RecordType l && rightType is RecordType r)
                 {
-                    System.Console.WriteLine("they are both records"); // the if below is not true
-                    // We can only add records of the same type (same fields)
-                    if (l.RecordFields.Count == r.RecordFields.Count &&
-                        l.RecordFields.Select(f => f.Label).SequenceEqual(r.RecordFields.Select(f => f.Label)))
+                    var resultFields = new List<RecordField>();
+
+                    var rhsMap = r.RecordFields.ToDictionary(f => f.Label);
+
+                    // 1. Preserve LHS order
+                    foreach (var lf in l.RecordFields)
                     {
-                        expr.SetType(leftType); // The result type is the same as the input record type
-                        return expr.Type; 
+                        if (rhsMap.TryGetValue(lf.Label, out var rf))
+                        {
+                            // override type from RHS
+                            resultFields.Add(rf);
+                        }
+                        else
+                        {
+                            resultFields.Add(lf);
+                        }
                     }
+
+                    // 2. Append RHS-only fields
+                    var lhsLabels = l.RecordFields.Select(f => f.Label).ToHashSet();
+
+                    foreach (var rf in r.RecordFields)
+                    {
+                        if (!lhsLabels.Contains(rf.Label))
+                        {
+                            resultFields.Add(rf);
+                        }
+                    }
+
+                    var mergedType = new RecordType(resultFields);
+                    expr.SetType(mergedType);
+                    return mergedType;
                 }
 
                 throw new Exception($"Invalid operands {leftType} and {rightType} for +");
@@ -1008,21 +1030,6 @@ namespace MyCompiler
             Visit(expr.AssignExpression);
             Visit(expr.IdRecord);
 
-            expr.SetType(new VoidType());
-            return expr.Type;
-        }
-
-        public Type VisitAddField(AddFieldNode expr)
-        {
-            Visit(expr.Record);
-            Visit(expr.Value);
-            expr.SetType(expr.Value.Type);
-            return expr.Type;
-        }
-
-        public Type VisitRemoveField(RemoveFieldNode expr)
-        {
-            Visit(expr.Record);
             expr.SetType(new VoidType());
             return expr.Type;
         }

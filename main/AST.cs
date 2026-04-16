@@ -636,34 +636,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
     }
 
-    public class AddFieldNode : ExpressionNode
-    {
-        public ExpressionNode Record { get; }
-        public string FieldName { get; }
-        public ExpressionNode Value { get; }
-
-        public AddFieldNode(ExpressionNode record, string fieldName, ExpressionNode value)
-        {
-            Record = record;
-            FieldName = fieldName;
-            Value = value;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddField(this);
-    }
-
-    public class RemoveFieldNode : ExpressionNode
-    {
-        public ExpressionNode Record { get; }
-        public string FieldName { get; }
-
-        public RemoveFieldNode(ExpressionNode record, string fieldName)
-        {
-            Record = record;
-            FieldName = fieldName;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveField(this);
-    }
-
     public class NamedArgumentNode : ExpressionNode
     {
         public string Name { get; }
