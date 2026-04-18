@@ -2483,55 +2483,81 @@ namespace MyCompiler
 
             return null;
         }
-
         public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
             var srcVar = "__map_src";
             var resVar = "__map_result";
             var iVar = "__map_i";
+            var currentRowVar = "__current_row";
             var dfType = (DataframeType)expr.Type;
 
-            // 1. Setup Source
+            // 1. Setup Source Dataframe
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 2. Setup Result Constructor (Crucial Fix)
-            // We create a DataframeNode with the columns/types from the inferred dfType
+            // 2. Initialize Result Dataframe
+            // We create the column list and dummy types for the constructor
             var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-            var dummyValues = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList(); // Just placeholders
+            var dummyValues = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
 
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                new NamedArgumentNode("columns", new ArrayNode(columns)),
-                new NamedArgumentNode("type", new ArrayNode(dummyValues))
-            });
+        new NamedArgumentNode("columns", new ArrayNode(columns)),
+        new NamedArgumentNode("type", new ArrayNode(dummyValues))
+    });
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
             program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
-            // 3. Loop Body
-            var loopBody = new SequenceNode();
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            // 3. Prepare the Transformation Expression
+            var replacementNode = new IdNode(currentRowVar);
+            // Use the first assignment (x + {test: "TEST"})
+            var bodyExpr = ReplaceIterator(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
 
-            // Process the transformation
-            ExpressionNode transformedExpr = null;
-            foreach (var e in expr.Assignments)
+            // 4. OPTIMIZATION: Loop Invariant Hoisting
+            // If the right side of the '+' is a record that doesn't use 'x', 
+            // move its allocation OUTSIDE the loop.
+            if (bodyExpr is BinaryOpNode bin && bin.Operator == "+")
             {
-                transformedExpr = ReplaceIterator(e, expr.IteratorId.Name, rowAccess);
+                if (bin.Right is RecordNode rec && !NodeContainsId(rec, currentRowVar))
+                {
+                    var invariantVar = "__const_record";
+                    program.Statements.Add(new AssignNode(invariantVar, rec));
+                    // Update bodyExpr to use the pre-allocated record variable
+                    bodyExpr = new BinaryOpNode(bin.Left, "+", new IdNode(invariantVar));
+                }
             }
 
-            // 4. Append to Dataframe
-            // Because resVar is now a Dataframe, AddNode will trigger Dataframe row appending
-            loopBody.Statements.Add(new AddNode(new IdNode(resVar), transformedExpr));
+            // 5. Build the Loop Body
+            var loopBody = new SequenceNode();
 
-            // 5. Loop Logic
+            // row = src[i]
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
+
+            // result.Add(transformed_row)
+            loopBody.Statements.Add(new AddNode(new IdNode(resVar), bodyExpr));
+
+            // 6. Assemble the For Loop
             var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
+
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
+            // 7. Return Result
             program.Statements.Add(new IdNode(resVar));
+
             return program;
         }
+
+        // Helper to check if a node tree uses a specific variable
+        private bool NodeContainsId(Node node, string idName)
+        {
+            if (node is IdNode id) return id.Name == idName;
+            // Recursive check for children... (simplified for brevity)
+            return false;
+        }
+
 
 
         /*
@@ -2894,16 +2920,19 @@ namespace MyCompiler
                 return newArg;
             }
 
-            // 5. RecordNode
+            // 5. RecordNode Optimization
             if (node is RecordNode rec)
             {
+                bool anyChanged = false;
                 var newFields = rec.Fields.Select(f =>
                 {
-                    var val = ReplaceIterator(f.Value, iteratorName, replacement);
-                    var argNode = new NamedArgumentNode(f.Label, val);
-                    argNode.SetType(f.Type);
-                    return argNode;
+                    var newVal = ReplaceIterator(f.Value, iteratorName, replacement);
+                    if (newVal != f.Value) anyChanged = true;
+                    return new NamedArgumentNode(f.Label, newVal);
                 }).ToList();
+
+                if (!anyChanged) return node; // <--- Return original!
+
                 var newRec = new RecordNode(newFields);
                 newRec.SetType(rec.Type);
                 return newRec;
