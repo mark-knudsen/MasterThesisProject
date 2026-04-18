@@ -11,6 +11,7 @@
     public MyCompiler.ExpressionNode expr; // Single expression
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list
     public List<MyCompiler.NamedArgumentNode> arglist; // for arg_list
+    public List<MyCompiler.Node> nodeList; // for map_body
 }
 
 %token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
@@ -47,6 +48,7 @@
 %type <expr> arg
 %type <exprList> expr_list
 %type <arglist> arg_list
+%type <nodeList> map_list
 
 
 /* This tells the parser which C# variable stores the final tree */
@@ -198,15 +200,12 @@ expr
             $7 as ExpressionNode
         );
     }
-    | expr DOT MAP LPAREN ID LAMBDA expr_list RPAREN  
+    | expr DOT MAP LPAREN ID LAMBDA map_list RPAREN  
     {   
-        // Cast $7 to the correct type (nodeList is List<Node>)
-        var assignments = $7 as List<ExpressionNode>;
-        
         $$ = new MapNode(
             new IdNode((string)$5),
             $1 as ExpressionNode,
-            assignments // Pass the list directly to the MapNode constructor
+            $7 as List<Node> // map_list already returns List<Node>
         );
     }
     
@@ -252,6 +251,10 @@ expr
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
     ;
 
+map_list
+    : Statement { $$ = new List<Node> { $1 }; }
+    | map_list COMMA Statement { ((List<Node>)$1).Add($3); $$ = $1; }
+    ;
 
 arg_list
     : arg                  { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }

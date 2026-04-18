@@ -639,7 +639,7 @@ namespace MyCompiler
         {
             var sourceType = Visit(expr.SourceExpr);
 
-            // Determine the type of 'x'
+            // Get the type of 'x'
             Type iteratorType;
             if (sourceType is DataframeType df)
                 iteratorType = df.RowType;
@@ -649,45 +649,44 @@ namespace MyCompiler
                 throw new Exception($"Cannot map over type {sourceType}. Source must be a Dataframe or Array.");
 
             var previousContext = _context;
-            // Add the iterator (e.g., 'x') to the scope
+            // Inject 'x' into scope
             _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
             try
             {
-                Type lastType = null;
-                foreach (var e in expr.Assignments)
+                foreach (var node in expr.Assignments)
                 {
-                    lastType = Visit(e);
+                    Visit(node);
                 }
 
-                if (lastType == null)
-                    throw new Exception("Map body cannot be empty.");
+                // Determine result type based on the LAST node
+                var lastNode = expr.Assignments.Last();
 
-                Type resultType;
-                // If the lambda returns a Record, we treat the result as a Dataframe
+                // If last node is a statement (Assignment), type is the modified iteratorType.
+                // If last node is an expression (Record + Record), type is that expression's type.
+                Type lastType = (lastNode is ExpressionNode en) ? en.Type : iteratorType;
+
                 if (lastType is RecordType rec)
                 {
-                    resultType = new DataframeType(
+                    var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
                         rec.RecordFields.Select(f => f.Type).ToList(),
                         rec
                     );
-                }
-                else
-                {
-                    // Otherwise, it's just a standard array of whatever type lastType is
-                    resultType = new ArrayType(lastType);
+                    expr.SetType(resultType);
+                    return resultType;
                 }
 
-                expr.SetType(resultType);
-                return resultType;
+                // Fallback for primitive arrays
+                var finalArrayType = new ArrayType(lastType);
+                expr.SetType(finalArrayType);
+                return finalArrayType;
             }
             finally
             {
                 _context = previousContext;
             }
         }
-
 
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
         private string InferFieldName(Node node)
@@ -818,6 +817,7 @@ namespace MyCompiler
 
         public Type VisitAdd(AddNode expr)
         {
+
             var arrayType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
 
