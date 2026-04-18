@@ -638,68 +638,47 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-            Type iteratorType;
 
-            if (sourceType is ArrayType arrayType)
-                iteratorType = arrayType.ElementType;
-            else if (sourceType is DataframeType dfType)
-                iteratorType = dfType.RowType;
+            // Determine the type of 'x'
+            Type iteratorType;
+            if (sourceType is DataframeType df)
+                iteratorType = df.RowType;
+            else if (sourceType is ArrayType arr)
+                iteratorType = arr.ElementType;
             else
-                throw new Exception("Map source must be an array or a dataframe.");
+                throw new Exception($"Cannot map over type {sourceType}. Source must be a Dataframe or Array.");
 
             var previousContext = _context;
+            // Add the iterator (e.g., 'x') to the scope
             _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
             try
             {
-                Visit(expr.IteratorId);
-
-                // Start with the current dataframe type (or a default)
-                Type resultType = sourceType;
-
-                foreach (var assignment in expr.Assignments)
+                Type lastType = null;
+                foreach (var e in expr.Assignments)
                 {
-                    // 1. Visit the assignment to ensure internal types are set
-                    var bodyType = Visit(assignment);
-
-                    if (sourceType is DataframeType sourceDf)
-                    {
-                        // 2. Use the 'assignment' (Node) directly, don't cast to ExpressionNode
-                        string targetField = InferFieldName(assignment);
-
-                        if (targetField == null)
-                            throw new Exception("Could not infer column name. Use '{column: value}' syntax.");
-
-                        var currentDf = (DataframeType)resultType;
-                        var newTypes = currentDf.DataTypes.ToList();
-                        var newRowFields = new List<RecordField>();
-
-                        for (int i = 0; i < currentDf.ColumnNames.Count; i++)
-                        {
-                            var colName = currentDf.ColumnNames[i];
-                            Type colType = currentDf.DataTypes[i];
-
-                            if (colName == targetField)
-                            {
-                                // Update the column type. 
-                                // If it's a statement (Void), we keep the original column type
-                                // If it's an expression, we use the expression's type
-                                colType = (bodyType is VoidType) ? colType : bodyType;
-                            }
-
-                            newTypes[i] = colType;
-                            newRowFields.Add(new RecordField { Label = colName, Type = colType });
-                        }
-
-                        resultType = new DataframeType(currentDf.ColumnNames, newTypes, new RecordType(newRowFields));
-                    }
-                    else
-                    {
-                        resultType = new ArrayType(bodyType);
-                    }
+                    lastType = Visit(e);
                 }
 
-                //System.Console.WriteLine($"[DEBUG] Map inferred type: {resultType}");
+                if (lastType == null)
+                    throw new Exception("Map body cannot be empty.");
+
+                Type resultType;
+                // If the lambda returns a Record, we treat the result as a Dataframe
+                if (lastType is RecordType rec)
+                {
+                    resultType = new DataframeType(
+                        rec.RecordFields.Select(f => f.Label).ToList(),
+                        rec.RecordFields.Select(f => f.Type).ToList(),
+                        rec
+                    );
+                }
+                else
+                {
+                    // Otherwise, it's just a standard array of whatever type lastType is
+                    resultType = new ArrayType(lastType);
+                }
+
                 expr.SetType(resultType);
                 return resultType;
             }

@@ -354,9 +354,9 @@ namespace MyCompiler
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public List<Node> Assignments { get; }
+        public List<ExpressionNode> Assignments { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<ExpressionNode> assignments)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;

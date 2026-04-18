@@ -698,23 +698,65 @@ namespace MyCompiler
 
         private List<string> ExtractArray(IntPtr arrayObjPtr, ArrayType type)
         {
-            var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
+            // Instead of PtrToStructure, we read the 3 fields of %array manually:
+            // %array = type { i64 (len), i64 (cap), ptr (data) }
 
+            long length = Marshal.ReadInt64(arrayObjPtr, 0);       // Offset 0: length
+                                                                   // long capacity = Marshal.ReadInt64(arrayObjPtr, 8); // Offset 8: capacity (unused here)
+            IntPtr dataPtr = Marshal.ReadIntPtr(arrayObjPtr, 16);  // Offset 16: data pointer
+
+            var result = new List<string>();
             var elementType = type.ElementType;
-            var result = new List<string>(); // Add first column for index
 
-            for (long i = 0; i < array.length; i++)
+            for (long i = 0; i < length; i++)
             {
-                IntPtr elemPtr = IntPtr.Add(array.data, (int)(i * 8));
-                IntPtr ptr = Marshal.ReadIntPtr(elemPtr);
+                // Each element in the data array is a pointer (8 bytes)
+                IntPtr elemSlot = IntPtr.Add(dataPtr, (int)(i * 8));
+                IntPtr actualValPtr = Marshal.ReadIntPtr(elemSlot);
+
+                if (actualValPtr == IntPtr.Zero)
+                {
+                    result.Add("null");
+                    continue;
+                }
 
                 if (elementType is StringType)
-                    result.Add(Marshal.PtrToStringAnsi(ptr).ToString());
+                {
+                    result.Add(Marshal.PtrToStringAnsi(actualValPtr) ?? "");
+                }
+                else if (elementType is RecordType rec)
+                {
+                    // Unpack the record
+                    var fields = new List<string>();
+                    for (int f = 0; f < rec.RecordFields.Count; f++)
+                    {
+                        IntPtr fieldSlot = IntPtr.Add(actualValPtr, f * 8);
+                        IntPtr valPtr = Marshal.ReadIntPtr(fieldSlot);
 
+                        var fieldType = rec.RecordFields[f].Type;
+                        if (fieldType is FloatType)
+                        {
+                            byte[] b = new byte[8];
+                            Marshal.Copy(valPtr, b, 0, 8);
+                            fields.Add(BitConverter.ToDouble(b, 0).ToString());
+                        }
+                        else if (fieldType is IntType)
+                        {
+                            fields.Add(Marshal.ReadInt64(valPtr).ToString());
+                        }
+                        else if (fieldType is StringType)
+                        {
+                            fields.Add(Marshal.PtrToStringAnsi(valPtr) ?? "");
+                        }
+                        else fields.Add("?");
+                    }
+                    result.Add(string.Join(" | ", fields));
+                }
                 else
+                {
                     result.Add("?");
+                }
             }
-
             return result;
         }
 
@@ -2373,51 +2415,50 @@ namespace MyCompiler
 
         public SequenceNode MapForArray(MapNode expr)
         {
-            //var arrType = (ArrayType)sourceType;
+            var program = new SequenceNode();
+            var srcVar = "__map_src";
+            var resVar = "__map_result";
+            var iVar = "__map_i"; // Your variable is named iVar
 
-            // Use 'as' or check type before casting to avoid the crash
-            if (expr.SourceExpr.Type is not ArrayType resultArrType)
-                throw new Exception($"Map on Array expected to return ArrayType, but got {expr.Type}");
+            // 1. Get the correct element type from the MapNode's result type
+            MyCompiler.Type resultElementType = null;
+            if (expr.Type is ArrayType at) resultElementType = at.ElementType;
+            else if (expr.Type is DataframeType df) resultElementType = df.RowType;
 
-            var srcVarName = "__map_src";
-            var resultVarName = "__map_result";
-            var indexVarName = "__map_i";
+            // 2. Setup
+            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // Use the element type from the RESOLVED result type
-            var emptyResultArray = new ArrayNode(new List<ExpressionNode>())
-            {
-                ElementType = resultArrType.ElementType
-            };
+            // Initialize empty array with the correct ElementType
+            var emptyArray = new ArrayNode(new List<ExpressionNode>());
+            emptyArray.ElementType = resultElementType;
 
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-            var resultAssign = new AssignNode(resultVarName, emptyResultArray);
-            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
-
-            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
-            var loopStep = new IncrementNode(new IdNode(indexVarName));
-
-            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
-
-
-            // Transform element
-            var mappedValue = ReplaceIterator(expr.Assignments[0] as ExpressionNode, expr.IteratorId.Name, currentElement);
-
-            // Use .add() for dynamic growth, same as 'where'
-            var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
+            program.Statements.Add(new AssignNode(resVar, emptyArray));
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
             var loopBody = new SequenceNode();
-            loopBody.Statements.Add(addNode);
 
-            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
+            // FIX: Use iVar here instead of indexVarName
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
 
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(new IdNode(resultVarName));
+            // 3. Transform the lambda body
+            ExpressionNode lastExpr = null;
+            foreach (var e in expr.Assignments)
+            {
+                lastExpr = ReplaceIterator(e as ExpressionNode, expr.IteratorId.Name, rowAccess);
+            }
 
+            // 4. Add to the result list
+            loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
+
+            // 5. Loop Logic - Use iVar here as well
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            var step = new IncrementNode(new IdNode(iVar));
+            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
+
+            program.Statements.Add(new IdNode(resVar));
             return program;
         }
+
 
         private string InferFieldName(Node node)
         {
@@ -2449,45 +2490,46 @@ namespace MyCompiler
             var srcVar = "__map_src";
             var resVar = "__map_result";
             var iVar = "__map_i";
+            var dfType = (DataframeType)expr.Type;
 
-            // 1. Setup: result = copy(source)
+            // 1. Setup Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
-            program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
+
+            // 2. Setup Result Constructor (Crucial Fix)
+            // We create a DataframeNode with the columns/types from the inferred dfType
+            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            var dummyValues = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList(); // Just placeholders
+
+            var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
+                new NamedArgumentNode("columns", new ArrayNode(columns)),
+                new NamedArgumentNode("type", new ArrayNode(dummyValues))
+            });
+            dfConstructor.SetType(dfType);
+
+            program.Statements.Add(new AssignNode(resVar, dfConstructor));
             program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
+            // 3. Loop Body
             var loopBody = new SequenceNode();
-            // What 'x' becomes: __map_result[__map_i]
-            var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
 
-            foreach (var assignmentNode in expr.Assignments)
+            // Process the transformation
+            ExpressionNode transformedExpr = null;
+            foreach (var e in expr.Assignments)
             {
-                // Replace iterator 'x' in the original node (handles both Statement and Expression)
-                Node transformed = ReplaceIteratorInNode(assignmentNode, expr.IteratorId.Name, rowAccess);
-
-                if (transformed is RecordFieldAssignNode rfan)
-                {
-                    // Case: x.longitude = 100.0 -> rowAccess.longitude = 100.0
-                    loopBody.Statements.Add(rfan);
-                }
-                else if (transformed is ExpressionNode en)
-                {
-                    // Case: x.longitude - 100.0 -> rowAccess.longitude = (rowAccess.longitude - 100.0)
-                    string targetField = InferFieldName(assignmentNode);
-                    if (targetField != null)
-                    {
-                        loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, en));
-                    }
-                }
+                transformedExpr = ReplaceIterator(e, expr.IteratorId.Name, rowAccess);
             }
 
-            // 2. Build the For Loop
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
+            // 4. Append to Dataframe
+            // Because resVar is now a Dataframe, AddNode will trigger Dataframe row appending
+            loopBody.Statements.Add(new AddNode(new IdNode(resVar), transformedExpr));
+
+            // 5. Loop Logic
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
-            // 3. The result of the sequence is the modified dataframe
             program.Statements.Add(new IdNode(resVar));
-
             return program;
         }
 
@@ -2811,26 +2853,7 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
-        public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
-        {
-            if (node == null) return null;
 
-            // Handle Statements (Assignments that aren't ExpressionNodes)
-            if (node is RecordFieldAssignNode rfan)
-            {
-                var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
-                var newAssign = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
-                return new RecordFieldAssignNode(newRec, rfan.IdField, newAssign);
-            }
-
-            // Fall back to the expression replacer for everything else
-            if (node is ExpressionNode expr)
-            {
-                return ReplaceIterator(expr, iteratorName, replacement);
-            }
-
-            return node;
-        }
 
         public ExpressionNode ReplaceIterator(ExpressionNode node, string iteratorName, ExpressionNode replacement)
         {
@@ -4713,26 +4736,29 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // {x:5}+{y:4} 
 
-            // Allocate the record (array of pointers)
+            // In LLVM 15+, 'ptr' is opaque, but we must tell GEP the size of the element
+            // we are indexing. Since we are storing pointers, the element type is 'ptr'.
+            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 1. Allocate the record (array of 8-byte pointers)
+            // Size = count * 8 bytes
             var recordSize = LLVMValueRef.CreateConstInt(i64, (ulong)(values.Count * 8));
             var recordPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { recordSize }, "rec_ptr");
 
-            System.Console.WriteLine("value count: " + values.Count + " recordfields count: " + type.RecordFields.Count);
-
             for (int i = 0; i < values.Count; i++)
             {
-                System.Console.WriteLine("record field type:" + type.RecordFields[i].Type + " value: " + values[i] + " the label: " + type.RecordFields[i].Label);
                 var fieldType = type.RecordFields[i].Type;
                 LLVMValueRef pointerToStore;
+
+                // 2. Handle Boxing for Primitives
+                // If it's a raw LLVM i64/double/i1, it needs a heap-allocated box
                 if (fieldType is IntType || fieldType is FloatType || fieldType is BoolType)
                 {
-                    // Only box if it's a raw value
                     if (values[i].TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
                         values[i].TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
                     {
-                        // ✅ raw primitive → box it
+                        // Allocate 8 bytes for the primitive value
                         var valMem = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
                             new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "val_mem");
 
@@ -4740,32 +4766,44 @@ namespace MyCompiler
                         {
                             IntType => ctx.Int64Type,
                             FloatType => ctx.DoubleType,
-                            _ => ctx.Int1Type
+                            _ => ctx.Int1Type // Bool
                         };
 
+                        // Store the raw value into the box
                         var cast = _builder.BuildBitCast(valMem, LLVMTypeRef.CreatePointer(llvmType, 0));
                         _builder.BuildStore(values[i], cast);
+
                         pointerToStore = valMem;
                     }
                     else
                     {
-                        // already boxed → reuse directly
+                        // Already a pointer (already boxed)
                         pointerToStore = values[i];
                     }
                 }
                 else
                 {
-                    // already boxed → reuse directly
+                    // Strings, Records, etc., are already pointers
                     pointerToStore = values[i];
                 }
 
-                // Store the pointer into the record's slot
-                System.Console.WriteLine("close");
-                var slotPtr = _builder.BuildGEP2(i8Ptr, recordPtr, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) });
+                // 3. THE CRITICAL FIX:
+                // Use ptrType (8 bytes) so the index 'i' multiplies correctly.
+                // This calculates address: recordPtr + (i * 8)
+                var slotPtr = _builder.BuildGEP2(
+                    ptrType,
+                    recordPtr,
+                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
+                    $"slot_{i}"
+                );
+
+                // Store the 8-byte pointer into the 8-byte slot
                 _builder.BuildStore(pointerToStore, slotPtr);
             }
+
             return recordPtr;
         }
+
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
