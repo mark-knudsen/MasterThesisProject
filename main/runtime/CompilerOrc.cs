@@ -2522,6 +2522,7 @@ namespace MyCompiler
             if (expr.Assignments.Count == 1 && !isStatementStyle)
             {
                 Console.WriteLine("DEBUG: Compiling MAP using Path A (Functional)");
+                
                 // Path A logic
                 var bodyNode = expr.Assignments.First();
 

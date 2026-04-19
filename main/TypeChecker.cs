@@ -655,8 +655,9 @@ namespace MyCompiler
             try
             {
                 foreach (var node in expr.Assignments)
-                {
-                    Visit(node);
+                {// IMPORTANT: Capture the type returned by the visitor
+                    Type t = Visit(node);
+                    if (node is ExpressionNode en2) en2.SetType(t);
                 }
 
                 // Determine result type based on the LAST node
