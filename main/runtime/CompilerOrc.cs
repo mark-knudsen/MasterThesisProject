@@ -2394,12 +2394,10 @@ namespace MyCompiler
             // Check what the TYPE CHECKER said the result would be
             if (expr.Type is DataframeType)
             {
-                //Console.WriteLine("DATAFRAME RESULT..............................................................");
                 program = MapForDataframe(expr);
             }
             else if (expr.Type is ArrayType)
             {
-                //Console.WriteLine("ARRAY RESULT..................................................................");
                 // MapForArray works perfectly even if the source is a Dataframe,
                 // because it just loops and performs the 'add' to a new array.
                 program = MapForArray(expr);
@@ -2522,7 +2520,7 @@ namespace MyCompiler
             if (expr.Assignments.Count == 1 && !isStatementStyle)
             {
                 Console.WriteLine("DEBUG: Compiling MAP using Path A (Functional)");
-                
+
                 // Path A logic
                 var bodyNode = expr.Assignments.First();
 
@@ -4961,6 +4959,7 @@ namespace MyCompiler
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
          for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
 
+        df.subset(["latitude", "longitude"])
 
         df.where(x => x.latitude > -18.0)
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
