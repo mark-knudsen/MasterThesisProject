@@ -112,8 +112,8 @@ namespace MyCompiler
                     }
                     else if (typeCode == 'F')
                     {
-                        // Add System.Globalization.CultureInfo.InvariantCulture here
-                        if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out double val))
+                        // Standardize formatting from program
+                        if (double.TryParse(rawValue, out double val))
                         {
                             long bits = BitConverter.DoubleToInt64Bits(val);
                             Marshal.WriteInt64(valuePtr, bits);
@@ -204,7 +204,7 @@ namespace MyCompiler
                         else if (typeCode == 2) // Float (Double)
                         {
                             long bits = Marshal.ReadInt64(valBoxPtr);
-                            cellValue = BitConverter.Int64BitsToDouble(bits).ToString(CultureInfo.InvariantCulture);
+                            cellValue = BitConverter.Int64BitsToDouble(bits).ToString();
                         }
                         else if (typeCode == 3) // Bool
                         {
@@ -450,7 +450,7 @@ namespace MyCompiler
         }
 
         // TODO: 
-        // none atm
+        // 
 
         // Problems
 
@@ -684,11 +684,11 @@ namespace MyCompiler
                 }
             }
 
-            // Standardize formatting here using InvariantCulture
+            // Standardize formatting from program
             var entries = result.Select(kv =>
             {
                 string valStr = kv.Value is IFormattable f
-                    ? f.ToString(null, CultureInfo.InvariantCulture)
+                    ? f.ToString()
                     : kv.Value?.ToString() ?? "null";
                 return $"{kv.Key}: {valStr}";
             });
@@ -812,7 +812,7 @@ namespace MyCompiler
                         case 2:
                             byte[] bytes = new byte[8];
                             Marshal.Copy(ptr, bytes, 0, 8);
-                            return BitConverter.ToDouble(bytes, 0).ToString(CultureInfo.InvariantCulture);
+                            return BitConverter.ToDouble(bytes, 0).ToString();
                         case 3: return Marshal.ReadByte(ptr) != 0 ? "True" : "False";
                         case 4:
                             IntPtr sAddr = Marshal.ReadIntPtr(ptr);
@@ -2162,9 +2162,13 @@ namespace MyCompiler
 
         // syntax 
         // r + {x: 5, y: 3}                          // should return a record with added fields x and y
-        // x.map(d=> d.name + "Smith")               // should return an array
-        // x.map(d=> d + {x: 5, y: 3})               // should return a dataframe with added columns x and y
-        // x.map(d=> d + {name: d.name + "smith"})   // should return a dataframe with added columns x and y
+        // x.map(d=> d.name + "Smith")               // should return an array                                    the new funcs fails this often(empty df requries 'types')
+        // x.map(d=> d + {x: 5, y: 3})               // should return a dataframe with added columns x and y      does not work
+        // x.map(d=> d + {name: d.name + "smith"})   // should return a dataframe with added smith to name
+        // x.map(d=> {name: d.name, age: d.age})     // should return a dataframe with the columns name and age   
+        // x.map(d=> {name: d.name, not: d.age})     // should return a dataframe with the columns name and not   does not work
+        // x.map(d=> {age: d.age, name: d.name})     // should return a dataframe with the columns age and name   does not work
+        // x.map(d=> {name: d.name})                 // should return a dataframe with the columns name           does not work
 
         // {x:5}+{y:4} = {x:5, y:4}  
         // {x:5}+{x:4} = {x:4}
@@ -2192,7 +2196,10 @@ namespace MyCompiler
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
-        // x.map(d => d.age + 10) // this should return the dataframe not the column
+        // x.map(d => d.age + 10)   // this should return a new array
+        // x.map(d => d)            // this should return a complete unmodified copy of a dataframe
+        // x.map(d => d.name, d.age)           
+        // x.map(d => d + {power: 10})   
         // x.where(d=> d.age > 90)  
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
@@ -2347,33 +2354,28 @@ namespace MyCompiler
         public LLVMValueRef VisitMap(MapNode expr)
         {
             var sourceType = expr.SourceExpr.Type;
-            SequenceNode program;
 
-            // Check what the TYPE CHECKER said the result would be
-            if (expr.Type is DataframeType)
+            SequenceNode program;
+            if (sourceType is ArrayType)
             {
-                Console.WriteLine("DATAFRAME RESULT..............................................................");
-                program = MapForDataframe(expr);
+                Console.WriteLine("Mapping array");
+                program = MapForArray(sourceType, expr);
             }
-            else if (expr.Type is ArrayType)
+            else if (sourceType is DataframeType)
             {
-                Console.WriteLine("ARRAY RESULT..................................................................");
-                // MapForArray works perfectly even if the source is a Dataframe,
-                // because it just loops and performs the 'add' to a new array.
-                program = MapForArray(expr);
+                Console.WriteLine("Mapping dataframe");
+                program = MapForDataframe(sourceType, expr); // This helper handles Dataframe result types
             }
             else
-            {
-                throw new Exception($"Unsupported map result type: {expr.Type}");
-            }
+                throw new Exception($"Cannot call map on {sourceType}");
 
             PerformSemanticAnalysis(program);
             return VisitSequence(program);
         }
 
-        public SequenceNode MapForArray(MapNode expr)
+        public SequenceNode MapForArray(Type sourceType, MapNode expr)
         {
-            //var arrType = (ArrayType)sourceType;
+            var arrType = (ArrayType)sourceType;
 
             // Use 'as' or check type before casting to avoid the crash
             if (expr.SourceExpr.Type is not ArrayType resultArrType)
@@ -2398,9 +2400,8 @@ namespace MyCompiler
 
             var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
-
             // Transform element
-            var mappedValue = ReplaceIterator(expr.Assignments[0] as ExpressionNode, expr.IteratorId.Name, currentElement);
+            var mappedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentElement);
 
             // Use .add() for dynamic growth, same as 'where'
             var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
@@ -2418,6 +2419,372 @@ namespace MyCompiler
 
             return program;
         }
+
+        public SequenceNode MapForDataframe(Type sourceType, MapNode expr)
+        {
+            var dfType = (DataframeType)sourceType;
+
+            string srcVarName = "__map_src";
+            string resultVarName = "__map_result";
+            string indexVarName = "__map_i";
+
+            // Initialize source and result
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+            var emptyRows = new ArrayNode(new List<ExpressionNode>()) { ElementType = new RecordType(dfType.RowType.RecordFields) };
+            var resultAssign = new AssignNode(resultVarName, new DataframeNode(new List<NamedArgumentNode>
+    {
+        new NamedArgumentNode("columns", new ArrayNode(dfType.ColumnNames.Select(c => new StringNode(c) as ExpressionNode).ToList())),
+        new NamedArgumentNode("rows", emptyRows)
+    }));
+
+            // Initialize loop index
+            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
+
+            // Loop condition and step
+            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
+            var loopStep = new IncrementNode(new IdNode(indexVarName));
+
+            // Current row
+            var currentRow = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
+
+            // Replace iterator in lambda
+            var lambdaResult = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, currentRow);
+
+            // Wrap lambda result in a RecordNode if not already
+            RecordNode mappedRecord;
+            if (lambdaResult is RecordNode recNode)
+            {
+                mappedRecord = recNode;
+            }
+            else
+            {
+                // For single-column mapping, use first column name
+                mappedRecord = new RecordNode(new List<NamedArgumentNode>
+        {
+            new NamedArgumentNode(dfType.ColumnNames[0], lambdaResult)
+        });
+
+                // Set proper type info
+                mappedRecord.SetType(new RecordType(new List<RecordField>
+        {
+            new RecordField
+            {
+                Label = dfType.ColumnNames[0],
+                Value = lambdaResult,
+                Type = lambdaResult.Type
+            }
+        }));
+            }
+
+            // Add mapped row to result dataframe
+            var addNode = new AddNode(new IdNode(resultVarName), mappedRecord);
+
+            // Loop body
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(addNode);
+
+            // For-loop
+            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
+
+            // Final program
+            var program = new SequenceNode();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(forLoop);
+            program.Statements.Add(new IdNode(resultVarName));
+
+            return program;
+        }
+
+
+
+
+        // public SequenceNode MapForDataframe_kinda_works_but_alot_is_broken(Type sourceType, MapNode expr)
+        // {
+        //     if (sourceType is not DataframeType dfType)
+        //         throw new Exception("Map source must be a Dataframe.");
+
+        //     var srcVar = "__map_src";
+        //     var resultVar = "__map_result";
+        //     var iVar = "__map_i";
+        //     var lenVar = "__map_len";
+        //     var rowVar = "__current_row";
+
+        //     // 1. Assign variables
+        //     var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
+        //     var indexInit = new AssignNode(iVar, new NumberNode(0));
+        //     var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
+
+        //     // 2. Loop body
+        //     var loopBody = new SequenceNode();
+
+        //     // Current row
+        //     var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+        //     var rowAssign = new AssignNode(rowVar, rowAccess);
+        //     loopBody.Statements.Add(rowAssign);
+
+        //     // 3. Map body
+        //     var rowIdRef = new IdNode(rowVar);
+        //     rowIdRef.SetType(dfType.RowType);
+
+        //     var mapBodyNode = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowIdRef);
+
+        //     // 4. Determine result type
+        //     ExpressionNode resultConstructor;
+        //     if (expr.Type is DataframeType resDfType)
+        //     {
+        //         // Record -> dataframe path
+        //         var columnNodes = resDfType.ColumnNames
+        //             .Select(c => (ExpressionNode)new StringNode(c))
+        //             .ToList();
+
+        //         var typeNodes = resDfType.DataTypes
+        //             .Select(t => t switch
+        //             {
+        //                 IntType => (ExpressionNode)new NumberNode(0),
+        //                 FloatType => (ExpressionNode)new FloatNode(0),
+        //                 BoolType => (ExpressionNode)new BooleanNode(false),
+        //                 _ => (ExpressionNode)new StringNode("")
+        //             })
+        //             .ToList();
+
+        //         resultConstructor = new DataframeNode(new List<NamedArgumentNode>
+        // {
+        //     new NamedArgumentNode("columns", new ArrayNode(columnNodes)),
+        //     new NamedArgumentNode("type", new ArrayNode(typeNodes))
+        // });
+        //         resultConstructor.SetType(resDfType);
+
+        //         // Normalize record to dataframe schema
+        //         //var emptyRow = CreateEmptyRecordNode(resDfType.RowType);
+        //         var emptyRow = new RecordNode(new List<NamedArgumentNode>()); // this might be wrong
+        //         mapBodyNode = new BinaryOpNode(emptyRow, "+", mapBodyNode);
+        //         mapBodyNode.SetType(resDfType.RowType);
+
+        //         // Add to dataframe
+        //         loopBody.Statements.Add(new AddNode(new IdNode("__map_result"), mapBodyNode));
+        //     }
+        //     else if (expr.Type is ArrayType arrType)
+        //     {
+        //         // Primitive -> array path
+        //         resultConstructor = new ArrayNode(new List<ExpressionNode>())
+        //         {
+        //             ElementType = arrType.ElementType
+        //         };
+        //         resultConstructor.SetType(arrType);
+
+        //         // Add element to array
+        //         loopBody.Statements.Add(new AddNode(new IdNode("__map_result"), mapBodyNode));
+        //     }
+        //     else
+        //     {
+        //         throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
+        //     }
+
+        //     // 5. Result variable
+        //     var resultAssign = new AssignNode(resultVar, resultConstructor);
+
+        //     // 6. Loop
+        //     var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
+        //     var step = new IncrementNode(new IdNode(iVar));
+        //     var forLoop = new ForLoopNode(indexInit, cond, step, loopBody);
+
+        //     // 7. Assemble program
+        //     var program = new SequenceNode();
+        //     program.Statements.Add(srcAssign);
+        //     program.Statements.Add(resultAssign);
+        //     program.Statements.Add(lenAssign);
+        //     program.Statements.Add(forLoop);
+        //     program.Statements.Add(new IdNode(resultVar));
+
+        //     return program;
+        // }
+
+
+        public SequenceNode MapForDataframe_old_but_correct_map(Type sourceType, MapNode expr)
+        {
+            var dfType = (DataframeType)sourceType;
+
+            var srcVar = "__map_src";
+            var resultVar = "__map_result";
+            var iVar = "__map_i";
+            var lenVar = "__map_len";
+            var rowVar = "__current_row";
+
+            ExpressionNode resultConstructor;
+
+            // 1. Determine if we are building a new Dataframe or a simple Array
+            if (expr.Type is DataframeType resDfType)
+            {
+                var column = resDfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+                var type = resDfType.DataTypes.Select(t =>
+                {
+                    if (t is IntType) return (ExpressionNode)new NumberNode(0);
+                    if (t is FloatType) return (ExpressionNode)new FloatNode(0);
+                    if (t is BoolType) return (ExpressionNode)new BooleanNode(false);
+                    return (ExpressionNode)new StringNode("");
+                }).ToList();
+
+                resultConstructor = new DataframeNode(new List<NamedArgumentNode> {
+            new NamedArgumentNode("columns", new ArrayNode(column)),
+            new NamedArgumentNode("type", new ArrayNode(type))
+        });
+                resultConstructor.SetType(resDfType);
+            }
+            else if (expr.Type is ArrayType resArrType)
+            {
+                resultConstructor = new ArrayNode(new List<ExpressionNode>())
+                {
+                    ElementType = resArrType.ElementType
+                };
+                resultConstructor.SetType(resArrType);
+            }
+            else
+            {
+                throw new Exception($"Unsupported result type for Dataframe map: {expr.Type}");
+            }
+
+            // 2. Synthesize Assignments & Setup
+            var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
+            var resultAssign = new AssignNode(resultVar, resultConstructor);
+            var indexInit = new AssignNode(iVar, new NumberNode(0));
+
+            // Optimization: Cache the length outside the loop
+            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
+
+            // 3. Loop Logic
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new IdNode(lenVar));
+            var step = new IncrementNode(new IdNode(iVar));
+
+            var loopBody = new SequenceNode();
+
+            // Optimization: Access the Row once and store it in a variable
+            // This row variable must have the RecordType of the source dataframe
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            var rowAssign = new AssignNode(rowVar, rowAccess);
+            loopBody.Statements.Add(rowAssign);
+
+            // Transform: Replace 'x' with the ID of the row variable, NOT the indexing expression
+            var rowIdReference = new IdNode(rowVar);
+            rowIdReference.SetType(dfType.RowType); // Crucial for field resolution
+
+            var transformedValue = ReplaceIterator(expr.Assignment, expr.IteratorId.Name, rowIdReference);
+
+            // 4. Append to result
+            var addNode = new AddNode(new IdNode(resultVar), transformedValue);
+            loopBody.Statements.Add(addNode);
+
+            var loop = new ForLoopNode(indexInit, cond, step, loopBody);
+
+            // 5. Assemble final program
+            var program = new SequenceNode();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(resultAssign);
+            program.Statements.Add(lenAssign); // Added length caching
+            program.Statements.Add(loop);
+            program.Statements.Add(new IdNode(resultVar));
+
+            return program;
+        }
+
+        private LLVMValueRef CreateEmptyRecord(RecordType type)
+        {
+            var values = type.RecordFields.Select(f =>
+            {
+                return f.Type switch
+                {
+                    IntType => LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0),
+                    FloatType => LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0.0),
+                    BoolType => LLVMValueRef.CreateConstInt(_module.Context.Int1Type, 0),
+                    StringType => Visit(new StringNode("")),
+                    _ => LLVMValueRef.CreateConstPointerNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0))
+                };
+            }).ToList();
+
+            return BuildRecordFromValues(type, values);
+        }
+
+        //      public LLVMValueRef VisitString(StringNode expr)
+        // {
+        //     return _builder.BuildGlobalStringPtr(expr.Value, "str");
+        // }
+
+
+
+        // public LLVMValueRef VisitMap_original(MapNode expr)
+        // {
+        //     var sourceType = expr.SourceExpr.Type;
+        //     SequenceNode program;
+
+        //     // Check what the TYPE CHECKER said the result would be
+        //     if (expr.Type is DataframeType)
+        //     {
+        //         Console.WriteLine("DATAFRAME RESULT..............................................................");
+        //         program = MapForDataframe(expr);
+        //     }
+        //     else if (expr.Type is ArrayType)
+        //     {
+        //         Console.WriteLine("ARRAY RESULT..................................................................");
+        //         // MapForArray works perfectly even if the source is a Dataframe,
+        //         // because it just loops and performs the 'add' to a new array.
+        //         program = MapForArray(expr);
+        //     }
+        //     else
+        //     {
+        //         throw new Exception($"Unsupported map result type: {expr.Type}");
+        //     }
+
+        //     PerformSemanticAnalysis(program);
+        //     return VisitSequence(program);
+        // }
+
+        // public SequenceNode MapForArray_original(MapNode expr)
+        // {
+        //     //var arrType = (ArrayType)sourceType;
+
+        //     // Use 'as' or check type before casting to avoid the crash
+        //     if (expr.SourceExpr.Type is not ArrayType resultArrType)
+        //         throw new Exception($"Map on Array expected to return ArrayType, but got {expr.Type}");
+
+        //     var srcVarName = "__map_src";
+        //     var resultVarName = "__map_result";
+        //     var indexVarName = "__map_i";
+
+        //     // Use the element type from the RESOLVED result type
+        //     var emptyResultArray = new ArrayNode(new List<ExpressionNode>())
+        //     {
+        //         ElementType = resultArrType.ElementType
+        //     };
+
+        //     var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+        //     var resultAssign = new AssignNode(resultVarName, emptyResultArray);
+        //     var indexInit = new AssignNode(indexVarName, new NumberNode(0));
+
+        //     var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
+        //     var loopStep = new IncrementNode(new IdNode(indexVarName));
+
+        //     var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
+
+
+        //     // Transform element
+        //     var mappedValue = ReplaceIterator(expr.Assignments[0] as ExpressionNode, expr.IteratorId.Name, currentElement);
+
+        //     // Use .add() for dynamic growth, same as 'where'
+        //     var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
+
+        //     var loopBody = new SequenceNode();
+        //     loopBody.Statements.Add(addNode);
+
+        //     var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
+
+        //     var program = new SequenceNode();
+        //     program.Statements.Add(srcAssign);
+        //     program.Statements.Add(resultAssign);
+        //     program.Statements.Add(forLoop);
+        //     program.Statements.Add(new IdNode(resultVarName));
+
+        //     return program;
+        // }
 
         private string InferFieldName(Node node)
         {
@@ -2443,53 +2810,53 @@ namespace MyCompiler
             return null;
         }
 
-        public SequenceNode MapForDataframe(MapNode expr)
-        {
-            var program = new SequenceNode();
-            var srcVar = "__map_src";
-            var resVar = "__map_result";
-            var iVar = "__map_i";
+        // public SequenceNode MapForDataframe_original(MapNode expr)
+        // {
+        //     var program = new SequenceNode();
+        //     var srcVar = "__map_src";
+        //     var resVar = "__map_result";
+        //     var iVar = "__map_i";
 
-            // 1. Setup: result = copy(source)
-            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
-            program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
-            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
+        //     // 1. Setup: result = copy(source)
+        //     program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
+        //     program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
+        //     program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
-            var loopBody = new SequenceNode();
-            // What 'x' becomes: __map_result[__map_i]
-            var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
+        //     var loopBody = new SequenceNode();
+        //     // What 'x' becomes: __map_result[__map_i]
+        //     var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
 
-            foreach (var assignmentNode in expr.Assignments)
-            {
-                // Replace iterator 'x' in the original node (handles both Statement and Expression)
-                Node transformed = ReplaceIteratorInNode(assignmentNode, expr.IteratorId.Name, rowAccess);
+        //     foreach (var assignmentNode in expr.Assignments)
+        //     {
+        //         // Replace iterator 'x' in the original node (handles both Statement and Expression)
+        //         Node transformed = ReplaceIteratorInNode(assignmentNode, expr.IteratorId.Name, rowAccess);
 
-                if (transformed is RecordFieldAssignNode rfan)
-                {
-                    // Case: x.longitude = 100.0 -> rowAccess.longitude = 100.0
-                    loopBody.Statements.Add(rfan);
-                }
-                else if (transformed is ExpressionNode en)
-                {
-                    // Case: x.longitude - 100.0 -> rowAccess.longitude = (rowAccess.longitude - 100.0)
-                    string targetField = InferFieldName(assignmentNode);
-                    if (targetField != null)
-                    {
-                        loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, en));
-                    }
-                }
-            }
+        //         if (transformed is RecordFieldAssignNode rfan)
+        //         {
+        //             // Case: x.longitude = 100.0 -> rowAccess.longitude = 100.0
+        //             loopBody.Statements.Add(rfan);
+        //         }
+        //         else if (transformed is ExpressionNode en)
+        //         {
+        //             // Case: x.longitude - 100.0 -> rowAccess.longitude = (rowAccess.longitude - 100.0)
+        //             string targetField = InferFieldName(assignmentNode);
+        //             if (targetField != null)
+        //             {
+        //                 loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, en));
+        //             }
+        //         }
+        //     }
 
-            // 2. Build the For Loop
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
-            var step = new IncrementNode(new IdNode(iVar));
-            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
+        //     // 2. Build the For Loop
+        //     var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
+        //     var step = new IncrementNode(new IdNode(iVar));
+        //     program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
-            // 3. The result of the sequence is the modified dataframe
-            program.Statements.Add(new IdNode(resVar));
+        //     // 3. The result of the sequence is the modified dataframe
+        //     program.Statements.Add(new IdNode(resVar));
 
-            return program;
-        }
+        //     return program;
+        // }
 
 
         /*
@@ -2744,72 +3111,72 @@ namespace MyCompiler
         }
 
         // Not used!
-        public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
-        {
-            // Temp variable names
-            var srcVarName = "__map_src";
-            var indexVarName = "__map_i";
+        // public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
+        // {
+        //     // Temp variable names
+        //     var srcVarName = "__map_src";
+        //     var indexVarName = "__map_i";
 
-            // 1. Store source array
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+        //     // 1. Store source array
+        //     var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
 
-            // 2. i = 0
-            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
+        //     // 2. i = 0
+        //     var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
 
-            // 3. Loop condition: i < src.length
-            var loopCond = new ComparisonNode(
-                new IdNode(indexVarName),
-                "<",
-                new LengthNode(new IdNode(srcVarName))
-            );
+        //     // 3. Loop condition: i < src.length
+        //     var loopCond = new ComparisonNode(
+        //         new IdNode(indexVarName),
+        //         "<",
+        //         new LengthNode(new IdNode(srcVarName))
+        //     );
 
-            // 4. i++
-            var loopStep = new IncrementNode(new IdNode(indexVarName));
+        //     // 4. i++
+        //     var loopStep = new IncrementNode(new IdNode(indexVarName));
 
-            // 5. src[i]
-            var currentElement = new IndexNode(
-                new IdNode(srcVarName),
-                new IdNode(indexVarName)
-            );
+        //     // 5. src[i]
+        //     var currentElement = new IndexNode(
+        //         new IdNode(srcVarName),
+        //         new IdNode(indexVarName)
+        //     );
 
-            // 6. Replace iterator (d => ...) with actual element
-            var mappedExpr = ReplaceIterator(
-                expr.Assignments[0] as ExpressionNode,
-                expr.IteratorId.Name,
-                currentElement
-            );
+        //     // 6. Replace iterator (d => ...) with actual element
+        //     var mappedExpr = ReplaceIterator(
+        //         expr.Assignments[0] as ExpressionNode,
+        //         expr.IteratorId.Name,
+        //         currentElement
+        //     );
 
-            // 7. src[i] = mappedExpr
-            var indexAssignNode = new IndexAssignNode(
-                new IdNode(srcVarName),
-                new IdNode(indexVarName),
-                mappedExpr
-            );
+        //     // 7. src[i] = mappedExpr
+        //     var indexAssignNode = new IndexAssignNode(
+        //         new IdNode(srcVarName),
+        //         new IdNode(indexVarName),
+        //         mappedExpr
+        //     );
 
-            // 8. Loop body
-            var loopBody = new SequenceNode();
-            loopBody.Statements.Add(indexAssignNode);
+        //     // 8. Loop body
+        //     var loopBody = new SequenceNode();
+        //     loopBody.Statements.Add(indexAssignNode);
 
-            var forLoop = new ForLoopNode(
-                indexAssign,
-                loopCond,
-                loopStep,
-                loopBody
-            );
+        //     var forLoop = new ForLoopNode(
+        //         indexAssign,
+        //         loopCond,
+        //         loopStep,
+        //         loopBody
+        //     );
 
-            // 9. Full sequence
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(forLoop);
+        //     // 9. Full sequence
+        //     var program = new SequenceNode();
+        //     program.Statements.Add(srcAssign);
+        //     program.Statements.Add(forLoop);
 
-            // Return the modified array
-            program.Statements.Add(new IdNode(srcVarName));
+        //     // Return the modified array
+        //     program.Statements.Add(new IdNode(srcVarName));
 
-            // Optional semantic check
-            PerformSemanticAnalysis(program);
+        //     // Optional semantic check
+        //     PerformSemanticAnalysis(program);
 
-            return VisitSequence(program);
-        }
+        //     return VisitSequence(program);
+        // }
 
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
@@ -4719,11 +5086,11 @@ namespace MyCompiler
             var recordSize = LLVMValueRef.CreateConstInt(i64, (ulong)(values.Count * 8));
             var recordPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { recordSize }, "rec_ptr");
 
-            System.Console.WriteLine("value count: " + values.Count + " recordfields count: " + type.RecordFields.Count);
+            Console.WriteLine("value count: " + values.Count + " recordfields count: " + type.RecordFields.Count);
 
             for (int i = 0; i < values.Count; i++)
             {
-                System.Console.WriteLine("record field type:" + type.RecordFields[i].Type + " value: " + values[i] + " the label: " + type.RecordFields[i].Label);
+                Console.WriteLine("record field type:" + type.RecordFields[i].Type + " value: " + values[i] + " the label: " + type.RecordFields[i].Label);
                 var fieldType = type.RecordFields[i].Type;
                 LLVMValueRef pointerToStore;
                 if (fieldType is IntType || fieldType is FloatType || fieldType is BoolType)
@@ -4760,7 +5127,6 @@ namespace MyCompiler
                 }
 
                 // Store the pointer into the record's slot
-                System.Console.WriteLine("close");
                 var slotPtr = _builder.BuildGEP2(i8Ptr, recordPtr, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) });
                 _builder.BuildStore(pointerToStore, slotPtr);
             }

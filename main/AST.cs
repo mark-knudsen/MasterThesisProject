@@ -352,21 +352,37 @@ namespace MyCompiler
 
     public class MapNode : ExpressionNode
     {
-        public IdNode IteratorId { get; }
-        public ExpressionNode SourceExpr { get; }
-        public List<Node> Assignments { get; }
+        public IdNode IteratorId;
+        public ExpressionNode SourceExpr;
+        public ExpressionNode Assignment;
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode assignment)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
-            Assignments = assignments;
-
-            //System.Console.WriteLine("AST: assignment count: " + Assignments.Count);
+            Assignment = assignment;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
     }
+
+    // public class MapNode_og : ExpressionNode
+    // {
+    //     public IdNode IteratorId { get; }
+    //     public ExpressionNode SourceExpr { get; }
+    //     public List<Node> Assignments { get; }
+
+    //     public MapNode_og(IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+    //     {
+    //         IteratorId = iteratorId;
+    //         SourceExpr = sourceExpr;
+    //         Assignments = assignments;
+
+    //         //System.Console.WriteLine("AST: assignment count: " + Assignments.Count);
+    //     }
+
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
+    // }
 
     public class ReadCsvNode : ExpressionNode
     {

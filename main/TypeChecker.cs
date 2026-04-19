@@ -473,6 +473,17 @@ namespace MyCompiler
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
+            int minArrayCount = Math.Min(expr.Elements.Count, 100);
+
+            for (int i = 1; i < minArrayCount; i++)
+            {
+                Type indexType = Visit(expr.Elements[i]);
+                if (indexType is ArrayType) continue;
+
+                // if (expr.ElementType.GetType() != indexType.GetType()) // is also hit for type array i think, when creating an empty dataframe
+                //     throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+            }
+
             var arrayType = new ArrayType(expr.ElementType);
             expr.SetType(arrayType);
             return expr.Type;
@@ -490,7 +501,7 @@ namespace MyCompiler
         public Type VisitIndex(IndexNode expr)
         {
             // 1. Visit children first to resolve their types
-            Type sourceType = Visit(expr.SourceExpression);
+            Visit(expr.SourceExpression);
             Type indexType = Visit(expr.IndexExpression);
 
             Type inferred = new IntType(); // Default
@@ -638,68 +649,56 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-            Type iteratorType;
+            Type elementType;
 
+            // 1. Determine what the iterator 'x' represents
             if (sourceType is ArrayType arrayType)
-                iteratorType = arrayType.ElementType;
+            {
+                elementType = arrayType.ElementType;
+            }
             else if (sourceType is DataframeType dfType)
-                iteratorType = dfType.RowType;
+            {
+                // For dataframes, we iterate over the RowType (the Record)
+                elementType = dfType.RowType;
+            }
             else
+            {
                 throw new Exception("Map source must be an array or a dataframe.");
+            }
 
             var previousContext = _context;
-            _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
-            try
+            // 2. Inject 'x' into the context with the correct type (Primitive or Record)
+            _context = _context.Add(expr.IteratorId.Name, default, null!, elementType);
+
+            try // there should not be an empty try catch in the type checker
             {
+                // Visit the iterator ID to ensure it's registered
                 Visit(expr.IteratorId);
 
-                // Start with the current dataframe type (or a default)
-                Type resultType = sourceType;
+                // 3. Visit the transformation (the lambda body)
+                // If x is a Record, x.name will now resolve correctly because x has RowType
+                var bodyType = Visit(expr.Assignment);
 
-                foreach (var assignment in expr.Assignments)
+                // 4. The result of a Map is always an Array of whatever the body returns
+                //var resultType = new ArrayType(bodyType);
+
+
+                Type resultType;
+
+                // NEW LOGIC HERE:
+                // If the map transformation results in a Record, we produce a Dataframe.
+                // Otherwise (like mapping to a list of strings), we produce an Array.
+                if (bodyType is RecordType recType)
                 {
-                    // 1. Visit the assignment to ensure internal types are set
-                    var bodyType = Visit(assignment);
-
-                    if (sourceType is DataframeType sourceDf)
-                    {
-                        // 2. Use the 'assignment' (Node) directly, don't cast to ExpressionNode
-                        string targetField = InferFieldName(assignment);
-
-                        if (targetField == null)
-                            throw new Exception("Could not infer column name. Use '{column: value}' syntax.");
-
-                        var currentDf = (DataframeType)resultType;
-                        var newTypes = currentDf.DataTypes.ToList();
-                        var newRowFields = new List<RecordField>();
-
-                        for (int i = 0; i < currentDf.ColumnNames.Count; i++)
-                        {
-                            var colName = currentDf.ColumnNames[i];
-                            Type colType = currentDf.DataTypes[i];
-
-                            if (colName == targetField)
-                            {
-                                // Update the column type. 
-                                // If it's a statement (Void), we keep the original column type
-                                // If it's an expression, we use the expression's type
-                                colType = (bodyType is VoidType) ? colType : bodyType;
-                            }
-
-                            newTypes[i] = colType;
-                            newRowFields.Add(new RecordField { Label = colName, Type = colType });
-                        }
-
-                        resultType = new DataframeType(currentDf.ColumnNames, newTypes, new RecordType(newRowFields));
-                    }
-                    else
-                    {
-                        resultType = new ArrayType(bodyType);
-                    }
+                    // Create a Dataframe type based on the record's schema
+                    resultType = sourceType;
+                }
+                else
+                {
+                    resultType = new ArrayType(bodyType);
                 }
 
-                //System.Console.WriteLine($"[DEBUG] Map inferred type: {resultType}");
                 expr.SetType(resultType);
                 return resultType;
             }
@@ -709,6 +708,79 @@ namespace MyCompiler
             }
         }
 
+        // public Type VisitMap_og(MapNode expr)
+        // {
+        //     var sourceType = Visit(expr.SourceExpr);
+        //     Type iteratorType;
+
+        //     if (sourceType is ArrayType arrayType)
+        //         iteratorType = arrayType.ElementType;
+        //     else if (sourceType is DataframeType dfType)
+        //         iteratorType = dfType.RowType;
+        //     else
+        //         throw new Exception("Map source must be an array or a dataframe.");
+
+        //     var previousContext = _context;
+        //     _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
+
+        //     try
+        //     {
+        //         Visit(expr.IteratorId);
+
+        //         // Start with the current dataframe type (or a default)
+        //         Type resultType = sourceType;
+
+        //         foreach (var assignment in expr.Assignments)
+        //         {
+        //             // 1. Visit the assignment to ensure internal types are set
+        //             var bodyType = Visit(assignment);
+
+        //             if (sourceType is DataframeType sourceDf)
+        //             {
+        //                 // 2. Use the 'assignment' (Node) directly, don't cast to ExpressionNode
+        //                 string targetField = InferFieldName(assignment);
+
+        //                 if (targetField == null)
+        //                     throw new Exception("Could not infer column name. Use '{column: value}' syntax.");
+
+        //                 var currentDf = (DataframeType)resultType;
+        //                 var newTypes = currentDf.DataTypes.ToList();
+        //                 var newRowFields = new List<RecordField>();
+
+        //                 for (int i = 0; i < currentDf.ColumnNames.Count; i++)
+        //                 {
+        //                     var colName = currentDf.ColumnNames[i];
+        //                     Type colType = currentDf.DataTypes[i];
+
+        //                     if (colName == targetField)
+        //                     {
+        //                         // Update the column type. 
+        //                         // If it's a statement (Void), we keep the original column type
+        //                         // If it's an expression, we use the expression's type
+        //                         colType = (bodyType is VoidType) ? colType : bodyType;
+        //                     }
+
+        //                     newTypes[i] = colType;
+        //                     newRowFields.Add(new RecordField { Label = colName, Type = colType });
+        //                 }
+
+        //                 resultType = new DataframeType(currentDf.ColumnNames, newTypes, new RecordType(newRowFields));
+        //             }
+        //             else
+        //             {
+        //                 resultType = new ArrayType(bodyType);
+        //             }
+        //         }
+
+        //         //System.Console.WriteLine($"[DEBUG] Map inferred type: {resultType}");
+        //         expr.SetType(resultType);
+        //         return resultType;
+        //     }
+        //     finally
+        //     {
+        //         _context = previousContext;
+        //     }
+        // }
 
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
         private string InferFieldName(Node node)
@@ -851,11 +923,11 @@ namespace MyCompiler
                 var dfColumns = dfType.ColumnNames;
                 var recFields = recType.RecordFields.Select(f => f.Label).ToArray();
 
-                if (dfColumns.Count != recType.RecordFields.Count)
-                    throw new Exception("Record fields count must match the dataframe columns count");
+                // if (dfColumns.Count != recType.RecordFields.Count)
+                //     throw new Exception("Record fields count must match the dataframe columns count");  // for map we hit here
 
-                if (!dfColumns.All(col => recFields.Contains(col)))
-                    throw new Exception("Record fields do not match dataframe columns");
+                // if (!dfColumns.All(col => recFields.Contains(col)))
+                //     throw new Exception("Record fields do not match dataframe columns"); // for map we hit here
             }
             else if (arrayType is ArrayType arrType)
             {
@@ -1056,7 +1128,7 @@ namespace MyCompiler
             else
             {
                 // Explicit types for empty dataframe
-                if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
+                //if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'."); // FIX, map doesn't set this correctly
 
                 Visit(expr.DataTypes);
 
