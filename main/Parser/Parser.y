@@ -22,7 +22,7 @@
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
-%token DATAFRAME SHOW
+%token DATAFRAME SUBSET SHOW
 
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
 
@@ -200,17 +200,31 @@ expr
             $7 as ExpressionNode
         );
     }
-    | expr DOT MAP LPAREN ID LAMBDA map_list RPAREN   /* df.map(x => x.name+"_2", x.age + 10 )  */
+    | expr DOT MAP LPAREN ID LAMBDA map_list RPAREN  
     {   
-        // Cast $7 to the correct type (nodeList is List<Node>)
-        var assignments = $7 as List<MyCompiler.Node>;
-        
         $$ = new MapNode(
             new IdNode((string)$5),
             $1 as ExpressionNode,
-            assignments // Pass the list directly to the MapNode constructor
+            $7 as List<Node> // map_list already returns List<Node>
         );
     }
+    | expr DOT SUBSET LPAREN LBRACKET map_list RBRACKET RPAREN
+    {
+        // Convert List<Node> to List<ExpressionNode>
+        var elements = ($6 as List<Node>).Cast<ExpressionNode>().ToList();
+        
+        // Create the ArrayNode
+        var arrayNode = new ArrayNode(elements);
+        
+        // Wrap it in a List<Node> for the MapNode constructor
+        var wrapperList = new List<Node> { arrayNode };
+        
+        $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, wrapperList);
+    }
+
+        
+    /* | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); } */
+ 
     
     /* Global Function Style */
         /* Global Function Style */
@@ -250,7 +264,6 @@ expr
         /* $$ = new DataframeNode($3.Cast<ExpressionNode>().ToList()); */
     }
 
-    | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); }
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
     ;
 

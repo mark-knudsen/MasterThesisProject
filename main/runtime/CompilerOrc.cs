@@ -698,23 +698,65 @@ namespace MyCompiler
 
         private List<string> ExtractArray(IntPtr arrayObjPtr, ArrayType type)
         {
-            var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
+            // Instead of PtrToStructure, we read the 3 fields of %array manually:
+            // %array = type { i64 (len), i64 (cap), ptr (data) }
 
+            long length = Marshal.ReadInt64(arrayObjPtr, 0);       // Offset 0: length
+                                                                   // long capacity = Marshal.ReadInt64(arrayObjPtr, 8); // Offset 8: capacity (unused here)
+            IntPtr dataPtr = Marshal.ReadIntPtr(arrayObjPtr, 16);  // Offset 16: data pointer
+
+            var result = new List<string>();
             var elementType = type.ElementType;
-            var result = new List<string>(); // Add first column for index
 
-            for (long i = 0; i < array.length; i++)
+            for (long i = 0; i < length; i++)
             {
-                IntPtr elemPtr = IntPtr.Add(array.data, (int)(i * 8));
-                IntPtr ptr = Marshal.ReadIntPtr(elemPtr);
+                // Each element in the data array is a pointer (8 bytes)
+                IntPtr elemSlot = IntPtr.Add(dataPtr, (int)(i * 8));
+                IntPtr actualValPtr = Marshal.ReadIntPtr(elemSlot);
+
+                if (actualValPtr == IntPtr.Zero)
+                {
+                    result.Add("null");
+                    continue;
+                }
 
                 if (elementType is StringType)
-                    result.Add(Marshal.PtrToStringAnsi(ptr).ToString());
+                {
+                    result.Add(Marshal.PtrToStringAnsi(actualValPtr) ?? "");
+                }
+                else if (elementType is RecordType rec)
+                {
+                    // Unpack the record
+                    var fields = new List<string>();
+                    for (int f = 0; f < rec.RecordFields.Count; f++)
+                    {
+                        IntPtr fieldSlot = IntPtr.Add(actualValPtr, f * 8);
+                        IntPtr valPtr = Marshal.ReadIntPtr(fieldSlot);
 
+                        var fieldType = rec.RecordFields[f].Type;
+                        if (fieldType is FloatType)
+                        {
+                            byte[] b = new byte[8];
+                            Marshal.Copy(valPtr, b, 0, 8);
+                            fields.Add(BitConverter.ToDouble(b, 0).ToString());
+                        }
+                        else if (fieldType is IntType)
+                        {
+                            fields.Add(Marshal.ReadInt64(valPtr).ToString());
+                        }
+                        else if (fieldType is StringType)
+                        {
+                            fields.Add(Marshal.PtrToStringAnsi(valPtr) ?? "");
+                        }
+                        else fields.Add("?");
+                    }
+                    result.Add(string.Join(" | ", fields));
+                }
                 else
+                {
                     result.Add("?");
+                }
             }
-
             return result;
         }
 
@@ -2352,12 +2394,10 @@ namespace MyCompiler
             // Check what the TYPE CHECKER said the result would be
             if (expr.Type is DataframeType)
             {
-                Console.WriteLine("DATAFRAME RESULT..............................................................");
                 program = MapForDataframe(expr);
             }
             else if (expr.Type is ArrayType)
             {
-                Console.WriteLine("ARRAY RESULT..................................................................");
                 // MapForArray works perfectly even if the source is a Dataframe,
                 // because it just loops and performs the 'add' to a new array.
                 program = MapForArray(expr);
@@ -2373,51 +2413,50 @@ namespace MyCompiler
 
         public SequenceNode MapForArray(MapNode expr)
         {
-            //var arrType = (ArrayType)sourceType;
+            var program = new SequenceNode();
+            var srcVar = "__map_src";
+            var resVar = "__map_result";
+            var iVar = "__map_i"; // Your variable is named iVar
 
-            // Use 'as' or check type before casting to avoid the crash
-            if (expr.SourceExpr.Type is not ArrayType resultArrType)
-                throw new Exception($"Map on Array expected to return ArrayType, but got {expr.Type}");
+            // 1. Get the correct element type from the MapNode's result type
+            MyCompiler.Type resultElementType = null;
+            if (expr.Type is ArrayType at) resultElementType = at.ElementType;
+            else if (expr.Type is DataframeType df) resultElementType = df.RowType;
 
-            var srcVarName = "__map_src";
-            var resultVarName = "__map_result";
-            var indexVarName = "__map_i";
+            // 2. Setup
+            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // Use the element type from the RESOLVED result type
-            var emptyResultArray = new ArrayNode(new List<ExpressionNode>())
-            {
-                ElementType = resultArrType.ElementType
-            };
+            // Initialize empty array with the correct ElementType
+            var emptyArray = new ArrayNode(new List<ExpressionNode>());
+            emptyArray.ElementType = resultElementType;
 
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-            var resultAssign = new AssignNode(resultVarName, emptyResultArray);
-            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
-
-            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
-            var loopStep = new IncrementNode(new IdNode(indexVarName));
-
-            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
-
-
-            // Transform element
-            var mappedValue = ReplaceIterator(expr.Assignments[0] as ExpressionNode, expr.IteratorId.Name, currentElement);
-
-            // Use .add() for dynamic growth, same as 'where'
-            var addNode = new AddNode(new IdNode(resultVarName), mappedValue);
+            program.Statements.Add(new AssignNode(resVar, emptyArray));
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
             var loopBody = new SequenceNode();
-            loopBody.Statements.Add(addNode);
 
-            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
+            // FIX: Use iVar here instead of indexVarName
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
 
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(new IdNode(resultVarName));
+            // 3. Transform the lambda body
+            ExpressionNode lastExpr = null;
+            foreach (var e in expr.Assignments)
+            {
+                lastExpr = ReplaceIterator(e as ExpressionNode, expr.IteratorId.Name, rowAccess);
+            }
 
+            // 4. Add to the result list
+            loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
+
+            // 5. Loop Logic - Use iVar here as well
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            var step = new IncrementNode(new IdNode(iVar));
+            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
+
+            program.Statements.Add(new IdNode(resVar));
             return program;
         }
+
 
         private string InferFieldName(Node node)
         {
@@ -2449,48 +2488,136 @@ namespace MyCompiler
             var srcVar = "__map_src";
             var resVar = "__map_result";
             var iVar = "__map_i";
+            var currentRowVar = "__current_row";
+            var dfType = (DataframeType)expr.Type;
 
-            // 1. Setup: result = copy(source)
+            // 1. Assign source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
-            program.Statements.Add(new AssignNode(resVar, new CopyNode(new IdNode(srcVar))));
+
+            // 2. Initialize Result Dataframe (Structure only)
+            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            var dummyValues = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
+            var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
+                new NamedArgumentNode("columns", new ArrayNode(columns)),
+                new NamedArgumentNode("type", new ArrayNode(dummyValues))
+            });
+            dfConstructor.SetType(dfType);
+
+            program.Statements.Add(new AssignNode(resVar, dfConstructor));
             program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
             var loopBody = new SequenceNode();
-            // What 'x' becomes: __map_result[__map_i]
-            var rowAccess = new IndexNode(new IdNode(resVar), new IdNode(iVar));
+            var replacementNode = new IdNode(currentRowVar);
 
-            foreach (var assignmentNode in expr.Assignments)
+            // row = src[i]
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
+
+            bool isStatementStyle = expr.Assignments.Any(a =>
+                a is AssignNode || a is RecordFieldAssignNode || a.GetType().Name.Contains("Assign")
+            );
+
+            if (expr.Assignments.Count == 1 && !isStatementStyle)
             {
-                // Replace iterator 'x' in the original node (handles both Statement and Expression)
-                Node transformed = ReplaceIteratorInNode(assignmentNode, expr.IteratorId.Name, rowAccess);
+                Console.WriteLine("DEBUG: Compiling MAP using Path A (Functional)");
 
-                if (transformed is RecordFieldAssignNode rfan)
+                // Path A logic
+                var bodyNode = expr.Assignments.First();
+
+                if (bodyNode is BinaryOpNode bin && bin.Operator == "+" && bin.Right is RecordNode rec)
                 {
-                    // Case: x.longitude = 100.0 -> rowAccess.longitude = 100.0
-                    loopBody.Statements.Add(rfan);
-                }
-                else if (transformed is ExpressionNode en)
-                {
-                    // Case: x.longitude - 100.0 -> rowAccess.longitude = (rowAccess.longitude - 100.0)
-                    string targetField = InferFieldName(assignmentNode);
-                    if (targetField != null)
+                    // If NodeContainsId correctly returns TRUE for { lat2: x.latitude }, 
+                    // this block is skipped, and no hoisting occurs.
+                    if (!NodeContainsId(rec, expr.IteratorId.Name) && IsPure(rec))
                     {
-                        loopBody.Statements.Add(new RecordFieldAssignNode(rowAccess, targetField, en));
+                        var invVar = "__const_record";
+                        program.Statements.Add(new AssignNode(invVar, rec));
+                        bodyNode = new BinaryOpNode(bin.Left, "+", new IdNode(invVar));
                     }
                 }
+
+                // Perform the replacement on the bodyNode (hoisted or not)
+                var replacedBody = (ExpressionNode)ReplaceIteratorInNode(bodyNode, expr.IteratorId.Name, replacementNode);
+                loopBody.Statements.Add(new AddNode(new IdNode(resVar), replacedBody));
+
+
+            }
+            else
+            {
+                Console.WriteLine("DEBUG: Compiling MAP using Path B (Imperative)");
+
+                // 1. Clone row (mutate safely)
+                var cloneNode = new BinaryOpNode(new IdNode(currentRowVar), "+", new RecordNode(new List<NamedArgumentNode>()));
+                cloneNode.SetType(dfType.RowType);
+                loopBody.Statements.Add(new AssignNode(currentRowVar, cloneNode));
+
+                // 2. Apply all assignments
+                foreach (var action in expr.Assignments)
+                {
+                    var replacedAction = ReplaceIteratorInNode(action, expr.IteratorId.Name, replacementNode);
+                    loopBody.Statements.Add((StatementNode)replacedAction);
+                }
+
+                // 3. Collect row
+                loopBody.Statements.Add(new AddNode(new IdNode(resVar), new IdNode(currentRowVar)));
             }
 
-            // 2. Build the For Loop
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(resVar)));
+            // 3. The Loop Structure
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
-            // 3. The result of the sequence is the modified dataframe
+            // Return the new dataframe
             program.Statements.Add(new IdNode(resVar));
 
             return program;
         }
 
+
+
+        // Helper to check if a node tree uses a specific variable
+        private bool IsPure(Node node)
+        {
+            if (node == null) return true;
+            if (node is RandomNode) return false;
+
+            if (node is RecordNode rec)
+            {
+                foreach (var f in rec.Fields)
+                    if (!IsPure(f.Value)) return false;
+            }
+
+            if (node is BinaryOpNode bin)
+                return IsPure(bin.Left) && IsPure(bin.Right);
+
+            return true;
+        }
+
+        private bool NodeContainsId(Node node, string idName)
+        {
+            if (node == null) return false;
+
+            if (node is IdNode id) return id.Name == idName;
+
+            if (node is RecordFieldNode rf)
+                return NodeContainsId(rf.IdRecord, idName);
+
+            if (node is RecordNode rec)
+            {
+                return rec.Fields.Any(f =>
+                {
+                    // Check the NamedArgumentNode inside the RecordField
+                    if (f.Value is NamedArgumentNode nan)
+                        return NodeContainsId(nan.Value, idName);
+                    return NodeContainsId(f.Value, idName);
+                });
+            }
+
+            if (node is BinaryOpNode bin)
+                return NodeContainsId(bin.Left, idName) || NodeContainsId(bin.Right, idName);
+
+            return false;
+        }
 
         /*
 
@@ -2811,19 +2938,28 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
+
+
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
             if (node == null) return null;
 
-            // Handle Statements (Assignments that aren't ExpressionNodes)
+            // Handle Record Field Assignment (x.latitude = 5)
             if (node is RecordFieldAssignNode rfan)
             {
                 var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
-                var newAssign = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
-                return new RecordFieldAssignNode(newRec, rfan.IdField, newAssign);
+                var newExpr = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
+                return new RecordFieldAssignNode(newRec, rfan.IdField, newExpr);
             }
 
-            // Fall back to the expression replacer for everything else
+            // Handle standard Assignment (y = x.latitude)
+            if (node is AssignNode ass)
+            {
+                var newExpr = ReplaceIterator(ass.Expression, iteratorName, replacement);
+                return new AssignNode(ass.Id, newExpr);
+            }
+
+            // Fallback to expression replacer
             if (node is ExpressionNode expr)
             {
                 return ReplaceIterator(expr, iteratorName, replacement);
@@ -2836,112 +2972,80 @@ namespace MyCompiler
         {
             if (node == null) return null;
 
-            // 1. Base Case: The ID itself (e.g., x)
+            // 1. Base Case: The ID itself (x -> __current_row)
             if (node is IdNode id && id.Name == iteratorName)
-            {
                 return replacement;
-            }
 
-            // 2. RecordFieldNode (Handles x.columnName)
-            if (node is RecordFieldNode rf)
+            if (node is IdNode id2)
             {
-                var newSrc = ReplaceIterator(rf.IdRecord, iteratorName, replacement);
-                var newRf = new RecordFieldNode(newSrc, rf.IdField);
-                newRf.SetType(rf.Type);
-                return newRf;
+                Console.WriteLine($"[DEBUG] Visiting ID: {id2.Name}");
             }
 
-            // 3. IndexAssignNode (e.g., x[0] = 10) - Since this is an ExpressionNode in your AST
-            if (node is IndexAssignNode ian)
-            {
-                var newArr = ReplaceIterator(ian.ArrayExpression, iteratorName, replacement);
-                var newIdx = ReplaceIterator(ian.IndexExpression, iteratorName, replacement);
-                var newAss = ReplaceIterator(ian.AssignExpression, iteratorName, replacement);
-                var newNode = new IndexAssignNode(newArr, newIdx, newAss);
-                newNode.SetType(ian.Type);
-                return newNode;
-            }
 
-            // 4. NamedArgumentNode
-            if (node is NamedArgumentNode arg)
-            {
-                var newValue = ReplaceIterator(arg.Value, iteratorName, replacement);
-                var newArg = new NamedArgumentNode(arg.Name, newValue);
-                newArg.SetType(arg.Type);
-                return newArg;
-            }
-
-            // 5. RecordNode
+            // 2. Record Field Access (x.latitude -> __current_row.latitude)
             if (node is RecordNode rec)
             {
-                var newFields = rec.Fields.Select(f =>
+                // We need to pass a List<NamedArgumentNode> to the RecordNode constructor
+                var newArgs = rec.Fields.Select(f =>
                 {
-                    var val = ReplaceIterator(f.Value, iteratorName, replacement);
-                    var argNode = new NamedArgumentNode(f.Label, val);
-                    argNode.SetType(f.Type);
-                    return argNode;
+                    // f.Value is a NamedArgumentNode
+                    if (f.Value is NamedArgumentNode nan)
+                    {
+                        // nan.Value is the actual ExpressionNode (e.g., RecordFieldNode 'x.latitude')
+                        var replacedInner = ReplaceIterator(nan.Value, iteratorName, replacement);
+                        return new NamedArgumentNode(nan.Name, replacedInner);
+                    }
+
+                    // Fallback: if Value is somehow the expression directly
+                    return new NamedArgumentNode(f.Label, ReplaceIterator(f.Value, iteratorName, replacement));
                 }).ToList();
-                var newRec = new RecordNode(newFields);
-                newRec.SetType(rec.Type);
-                return newRec;
+
+                return new RecordNode(newArgs);
             }
 
-            // 6. Comparison
-            if (node is ComparisonNode comp)
+            if (node is RecordFieldNode rf)
             {
-                var newComp = new ComparisonNode(
-                    ReplaceIterator(comp.Left, iteratorName, replacement),
-                    comp.Operator,
-                    ReplaceIterator(comp.Right, iteratorName, replacement)
-                );
-                newComp.SetType(comp.Type);
-                return newComp;
+                // Recursively replace 'x' in 'x.latitude'
+                return new RecordFieldNode(ReplaceIterator(rf.IdRecord, iteratorName, replacement), rf.IdField);
             }
 
-            // 7. Binary Operations (Handles x.longitude - 100.0)
+            // 4. Binary Operations (x + { ... })
             if (node is BinaryOpNode bin)
             {
-                var newBin = new BinaryOpNode(
-                    ReplaceIterator(bin.Left, iteratorName, replacement),
-                    bin.Operator,
-                    ReplaceIterator(bin.Right, iteratorName, replacement)
-                );
-                newBin.SetType(bin.Type);
-                return newBin;
-            }
+                var left = ReplaceIterator(bin.Left, iteratorName, replacement);
+                var right = ReplaceIterator(bin.Right, iteratorName, replacement);
 
-            // 8. Indexing (Read access: x[0])
-            if (node is IndexNode idx)
-            {
-                var nSrc = ReplaceIterator(idx.SourceExpression, iteratorName, replacement);
-                var nIdx = ReplaceIterator(idx.IndexExpression, iteratorName, replacement);
-                var newNode = new IndexNode(nSrc, nIdx);
-                newNode.SetType(idx.Type);
+                var newNode = new BinaryOpNode(left, bin.Operator, right);
+                newNode.SetType(bin.Type); // Ensure metadata is preserved
                 return newNode;
             }
 
-            // 9. Unary
+            // 5. Unary Operations (-x.lat)
             if (node is UnaryOpNode un)
             {
-                var newUn = new UnaryOpNode(un.Operator, ReplaceIterator(un.Operand, iteratorName, replacement));
-                newUn.SetType(un.Type);
-                return newUn;
+                var newOperand = ReplaceIterator(un.Operand, iteratorName, replacement);
+                return new UnaryOpNode(un.Operator, newOperand);
             }
 
-            // 10. Logical Operations
-            if (node is LogicalOpNode log)
+            // 6. Function Calls (random(x.a, x.b))
+            if (node is RandomNode ran)
             {
-                var newLog = new LogicalOpNode(
-                    ReplaceIterator(log.Left, iteratorName, replacement),
-                    log.Operator,
-                    ReplaceIterator(log.Right, iteratorName, replacement)
-                );
-                newLog.SetType(log.Type);
-                return newLog;
+                var newArgs = ran.Arguments.Select(a => ReplaceIterator(a, iteratorName, replacement)).ToList();
+                return new RandomNode(newArgs);
+            }
+
+
+            // 7. Indexing (x[0])
+            if (node is IndexNode idx)
+            {
+                var newSrc = ReplaceIterator(idx.SourceExpression, iteratorName, replacement);
+                var newIdx = ReplaceIterator(idx.IndexExpression, iteratorName, replacement);
+                return new IndexNode(newSrc, newIdx);
             }
 
             return node;
         }
+
 
         private bool IsReferenceType(Type t)
         {
@@ -4713,26 +4817,29 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // {x:5}+{y:4} 
 
-            // Allocate the record (array of pointers)
+            // In LLVM 15+, 'ptr' is opaque, but we must tell GEP the size of the element
+            // we are indexing. Since we are storing pointers, the element type is 'ptr'.
+            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // 1. Allocate the record (array of 8-byte pointers)
+            // Size = count * 8 bytes
             var recordSize = LLVMValueRef.CreateConstInt(i64, (ulong)(values.Count * 8));
             var recordPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { recordSize }, "rec_ptr");
 
-            System.Console.WriteLine("value count: " + values.Count + " recordfields count: " + type.RecordFields.Count);
-
             for (int i = 0; i < values.Count; i++)
             {
-                System.Console.WriteLine("record field type:" + type.RecordFields[i].Type + " value: " + values[i] + " the label: " + type.RecordFields[i].Label);
                 var fieldType = type.RecordFields[i].Type;
                 LLVMValueRef pointerToStore;
+
+                // 2. Handle Boxing for Primitives
+                // If it's a raw LLVM i64/double/i1, it needs a heap-allocated box
                 if (fieldType is IntType || fieldType is FloatType || fieldType is BoolType)
                 {
-                    // Only box if it's a raw value
                     if (values[i].TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
                         values[i].TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
                     {
-                        // ✅ raw primitive → box it
+                        // Allocate 8 bytes for the primitive value
                         var valMem = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
                             new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "val_mem");
 
@@ -4740,32 +4847,44 @@ namespace MyCompiler
                         {
                             IntType => ctx.Int64Type,
                             FloatType => ctx.DoubleType,
-                            _ => ctx.Int1Type
+                            _ => ctx.Int1Type // Bool
                         };
 
+                        // Store the raw value into the box
                         var cast = _builder.BuildBitCast(valMem, LLVMTypeRef.CreatePointer(llvmType, 0));
                         _builder.BuildStore(values[i], cast);
+
                         pointerToStore = valMem;
                     }
                     else
                     {
-                        // already boxed → reuse directly
+                        // Already a pointer (already boxed)
                         pointerToStore = values[i];
                     }
                 }
                 else
                 {
-                    // already boxed → reuse directly
+                    // Strings, Records, etc., are already pointers
                     pointerToStore = values[i];
                 }
 
-                // Store the pointer into the record's slot
-                System.Console.WriteLine("close");
-                var slotPtr = _builder.BuildGEP2(i8Ptr, recordPtr, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) });
+                // 3. THE CRITICAL FIX:
+                // Use ptrType (8 bytes) so the index 'i' multiplies correctly.
+                // This calculates address: recordPtr + (i * 8)
+                var slotPtr = _builder.BuildGEP2(
+                    ptrType,
+                    recordPtr,
+                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
+                    $"slot_{i}"
+                );
+
+                // Store the 8-byte pointer into the 8-byte slot
                 _builder.BuildStore(pointerToStore, slotPtr);
             }
+
             return recordPtr;
         }
+
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
@@ -4840,6 +4959,7 @@ namespace MyCompiler
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
          for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
 
+        df.subset(["latitude", "longitude"])
 
         df.where(x => x.latitude > -18.0)
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)

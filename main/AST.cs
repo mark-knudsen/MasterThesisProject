@@ -360,9 +360,30 @@ namespace MyCompiler
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
-            Assignments = assignments;
 
-            //System.Console.WriteLine("AST: assignment count: " + Assignments.Count);
+            if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
+            {
+                //System.Console.WriteLine("DEBUG: Constructing Show Record...");
+
+                List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
+                foreach (var arr in arrayNode.Elements)
+                {
+                    if (arr is StringNode strNode)
+                    {
+                        namedArguments.Add(new NamedArgumentNode(
+                            strNode.Value,
+                            new RecordFieldNode(iteratorId, strNode.Value)
+                        ));
+                    }
+                }
+
+                // Correctly initialize the Assignments list
+                Assignments = new List<Node> { new RecordNode(namedArguments) };
+            }
+            else
+            {
+                Assignments = assignments;
+            }
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
