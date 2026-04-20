@@ -363,8 +363,6 @@ namespace MyCompiler
 
             if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
             {
-                //System.Console.WriteLine("DEBUG: Constructing Show Record...");
-
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
                 {
@@ -376,8 +374,7 @@ namespace MyCompiler
                         ));
                     }
                 }
-
-                // Correctly initialize the Assignments list
+                
                 Assignments = new List<Node> { new RecordNode(namedArguments) };
             }
             else
