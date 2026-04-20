@@ -3334,6 +3334,109 @@ namespace MyCompiler
             throw new Exception("Unknown type for struct size calculation: " + type);
         }
 
+        public LLVMValueRef VisitArray_better_quesiton_mark(ArrayNode expr)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+            uint count = (uint)expr.Elements.Count;
+
+            var mallocFunc = GetOrDeclareMalloc();
+
+            // 1. Element type
+            var elementType = GetLLVMType(expr.ElementType);
+            var elementPtrType = LLVMTypeRef.CreatePointer(elementType, 0);
+
+            bool isRefType = IsReferenceType(expr.ElementType);
+
+            // 2. Capacity logic (cleaned up)
+            uint capacity = expr.Capacity != null
+                ? (uint)expr.Capacity
+                : (count > 0 ? Math.Min(count * 2, 100) : 100);
+
+            if (capacity < count)
+                capacity = count;
+
+            // 3. Sizes
+            uint elementSize = isRefType
+                ? (uint)IntPtr.Size
+                : GetTypeSize(expr.ElementType);
+
+            uint bufferSize = elementSize * capacity;
+
+            uint headerSize = GetStructSize(expr.Type);
+
+            // 4. Allocate header
+            var header = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, headerSize) },
+                "arr_header"
+            );
+
+            // 5. Allocate buffer (THIS is the "buffer")
+            var rawBuffer = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, bufferSize) },
+                "arr_buffer"
+            );
+
+            var bufferPtr = _builder.BuildBitCast(rawBuffer, elementPtrType, "buffer_typed");
+
+            // 6. Store metadata
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, header, 0);
+            var capPtr = _builder.BuildStructGEP2(_arrayStruct, header, 1);
+            var dataPtr = _builder.BuildStructGEP2(_arrayStruct, header, 2);
+
+            _builder.BuildStore(
+                LLVMValueRef.CreateConstInt(i64, count),
+                lenPtr
+            );
+
+            _builder.BuildStore(
+                LLVMValueRef.CreateConstInt(i64, capacity),
+                capPtr
+            );
+
+            // store buffer pointer (i8* for ABI consistency)
+            var bufferAsI8 = _builder.BuildBitCast(bufferPtr, i8Ptr, "buffer_i8");
+            _builder.BuildStore(bufferAsI8, dataPtr);
+
+            // 7. Fill buffer
+            for (int i = 0; i < expr.Elements.Count; i++)
+            {
+                var val = Visit(expr.Elements[i]);
+
+                var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+
+                var elementPtr = _builder.BuildGEP2(
+                    elementType,
+                    bufferPtr,
+                    new[] { idx },
+                    "elem_ptr"
+                );
+
+                if (isRefType)
+                {
+                    var castVal = _builder.BuildBitCast(val, elementType, "ref_cast");
+                    _builder.BuildStore(castVal, elementPtr);
+                }
+                else
+                {
+                    // IMPORTANT: use natural alignment, not hardcoded 8
+                    uint align = elementSize;
+
+                    _builder.BuildStore(val, elementPtr)
+                            .SetAlignment(align);
+                }
+            }
+
+            return header;
+        }
+
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
             var ctx = _module.Context;
@@ -3352,15 +3455,15 @@ namespace MyCompiler
             bool isRefType = IsReferenceType(expr.ElementType);
 
             // 2. Compute sizes using elementType
-            uint elementSize = IsReferenceType(expr.ElementType)
+            uint elementSize = isRefType
             ? (uint)IntPtr.Size   // 8 bytes
             : GetTypeSize(expr.ElementType);
 
-            uint capacity = count > 0 ? Math.Min(count * 200, uint.MaxValue) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
+            uint capacity = count > 0 ? Math.Min(count * 2, 100) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
             if (expr.Capacity != null)
-                capacity = Math.Min(count * 20, uint.MaxValue);
+                capacity = Math.Min(count * 2, 100);
 
-            uint totalSize = elementSize * capacity;
+            uint totalSize = elementSize * capacity; // buffer size is a more correct term
 
             // 3. Allocate header (len, cap, data*)            
             var headerSize = GetStructSize(expr.Type);
@@ -3384,19 +3487,19 @@ namespace MyCompiler
             var dataPtr = _builder.BuildBitCast(rawDataPtr, elementPtrType, "arr_data");
 
             // 5. Store metadata
-            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0);
-            var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1);
-            var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2);
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0, "len_ptr");
+            var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1, "cap_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2, "data_field_ptr");
 
             _builder.BuildStore(
                 LLVMValueRef.CreateConstInt(i64, count),
                 lenPtr
-            );
+            ).SetAlignment(8); 
 
             _builder.BuildStore(
                 LLVMValueRef.CreateConstInt(i64, capacity),
                 capPtr
-            );
+            ).SetAlignment(8);
 
             // Store as i8* in struct
             var dataAsI8 = _builder.BuildBitCast(dataPtr, i8Ptr, "data_as_i8");
@@ -3424,7 +3527,7 @@ namespace MyCompiler
                 else
                 {
                     // Value types stored directly
-                    _builder.BuildStore(val, elementPtr).SetAlignment(8);
+                    _builder.BuildStore(val, elementPtr).SetAlignment(elementSize);
                 }
             }
 

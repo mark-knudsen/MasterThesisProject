@@ -342,15 +342,8 @@ namespace MyCompiler
         {
             Type valType = Visit(expr.Expression);
 
-            // Obtain element type from either literal array or array type expression
-            Type elemType = null;
-            if (expr.Expression is ArrayNode arrLiteral)
-                elemType = arrLiteral.ElementType;
-            else if (valType is ArrayType arrayType)
-                elemType = arrayType.ElementType;
-
             // Use 'default' for LLVMValueRef to avoid CS0246
-            _context = _context.Add(expr.Id, default, null, valType, elemType);
+            _context = _context.Add(expr.Id, default, null, valType);
             expr.SetType(valType); // <--- ADD THIS LINE
             return valType;
         }
@@ -480,8 +473,8 @@ namespace MyCompiler
                 Type indexType = Visit(expr.Elements[i]);
                 if (indexType is ArrayType) continue;
 
-                // if (expr.ElementType.GetType() != indexType.GetType()) // is also hit for type array i think, when creating an empty dataframe
-                //     throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+                if (expr.ElementType.GetType() != indexType.GetType())
+                    throw new Exception("Not all elements are of the same type, which is not allowed in an array");
             }
 
             var arrayType = new ArrayType(expr.ElementType);
@@ -510,7 +503,7 @@ namespace MyCompiler
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
-                    inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
+                    inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
                 {
                     if (indexType is StringType)
@@ -542,7 +535,7 @@ namespace MyCompiler
             {
                 var entry = _context.Get(idNode.Name);
                 var assignType = expr.AssignExpression.Type.GetType();
-                var arrayType = entry?.ElementType.GetType();
+                var arrayType = (entry?.Type as ArrayType).ElementType.GetType();
                 if (arrayType != assignType)
                     throw new Exception($"Can't assign {arrayType.Name} to {assignType.Name} array");
             }
