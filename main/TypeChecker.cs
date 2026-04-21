@@ -151,8 +151,22 @@ namespace MyCompiler
 
         public Type VisitBinary(BinaryOpNode expr)
         {
-            var leftType = Visit(expr.Left);
-            var rightType = Visit(expr.Right);
+            Type leftType = new NullType();
+            Type rightType = new NullType();
+
+            if (expr.Operator == "/")
+            {
+                var right = new FloatNode(expr.Left as NumberNode != null ? (expr.Left as NumberNode).Value : 0.0);
+                var left = new FloatNode(expr.Right as NumberNode != null ? (expr.Right as NumberNode).Value : 0.0);
+                rightType = Visit(right);
+                leftType = Visit(left);
+                expr = new BinaryOpNode(left, expr.Operator, right);
+            }
+            else
+            {
+                leftType = Visit(expr.Left);
+                rightType = Visit(expr.Right);
+            }
 
             // Helper to check if a type is numeric (Int or Float)
             bool isLeftNum = leftType is IntType || leftType is FloatType;
