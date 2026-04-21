@@ -20,6 +20,7 @@
 "print"         { return (int)Tokens.PRINT; }
 "random"        { return (int)Tokens.RANDOM; }
 "round"         { return (int)Tokens.ROUND; }
+"sqrt"          { return (int)Tokens.SQRT; }
 "func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
 "foreach"       { return (int)Tokens.FOREACH; }

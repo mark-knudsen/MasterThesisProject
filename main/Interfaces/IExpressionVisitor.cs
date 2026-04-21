@@ -56,6 +56,8 @@ namespace MyCompiler
         LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
         LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
 
+        LLVMValueRef VisitSqrt(SqrtNode expr);
+
 
 
         // // Visit for define and usage of created functions

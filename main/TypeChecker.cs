@@ -75,6 +75,7 @@ namespace MyCompiler
                 //InternalDataframeFieldNode interDFField => VisitInternalDataframeField(interDFField),
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
+                SqrtNode sqrt => VisitSqrt(sqrt),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -705,6 +706,21 @@ namespace MyCompiler
                 return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
 
             return null;
+        }
+
+        public Type VisitSqrt(SqrtNode expr)
+        {
+            var argType = Visit(expr.Value);
+
+            if (!(argType is IntType || argType is FloatType))
+            {
+                throw new Exception($"sqrt() expected numeric type, got {argType}");
+            }
+
+            // Result is always a float
+            var resultType = new FloatType();
+            expr.SetType(resultType);
+            return resultType;
         }
 
         // Helper: Build a RecordNode from CSV (first line + type inference)
