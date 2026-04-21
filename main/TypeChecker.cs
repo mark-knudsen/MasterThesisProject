@@ -218,7 +218,7 @@ namespace MyCompiler
                 throw new Exception($"Invalid operands {leftType} and {rightType} for +");
             }
 
-            if (expr.Operator is "-" or "*" or "/")
+            if (expr.Operator is "-" or "*" or "/") // it is a problem if we divide and it is an int because we want to keep it as an int if possible, but we also want to allow float division
             {
                 // Allow math on any numeric types
                 if (isLeftNum && isRightNum)
@@ -237,13 +237,7 @@ namespace MyCompiler
             {
                 // For comparisons, we just need the types to be compatible 
                 // (e.g., comparing a Float and an Int is fine)
-                if (isLeftNum && isRightNum)
-                {
-                    expr.SetType(new BoolType());
-                    return expr.Type;
-                }
-
-                if (leftType == rightType)
+                if (isLeftNum && isRightNum || leftType == rightType)
                 {
                     expr.SetType(new BoolType());
                     return expr.Type;

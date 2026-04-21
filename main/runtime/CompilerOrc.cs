@@ -3442,12 +3442,12 @@ namespace MyCompiler
             throw new Exception("Add operation is only supported on arrays and dataframes");
         }
 
-        private LLVMValueRef AddToArray(AddNode expr) // x.add({index: 5, name: "Hary potter", age: 35})
+        private LLVMValueRef AddToArray(AddNode expr) 
         {
             var headerPtr = Visit(expr.SourceExpression);
             ExecuteArrayAddition(headerPtr, Visit(expr.AddExpression), expr.AddExpression.Type);
 
-            return headerPtr; // calling x.add x.length    the return type is none which is the add's type
+            return headerPtr; 
         }
 
         public LLVMValueRef AddToDataframe(AddNode expr, DataframeType dfType)
@@ -3487,12 +3487,7 @@ namespace MyCompiler
 
             // 1. Resolve types
             LLVMTypeRef llvmElementType = GetLLVMType(elementType);
-
-            bool isReferenceType =
-                elementType is StringType ||
-                elementType is RecordType ||
-                elementType is ArrayType ||
-                elementType is DataframeType;
+            bool isReferenceType = IsReferenceType(elementType);
 
             var elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
 
