@@ -75,6 +75,7 @@ namespace MyCompiler
                 //InternalDataframeFieldNode interDFField => VisitInternalDataframeField(interDFField),
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
+                CastNode cast => VisitCast(cast),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -156,11 +157,11 @@ namespace MyCompiler
 
             if (expr.Operator == "/")
             {
-                var right = new FloatNode(expr.Left as NumberNode != null ? (expr.Left as NumberNode).Value : 0.0);
-                var left = new FloatNode(expr.Right as NumberNode != null ? (expr.Right as NumberNode).Value : 0.0);
-                rightType = Visit(right);
-                leftType = Visit(left);
-                expr = new BinaryOpNode(left, expr.Operator, right);
+                expr.Left = InsertCast(expr.Left, Visit(expr.Left), new FloatType());
+                expr.Right = InsertCast(expr.Right, Visit(expr.Right), new FloatType());
+
+                leftType = Visit(expr.Left);
+                rightType = Visit(expr.Right);
             }
             else
             {
@@ -232,7 +233,7 @@ namespace MyCompiler
                 throw new Exception($"Invalid operands {leftType} and {rightType} for +");
             }
 
-            if (expr.Operator is "-" or "*" or "/") // it is a problem if we divide and it is an int because we want to keep it as an int if possible, but we also want to allow float division
+            if (expr.Operator is "-" or "*" or "/")
             {
                 // Allow math on any numeric types
                 if (isLeftNum && isRightNum)
@@ -259,6 +260,37 @@ namespace MyCompiler
             }
 
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
+        }
+
+        public Type VisitCast(CastNode expr)
+        {
+            Type fromType = Visit(expr.Expression);
+            Type toType = expr.ToType;
+
+            if (fromType.GetType() == toType.GetType())
+            {
+                expr.SetType(toType);
+                return toType;
+            }
+
+            if (fromType is IntType && toType is FloatType) // currently only support int -> float casts
+            {
+                expr.SetType(toType);
+                return toType;
+            }
+
+            throw new Exception($"Cannot cast from {fromType} to {toType}");
+        }
+
+        private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
+        {
+            if (from.GetType() == to.GetType())
+                return node;
+
+            if (from is IntType && to is FloatType)
+                return new CastNode(node, from, to);
+
+            throw new Exception($"Cannot cast {from} to {to}");
         }
 
         public Type VisitLogical(LogicalOpNode expr)

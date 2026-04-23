@@ -45,6 +45,7 @@ namespace MyCompiler
         Type VisitColumns(ColumnsNode expr);
         Type VisitNamedArgument(NamedArgumentNode expr);
         Type VisitTypeLiteral(TypeLiteralNode expr);
+        Type VisitCast(CastNode expr);
 
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);

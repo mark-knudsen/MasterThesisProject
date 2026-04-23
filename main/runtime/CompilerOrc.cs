@@ -1020,10 +1020,8 @@ namespace MyCompiler
             // --- THE SHIELD ---
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
             if (value.TypeOf == boxTypePtr)
-            {
                 return value;
-            }
-
+            
             int tag = GetTypeByTag(type);
             LLVMValueRef dataPtr;
 
@@ -1654,6 +1652,19 @@ namespace MyCompiler
             }
 
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
+        }
+
+        public LLVMValueRef VisitCast(CastNode node)
+        {
+            var value = Visit(node.Expression);
+
+            if (node.Expression.Type is IntType && node.ToType is FloatType)
+            {
+                if (_debug) Console.WriteLine($"Converting {node.Expression.Type} to {node.ToType} in cast node");
+                return _builder.BuildSIToFP(value, _module.Context.DoubleType, "int2double");
+            }
+
+            throw new NotImplementedException($"Unsupported cast {node.FromType} -> {node.ToType}");
         }
 
         private LLVMValueRef LoadField(LLVMValueRef recordPtr, int index)
@@ -3442,12 +3453,12 @@ namespace MyCompiler
             throw new Exception("Add operation is only supported on arrays and dataframes");
         }
 
-        private LLVMValueRef AddToArray(AddNode expr) 
+        private LLVMValueRef AddToArray(AddNode expr)
         {
             var headerPtr = Visit(expr.SourceExpression);
             ExecuteArrayAddition(headerPtr, Visit(expr.AddExpression), expr.AddExpression.Type);
 
-            return headerPtr; 
+            return headerPtr;
         }
 
         public LLVMValueRef AddToDataframe(AddNode expr, DataframeType dfType)
