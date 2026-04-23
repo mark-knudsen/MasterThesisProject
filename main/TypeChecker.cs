@@ -507,16 +507,16 @@ namespace MyCompiler
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
-            int minArrayCount = Math.Min(expr.Elements.Count, 100);
+            // int minArrayCount = Math.Min(expr.Elements.Count, 100); // it is a bit complex when doing dataframe, might have to make a record for combine type and column in dataframe
 
-            for (int i = 1; i < minArrayCount; i++)
-            {
-                Type indexType = Visit(expr.Elements[i]);
-                if (indexType is ArrayType) continue;
+            // for (int i = 1; i < minArrayCount; i++)
+            // {
+            //     Type indexType = Visit(expr.Elements[i]);
+            //     if (indexType is ArrayType) continue;
 
-                if (expr.ElementType.GetType() != indexType.GetType())
-                    throw new Exception("Not all elements are of the same type, which is not allowed in an array");
-            }
+            //     if (expr.ElementType.GetType() != indexType.GetType())
+            //         throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+            // }
 
             var arrayType = new ArrayType(expr.ElementType);
             expr.SetType(arrayType);
