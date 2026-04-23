@@ -786,6 +786,8 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSqrt(this);
+    }
+
     public class CastNode : ExpressionNode
     {
         public ExpressionNode Expression { get; }
@@ -803,3 +805,5 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCast(this);
     }
 }
+
+
