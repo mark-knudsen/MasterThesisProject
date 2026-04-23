@@ -76,6 +76,7 @@ namespace MyCompiler
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
                 SqrtNode sqrt => VisitSqrt(sqrt),
+                CastNode cast => VisitCast(cast),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -152,8 +153,22 @@ namespace MyCompiler
 
         public Type VisitBinary(BinaryOpNode expr)
         {
-            var leftType = Visit(expr.Left);
-            var rightType = Visit(expr.Right);
+            Type leftType = new NullType();
+            Type rightType = new NullType();
+
+            if (expr.Operator == "/")
+            {
+                expr.Left = InsertCast(expr.Left, Visit(expr.Left), new FloatType());
+                expr.Right = InsertCast(expr.Right, Visit(expr.Right), new FloatType());
+
+                leftType = Visit(expr.Left);
+                rightType = Visit(expr.Right);
+            }
+            else
+            {
+                leftType = Visit(expr.Left);
+                rightType = Visit(expr.Right);
+            }
 
             // Helper to check if a type is numeric (Int or Float)
             bool isLeftNum = leftType is IntType || leftType is FloatType;
@@ -238,13 +253,7 @@ namespace MyCompiler
             {
                 // For comparisons, we just need the types to be compatible 
                 // (e.g., comparing a Float and an Int is fine)
-                if (isLeftNum && isRightNum)
-                {
-                    expr.SetType(new BoolType());
-                    return expr.Type;
-                }
-
-                if (leftType == rightType)
+                if (isLeftNum && isRightNum || leftType == rightType)
                 {
                     expr.SetType(new BoolType());
                     return expr.Type;
@@ -252,6 +261,37 @@ namespace MyCompiler
             }
 
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
+        }
+
+        public Type VisitCast(CastNode expr)
+        {
+            Type fromType = Visit(expr.Expression);
+            Type toType = expr.ToType;
+
+            if (fromType.GetType() == toType.GetType())
+            {
+                expr.SetType(toType);
+                return toType;
+            }
+
+            if (fromType is IntType && toType is FloatType) // currently only support int -> float casts
+            {
+                expr.SetType(toType);
+                return toType;
+            }
+
+            throw new Exception($"Cannot cast from {fromType} to {toType}");
+        }
+
+        private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
+        {
+            if (from.GetType() == to.GetType())
+                return node;
+
+            if (from is IntType && to is FloatType)
+                return new CastNode(node, from, to);
+
+            throw new Exception($"Cannot cast {from} to {to}");
         }
 
         public Type VisitLogical(LogicalOpNode expr)
@@ -343,15 +383,8 @@ namespace MyCompiler
         {
             Type valType = Visit(expr.Expression);
 
-            // Obtain element type from either literal array or array type expression
-            Type elemType = null;
-            if (expr.Expression is ArrayNode arrLiteral)
-                elemType = arrLiteral.ElementType;
-            else if (valType is ArrayType arrayType)
-                elemType = arrayType.ElementType;
-
             // Use 'default' for LLVMValueRef to avoid CS0246
-            _context = _context.Add(expr.Id, default, null, valType, elemType);
+            _context = _context.Add(expr.Id, default, null, valType);
             expr.SetType(valType); // <--- ADD THIS LINE
             return valType;
         }
@@ -474,6 +507,17 @@ namespace MyCompiler
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
+            int minArrayCount = Math.Min(expr.Elements.Count, 100);
+
+            for (int i = 1; i < minArrayCount; i++)
+            {
+                Type indexType = Visit(expr.Elements[i]);
+                if (indexType is ArrayType) continue;
+
+                if (expr.ElementType.GetType() != indexType.GetType())
+                    throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+            }
+
             var arrayType = new ArrayType(expr.ElementType);
             expr.SetType(arrayType);
             return expr.Type;
@@ -500,7 +544,7 @@ namespace MyCompiler
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
-                    inferred = entry.ElementType ?? arrType.ElementType ?? new IntType();
+                    inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
                 {
                     if (indexType is StringType)
@@ -532,7 +576,7 @@ namespace MyCompiler
             {
                 var entry = _context.Get(idNode.Name);
                 var assignType = expr.AssignExpression.Type.GetType();
-                var arrayType = entry?.ElementType.GetType();
+                var arrayType = entry?.Type is ArrayType arrType ? arrType.ElementType?.GetType() : null;
                 if (arrayType != assignType)
                     throw new Exception($"Can't assign {arrayType.Name} to {assignType.Name} array");
             }
@@ -655,8 +699,8 @@ namespace MyCompiler
 
             try
             {
-                foreach (var node in expr.Assignments)
-                {// IMPORTANT: Capture the type returned by the visitor
+                foreach (var node in expr.Assignments) // IMPORTANT: Capture the type returned by the visitor
+                {
                     Type t = Visit(node);
                     if (node is ExpressionNode en2) en2.SetType(t);
                 }
@@ -743,7 +787,7 @@ namespace MyCompiler
 
                 if (long.TryParse(rawValue, out _))
                     typeCode = 'I';
-                else if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out _))
+                else if (double.TryParse(rawValue, out _))
                     typeCode = 'F';
                 else if (rawValue.Equals("true", StringComparison.OrdinalIgnoreCase) || rawValue.Equals("false", StringComparison.OrdinalIgnoreCase))
                     typeCode = 'B';

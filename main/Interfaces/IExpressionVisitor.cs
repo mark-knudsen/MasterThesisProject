@@ -46,19 +46,17 @@ namespace MyCompiler
         LLVMValueRef VisitRecord(RecordNode expr);
         LLVMValueRef VisitRecordField(RecordFieldNode expr);
         LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr);
-        //LLVMValueRef VisitCopyRecord(CopyRecordNode expr);
         LLVMValueRef VisitCopy(CopyNode expr);
         LLVMValueRef VisitDataframe(DataframeNode expr);
         LLVMValueRef VisitColumns(ColumnsNode expr);
         LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);
-        //LLVMValueRef VisitPropertyAccess(PropertyAccessNode node);
-        //LLVMValueRef VisitInternalDataframeField(InternalDataframeFieldNode node);
         LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
         LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
 
         LLVMValueRef VisitSqrt(SqrtNode expr);
 
 
+        LLVMValueRef VisitCast(CastNode expr);
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);

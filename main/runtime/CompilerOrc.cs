@@ -204,7 +204,7 @@ namespace MyCompiler
                         else if (typeCode == 2) // Float (Double)
                         {
                             long bits = Marshal.ReadInt64(valBoxPtr);
-                            cellValue = BitConverter.Int64BitsToDouble(bits).ToString(CultureInfo.InvariantCulture);
+                            cellValue = BitConverter.Int64BitsToDouble(bits).ToString();
                         }
                         else if (typeCode == 3) // Bool
                         {
@@ -459,16 +459,12 @@ namespace MyCompiler
         // BROKEN FUNCTIONALITY   
         // record copy is not working
         // making a dataframe takes a repeat of record syntax, could be smoother              
-        // doing this in the same command fails: x.add(1); x.length
 
         // UNIT TESTING
         // create a orc unit test
-        // A REPL can do multipe commands in a row and they need to be tested to see if they work correctly, this has to be setup in a integration test
-        // we need to not return the struct, we should only print if there is a return value
-        // what the compiler returns would if anything be a exit code, 0 for no problem or say 1 for error
+        // A REPL can do multipe commands in a row and they need to be tested to see if they work correctly
 
         // OTHER
-        // currently it also prints out the lenght when calling print, not sure where it happends
         // int is sometimes set to i64, but int is standard i32 in many langauges, it should be consistent and don't think we need int64 as standard for our language
         // FIX: having int be i64 is a massive number, we do not need that kind of precision, it would be better to use i32
 
@@ -688,7 +684,7 @@ namespace MyCompiler
             var entries = result.Select(kv =>
             {
                 string valStr = kv.Value is IFormattable f
-                    ? f.ToString(null, CultureInfo.InvariantCulture)
+                    ? f.ToString()
                     : kv.Value?.ToString() ?? "null";
                 return $"{kv.Key}: {valStr}";
             });
@@ -702,7 +698,7 @@ namespace MyCompiler
             // %array = type { i64 (len), i64 (cap), ptr (data) }
 
             long length = Marshal.ReadInt64(arrayObjPtr, 0);       // Offset 0: length
-                                                                   // long capacity = Marshal.ReadInt64(arrayObjPtr, 8); // Offset 8: capacity (unused here)
+            // long capacity = Marshal.ReadInt64(arrayObjPtr, 8);  // Offset 8: capacity (unused here)
             IntPtr dataPtr = Marshal.ReadIntPtr(arrayObjPtr, 16);  // Offset 16: data pointer
 
             var result = new List<string>();
@@ -854,7 +850,7 @@ namespace MyCompiler
                         case 2:
                             byte[] bytes = new byte[8];
                             Marshal.Copy(ptr, bytes, 0, 8);
-                            return BitConverter.ToDouble(bytes, 0).ToString(CultureInfo.InvariantCulture);
+                            return BitConverter.ToDouble(bytes, 0).ToString();
                         case 3: return Marshal.ReadByte(ptr) != 0 ? "True" : "False";
                         case 4:
                             IntPtr sAddr = Marshal.ReadIntPtr(ptr);
@@ -1024,10 +1020,8 @@ namespace MyCompiler
             // --- THE SHIELD ---
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
             if (value.TypeOf == boxTypePtr)
-            {
                 return value;
-            }
-
+            
             int tag = GetTypeByTag(type);
             LLVMValueRef dataPtr;
 
@@ -1660,6 +1654,19 @@ namespace MyCompiler
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
         }
 
+        public LLVMValueRef VisitCast(CastNode node)
+        {
+            var value = Visit(node.Expression);
+
+            if (node.Expression.Type is IntType && node.ToType is FloatType)
+            {
+                if (_debug) Console.WriteLine($"Converting {node.Expression.Type} to {node.ToType} in cast node");
+                return _builder.BuildSIToFP(value, _module.Context.DoubleType, "int2double");
+            }
+
+            throw new NotImplementedException($"Unsupported cast {node.FromType} -> {node.ToType}");
+        }
+
         private LLVMValueRef LoadField(LLVMValueRef recordPtr, int index)
         {
             var ctx = _module.Context;
@@ -1936,9 +1943,7 @@ namespace MyCompiler
                 "rand"
             );
 
-            // =========================
             // CASE 1: INTEGER RANDOM
-            // =========================
             if (expr.Type is IntType)
             {
                 var min = Visit(expr.MinValue);
@@ -2009,9 +2014,7 @@ namespace MyCompiler
                 return phi;
             }
 
-            // =========================
             // CASE 2: FLOAT RANDOM
-            // =========================
             else if (expr.Type is FloatType)
             {
                 var min = Visit(expr.MinValue);
@@ -2457,7 +2460,6 @@ namespace MyCompiler
             return program;
         }
 
-
         private string InferFieldName(Node node)
         {
             if (node == null) return null;
@@ -2573,8 +2575,6 @@ namespace MyCompiler
             return program;
         }
 
-
-
         // Helper to check if a node tree uses a specific variable
         private bool IsPure(Node node)
         {
@@ -2618,30 +2618,6 @@ namespace MyCompiler
 
             return false;
         }
-
-        /*
-
-        Final Verdict: 
-        You have a working, type-safe, compiled Dataframe engine.
-        You've solved the hardest part (the JIT/Compilation logic). 
-        To reach "blazing fast" speeds, your next step would be the 
-        "Flattening" we discussed earlier—storing the i64 directly 
-        in the record_buffer instead of malloc-ing a separate box for it.
-
-        */
-
-        /* Pseudo code:
-
-        dfcopy = df.copy;
-        for(i=0; i< dfcopy.length; i++)
-        {
-            dfcopy[i].age = dfcopy[i].age + 10;
-        }
-
-        return dfcopy;
-
-        */
-
 
         public LLVMValueRef VisitCopy(CopyNode expr)
         {
@@ -2938,8 +2914,6 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
-
-
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
             if (node == null) return null;
@@ -3089,13 +3063,13 @@ namespace MyCompiler
             bool isRefType = IsReferenceType(expr.ElementType);
 
             // 2. Compute sizes using elementType
-            uint elementSize = IsReferenceType(expr.ElementType)
+            uint elementSize = isRefType
             ? (uint)IntPtr.Size   // 8 bytes
             : GetTypeSize(expr.ElementType);
 
-            uint capacity = count > 0 ? Math.Min(count * 200, uint.MaxValue) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
+            uint capacity = count > 0 ? Math.Min(count * 2, 100) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
             if (expr.Capacity != null)
-                capacity = Math.Min(count * 20, uint.MaxValue);
+                capacity = Math.Min(count * 2, 100);
 
             uint totalSize = elementSize * capacity;
 
@@ -3121,19 +3095,19 @@ namespace MyCompiler
             var dataPtr = _builder.BuildBitCast(rawDataPtr, elementPtrType, "arr_data");
 
             // 5. Store metadata
-            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0);
-            var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1);
-            var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2);
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0, "len_ptr");
+            var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1, "cap_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2, "data_field_ptr");
 
             _builder.BuildStore(
                 LLVMValueRef.CreateConstInt(i64, count),
                 lenPtr
-            );
+            ).SetAlignment(8);
 
             _builder.BuildStore(
                 LLVMValueRef.CreateConstInt(i64, capacity),
                 capPtr
-            );
+            ).SetAlignment(8);
 
             // Store as i8* in struct
             var dataAsI8 = _builder.BuildBitCast(dataPtr, i8Ptr, "data_as_i8");
@@ -3161,7 +3135,7 @@ namespace MyCompiler
                 else
                 {
                     // Value types stored directly
-                    _builder.BuildStore(val, elementPtr).SetAlignment(8);
+                    _builder.BuildStore(val, elementPtr).SetAlignment(elementSize);
                 }
             }
 
@@ -3479,12 +3453,12 @@ namespace MyCompiler
             throw new Exception("Add operation is only supported on arrays and dataframes");
         }
 
-        private LLVMValueRef AddToArray(AddNode expr) // x.add({index: 5, name: "Hary potter", age: 35})
+        private LLVMValueRef AddToArray(AddNode expr)
         {
             var headerPtr = Visit(expr.SourceExpression);
             ExecuteArrayAddition(headerPtr, Visit(expr.AddExpression), expr.AddExpression.Type);
 
-            return headerPtr; // calling x.add x.length    the return type is none which is the add's type
+            return headerPtr;
         }
 
         public LLVMValueRef AddToDataframe(AddNode expr, DataframeType dfType)
@@ -3524,12 +3498,7 @@ namespace MyCompiler
 
             // 1. Resolve types
             LLVMTypeRef llvmElementType = GetLLVMType(elementType);
-
-            bool isReferenceType =
-                elementType is StringType ||
-                elementType is RecordType ||
-                elementType is ArrayType ||
-                elementType is DataframeType;
+            bool isReferenceType = IsReferenceType(elementType);
 
             var elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
 
@@ -3806,10 +3775,7 @@ namespace MyCompiler
 
             if (expr.ArrayExpression.Type is ArrayType)
             {
-                var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourcePtr, 0, "length_ptr");
-                var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "length");
-                length.SetAlignment(8);
-                return length;
+                return GetArrayLength(sourcePtr);
             }
             else if (expr.ArrayExpression.Type is DataframeType)
             {
@@ -4522,14 +4488,7 @@ namespace MyCompiler
             for (int i = 0; i < count; i++)
             {
                 // Map your types to numbers (match your original IR output: 1, 4, 1, 3, 2)
-                int typeId = schema.Fields[i].Type switch
-                {
-                    IntType => 1,
-                    FloatType => 2,
-                    BoolType => 3,
-                    StringType => 4,
-                    _ => 0
-                };
+                int typeId = GetTypeByTag(schema.Fields[i].Type);
 
                 var target = _builder.BuildGEP2(i8Ptr, data, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, "ptr");
                 // bitcast integer to ptr for storage in the pointer array
@@ -4884,7 +4843,6 @@ namespace MyCompiler
 
             return recordPtr;
         }
-
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {

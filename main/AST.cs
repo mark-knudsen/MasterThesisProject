@@ -143,9 +143,9 @@ namespace MyCompiler
     // Represents a math operation (e.g., 10 + 20)
     public class BinaryOpNode : ExpressionNode
     {
-        public ExpressionNode Left { get; }
+        public ExpressionNode Left { get; set; }
         public string Operator { get; }
-        public ExpressionNode Right { get; }
+        public ExpressionNode Right { get; set; }
         public BinaryOpNode(ExpressionNode left, string op, ExpressionNode right)
         {
             Left = left;
@@ -363,8 +363,6 @@ namespace MyCompiler
 
             if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
             {
-                //System.Console.WriteLine("DEBUG: Constructing Show Record...");
-
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
                 {
@@ -377,7 +375,6 @@ namespace MyCompiler
                     }
                 }
 
-                // Correctly initialize the Assignments list
                 Assignments = new List<Node> { new RecordNode(namedArguments) };
             }
             else
@@ -789,5 +786,20 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSqrt(this);
+    public class CastNode : ExpressionNode
+    {
+        public ExpressionNode Expression { get; }
+        public Type FromType { get; }
+        public Type ToType { get; }
+
+        public CastNode(ExpressionNode expr, Type fromType, Type toType)
+        {
+            Expression = expr;
+            ToType = toType;
+            FromType = fromType;
+            SetType(toType);
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCast(this);
     }
 }

@@ -1,3 +1,12 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 21/04/2026 16:15:22>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 21/04/2026 16:15:27
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
@@ -20,7 +29,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND SQRT READCSV TOCSV 
+%token PRINT RANDOM ROUND READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
 %token DATAFRAME SUBSET SHOW
 
@@ -57,6 +66,11 @@
 %}
 
 %%
+// Error: There are 4 non-terminating NonTerminal Symbols
+   //  {Prog, StatementList, Block, $accept}
+// Warning: Terminating StatementList fixes the following size-4 NonTerminal set
+   // {Prog, StatementList, Block, $accept}
+// -----------------------------------------------------------------------------
 
 Prog
     : StatementList { $$ = $1; RootNode = $$; }
@@ -74,17 +88,14 @@ Separator
     ;
 
 StatementList
-    : /* empty */
-      { $$ = new SequenceNode(); }
-
-    | StatementList Separator
+    : StatementList Separator
       { $$ = $1; }
 
     | StatementList Statement
       { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
 
-    | StatementList Separator Statement
-      { ((SequenceNode)$1).Statements.Add($3); $$ = $1; }
+    | StatementList Statement Separator
+      { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
     ;
 
 Statement
@@ -180,11 +191,6 @@ expr
     | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
     | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
-
-    | SQRT LPAREN expr RPAREN 
-    { 
-        $$ = new SqrtNode($3 as ExpressionNode); 
-    }
 
     | expr LOGICAL_AND expr { $$ = new LogicalOpNode($1 as ExpressionNode, "&&", $3 as ExpressionNode); }  
     | expr LOGICAL_OR expr  { $$ = new LogicalOpNode($1 as ExpressionNode, "||", $3 as ExpressionNode); }  
@@ -312,4 +318,5 @@ arg
     ;
 %%
 
-internal Parser(Scanner s) : base(s) { }
+internal Parser(Scanner s) : base(s) { }// ==========================================================================
+

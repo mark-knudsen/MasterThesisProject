@@ -47,6 +47,7 @@ namespace MyCompiler
         Type VisitTypeLiteral(TypeLiteralNode expr);
         Type VisitSqrt(SqrtNode expr);
 
+        Type VisitCast(CastNode expr);
 
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);

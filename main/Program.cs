@@ -347,7 +347,7 @@ namespace MyCompiler
                                     {
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         // HandleArray2 already formats the string, so we just print it
-                                        string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
+                                        string formatted = string.Format("{0}", result);
                                         Console.WriteLine($"Result: {formatted}");
                                     }
                                 }
@@ -529,7 +529,7 @@ namespace MyCompiler
                     break;
 
                 case FloatNode f:
-                    Console.WriteLine($"{space}Float: {f.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
+                    Console.WriteLine($"{space}Float: {f.Value.ToString()}");
                     break;
 
                 case IdNode id:
