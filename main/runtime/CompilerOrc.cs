@@ -4884,6 +4884,35 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0));
         }
 
+        public LLVMValueRef VisitSqrt(SqrtNode expr)
+        {
+            // 1. Visit the argument
+            var val = Visit(expr.Value);
+
+            // 2. Promotion: If it's an int, convert to double
+            if (expr.Value.Type is IntType)
+            {
+                val = _builder.BuildSIToFP(val, _module.Context.DoubleType, "int2double");
+            }
+
+            // 3. Define the Intrinsic. 
+            // LLVM intrinsics are named "llvm.<name>.<type>"
+            // For a 64-bit float (double), it is "llvm.sqrt.f64"
+            string intrinsicName = "llvm.sqrt.f64";
+            var doubleType = _module.Context.DoubleType;
+            var sqrtType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
+
+            // 4. Register the intrinsic in the module if not already present
+            var sqrtFunc = _module.GetNamedFunction(intrinsicName);
+            if (sqrtFunc.Handle == IntPtr.Zero)
+            {
+                sqrtFunc = _module.AddFunction(intrinsicName, sqrtType);
+            }
+
+            // 5. Call it
+            return _builder.BuildCall2(sqrtType, sqrtFunc, new[] { val }, "sqrttmp");
+        }
+
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
@@ -4962,6 +4991,30 @@ namespace MyCompiler
                     C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
 
 
-                */
+
+mx = df["latitude"].mean
+my = df["elevation"].mean
+
+
+components = df.map(r => {
+    dx: r.latitude - mx,
+    dy: r.elevation - my,
+    dx2: (r.latitude - mx) * (r.latitude - mx),
+    dy2: (r.elevation - my) * (r.elevation - my),
+    prod: (r.latitude - mx) * (r.elevation - my)
+})
+
+numerator = components.map(x => x.prod).sum
+sum_dx2 = components.map(x => x.dx2).sum
+sum_dy2 = components.map(x => x.dy2).sum
+
+
+correlation = numerator / sqrt(sum_dx2 * sum_dy2)
+
+print(correlation)
+
+
+
+        */
     }
 }
