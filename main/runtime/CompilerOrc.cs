@@ -1021,7 +1021,7 @@ namespace MyCompiler
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
             if (value.TypeOf == boxTypePtr)
                 return value;
-            
+
             int tag = GetTypeByTag(type);
             LLVMValueRef dataPtr;
 
@@ -2946,80 +2946,119 @@ namespace MyCompiler
         {
             if (node == null) return null;
 
-            // 1. Base Case: The ID itself (x -> __current_row)
+            // 1. Base Case: The ID itself (e.g., x)
             if (node is IdNode id && id.Name == iteratorName)
+            {
                 return replacement;
-
-            if (node is IdNode id2)
-            {
-                Console.WriteLine($"[DEBUG] Visiting ID: {id2.Name}");
             }
 
-
-            // 2. Record Field Access (x.latitude -> __current_row.latitude)
-            if (node is RecordNode rec)
-            {
-                // We need to pass a List<NamedArgumentNode> to the RecordNode constructor
-                var newArgs = rec.Fields.Select(f =>
-                {
-                    // f.Value is a NamedArgumentNode
-                    if (f.Value is NamedArgumentNode nan)
-                    {
-                        // nan.Value is the actual ExpressionNode (e.g., RecordFieldNode 'x.latitude')
-                        var replacedInner = ReplaceIterator(nan.Value, iteratorName, replacement);
-                        return new NamedArgumentNode(nan.Name, replacedInner);
-                    }
-
-                    // Fallback: if Value is somehow the expression directly
-                    return new NamedArgumentNode(f.Label, ReplaceIterator(f.Value, iteratorName, replacement));
-                }).ToList();
-
-                return new RecordNode(newArgs);
-            }
-
+            // 2. RecordFieldNode (Handles x.columnName)
             if (node is RecordFieldNode rf)
             {
-                // Recursively replace 'x' in 'x.latitude'
-                return new RecordFieldNode(ReplaceIterator(rf.IdRecord, iteratorName, replacement), rf.IdField);
+                var newSrc = ReplaceIterator(rf.IdRecord, iteratorName, replacement);
+                var newRf = new RecordFieldNode(newSrc, rf.IdField);
+                newRf.SetType(rf.Type);
+                return newRf;
             }
 
-            // 4. Binary Operations (x + { ... })
-            if (node is BinaryOpNode bin)
+            // 3. IndexAssignNode (e.g., x[0] = 10) - Since this is an ExpressionNode in your AST
+            if (node is IndexAssignNode ian)
             {
-                var left = ReplaceIterator(bin.Left, iteratorName, replacement);
-                var right = ReplaceIterator(bin.Right, iteratorName, replacement);
-
-                var newNode = new BinaryOpNode(left, bin.Operator, right);
-                newNode.SetType(bin.Type); // Ensure metadata is preserved
+                var newArr = ReplaceIterator(ian.ArrayExpression, iteratorName, replacement);
+                var newIdx = ReplaceIterator(ian.IndexExpression, iteratorName, replacement);
+                var newAss = ReplaceIterator(ian.AssignExpression, iteratorName, replacement);
+                var newNode = new IndexAssignNode(newArr, newIdx, newAss);
+                newNode.SetType(ian.Type);
                 return newNode;
             }
 
-            // 5. Unary Operations (-x.lat)
-            if (node is UnaryOpNode un)
+            // 4. NamedArgumentNode
+            if (node is NamedArgumentNode arg)
             {
-                var newOperand = ReplaceIterator(un.Operand, iteratorName, replacement);
-                return new UnaryOpNode(un.Operator, newOperand);
+                var newValue = ReplaceIterator(arg.Value, iteratorName, replacement);
+                var newArg = new NamedArgumentNode(arg.Name, newValue);
+                newArg.SetType(arg.Type);
+                return newArg;
             }
 
-            // 6. Function Calls (random(x.a, x.b))
+            // 5. RecordNode
+            if (node is RecordNode rec)
+            {
+                var newFields = rec.Fields.Select(f =>
+                {
+                    var val = ReplaceIterator(f.Value, iteratorName, replacement);
+                    var argNode = new NamedArgumentNode(f.Label, val);
+                    argNode.SetType(f.Type);
+                    return argNode;
+                }).ToList();
+                var newRec = new RecordNode(newFields);
+                newRec.SetType(rec.Type);
+                return newRec;
+            }
+
+            // 6. Comparison
+            if (node is ComparisonNode comp)
+            {
+                var newComp = new ComparisonNode(
+                    ReplaceIterator(comp.Left, iteratorName, replacement),
+                    comp.Operator,
+                    ReplaceIterator(comp.Right, iteratorName, replacement)
+                );
+                newComp.SetType(comp.Type);
+                return newComp;
+            }
+
+            // 7. Binary Operations (Handles x.longitude - 100.0)
+            if (node is BinaryOpNode bin)
+            {
+                var newBin = new BinaryOpNode(
+                    ReplaceIterator(bin.Left, iteratorName, replacement),
+                    bin.Operator,
+                    ReplaceIterator(bin.Right, iteratorName, replacement)
+                );
+                newBin.SetType(bin.Type);
+                return newBin;
+            }
+
+            // 8. Indexing (Read access: x[0])
+            if (node is IndexNode idx)
+            {
+                var nSrc = ReplaceIterator(idx.SourceExpression, iteratorName, replacement);
+                var nIdx = ReplaceIterator(idx.IndexExpression, iteratorName, replacement);
+                var newNode = new IndexNode(nSrc, nIdx);
+                newNode.SetType(idx.Type);
+                return newNode;
+            }
+
+            // 9. Unary
+            if (node is UnaryOpNode un)
+            {
+                var newUn = new UnaryOpNode(un.Operator, ReplaceIterator(un.Operand, iteratorName, replacement));
+                newUn.SetType(un.Type);
+                return newUn;
+            }
+
+            // 10. Logical Operations
+            if (node is LogicalOpNode log)
+            {
+                var newLog = new LogicalOpNode(
+                    ReplaceIterator(log.Left, iteratorName, replacement),
+                    log.Operator,
+                    ReplaceIterator(log.Right, iteratorName, replacement)
+                );
+                newLog.SetType(log.Type);
+                return newLog;
+            }
+
+            // 11. Function Calls (random(x.a, x.b))
             if (node is RandomNode ran)
             {
                 var newArgs = ran.Arguments.Select(a => ReplaceIterator(a, iteratorName, replacement)).ToList();
                 return new RandomNode(newArgs);
             }
 
-
-            // 7. Indexing (x[0])
-            if (node is IndexNode idx)
-            {
-                var newSrc = ReplaceIterator(idx.SourceExpression, iteratorName, replacement);
-                var newIdx = ReplaceIterator(idx.IndexExpression, iteratorName, replacement);
-                return new IndexNode(newSrc, newIdx);
-            }
-
             return node;
         }
-
 
         private bool IsReferenceType(Type t)
         {
