@@ -66,6 +66,7 @@ namespace MyCompiler
                 bool useStopWatch = false;
                 bool showAllColumns = false;
                 bool showAllRows = false;
+                List<double> listTime = new List<double>();
 
 #if LINUX
                 bool multipleLines = true;
@@ -251,6 +252,32 @@ namespace MyCompiler
                         continue;
                     }
 
+                    if (userInput.ToString() == "stopwatch list")
+                    {
+                        if (listTime.Count > 0)
+                        {
+                            string arr = "[";
+                            foreach (var item in listTime)
+                            {
+                                arr += item + ", ";
+                            }
+                            arr = arr[..^2];
+                            arr += "]";
+                            Console.WriteLine(arr);
+
+                            userInput.Clear();
+                            continue;
+
+                        }
+                        else
+                        {
+                            Console.WriteLine("Warning: List is empty! Please use 'stopwatch' command to activate the functionality to add time ti listTime.");
+                            userInput.Clear();
+                            continue;
+                        }
+
+                    }
+
                     if (userInput.ToString() == "allcolumns")
                     {
                         showAllColumns = !showAllColumns;
@@ -363,7 +390,7 @@ namespace MyCompiler
                             }
                         }
 
-                        if (useStopWatch) StopStopWatch("Ran the full stack");
+                        if (useStopWatch) StopStopWatch("Ran the full stack", listTime);
                     }
                     catch (Exception ex)
                     {
@@ -586,7 +613,7 @@ namespace MyCompiler
             }
         }
 
-        static void StopStopWatch(string testName = null)
+        static void StopStopWatch(string testName = null, List<double> listTime = null)
         {
             sw.Stop();
             if (testName is not null)
@@ -594,7 +621,10 @@ namespace MyCompiler
             else
                 Console.WriteLine("\n--- Execution Stats ---");
 
-            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            if (listTime is not null)
+                listTime.Add(sw.Elapsed.TotalSeconds);
+
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalSeconds} ms");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
         }

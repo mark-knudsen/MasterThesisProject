@@ -4955,7 +4955,7 @@ namespace MyCompiler
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
-        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded.csv")
 
         
         to_csv(df, "CSV/mytest.csv")
