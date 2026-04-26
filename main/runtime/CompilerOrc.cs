@@ -1203,8 +1203,8 @@ namespace MyCompiler
 
             // 🔥 decide if we need write-back
             Type elementType = new NullType();
-            if(expr.Source.Type is DataframeType df) elementType = df.RowType;
-             else if(expr.Source.Type is ArrayType arr) elementType = arr.ElementType;
+            if (expr.Source.Type is DataframeType df) elementType = df.RowType;
+            else if (expr.Source.Type is ArrayType arr) elementType = arr.ElementType;
 
             bool needsWriteBack =
                 elementType is IntType ||
@@ -1225,7 +1225,7 @@ namespace MyCompiler
 
             var lowered = new ForLoopNode(init, cond, step, bodySeq);
 
-            PerformSemanticAnalysis(lowered); 
+            PerformSemanticAnalysis(lowered);
             return Visit(lowered);
         }
 
@@ -4971,6 +4971,103 @@ namespace MyCompiler
 
             // 5. Call it
             return _builder.BuildCall2(sqrtType, sqrtFunc, new[] { val }, "sqrttmp");
+        }
+
+        public LLVMValueRef VisitLog(LogNode expr)
+        {
+            // 1. Evaluate argument
+            var val = Visit(expr.Value);
+
+            // 2. Promote int → double if needed
+            if (expr.Value.Type is IntType)
+            {
+                val = _builder.BuildSIToFP(val, _module.Context.DoubleType, "int2double");
+            }
+
+            var doubleType = _module.Context.DoubleType;
+
+            // 3. Intrinsic function type: double -> double
+            var logType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
+
+            const string intrinsicName = "llvm.log.f64";
+
+            var logFunc = _module.GetNamedFunction(intrinsicName);
+            if (logFunc.Handle == IntPtr.Zero)
+            {
+                logFunc = _module.AddFunction(intrinsicName, logType);
+            }
+
+            // 4. Call intrinsic
+            return _builder.BuildCall2(
+                logType,
+                logFunc,
+                new[] { val },
+                "logtmp"
+            );
+        }
+
+        public LLVMValueRef VisitPow(PowNode expr)
+        {
+            var lhs = Visit(expr.Value);
+            var rhs = Visit(expr.Power);
+
+            var ctx = _module.Context;
+            var doubleType = ctx.DoubleType;
+
+            // Promote ints → doubles if needed
+            if (expr.Value.Type is IntType)
+                lhs = _builder.BuildSIToFP(lhs, doubleType, "int2double_lhs");
+
+            if (expr.Power.Type is IntType)
+                rhs = _builder.BuildSIToFP(rhs, doubleType, "int2double_rhs");
+
+            // pow signature: double(double, double)
+            var powType = LLVMTypeRef.CreateFunction(
+                doubleType,
+                new[] { doubleType, doubleType }
+            );
+
+            const string intrinsicName = "llvm.pow.f64";
+
+            var powFunc = _module.GetNamedFunction(intrinsicName);
+            if (powFunc.Handle == IntPtr.Zero)
+            {
+                powFunc = _module.AddFunction(intrinsicName, powType);
+            }
+
+            return _builder.BuildCall2(
+                powType,
+                powFunc,
+                new[] { lhs, rhs },
+                "powtmp"
+            );
+        }
+
+        public LLVMValueRef VisitExponentialMathFunc(ExponentialMathFuncNode expr)
+        {
+            var val = Visit(expr.Value);
+
+            // Promote int → double (same as sqrt)
+            if (expr.Value.Type is IntType)
+            {
+                val = _builder.BuildSIToFP(val, _module.Context.DoubleType, "int2double");
+            }
+
+            var doubleType = _module.Context.DoubleType;
+
+            // IMPORTANT: correct LLVM intrinsic
+            string intrinsicName = "llvm.exp.f64";
+
+            var expType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
+
+            var expFunc = _module.GetNamedFunction(intrinsicName);
+
+            if (expFunc.Handle == IntPtr.Zero)
+            {
+                expFunc = _module.AddFunction(intrinsicName, expType);
+            }
+
+            return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
         }
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:

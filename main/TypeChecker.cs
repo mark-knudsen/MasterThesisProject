@@ -23,7 +23,7 @@ namespace MyCompiler
             var name = node.GetType().Name;
 
             if (_debug) Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
-            return node switch 
+            return node switch
             {
                 NumberNode n => VisitNumber(n),
                 StringNode str => VisitString(str),
@@ -75,6 +75,9 @@ namespace MyCompiler
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
                 SqrtNode sqrt => VisitSqrt(sqrt),
+                LogNode log => VisitLog(log),
+                PowNode pow => VisitPow(pow),
+                ExponentialMathFuncNode exp => VisitExponentialMathFunc(exp),
                 CastNode cast => VisitCast(cast),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
@@ -93,7 +96,7 @@ namespace MyCompiler
 
             if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
 
-             // it should use an assign node to assign the value instead of harcoding it here
+            // it should use an assign node to assign the value instead of harcoding it here
             _context = _context.Add(expr.Iterator.Name, default, _value: null!, type: rowType);
 
             Visit(expr.Body);
@@ -736,11 +739,54 @@ namespace MyCompiler
 
         public Type VisitSqrt(SqrtNode expr)
         {
-            var argType = Visit(expr.Value);
+            var argType = Visit(expr.Value); // maybe always cast to float if it's an int for sqrt, log, pow, exp?
 
             if (!(argType is IntType || argType is FloatType))
             {
                 throw new Exception($"sqrt() expected numeric type, got {argType}");
+            }
+
+            // Result is always a float
+            var resultType = new FloatType();
+            expr.SetType(resultType);
+            return resultType;
+        }
+
+        public Type VisitLog(LogNode expr)
+        {
+            var argType = Visit(expr.Value);
+            if (!(argType is IntType || argType is FloatType))
+            {
+                throw new Exception($"log() expected numeric type, got {argType}");
+            }
+
+            var resultType = new FloatType();
+            expr.SetType(resultType);
+            return resultType;
+        }
+
+        public Type VisitPow(PowNode expr)
+        {
+            var baseType = Visit(expr.Value);
+            var exponentType = Visit(expr.Power);
+
+            if (!(baseType is IntType || baseType is FloatType) || !(exponentType is IntType || exponentType is FloatType))
+            {
+                throw new Exception($"pow() expected numeric types, got {baseType} and {exponentType}");
+            }
+
+            var resultType = new FloatType();
+            expr.SetType(resultType);
+            return resultType;
+        }
+
+        public Type VisitExponentialMathFunc(ExponentialMathFuncNode expr)
+        {
+            var argType = Visit(expr.Value);
+
+            if (!(argType is IntType || argType is FloatType))
+            {
+                throw new Exception($"exponential() expected numeric type, got {argType}");
             }
 
             // Result is always a float

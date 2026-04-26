@@ -20,7 +20,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND SQRT READCSV TOCSV 
+%token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
 %token DATAFRAME SUBSET SHOW
 
@@ -209,6 +209,18 @@ expr
     | SQRT LPAREN expr RPAREN 
     { 
         $$ = new SqrtNode($3 as ExpressionNode); 
+    }
+    | EXP LPAREN expr RPAREN 
+    { 
+        $$ = new ExponentialMathFuncNode($3 as ExpressionNode); 
+    }
+    | POW LPAREN expr COMMA expr RPAREN 
+    { 
+        $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); 
+    }
+    | LOG LPAREN expr RPAREN 
+    { 
+        $$ = new LogNode($3 as ExpressionNode); 
     }
 
     | expr LOGICAL_AND expr { $$ = new LogicalOpNode($1 as ExpressionNode, "&&", $3 as ExpressionNode); }  

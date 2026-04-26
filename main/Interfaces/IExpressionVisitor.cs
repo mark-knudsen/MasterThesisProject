@@ -52,10 +52,10 @@ namespace MyCompiler
         LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);
         LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
         LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
-
         LLVMValueRef VisitSqrt(SqrtNode expr);
-
-
+        LLVMValueRef VisitLog(LogNode expr);
+        LLVMValueRef VisitPow(PowNode expr);
+        LLVMValueRef VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         LLVMValueRef VisitCast(CastNode expr);
 
         // // Visit for define and usage of created functions
