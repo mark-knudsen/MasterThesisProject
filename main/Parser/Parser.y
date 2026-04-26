@@ -64,6 +64,7 @@ Prog
 
 Block
     : LBRACE StatementList RBRACE { $$ = $2; }
+    | StatementList { $$ = $1; }
     ;
 
 Separator
@@ -95,9 +96,9 @@ StatementList
 Statement
     : Assignment          { $$ = $1; } 
     | expr                { $$ = $1; }             
-    | IF LPAREN expr RPAREN Statement %prec IF
+    | IF LPAREN expr RPAREN Block %prec IF
       { $$ = new IfNode($3 as ExpressionNode, $5); }
-    | IF LPAREN expr RPAREN Statement ELSE Statement
+    | IF LPAREN expr RPAREN Block ELSE Block
       { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
 
    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN OptNewlines Statement

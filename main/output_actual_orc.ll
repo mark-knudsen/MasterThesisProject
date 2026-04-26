@@ -1,12 +1,27 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@fmt_float_raw = private unnamed_addr constant [4 x i8] c"%f\0A\00", align 1
+@fmt_int_raw = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
+@fmt_int_raw.1 = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
+@fmt_int_raw.2 = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
+@fmt_int_raw.3 = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
 
-define ptr @main_6() {
+define ptr @main_2() {
 entry:
-  %logtmp = call double @llvm.log.f64(double 1.000000e+00)
-  %printf_call = call i32 (ptr, ...) @printf(ptr @fmt_float_raw, double %logtmp)
+  br i1 true, label %then, label %else
+
+then:                                             ; preds = %entry
+  %printf_call = call i32 (ptr, ...) @printf(ptr @fmt_int_raw, i64 1)
+  %printf_call1 = call i32 (ptr, ...) @printf(ptr @fmt_int_raw.1, i64 1)
+  %printf_call2 = call i32 (ptr, ...) @printf(ptr @fmt_int_raw.2, i64 1)
+  br label %ifcont
+
+else:                                             ; preds = %entry
+  %printf_call3 = call i32 (ptr, ...) @printf(ptr @fmt_int_raw.3, i64 0)
+  br label %ifcont
+
+ifcont:                                           ; preds = %else, %then
+  %iftmp = phi i32 [ %printf_call2, %then ], [ %printf_call3, %else ]
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
@@ -18,9 +33,4 @@ entry:
 
 declare i32 @printf(ptr, ...)
 
-; Function Attrs: nocallback nofree nosync nounwind speculatable willreturn memory(none)
-declare double @llvm.log.f64(double) #0
-
 declare ptr @malloc(i64)
-
-attributes #0 = { nocallback nofree nosync nounwind speculatable willreturn memory(none) }
