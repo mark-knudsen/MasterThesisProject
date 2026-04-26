@@ -3223,6 +3223,7 @@ namespace MyCompiler
                 var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
 
                 var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+                arrayLen.SetAlignment(8);
                 var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
 
                 // 3. --- BOUNDS CHECK ---
@@ -3880,7 +3881,9 @@ namespace MyCompiler
         {
             var i64 = _module.Context.Int64Type;
             var lengthGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) }, "length_ptr");
-            return _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
+            var d = _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
+            d.SetAlignment(8);
+            return d;
         }
 
         private LLVMValueRef GetArrayCapacity(LLVMValueRef arrayPtr)
