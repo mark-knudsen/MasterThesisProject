@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 26/04/2026 12:42:50>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 27/04/2026 11:34:48>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 26/04/2026 12:42:53
+//  DateTime: 27/04/2026 11:35:09
 // ==========================================================================
 
 
@@ -29,7 +29,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND SQRT READCSV TOCSV 
+%token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
 %token DATAFRAME SUBSET SHOW
 
@@ -66,12 +66,9 @@
 %}
 
 %%
-// Error: There are 1 non-terminating NonTerminal Symbols
-   //  {MINUS_ASSIGN_ASSIGN}
-// Warning: Terminating MINUS_ASSIGN_ASSIGN fixes the following size-1 NonTerminal set
-   // {MINUS_ASSIGN_ASSIGN}
-// Error: NonTerminal symbol "MINUS_ASSIGN_ASSIGN" has no productions
-// -----------------------------------------------------------------------------------
+// Warning: NonTerminal symbol "mixed_arg_list" is unreachable
+// Warning: NonTerminal symbol "mixed_arg" is unreachable
+// -----------------------------------------------------------
 
 Prog
     : StatementList { $$ = $1; RootNode = $$; }
@@ -79,6 +76,7 @@ Prog
 
 Block
     : LBRACE StatementList RBRACE { $$ = $2; }
+    | StatementList { $$ = $1; }
     ;
 
 Separator
@@ -108,13 +106,11 @@ StatementList
     ;
 
 Statement
-    : Assignment          { $$ = $1; }
-    | PLUS_ASSIGN         { $$ = $1; }  
-    | MINUS_ASSIGN_ASSIGN { $$ = $1; }  
+    : Assignment          { $$ = $1; } 
     | expr                { $$ = $1; }             
-    | IF LPAREN expr RPAREN Statement %prec IF
+    | IF LPAREN expr RPAREN Block %prec IF
       { $$ = new IfNode($3 as ExpressionNode, $5); }
-    | IF LPAREN expr RPAREN Statement ELSE Statement
+    | IF LPAREN expr RPAREN Block ELSE Block
       { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
 
    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN OptNewlines Statement
@@ -147,11 +143,33 @@ Assignment
         var add = new BinaryOpNode(id, "+", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, add); 
     }
+    | expr DOT ID PLUS_ASSIGN expr
+    {
+        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        var add = new BinaryOpNode(left, "+", $5 as ExpressionNode);
+
+        $$ = new RecordFieldAssignNode(
+            $1 as ExpressionNode,
+            (string)$3,
+            add
+        );
+    }
     | ID MINUS_ASSIGN expr { 
         // Sugar: x -= 1  becomes  x = x - 1
         var id = new IdNode((string)$1);
         var sub = new BinaryOpNode(id, "-", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, sub); 
+    }
+    | expr DOT ID MINUS_ASSIGN expr
+    {
+        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        var sub = new BinaryOpNode(left, "-", $5 as ExpressionNode);
+
+        $$ = new RecordFieldAssignNode(
+            $1 as ExpressionNode,
+            (string)$3,
+            sub
+        );
     }
     | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }
@@ -205,6 +223,18 @@ expr
     { 
         $$ = new SqrtNode($3 as ExpressionNode); 
     }
+    | EXP LPAREN expr RPAREN 
+    { 
+        $$ = new ExponentialMathFuncNode($3 as ExpressionNode); 
+    }
+    | POW LPAREN expr COMMA expr RPAREN 
+    { 
+        $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); 
+    }
+    | LOG LPAREN expr RPAREN 
+    { 
+        $$ = new LogNode($3 as ExpressionNode); 
+    }
 
     | expr LOGICAL_AND expr { $$ = new LogicalOpNode($1 as ExpressionNode, "&&", $3 as ExpressionNode); }  
     | expr LOGICAL_OR expr  { $$ = new LogicalOpNode($1 as ExpressionNode, "||", $3 as ExpressionNode); }  
@@ -217,7 +247,7 @@ expr
     | expr LT expr        { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
 
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
-    | LBRACE arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*{ name: "Bob", age: 23 } */
+    | LBRACE named_arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*{ name: "Bob", age: 23 } */
     | LBRACKET arg_list RBRACKET { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*[index: int, name: string] */
     | ID LBRACKET expr RBRACKET 
     { 
@@ -328,8 +358,24 @@ arg
     | ID COLON expr       { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
     | COLUMNS ASSIGN expr { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
     | COLUMNS COLON expr  { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
-    | expr                { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
+    /*| expr                { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } */
     ;
+
+named_arg_list
+    : arg
+    | named_arg_list COMMA arg
+    ;
+
+mixed_arg_list
+    : mixed_arg
+    | mixed_arg_list COMMA mixed_arg
+    ;
+
+mixed_arg
+    : arg
+    | expr { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); }
+    ;
+    
 %%
 
 internal Parser(Scanner s) : base(s) { }// ==========================================================================

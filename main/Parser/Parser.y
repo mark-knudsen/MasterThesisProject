@@ -21,7 +21,7 @@
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
-%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
+%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM CORR COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
 %token DATAFRAME SUBSET SHOW
 
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
@@ -255,6 +255,7 @@ expr
     | expr DOT MAX                          { $$ = new MaxNode($1 as ExpressionNode); }
     | expr DOT MEAN                         { $$ = new MeanNode($1 as ExpressionNode); }
     | expr DOT SUM                          { $$ = new SumNode($1 as ExpressionNode); }
+    | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1 as ExpressionNode, $5 as ExpressionNode); }
 
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {

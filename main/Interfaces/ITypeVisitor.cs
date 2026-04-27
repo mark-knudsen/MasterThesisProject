@@ -32,6 +32,7 @@ namespace MyCompiler
         Type VisitMax(MaxNode expr);
         Type VisitMean(MeanNode expr);
         Type VisitSum(SumNode expr);
+        Type VisitCorrelation(CorrelationNode expr);
         Type VisitWhere(WhereNode expr);
         Type VisitMap(MapNode expr);
         Type VisitReadCsv(ReadCsvNode expr);

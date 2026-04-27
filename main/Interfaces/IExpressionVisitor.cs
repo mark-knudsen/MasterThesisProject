@@ -36,6 +36,7 @@ namespace MyCompiler
         LLVMValueRef VisitMax(MaxNode expr);
         LLVMValueRef VisitMean(MeanNode expr);
         LLVMValueRef VisitSum(SumNode expr);
+        LLVMValueRef VisitCorrelation(CorrelationNode expr);
         LLVMValueRef VisitWhere(WhereNode expr);
         LLVMValueRef VisitMap(MapNode expr);
 

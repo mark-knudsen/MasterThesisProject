@@ -52,6 +52,7 @@
 "max"           { return (int)Tokens.MAX; }
 "mean"          { return (int)Tokens.MEAN; }
 "sum"           { return (int)Tokens.SUM; }
+"corr"          { return (int)Tokens.CORR; }
 
 "record"        { return (int)Tokens.RECORD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }

@@ -48,9 +48,10 @@ namespace MyCompiler
                 IndexAssignNode idxa => VisitIndexAssign(idxa),
                 WhereNode whe => VisitWhere(whe),
                 MapNode map => VisitMap(map),
-                ReadCsvNode read => VisitReadCsv(read),
 
+                ReadCsvNode read => VisitReadCsv(read),
                 ToCsvNode tocsv => VisitToCsv(tocsv),
+
                 AddNode add => VisitAdd(add),
                 AddRangeNode addr => VisitAddRange(addr),
                 RemoveNode remo => VisitRemove(remo),
@@ -60,7 +61,7 @@ namespace MyCompiler
                 MaxNode max => VisitMax(max),
                 MeanNode mean => VisitMean(mean),
                 SumNode sum => VisitSum(sum),
-
+                CorrelationNode corr => VisitCorrelation(corr),
                 //FunctionDefNode fdef => VisitFunctionDef(fdef),
                 //FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNode rnd => VisitRound(rnd),
@@ -1022,6 +1023,18 @@ namespace MyCompiler
             return expr.Type;
         }
 
+        public Type VisitCorrelation(CorrelationNode expr)
+        {
+            var arrayElementType1 = (Visit(expr.SourceExpression) as ArrayType).ElementType;
+            var arrayElementType2 = (Visit(expr.TargetExpression) as ArrayType).ElementType;
+
+            ValidType(arrayElementType1);
+            ValidType(arrayElementType2);
+
+            expr.SetType(new FloatType());
+            return expr.Type;
+        }
+
         public Type VisitUnaryOp(UnaryOpNode expr)
         {
             // Visit the operand first
@@ -1095,8 +1108,10 @@ namespace MyCompiler
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
-            Visit(expr.AssignExpression);
-            Visit(expr.IdRecord);
+            var assignType = Visit(expr.AssignExpression);
+            var recordType = Visit(expr.IdRecord);
+
+            System.Console.WriteLine("Assigning to field: " + expr.IdField + " with value type: " + assignType + " on record type: " + recordType);
 
             expr.SetType(new VoidType());
             return expr.Type;

@@ -545,6 +545,21 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSum(this);
     }
 
+    public class CorrelationNode : ExpressionNode
+    {
+        public ExpressionNode SourceExpression { get; }
+        public ExpressionNode TargetExpression { get; }
+
+        public CorrelationNode(ExpressionNode sourceExpr, ExpressionNode targetExpr)
+        {
+            SourceExpression = sourceExpr;
+            TargetExpression = targetExpr;
+            Type = new FloatType();
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCorrelation(this);
+    }
+
     public class UnaryOpNode : ExpressionNode
     {
         public string Operator { get; }

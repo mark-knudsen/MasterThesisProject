@@ -2240,12 +2240,18 @@ namespace MyCompiler
         // {x:5}+{y:2}+{z:1} = {x:5, y:2, z:1}
         // {x:5}+{y:2}+{z:1}+{a:"bob", b: true, f:10.1} = { x: 5, y: 2, z: 1, a: bob, b: True, f: 10.1 }
 
+        // for(i=0; i<50; i++) print(i)
+        // foreach(item in x) {print(item)} // but this works fine
+        // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
+        // random(1,100.00) BUG, this doesn't work any more
+
         public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
         // x=dataframe(["name", "age"], type=[string, int])
+        // x=dataframe(["name", "age"], type=[string, float])
         // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})  
@@ -4088,6 +4094,139 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
+        public LLVMValueRef VisitCorrelation(CorrelationNode expr)
+        {
+            var xVar = "__corr_x";
+            var yVar = "__corr_y";
+            var iVar = "__corr_i";
+
+            var sumX = "__corr_sum_x";
+            var sumY = "__corr_sum_y";
+
+            var meanX = "__corr_mean_x";
+            var meanY = "__corr_mean_y";
+
+            var num = "__corr_num";
+            var denomX = "__corr_dx";
+            var denomY = "__corr_dy";
+
+            // assign arrays
+            var assignX = new AssignNode(xVar, expr.SourceExpression);
+            var assignY = new AssignNode(yVar, expr.TargetExpression);
+
+            var initSumX = new AssignNode(sumX, new NumberNode(0));
+            var initSumY = new AssignNode(sumY, new NumberNode(0));
+            var initI = new AssignNode(iVar, new NumberNode(0));
+
+            var lenX = new LengthNode(new IdNode(xVar));
+
+            // FIRST LOOP: compute means
+            var cond1 = new ComparisonNode(new IdNode(iVar), "<", lenX);
+            var step1 = new IncrementNode(new IdNode(iVar));
+
+            var x_i = new IndexNode(new IdNode(xVar), new IdNode(iVar));
+            var y_i = new IndexNode(new IdNode(yVar), new IdNode(iVar));
+
+            var addSumX = new AssignNode(sumX,
+                new BinaryOpNode(new IdNode(sumX), "+", x_i)
+            );
+
+            var addSumY = new AssignNode(sumY,
+                new BinaryOpNode(new IdNode(sumY), "+", y_i)
+            );
+
+            var loop1Body = new SequenceNode();
+            loop1Body.Statements.Add(addSumX);
+            loop1Body.Statements.Add(addSumY);
+
+            var loop1 = new ForLoopNode(initI, cond1, step1, loop1Body);
+
+            var meanAssignX = new AssignNode(meanX,
+                new BinaryOpNode(new IdNode(sumX), "/", lenX)
+            );
+
+            var meanAssignY = new AssignNode(meanY,
+                new BinaryOpNode(new IdNode(sumY), "/", lenX)
+            );
+
+            // reset index for second loop
+            var resetI = new AssignNode(iVar, new NumberNode(0));
+
+            // SECOND LOOP: covariance
+            var cond2 = new ComparisonNode(new IdNode(iVar), "<", lenX);
+            var step2 = new IncrementNode(new IdNode(iVar));
+
+            var dx = new BinaryOpNode(x_i, "-", new IdNode(meanX));
+            var dy = new BinaryOpNode(y_i, "-", new IdNode(meanY));
+
+            var addNum = new AssignNode(num,
+                new BinaryOpNode(new IdNode(num), "+",
+                    new BinaryOpNode(dx, "*", dy)
+                )
+            );
+
+            var addDenomX = new AssignNode(denomX,
+                new BinaryOpNode(new IdNode(denomX), "+",
+                    new BinaryOpNode(dx, "*", dx)
+                )
+            );
+
+            var addDenomY = new AssignNode(denomY,
+                new BinaryOpNode(new IdNode(denomY), "+",
+                    new BinaryOpNode(dy, "*", dy)
+                )
+            );
+
+            var loop2Body = new SequenceNode();
+            loop2Body.Statements.Add(addNum);
+            loop2Body.Statements.Add(addDenomX);
+            loop2Body.Statements.Add(addDenomY);
+
+            var loop2 = new ForLoopNode(resetI, cond2, step2, loop2Body);
+
+            // FINAL RESULT
+            var corr = new AssignNode("__corr_result",
+                new BinaryOpNode(
+                    new IdNode(num),
+                    "/",
+                    new SqrtNode(
+                        new BinaryOpNode(
+                            new IdNode(denomX),
+                            "*",
+                            new IdNode(denomY)
+                        )
+                    )
+                )
+            );
+
+            var program = new SequenceNode();
+            program.Statements.Add(assignX);
+            program.Statements.Add(assignY);
+
+            program.Statements.Add(initSumX);
+            program.Statements.Add(initSumY);
+            program.Statements.Add(initI);
+            program.Statements.Add(loop1);
+
+            program.Statements.Add(meanAssignX);
+            program.Statements.Add(meanAssignY);
+
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
+
+            program.Statements.Add(new AssignNode(num, new NumberNode(0)));
+            program.Statements.Add(new AssignNode(denomX, new NumberNode(0)));
+            program.Statements.Add(new AssignNode(denomY, new NumberNode(0)));
+
+            program.Statements.Add(loop2);
+
+            program.Statements.Add(corr);
+            program.Statements.Add(new IdNode("__corr_result"));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequence(program);
+        }
+
         public LLVMValueRef VisitId(IdNode expr)
         {
             var entry = _context.Get(expr.Name);
@@ -4339,7 +4478,7 @@ namespace MyCompiler
             var recType = (RecordType)expr.IdRecord.Type;
             var fieldDef = recType.RecordFields.First(f => f.Label == expr.IdField);
 
-            if (fieldDef.Type is IntType or FloatType or BoolType)
+            if (!IsReferenceType(fieldDef.Type))
             {
                 // Primitives are boxed: load the pointer to the box, then store the value
                 var boxPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), fieldSlotPtr, "box_ptr");
