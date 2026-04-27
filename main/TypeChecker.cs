@@ -1108,10 +1108,8 @@ namespace MyCompiler
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
-            var assignType = Visit(expr.AssignExpression);
-            var recordType = Visit(expr.IdRecord);
-
-            System.Console.WriteLine("Assigning to field: " + expr.IdField + " with value type: " + assignType + " on record type: " + recordType);
+            Visit(expr.AssignExpression);
+            Visit(expr.IdRecord);
 
             expr.SetType(new VoidType());
             return expr.Type;

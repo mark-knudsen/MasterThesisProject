@@ -1983,7 +1983,7 @@ namespace MyCompiler
 
                 // rand -> double
                 var randFp = _builder.BuildSIToFP(randCall, doubleType, "rand_fp");
-                double randMaxValue = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 32767.0 : 2147483647.0;
+                double randMaxValue = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 32767.0 : 2147483647.0; // HACK: to make it work for windows and linux
                 var randMax = LLVMValueRef.CreateConstReal(doubleType, randMaxValue);
 
                 var normalized = _builder.BuildFDiv(randFp, randMax, "norm");
@@ -2243,7 +2243,6 @@ namespace MyCompiler
         // for(i=0; i<50; i++) print(i)
         // foreach(item in x) {print(item)} // but this works fine
         // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
-        // random(1,100.00) BUG, this doesn't work any more
 
         public LLVMValueRef VisitPrint(PrintNode expr)
         {
@@ -2251,7 +2250,6 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
         // x=dataframe(["name", "age"], type=[string, int])
-        // x=dataframe(["name", "age"], type=[string, float])
         // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})  
