@@ -804,6 +804,44 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCast(this);
     }
+
+    public class ExponentialMathFuncNode : ExpressionNode
+    {
+        public ExpressionNode Value { get; }
+
+        public ExponentialMathFuncNode(ExpressionNode value)
+        {
+            Value = value;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitExponentialMathFunc(this);
+    }
+
+    public class PowNode : ExpressionNode
+    {
+        public ExpressionNode Value { get; }
+        public ExpressionNode Power { get; }
+
+        public PowNode(ExpressionNode value, ExpressionNode power)
+        {
+            Value = value;
+            Power = power;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitPow(this);
+    }
+
+    public class LogNode : ExpressionNode
+    {
+        public ExpressionNode Value { get; }
+
+        public LogNode(ExpressionNode value)
+        {
+            Value = value;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
+    }
 }
 
 

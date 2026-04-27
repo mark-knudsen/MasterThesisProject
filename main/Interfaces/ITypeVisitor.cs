@@ -46,7 +46,9 @@ namespace MyCompiler
         Type VisitNamedArgument(NamedArgumentNode expr);
         Type VisitTypeLiteral(TypeLiteralNode expr);
         Type VisitSqrt(SqrtNode expr);
-
+        Type VisitLog(LogNode expr);
+        Type VisitPow(PowNode expr);
+        Type VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         Type VisitCast(CastNode expr);
 
         // Type VisitFunctionDef(FunctionDefNode expr);

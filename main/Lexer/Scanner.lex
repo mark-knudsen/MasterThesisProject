@@ -21,6 +21,9 @@
 "random"        { return (int)Tokens.RANDOM; }
 "round"         { return (int)Tokens.ROUND; }
 "sqrt"          { return (int)Tokens.SQRT; }
+"pow"           { return (int)Tokens.POW; }
+"log"           { return (int)Tokens.LOG; }
+"exp"           { return (int)Tokens.EXP; }
 "func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
 "foreach"       { return (int)Tokens.FOREACH; }
@@ -53,7 +56,7 @@
 "record"        { return (int)Tokens.RECORD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
 "columns"       { return (int)Tokens.COLUMNS; }
-"subset"          { return (int)Tokens.SUBSET; }  /* others: extract, derive, select  */
+"subset"        { return (int)Tokens.SUBSET; }  /* others: extract, derive, select  */
 "show"          { return (int)Tokens.SHOW; }
 
 ">="            { return (int)Tokens.GE; }

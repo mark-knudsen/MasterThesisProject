@@ -1,3 +1,12 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 26/04/2026 12:42:50>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 26/04/2026 12:42:53
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
@@ -20,7 +29,7 @@
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
-%token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
+%token PRINT RANDOM ROUND SQRT READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
 %token DATAFRAME SUBSET SHOW
 
@@ -57,6 +66,12 @@
 %}
 
 %%
+// Error: There are 1 non-terminating NonTerminal Symbols
+   //  {MINUS_ASSIGN_ASSIGN}
+// Warning: Terminating MINUS_ASSIGN_ASSIGN fixes the following size-1 NonTerminal set
+   // {MINUS_ASSIGN_ASSIGN}
+// Error: NonTerminal symbol "MINUS_ASSIGN_ASSIGN" has no productions
+// -----------------------------------------------------------------------------------
 
 Prog
     : StatementList { $$ = $1; RootNode = $$; }
@@ -64,7 +79,6 @@ Prog
 
 Block
     : LBRACE StatementList RBRACE { $$ = $2; }
-    | StatementList { $$ = $1; }
     ;
 
 Separator
@@ -94,11 +108,13 @@ StatementList
     ;
 
 Statement
-    : Assignment          { $$ = $1; } 
+    : Assignment          { $$ = $1; }
+    | PLUS_ASSIGN         { $$ = $1; }  
+    | MINUS_ASSIGN_ASSIGN { $$ = $1; }  
     | expr                { $$ = $1; }             
-    | IF LPAREN expr RPAREN Block %prec IF
+    | IF LPAREN expr RPAREN Statement %prec IF
       { $$ = new IfNode($3 as ExpressionNode, $5); }
-    | IF LPAREN expr RPAREN Block ELSE Block
+    | IF LPAREN expr RPAREN Statement ELSE Statement
       { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
 
    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN OptNewlines Statement
@@ -131,33 +147,11 @@ Assignment
         var add = new BinaryOpNode(id, "+", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, add); 
     }
-    | expr DOT ID PLUS_ASSIGN expr
-    {
-        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
-        var add = new BinaryOpNode(left, "+", $5 as ExpressionNode);
-
-        $$ = new RecordFieldAssignNode(
-            $1 as ExpressionNode,
-            (string)$3,
-            add
-        );
-    }
     | ID MINUS_ASSIGN expr { 
         // Sugar: x -= 1  becomes  x = x - 1
         var id = new IdNode((string)$1);
         var sub = new BinaryOpNode(id, "-", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, sub); 
-    }
-    | expr DOT ID MINUS_ASSIGN expr
-    {
-        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
-        var sub = new BinaryOpNode(left, "-", $5 as ExpressionNode);
-
-        $$ = new RecordFieldAssignNode(
-            $1 as ExpressionNode,
-            (string)$3,
-            sub
-        );
     }
     | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }
@@ -210,18 +204,6 @@ expr
     | SQRT LPAREN expr RPAREN 
     { 
         $$ = new SqrtNode($3 as ExpressionNode); 
-    }
-    | EXP LPAREN expr RPAREN 
-    { 
-        $$ = new ExponentialMathFuncNode($3 as ExpressionNode); 
-    }
-    | POW LPAREN expr COMMA expr RPAREN 
-    { 
-        $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); 
-    }
-    | LOG LPAREN expr RPAREN 
-    { 
-        $$ = new LogNode($3 as ExpressionNode); 
     }
 
     | expr LOGICAL_AND expr { $$ = new LogicalOpNode($1 as ExpressionNode, "&&", $3 as ExpressionNode); }  
@@ -350,4 +332,5 @@ arg
     ;
 %%
 
-internal Parser(Scanner s) : base(s) { }
+internal Parser(Scanner s) : base(s) { }// ==========================================================================
+
