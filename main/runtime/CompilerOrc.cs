@@ -1983,8 +1983,8 @@ namespace MyCompiler
 
                 // rand -> double
                 var randFp = _builder.BuildSIToFP(randCall, doubleType, "rand_fp");
-
-                var randMax = LLVMValueRef.CreateConstReal(doubleType, 32767.0);
+                double randMaxValue = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 32767.0 : 2147483647.0;
+                var randMax = LLVMValueRef.CreateConstReal(doubleType, randMaxValue);
 
                 var normalized = _builder.BuildFDiv(randFp, randMax, "norm");
 
