@@ -5240,8 +5240,9 @@ namespace MyCompiler
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
 
         df.map(x => x.latitude - 100.0)
-        df.map(x => x.latitude - 100.0).map(x => x.longitude = 100.0)
-        df.map(x => x.latitude - 100.0, x.longitude = 100.0)
+        df.map(x => x + {latitude: x.latitude - 100.0})
+        df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
+        df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
 
 */
 
