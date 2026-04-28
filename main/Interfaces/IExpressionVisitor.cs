@@ -45,7 +45,7 @@ namespace MyCompiler
 
         LLVMValueRef VisitRound(RoundNode expr);
         LLVMValueRef VisitRecord(RecordNode expr);
-        LLVMValueRef VisitRecordField(RecordFieldNode expr);
+        LLVMValueRef VisitField(FieldNode expr);
         LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr);
         LLVMValueRef VisitCopy(CopyNode expr);
         LLVMValueRef VisitDataframe(DataframeNode expr);

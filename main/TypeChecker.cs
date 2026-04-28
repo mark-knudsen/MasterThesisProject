@@ -67,7 +67,7 @@ namespace MyCompiler
                 RoundNode rnd => VisitRound(rnd),
                 FloatNode flt => VisitFloat(flt),
                 RecordNode rec => VisitRecord(rec),
-                RecordFieldNode recf => VisitRecordField(recf),
+                FieldNode recf => VisitField(recf),
                 RecordFieldAssignNode reca => VisitRecordFieldAssign(reca),
                 CopyNode cop => VisitCopy(cop),
                 DataframeNode df => VisitDataframe(df),
@@ -511,8 +511,8 @@ namespace MyCompiler
 
         public Type VisitCopy(CopyNode expr)
         {
-            Visit(expr.Source);
-            expr.SetType(expr.Source.Type);
+            Visit(expr.SourceExpression);
+            expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
 
@@ -538,7 +538,7 @@ namespace MyCompiler
                         Type columnType = new IntType();
                         for (int i = 0; i < dfType.ColumnNames.Count; i++)
                         {
-                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode)?.Value) columnType = dfType.DataTypes[i];
+                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
                         }
 
                         inferred = new ArrayType(columnType);
@@ -729,7 +729,7 @@ namespace MyCompiler
             if (node is RecordFieldAssignNode rfan) return rfan.IdField;
 
             // Handle x.longitude
-            if (node is RecordFieldNode rf) return rf.IdField;
+            if (node is FieldNode rf) return rf.IdField;
 
             // Handle x.longitude + 1
             if (node is BinaryOpNode bin)
@@ -1074,12 +1074,12 @@ namespace MyCompiler
             return recordType;
         }
 
-        public Type VisitRecordField(RecordFieldNode expr)
+        public Type VisitField(FieldNode expr)
         {
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
-            Type recordSourceType = Visit(expr.IdRecord);
+            Type recordSourceType = Visit(expr.SourceExpression);
 
-            if (_debug) Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.IdRecord.Type);
+            if (_debug) Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.SourceExpression.Type);
 
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;
@@ -1097,14 +1097,26 @@ namespace MyCompiler
                 else
                     throw new Exception($"Field '{expr.IdField}' not found in record.");
             }
+            else if(recordSourceType is DataframeType dfType)
+            {
+                System.Console.WriteLine("YOOO we visiting field and its a datafame! " + expr.IdField);
+                // 4. Look up the field label in the dataframe definition
+                int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
+                if (idx >= 0)
+                {
+                    resolvedFieldType = new ArrayType(dfType.DataTypes[idx]);
+                }
+                else
+                    throw new Exception($"Column '{expr.IdField}' not found in dataframe.");
+            }
             else
-                throw new Exception($"Cannot access field '{expr.IdField}' on non-record type: {recordSourceType}");
+                throw new Exception($"Cannot access field '{expr.IdField}' on non-record or dataframe type: {recordSourceType}");
 
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 
             expr.SetType(resolvedFieldType);
             return resolvedFieldType;
-        }
+        }  
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {

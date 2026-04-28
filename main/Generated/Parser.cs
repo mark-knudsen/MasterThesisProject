@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 28/04/2026 12:08:12
-// Input file <Parser/Parser.y - 27/04/2026 16:30:16>
+// DateTime: 28/04/2026 17:51:46
+// Input file <Parser/Parser.y - 28/04/2026 17:12:36>
 
 // options: lines gplex
 
@@ -68,11 +68,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 27/04/2026 16:30:16
+  // Verbatim content from Parser/Parser.y - 28/04/2026 17:12:36
 #line 56 "Parser/Parser.y"
     public MyCompiler.Node RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 27/04/2026 16:30:16
+  // End verbatim content from Parser/Parser.y - 28/04/2026 17:12:36
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -585,7 +585,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
       case 32: // Assignment -> expr, DOT, ID, PLUS_ASSIGN, expr
 #line 135 "Parser/Parser.y"
     {
-        var left = new RecordFieldNode(ValueStack[ValueStack.Depth-5].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-3].obj);
+        var left = new FieldNode(ValueStack[ValueStack.Depth-5].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-3].obj);
         var add = new BinaryOpNode(left, "+", ValueStack[ValueStack.Depth-1].node as ExpressionNode);
 
         CurrentSemanticValue.node = new RecordFieldAssignNode(
@@ -609,7 +609,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
       case 34: // Assignment -> expr, DOT, ID, MINUS_ASSIGN, expr
 #line 152 "Parser/Parser.y"
     {
-        var left = new RecordFieldNode(ValueStack[ValueStack.Depth-5].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-3].obj);
+        var left = new FieldNode(ValueStack[ValueStack.Depth-5].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-3].obj);
         var sub = new BinaryOpNode(left, "-", ValueStack[ValueStack.Depth-1].node as ExpressionNode);
 
         CurrentSemanticValue.node = new RecordFieldAssignNode(
@@ -961,7 +961,7 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
       case 91: // expr -> expr, DOT, ID
 #line 318 "Parser/Parser.y"
     {
-        CurrentSemanticValue.node = new RecordFieldNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-1].obj);
+        CurrentSemanticValue.node = new FieldNode(ValueStack[ValueStack.Depth-3].node as ExpressionNode, (string)ValueStack[ValueStack.Depth-1].obj);
     }
 #line default
         break;

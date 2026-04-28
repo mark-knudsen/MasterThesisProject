@@ -370,7 +370,7 @@ namespace MyCompiler
                     {
                         namedArguments.Add(new NamedArgumentNode(
                             strNode.Value,
-                            new RecordFieldNode(iteratorId, strNode.Value)
+                            new FieldNode(iteratorId, strNode.Value)
                         ));
                     }
                 }
@@ -625,19 +625,19 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecord(this);
     }
 
-    public class RecordFieldNode : ExpressionNode
+    public class FieldNode : ExpressionNode
     {
-        public ExpressionNode IdRecord { get; }
+        public ExpressionNode SourceExpression { get; }
         public string IdField { get; }
 
-        public RecordFieldNode(ExpressionNode idRecord, string idField)
+        public FieldNode(ExpressionNode sourceExpression, string idField)
         {
-            IdRecord = idRecord;
+            SourceExpression = sourceExpression;
             IdField = idField;
             Type = new IntType();
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordField(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitField(this);
     }
 
     public class RecordFieldAssignNode : StatementNode
@@ -659,11 +659,11 @@ namespace MyCompiler
 
     public class CopyNode : ExpressionNode
     {
-        public ExpressionNode Source { get; }
+        public ExpressionNode SourceExpression { get; }
 
         public CopyNode(ExpressionNode source)
         {
-            Source = source;
+            SourceExpression = source;
             Type = source.Type;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);

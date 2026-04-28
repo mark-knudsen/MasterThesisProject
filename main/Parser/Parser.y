@@ -133,7 +133,7 @@ Assignment
     }
     | expr DOT ID PLUS_ASSIGN expr
     {
-        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        var left = new FieldNode($1 as ExpressionNode, (string)$3);
         var add = new BinaryOpNode(left, "+", $5 as ExpressionNode);
 
         $$ = new RecordFieldAssignNode(
@@ -150,7 +150,7 @@ Assignment
     }
     | expr DOT ID MINUS_ASSIGN expr
     {
-        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        var left = new FieldNode($1 as ExpressionNode, (string)$3);
         var sub = new BinaryOpNode(left, "-", $5 as ExpressionNode);
 
         $$ = new RecordFieldAssignNode(
@@ -316,7 +316,7 @@ expr
 
     | expr DOT ID %prec LOWER_THAN_LPAREN
     {
-        $$ = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        $$ = new FieldNode($1 as ExpressionNode, (string)$3);
     }
 
     | expr DOT COPY                           { $$ = new CopyNode($1 as ExpressionNode); }
