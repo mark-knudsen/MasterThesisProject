@@ -235,7 +235,7 @@ namespace MyCompiler
         private LLVMValueRef _falseStr;
         private bool _jitInitialized = false;
         private string _funcName;
-        private int _replCounter = 0; // what is this for?
+        private int _replCounter = 0;
         int _headTailCount = 5;
         int _maxRowCount = 50;
         private bool _debug = true;
@@ -358,7 +358,7 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
 
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
             _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); // why is this necessary? 
             return _runtimeValueType;
@@ -1012,7 +1012,6 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i16 = ctx.Int16Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var mallocFunc = GetOrDeclareMalloc();
@@ -1050,7 +1049,7 @@ namespace MyCompiler
                 _builder.BuildStore(value, cast);
                 dataPtr = mem;
             }
-            else if (type is StringType || type is RecordType || type is ArrayType || type is DataframeType || type.GetType() == typeof(Type))
+            else if (IsReferenceType(type))
             {
                 // Treat as pointer
                 //if (_debug) Console.WriteLine($"Boxing complex type: {type} (Tag: {tag})");
@@ -2417,7 +2416,6 @@ namespace MyCompiler
 
         public LLVMValueRef VisitMap(MapNode expr)
         {
-            var sourceType = expr.SourceExpr.Type;
             SequenceNode program;
 
             // Check what the TYPE CHECKER said the result would be
@@ -3277,19 +3275,15 @@ namespace MyCompiler
             {
                 LLVMValueRef result;
 
-                if (expr.IndexExpression is StringNode)
-                {
-                    SequenceNode program = ColumnAccessForDataframe(expr);
-                    PerformSemanticAnalysis(program);
-                    return VisitSequence(program);
-                }
-                else if (expr.IndexExpression.Type is IntType)
+                if (expr.IndexExpression.Type is IntType)
                 {
                     result = DataframeIndex(headerPtr, indexVal);
                     return _builder.BuildBitCast(result, i8Ptr);
                 }
-
-                throw new Exception($"Invalid dataframe index type: {expr.IndexExpression.Type}");
+                
+                SequenceNode program = ColumnAccessForDataframe(expr);
+                PerformSemanticAnalysis(program);
+                return VisitSequence(program);
             }
 
             return default;
@@ -3416,7 +3410,7 @@ namespace MyCompiler
             // blocks            
             var okBlock = ctx.AppendBasicBlock(func, "df_idx_ok");
             var errBlock = ctx.AppendBasicBlock(func, "df_idx_err");
-            var mergeBlock = ctx.AppendBasicBlock(func, "df_idx_merge"); // ⭐ NEW
+            var mergeBlock = ctx.AppendBasicBlock(func, "df_idx_merge");
 
             _builder.BuildCondBr(invalid, errBlock, okBlock);
 
@@ -3432,7 +3426,7 @@ namespace MyCompiler
 
             var nullVal = LLVMValueRef.CreateConstNull(i8Ptr);
 
-            _builder.BuildBr(mergeBlock); // ⭐ jump to merge
+            _builder.BuildBr(mergeBlock); // jump to merge
 
             var errEndBlock = _builder.InsertBlock; // capture block for PHI
 
@@ -3526,7 +3520,6 @@ namespace MyCompiler
         public LLVMValueRef AddToDataframe(AddNode expr, DataframeType dfType)
         {
             var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // 1. Get dataframe pointer
@@ -3885,9 +3878,9 @@ namespace MyCompiler
         {
             var i64 = _module.Context.Int64Type;
             var lengthGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) }, "length_ptr");
-            var d = _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
-            d.SetAlignment(8);
-            return d;
+            var length = _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
+            length.SetAlignment(8);
+            return length;
         }
 
         private LLVMValueRef GetArrayCapacity(LLVMValueRef arrayPtr)

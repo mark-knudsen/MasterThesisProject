@@ -538,7 +538,7 @@ namespace MyCompiler
                         Type columnType = new IntType();
                         for (int i = 0; i < dfType.ColumnNames.Count; i++)
                         {
-                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
+                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode)?.Value) columnType = dfType.DataTypes[i];
                         }
 
                         inferred = new ArrayType(columnType);
