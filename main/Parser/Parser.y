@@ -22,7 +22,7 @@
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM CORR COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
-%token DATAFRAME SUBSET SHOW
+%token DATAFRAME SELECT SHOW
 
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
 
@@ -273,10 +273,10 @@ expr
             $7 as List<Node> // map_list already returns List<Node>
         );
     }
-    | expr DOT SUBSET LPAREN LBRACKET map_list RBRACKET RPAREN
+    | expr DOT SELECT LPAREN map_list RPAREN
     {
         // Convert List<Node> to List<ExpressionNode>
-        var elements = ($6 as List<Node>).Cast<ExpressionNode>().ToList();
+        var elements = ($5 as List<Node>).Cast<ExpressionNode>().ToList();
         
         // Create the ArrayNode
         var arrayNode = new ArrayNode(elements);

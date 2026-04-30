@@ -521,7 +521,7 @@ namespace MyCompiler
         public Type VisitIndex(IndexNode expr)
         {
             // 1. Visit children first to resolve their types
-            Type sourceType = Visit(expr.SourceExpression);
+            Visit(expr.SourceExpression);
             Type indexType = Visit(expr.IndexExpression);
 
             Type inferred = new IntType(); // Default
@@ -907,7 +907,6 @@ namespace MyCompiler
 
         public Type VisitAdd(AddNode expr)
         {
-
             var arrayType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
 
@@ -1077,40 +1076,34 @@ namespace MyCompiler
         public Type VisitField(FieldNode expr)
         {
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
-            Type recordSourceType = Visit(expr.SourceExpression);
+            Type SourceType = Visit(expr.SourceExpression);
 
-            if (_debug) Console.WriteLine("idrecord: " + expr.IdField + " type: " + expr.SourceExpression.Type);
+            if (_debug) Console.WriteLine("Id record: " + expr.IdField + " type: " + expr.SourceExpression.Type);
 
             // 2. Initialize a default (or null)
             Type resolvedFieldType = null;
 
             // 3. Check if the source actually resolved to a RecordType
-            if (recordSourceType is RecordType recType)
+            if (SourceType is RecordType recType)
             {
                 // 4. Look up the field label in the record definition
                 var field = recType.RecordFields.FirstOrDefault(f => f.Label == expr.IdField);
-                if (field != null)
-                {
-                    // Use the stored type from the field
+                if (field != null) // Use the stored type from the field
                     resolvedFieldType = field.Value?.Type ?? field.Type;
-                }
                 else
                     throw new Exception($"Field '{expr.IdField}' not found in record.");
             }
-            else if(recordSourceType is DataframeType dfType)
+            else if(SourceType is DataframeType dfType)
             {
-                System.Console.WriteLine("YOOO we visiting field and its a datafame! " + expr.IdField);
                 // 4. Look up the field label in the dataframe definition
                 int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
                 if (idx >= 0)
-                {
                     resolvedFieldType = new ArrayType(dfType.DataTypes[idx]);
-                }
                 else
                     throw new Exception($"Column '{expr.IdField}' not found in dataframe.");
             }
             else
-                throw new Exception($"Cannot access field '{expr.IdField}' on non-record or dataframe type: {recordSourceType}");
+                throw new Exception($"Cannot access field '{expr.IdField}' on non-record or dataframe type: {SourceType}");
 
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 

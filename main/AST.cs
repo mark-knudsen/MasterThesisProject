@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using LLVMSharp.Interop;
 using LLVMSharp;
-using System.Linq.Expressions;
 
 namespace MyCompiler
 {
@@ -366,21 +365,21 @@ namespace MyCompiler
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
                 {
-                    if (arr is StringNode strNode)
+                    if (arr is IdNode strNode)
                     {
                         namedArguments.Add(new NamedArgumentNode(
-                            strNode.Value,
-                            new FieldNode(iteratorId, strNode.Value)
+                            strNode.Name,
+                            new FieldNode(iteratorId, strNode.Name)
                         ));
                     }
+                    else
+                        throw new Exception("Map array elements must be identifiers");
                 }
 
                 Assignments = new List<Node> { new RecordNode(namedArguments) };
             }
             else
-            {
                 Assignments = assignments;
-            }
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);

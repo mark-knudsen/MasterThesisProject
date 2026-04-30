@@ -68,7 +68,7 @@ namespace MyCompiler
                 bool showAllRows = false;
 
 #if LINUX
-                bool multipleLines = true;
+                bool multipleLines = false;
                 string exitText = "e";
 #else
                 bool multipleLines = false;

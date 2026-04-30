@@ -360,7 +360,7 @@ namespace MyCompiler
 
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); // why is this necessary? 
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); 
             return _runtimeValueType;
         }
 
@@ -3213,70 +3213,84 @@ namespace MyCompiler
             var headerPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.IndexExpression);
 
-            if (indexVal.TypeOf == ctx.DoubleType)
-                indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
+            var sourceType = expr.SourceExpression.Type;
 
-            // 2. Load Metadata from Header
-            var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
-            var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
-
-            var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
-            arrayLen.SetAlignment(8);
-            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
-
-            // 3. --- BOUNDS CHECK ---
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
-            var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
-
-            var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
-            var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
-            _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
-
-            // --- FAIL BLOCK ---
-            _builder.PositionAtEnd(failBlock);
-            var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
-            _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
-
-            // --- SAFE BLOCK ---
-            _builder.PositionAtEnd(safeBlock);
-
-            // 4. STRIDE-AWARE ACCESS
-            // Check if the actual language type is boolean
-            bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
-
-            // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
-            var gepType = isBool ? i8 : i8Ptr;
-
-            // We index into dataPtr starting at 0 (no +2 offset anymore!)
-            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
-            var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
-
-            // 5. Transform based on Type
-            // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
-            return expr.Type switch
+            if (sourceType is ArrayType)
             {
-                StringType => _builder.BuildBitCast(rawValue, i8Ptr),
-                FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
-                IntType => _builder.BuildPtrToInt(rawValue, i64),
-                BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
-                RecordType => _builder.BuildBitCast(rawValue, i8Ptr),
-                DataframeType => _builder.BuildBitCast(rawValue, i8Ptr),
-                NullType => _builder.BuildTrunc(rawValue, i8Ptr),
-                _ => rawValue
-            };
+                if (indexVal.TypeOf == ctx.DoubleType)
+                    indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
+
+                // 2. Load Metadata from Header
+                var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
+                var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
+
+                var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+                arrayLen.SetAlignment(8);
+                var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+
+                // 3. --- BOUNDS CHECK ---
+                var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
+                var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
+                var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
+
+                var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
+                var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
+                _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
+
+                // --- FAIL BLOCK ---
+                _builder.PositionAtEnd(failBlock);
+                var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
+                _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+                _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
+
+                // --- SAFE BLOCK ---
+                _builder.PositionAtEnd(safeBlock);
+
+                // 4. STRIDE-AWARE ACCESS
+                // Check if the actual language type is boolean
+                bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
+
+                // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
+                var gepType = isBool ? i8 : i8Ptr;
+
+                // We index into dataPtr starting at 0 (no +2 offset anymore!)
+                var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
+                var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
+
+                // 5. Transform based on Type
+                // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
+                return expr.Type switch
+                {
+                    StringType => _builder.BuildBitCast(rawValue, i8Ptr),
+                    FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
+                    IntType => _builder.BuildPtrToInt(rawValue, i64),
+                    BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
+                    RecordType => _builder.BuildBitCast(rawValue, i8Ptr),
+                    DataframeType => _builder.BuildBitCast(rawValue, i8Ptr),
+                    NullType => _builder.BuildTrunc(rawValue, i8Ptr),
+                    _ => rawValue
+                };
+            }
+            else if (sourceType is DataframeType)
+            {
+                LLVMValueRef result;
+
+                if (expr.IndexExpression.Type is IntType)
+                {
+                    result = DataframeIndex(headerPtr, indexVal);
+                    return _builder.BuildBitCast(result, i8Ptr);
+                }
+            }
+
+            return default;
         }
 
-        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode)
+        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode) 
         {
             var dfType = indexNode.SourceExpression.Type as DataframeType
                 ?? throw new Exception("Expected dataframe type");
 
             var columnName = indexNode.IdField;
-
-
-            System.Console.WriteLine("YOOO the dftype row type is: " + dfType.RowType);
 
             var fieldType = default(Type);
             foreach (var item in dfType.RowType.RecordFields)
@@ -3288,14 +3302,12 @@ namespace MyCompiler
                 }
             }
 
-            Guid id = Guid.NewGuid();
-
             // Variables
-            var srcVar = "__col_src" + id.ToString("N");
-            var resultVar = "__col_result" + id.ToString("N");
-            var iVar = "__col_i" + id.ToString("N");
-            var lenVar = "__col_len" + id.ToString("N");
-            var rowVar = "__col_row" + id.ToString("N");
+            var srcVar = "__col_src";
+            var resultVar = "__col_result";
+            var iVar = "__col_i";
+            var lenVar = "__col_len";
+            var rowVar = "__col_row";
 
             // 1. result = []
             var resultConstructor = new ArrayNode(new List<ExpressionNode>())
@@ -3317,7 +3329,7 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
 
             // row = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)); 
             rowAccess.SetType(dfType.RowType);
 
             var rowAssign = new AssignNode(rowVar, rowAccess);

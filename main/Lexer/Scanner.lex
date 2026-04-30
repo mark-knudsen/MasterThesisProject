@@ -57,7 +57,7 @@
 "record"        { return (int)Tokens.RECORD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
 "columns"       { return (int)Tokens.COLUMNS; }
-"subset"        { return (int)Tokens.SUBSET; }  /* others: extract, derive, select  */
+"select"        { return (int)Tokens.SELECT; }  /* others: extract, derive, select  */
 "show"          { return (int)Tokens.SHOW; }
 
 ">="            { return (int)Tokens.GE; }
