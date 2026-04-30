@@ -68,7 +68,7 @@ namespace MyCompiler
                 bool showAllRows = false;
 
 #if LINUX
-                bool multipleLines = true;
+                bool multipleLines = false;
                 string exitText = "e";
 #else
                 bool multipleLines = false;
@@ -421,9 +421,9 @@ namespace MyCompiler
                     Console.WriteLine($"{space}}}");
                     break;
 
-                case RecordFieldNode rf:
+                case FieldNode rf:
                     Console.WriteLine($"{space}Get Field: {rf.IdField} from:");
-                    PrintNode(rf.IdRecord, indent + 1);
+                    PrintNode(rf.SourceExpression, indent + 1);
                     break;
 
                 case RecordFieldAssignNode rfa:
@@ -512,7 +512,7 @@ namespace MyCompiler
 
                 case CopyNode cp:
                     Console.WriteLine($"{space}COPY:");
-                    PrintNode(cp.Source, indent + 1);
+                    PrintNode(cp.SourceExpression, indent + 1);
                     break;
 
                 case ArrayNode ar:

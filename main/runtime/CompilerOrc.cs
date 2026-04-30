@@ -360,7 +360,7 @@ namespace MyCompiler
 
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); // why is this necessary? 
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); 
             return _runtimeValueType;
         }
 
@@ -2492,7 +2492,7 @@ namespace MyCompiler
                 return rfan.IdField;
 
             // 2. Property Access: x.longitude
-            if (node is RecordFieldNode rf)
+            if (node is FieldNode rf)
                 return rf.IdField;
 
             // 3. Binary Operations: x.longitude - 100.0
@@ -2619,8 +2619,8 @@ namespace MyCompiler
 
             if (node is IdNode id) return id.Name == idName;
 
-            if (node is RecordFieldNode rf)
-                return NodeContainsId(rf.IdRecord, idName);
+            if (node is FieldNode rf)
+                return NodeContainsId(rf.SourceExpression, idName);
 
             if (node is RecordNode rec)
             {
@@ -2641,8 +2641,8 @@ namespace MyCompiler
 
         public LLVMValueRef VisitCopy(CopyNode expr)
         {
-            var value = Visit(expr.Source);
-            return EmitDeepCopy(value, expr.Source.Type);
+            var value = Visit(expr.SourceExpression);
+            return EmitDeepCopy(value, expr.SourceExpression.Type);
         }
 
         private LLVMValueRef EmitDeepCopy(LLVMValueRef sourceVal, Type type)
@@ -2972,11 +2972,11 @@ namespace MyCompiler
                 return replacement;
             }
 
-            // 2. RecordFieldNode (Handles x.columnName)
-            if (node is RecordFieldNode rf)
+            // 2. FieldNode (Handles x.columnName)
+            if (node is FieldNode rf)
             {
-                var newSrc = ReplaceIterator(rf.IdRecord, iteratorName, replacement);
-                var newRf = new RecordFieldNode(newSrc, rf.IdField);
+                var newSrc = ReplaceIterator(rf.SourceExpression, iteratorName, replacement);
+                var newRf = new FieldNode(newSrc, rf.IdField);
                 newRf.SetType(rf.Type);
                 return newRf;
             }
@@ -3280,24 +3280,17 @@ namespace MyCompiler
                     result = DataframeIndex(headerPtr, indexVal);
                     return _builder.BuildBitCast(result, i8Ptr);
                 }
-                
-                SequenceNode program = ColumnAccessForDataframe(expr);
-                PerformSemanticAnalysis(program);
-                return VisitSequence(program);
             }
 
             return default;
         }
 
-        public SequenceNode ColumnAccessForDataframe(IndexNode indexNode)
+        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode) 
         {
             var dfType = indexNode.SourceExpression.Type as DataframeType
                 ?? throw new Exception("Expected dataframe type");
 
-            if (indexNode.IndexExpression is not StringNode strNode)
-                throw new Exception("Dataframe column access must be string");
-
-            var columnName = strNode.Value;
+            var columnName = indexNode.IdField;
 
             var fieldType = default(Type);
             foreach (var item in dfType.RowType.RecordFields)
@@ -3336,14 +3329,14 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
 
             // row = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)); 
             rowAccess.SetType(dfType.RowType);
 
             var rowAssign = new AssignNode(rowVar, rowAccess);
             loopBody.Statements.Add(rowAssign);
 
             // value = row[columnIndex]
-            var valueExpr = new RecordFieldNode(new IdNode(rowVar), columnName);
+            var valueExpr = new FieldNode(new IdNode(rowVar), columnName);
 
             valueExpr.SetType(fieldType);
 
@@ -4519,31 +4512,44 @@ namespace MyCompiler
             throw new Exception($"Field '{name}' not found.");
         }
 
-        public LLVMValueRef VisitRecordField(RecordFieldNode expr)
+        public LLVMValueRef VisitField(FieldNode expr)
         {
-            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
-            var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // Load the pointer stored in the record slot
-            var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_{expr.IdField}_ptr");
-
-            if (expr.Type is IntType)
-                return _builder.BuildLoad2(ctx.Int64Type, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is FloatType)
-                return _builder.BuildLoad2(ctx.DoubleType, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is BoolType)
-                return _builder.BuildLoad2(ctx.Int1Type, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is StringType)
+            if (expr.SourceExpression.Type is RecordType)
             {
-                // NO GEP HERE. The storedPtr is already the char* (or the pointer to the string)
+                var (fieldSlotPtr, _) = GetFieldPointer(expr.SourceExpression, expr.IdField);
+                var ctx = _module.Context;
+                var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+                // Load the pointer stored in the record slot
+                var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_{expr.IdField}_ptr");
+
+                if (expr.Type is IntType)
+                    return _builder.BuildLoad2(ctx.Int64Type, storedPtr, $"val_{expr.IdField}");
+
+                if (expr.Type is FloatType)
+                    return _builder.BuildLoad2(ctx.DoubleType, storedPtr, $"val_{expr.IdField}");
+
+                if (expr.Type is BoolType)
+                    return _builder.BuildLoad2(ctx.Int1Type, storedPtr, $"val_{expr.IdField}");
+
+                if (expr.Type is StringType)
+                {
+                    // NO GEP HERE. The storedPtr is already the char* (or the pointer to the string)
+                    return storedPtr;
+                }
+
                 return storedPtr;
             }
-
-            return storedPtr;
+            else if (expr.SourceExpression.Type is DataframeType)
+            {
+                var d = ColumnAccessForDataframe(expr);
+                PerformSemanticAnalysis(d);
+                return Visit(d);
+            }
+            else
+            {
+                throw new Exception("Field access is only supported on records");
+            }
         }
 
         public LLVMValueRef VisitToCsv(ToCsvNode expr)
@@ -4887,12 +4893,12 @@ namespace MyCompiler
 
                 foreach (var colName in resultType.ColumnNames)
                 {
-                    var fieldAccess = new RecordFieldNode(rowId, colName);
+                    var fieldAccess = new FieldNode(rowId, colName);
                     var fType = sourceType.RowType.RecordFields.First(f => f.Label == colName).Type;
                     fieldAccess.SetType(fType);
 
                     // VisitRecordField now returns unboxed raw values (i64, double, or i8* for strings)
-                    LLVMValueRef rawValue = VisitRecordField(fieldAccess);
+                    LLVMValueRef rawValue = VisitField(fieldAccess);
                     projectedValues.Add(rawValue);
                 }
 

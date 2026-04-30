@@ -38,7 +38,7 @@ namespace MyCompiler
         Type VisitReadCsv(ReadCsvNode expr);
         Type VisitRound(RoundNode expr);
         Type VisitRecord(RecordNode expr);
-        Type VisitRecordField(RecordFieldNode expr);
+        Type VisitField(FieldNode expr);
         Type VisitRecordFieldAssign(RecordFieldAssignNode expr);
         Type VisitCopy(CopyNode expr);
         Type VisitDataframe(DataframeNode expr);
