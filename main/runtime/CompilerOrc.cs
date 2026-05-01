@@ -266,6 +266,7 @@ namespace MyCompiler
         Stopwatch sw;
         void StartStopWatch() => sw = Stopwatch.StartNew();
 
+
         public CompilerOrc()
         {
             LLVM.InitializeNativeTarget();
@@ -287,7 +288,7 @@ namespace MyCompiler
             DeclareDataframeStruct();
             SetupCsvFunctions();
         }
-        void StopStopWatch(string testName = null)
+        double StopStopWatch(string testName = null)
         {
             sw.Stop();
             if (testName is not null)
@@ -298,6 +299,8 @@ namespace MyCompiler
             Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
+
+            return sw.Elapsed.TotalMilliseconds;
         }
 
         private unsafe void RegisterNativeFunc(LLVMOrcOpaqueJITDylib* dylib, string name, IntPtr fnAddr)
@@ -492,6 +495,9 @@ namespace MyCompiler
             _builder = builder;
         }
 
+        public List<double> compilerTestList = new List<double>();
+        public List<double> IRTestList = new List<double>();
+        public List<double> RuntimeTestList = new List<double>();
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
             _debug = debug;
@@ -509,8 +515,10 @@ namespace MyCompiler
 
             if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
-            if (_stopwatch) StopStopWatch("Ran codegen");
+            if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
 
+
+            if (_stopwatch) StartStopWatch();
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
@@ -533,13 +541,25 @@ namespace MyCompiler
             // 7 Call it
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
+            if (_stopwatch) IRTestList.Add(StopStopWatch("Ran IR codegen"));
 
-            var tempResult = delegateResult();
-            if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
 
             if (_stopwatch) StartStopWatch();
+            var tempResult = delegateResult();
+            if (_stopwatch) RuntimeTestList.Add(StopStopWatch("Ran program"));
+
+            if (_stopwatch)
+            {
+                Console.WriteLine($"compiler list: {string.Join(", ", compilerTestList)}");
+                Console.WriteLine($"IR list: {string.Join(", ", IRTestList)}");
+                Console.WriteLine($"Runtime list: {string.Join(", ", RuntimeTestList)}");
+            }
+
+
+
+            if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
+
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
-            if (_stopwatch) StopStopWatch("Ran compiler");
 
             switch ((ValueTag)result.tag)
             {
@@ -587,6 +607,7 @@ namespace MyCompiler
             }
 
             return result;
+
         }
 
         private string HandleArray(IntPtr arrayObjPtr, Type type)
@@ -5073,8 +5094,8 @@ namespace MyCompiler
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
-        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded.csv")
-
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded.csv") # 1.9 million rows
+        for(i=10000; 1<df.length; i++) df.remove(i)
         
         to_csv(df, "CSV/mytest.csv")
 
@@ -5096,7 +5117,7 @@ namespace MyCompiler
         for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
 
 
-        for(i=0; i < 5000000; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
+        for(i=0; i < 250000; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
         
         x.where(d=> d.age > 50)
 
@@ -5109,10 +5130,36 @@ namespace MyCompiler
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
 
+
+        df.where(x => x.longitude < -69.0).where(x => x.latitude > -18.0)
+        df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
+
         df.map(x => x.latitude - 100.0)
         df.map(x => x + {latitude: x.latitude - 100})
         df.map(x => x + {latitude: x.latitude - 100}).map(x => x + { longitude: 100.0})
         df.map(x => x + {latitude: x.latitude - 100, longitude: 100.0})
+
+        # TEST OF where and map on arrays
+        1) SETUP:
+            arr = [10]
+            for(i=20;i<10000000; i = i+10) arr.add(i)
+
+        2) WHERE:
+            arr.where(x => x >=1000)
+            arr.where(x => x >=1000).where(x => x < 500000)
+        
+        3) MAP:
+            arr.map(x => x * 2)
+            arr.map(x => x * 2).map(x => x +5)
+
+
+        lat_min = df.map(x => x.latitude).min; lat_max = df.map(x => x.latitude).max; lat_mean = df.map(x => x.latitude).mean; lat_sum = df.map(x => x.latitude).sum
+        
+        df_arr = df.map(x => x.latitude)
+        lat_min = df_arr.min; lat_max = df_arr.max; lat_mean = df_arr.mean; lat_sum = df_arr.sum
+        
+        lat_min = df['latitude'].min; lat_max = df['latitude'].max; lat_mean = df['latitude'].mean; lat_sum = df['latitude'].sum
+
 
         /*
                 Performance test for our Language:

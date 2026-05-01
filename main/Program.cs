@@ -624,7 +624,7 @@ namespace MyCompiler
             if (listTime is not null)
                 listTime.Add(sw.Elapsed.TotalSeconds);
 
-            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalSeconds} ms");
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalSeconds} sec");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
         }
