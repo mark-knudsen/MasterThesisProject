@@ -493,16 +493,16 @@ namespace MyCompiler
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
-            // int minArrayCount = Math.Min(expr.Elements.Count, 100); // it is a bit complex when doing dataframe, might have to make a record for combine type and column in dataframe
+            for (int i = 1; i < expr.Elements.Count; i++)
+            {
+                Type indexType = Visit(expr.Elements[i]);
+                if (indexType is ArrayType) continue;
 
-            // for (int i = 1; i < minArrayCount; i++)
-            // {
-            //     Type indexType = Visit(expr.Elements[i]);
-            //     if (indexType is ArrayType) continue;
+                if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
 
-            //     if (expr.ElementType.GetType() != indexType.GetType())
-            //         throw new Exception("Not all elements are of the same type, which is not allowed in an array");
-            // }
+                if (expr.ElementType.GetType() != indexType.GetType())
+                    throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+            }
 
             var arrayType = new ArrayType(expr.ElementType);
             expr.SetType(arrayType);
@@ -907,10 +907,10 @@ namespace MyCompiler
 
         public Type VisitAdd(AddNode expr)
         {
-            var arrayType = Visit(expr.SourceExpression);
+            var sourceType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
 
-            if (arrayType is DataframeType dfType)
+            if (sourceType is DataframeType dfType)
             {
                 if (addType is not RecordType recType)
                     throw new Exception("Add can only add records to dataframes");
@@ -925,9 +925,9 @@ namespace MyCompiler
                 if (!dfColumns.All(col => recFields.Contains(col)))
                     throw new Exception("Record fields do not match dataframe columns");
             }
-            else if (arrayType is ArrayType arrType)
+            else if (sourceType is ArrayType arrType)
             {
-                var arrayElementType = ((ArrayType)arrayType).ElementType;
+                var arrayElementType = ((ArrayType)sourceType).ElementType;
 
                 if (arrayElementType.GetType() != addType.GetType())
                     throw new Exception($"Can't add {addType} value to a {arrayElementType} array");
@@ -935,7 +935,7 @@ namespace MyCompiler
             else
                 throw new Exception("Add can only be used on arrays and dataframes");
 
-            expr.SetType(arrayType);
+            expr.SetType(sourceType);
             return expr.Type;
         }
 
@@ -943,15 +943,6 @@ namespace MyCompiler
         {
             Visit(expr.SourceExpression);
             Visit(expr.AddRangeExpression);
-
-            if (expr.AddRangeExpression is ArrayNode arrayNode)
-            {
-                foreach (var item in arrayNode.Elements)
-                {
-                    if ((item.Type as RecordType).RecordFields.Count != (expr.SourceExpression as ArrayNode).Elements.Count)
-                        throw new Exception("Not all records has fields equal to the amount of columns in the dataframe");
-                }
-            }
 
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;

@@ -360,7 +360,7 @@ namespace MyCompiler
 
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); 
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
             return _runtimeValueType;
         }
 
@@ -453,6 +453,9 @@ namespace MyCompiler
         // none atm
 
         // Problems
+        // add range can only take an array, not an id or an expr, only an array
+        // z.addRange(x.select(age)) doesn't work
+        // z.addRange(arr)           doesn't work
 
         // TODO: fix the problems
 
@@ -2304,10 +2307,10 @@ namespace MyCompiler
             var types = new List<ExpressionNode>();
             foreach (var item in recType.DataTypes)
             {
-                if (item is IntType) types.Add(new NumberNode(0));
-                else if (item is FloatType) types.Add(new FloatNode(0));
-                else if (item is BoolType) types.Add(new BooleanNode(false));
-                else if (item is StringType) types.Add(new StringNode(""));
+                if (item is IntType) types.Add(new TypeLiteralNode(new TypeNode("int")));
+                else if (item is FloatType) types.Add(new TypeLiteralNode(new TypeNode("float")));
+                else if (item is BoolType) types.Add(new TypeLiteralNode(new TypeNode("bool")));
+                else if (item is StringType) types.Add(new TypeLiteralNode(new TypeNode("string")));
             }
 
             var typeArray = new ArrayNode(types);
@@ -3285,7 +3288,7 @@ namespace MyCompiler
             return default;
         }
 
-        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode) 
+        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode)
         {
             var dfType = indexNode.SourceExpression.Type as DataframeType
                 ?? throw new Exception("Expected dataframe type");
@@ -3329,7 +3332,7 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
 
             // row = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)); 
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
             rowAccess.SetType(dfType.RowType);
 
             var rowAssign = new AssignNode(rowVar, rowAccess);
@@ -3667,10 +3670,10 @@ namespace MyCompiler
 
             var fullSequence = new SequenceNode();
 
-            foreach (var item in ((ArrayNode)expr.AddRangeExpression).Elements)
+            foreach (var item in ((ArrayNode)expr.AddRangeExpression).Elements) // it is hardcoded, it can't be given an id
             {
-                var d = new AddNode(expr.SourceExpression, item);
-                fullSequence.Statements.Add(d);
+                var addNode = new AddNode(expr.SourceExpression, item);
+                fullSequence.Statements.Add(addNode);
             }
             var newRange = Visit(fullSequence);
 
