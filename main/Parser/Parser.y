@@ -21,8 +21,8 @@
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
-%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
-%token DATAFRAME SUBSET SHOW
+%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM CORR COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
+%token DATAFRAME SELECT SHOW
 
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
 
@@ -133,7 +133,7 @@ Assignment
     }
     | expr DOT ID PLUS_ASSIGN expr
     {
-        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        var left = new FieldNode($1 as ExpressionNode, (string)$3);
         var add = new BinaryOpNode(left, "+", $5 as ExpressionNode);
 
         $$ = new RecordFieldAssignNode(
@@ -150,7 +150,7 @@ Assignment
     }
     | expr DOT ID MINUS_ASSIGN expr
     {
-        var left = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        var left = new FieldNode($1 as ExpressionNode, (string)$3);
         var sub = new BinaryOpNode(left, "-", $5 as ExpressionNode);
 
         $$ = new RecordFieldAssignNode(
@@ -255,6 +255,7 @@ expr
     | expr DOT MAX                          { $$ = new MaxNode($1 as ExpressionNode); }
     | expr DOT MEAN                         { $$ = new MeanNode($1 as ExpressionNode); }
     | expr DOT SUM                          { $$ = new SumNode($1 as ExpressionNode); }
+    | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1 as ExpressionNode, $5 as ExpressionNode); }
 
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {
@@ -272,10 +273,10 @@ expr
             $7 as List<Node> // map_list already returns List<Node>
         );
     }
-    | expr DOT SUBSET LPAREN LBRACKET map_list RBRACKET RPAREN
+    | expr DOT SELECT LPAREN map_list RPAREN
     {
         // Convert List<Node> to List<ExpressionNode>
-        var elements = ($6 as List<Node>).Cast<ExpressionNode>().ToList();
+        var elements = ($5 as List<Node>).Cast<ExpressionNode>().ToList();
         
         // Create the ArrayNode
         var arrayNode = new ArrayNode(elements);
@@ -315,7 +316,7 @@ expr
 
     | expr DOT ID %prec LOWER_THAN_LPAREN
     {
-        $$ = new RecordFieldNode($1 as ExpressionNode, (string)$3);
+        $$ = new FieldNode($1 as ExpressionNode, (string)$3);
     }
 
     | expr DOT COPY                           { $$ = new CopyNode($1 as ExpressionNode); }

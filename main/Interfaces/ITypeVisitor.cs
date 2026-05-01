@@ -32,12 +32,13 @@ namespace MyCompiler
         Type VisitMax(MaxNode expr);
         Type VisitMean(MeanNode expr);
         Type VisitSum(SumNode expr);
+        Type VisitCorrelation(CorrelationNode expr);
         Type VisitWhere(WhereNode expr);
         Type VisitMap(MapNode expr);
         Type VisitReadCsv(ReadCsvNode expr);
         Type VisitRound(RoundNode expr);
         Type VisitRecord(RecordNode expr);
-        Type VisitRecordField(RecordFieldNode expr);
+        Type VisitField(FieldNode expr);
         Type VisitRecordFieldAssign(RecordFieldAssignNode expr);
         Type VisitCopy(CopyNode expr);
         Type VisitDataframe(DataframeNode expr);

@@ -36,6 +36,7 @@ namespace MyCompiler
         LLVMValueRef VisitMax(MaxNode expr);
         LLVMValueRef VisitMean(MeanNode expr);
         LLVMValueRef VisitSum(SumNode expr);
+        LLVMValueRef VisitCorrelation(CorrelationNode expr);
         LLVMValueRef VisitWhere(WhereNode expr);
         LLVMValueRef VisitMap(MapNode expr);
 
@@ -44,7 +45,7 @@ namespace MyCompiler
 
         LLVMValueRef VisitRound(RoundNode expr);
         LLVMValueRef VisitRecord(RecordNode expr);
-        LLVMValueRef VisitRecordField(RecordFieldNode expr);
+        LLVMValueRef VisitField(FieldNode expr);
         LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr);
         LLVMValueRef VisitCopy(CopyNode expr);
         LLVMValueRef VisitDataframe(DataframeNode expr);

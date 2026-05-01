@@ -235,7 +235,7 @@ namespace MyCompiler
         private LLVMValueRef _falseStr;
         private bool _jitInitialized = false;
         private string _funcName;
-        private int _replCounter = 0; // what is this for?
+        private int _replCounter = 0;
         int _headTailCount = 5;
         int _maxRowCount = 50;
         private bool _debug = true;
@@ -361,9 +361,9 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
 
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); // why is this necessary? 
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); 
             return _runtimeValueType;
         }
 
@@ -1033,7 +1033,6 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i16 = ctx.Int16Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var mallocFunc = GetOrDeclareMalloc();
@@ -1071,7 +1070,7 @@ namespace MyCompiler
                 _builder.BuildStore(value, cast);
                 dataPtr = mem;
             }
-            else if (type is StringType || type is RecordType || type is ArrayType || type is DataframeType || type.GetType() == typeof(Type))
+            else if (IsReferenceType(type))
             {
                 // Treat as pointer
                 //if (_debug) Console.WriteLine($"Boxing complex type: {type} (Tag: {tag})");
@@ -2004,8 +2003,8 @@ namespace MyCompiler
 
                 // rand -> double
                 var randFp = _builder.BuildSIToFP(randCall, doubleType, "rand_fp");
-
-                var randMax = LLVMValueRef.CreateConstReal(doubleType, 32767.0);
+                double randMaxValue = RuntimeInformation.IsOSPlatform(OSPlatform.Windows) ? 32767.0 : 2147483647.0; // HACK: to make it work for windows and linux
+                var randMax = LLVMValueRef.CreateConstReal(doubleType, randMaxValue);
 
                 var normalized = _builder.BuildFDiv(randFp, randMax, "norm");
 
@@ -2261,6 +2260,10 @@ namespace MyCompiler
         // {x:5}+{y:2}+{z:1} = {x:5, y:2, z:1}
         // {x:5}+{y:2}+{z:1}+{a:"bob", b: true, f:10.1} = { x: 5, y: 2, z: 1, a: bob, b: True, f: 10.1 }
 
+        // for(i=0; i<50; i++) print(i)
+        // foreach(item in x) {print(item)} // but this works fine
+        // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
+
         public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
@@ -2434,7 +2437,6 @@ namespace MyCompiler
 
         public LLVMValueRef VisitMap(MapNode expr)
         {
-            var sourceType = expr.SourceExpr.Type;
             SequenceNode program;
 
             // Check what the TYPE CHECKER said the result would be
@@ -2511,7 +2513,7 @@ namespace MyCompiler
                 return rfan.IdField;
 
             // 2. Property Access: x.longitude
-            if (node is RecordFieldNode rf)
+            if (node is FieldNode rf)
                 return rf.IdField;
 
             // 3. Binary Operations: x.longitude - 100.0
@@ -2638,8 +2640,8 @@ namespace MyCompiler
 
             if (node is IdNode id) return id.Name == idName;
 
-            if (node is RecordFieldNode rf)
-                return NodeContainsId(rf.IdRecord, idName);
+            if (node is FieldNode rf)
+                return NodeContainsId(rf.SourceExpression, idName);
 
             if (node is RecordNode rec)
             {
@@ -2660,8 +2662,8 @@ namespace MyCompiler
 
         public LLVMValueRef VisitCopy(CopyNode expr)
         {
-            var value = Visit(expr.Source);
-            return EmitDeepCopy(value, expr.Source.Type);
+            var value = Visit(expr.SourceExpression);
+            return EmitDeepCopy(value, expr.SourceExpression.Type);
         }
 
         private LLVMValueRef EmitDeepCopy(LLVMValueRef sourceVal, Type type)
@@ -2991,11 +2993,11 @@ namespace MyCompiler
                 return replacement;
             }
 
-            // 2. RecordFieldNode (Handles x.columnName)
-            if (node is RecordFieldNode rf)
+            // 2. FieldNode (Handles x.columnName)
+            if (node is FieldNode rf)
             {
-                var newSrc = ReplaceIterator(rf.IdRecord, iteratorName, replacement);
-                var newRf = new RecordFieldNode(newSrc, rf.IdField);
+                var newSrc = ReplaceIterator(rf.SourceExpression, iteratorName, replacement);
+                var newRf = new FieldNode(newSrc, rf.IdField);
                 newRf.SetType(rf.Type);
                 return newRf;
             }
@@ -3294,33 +3296,22 @@ namespace MyCompiler
             {
                 LLVMValueRef result;
 
-                if (expr.IndexExpression is StringNode)
-                {
-                    SequenceNode program = ColumnAccessForDataframe(expr);
-                    PerformSemanticAnalysis(program);
-                    return VisitSequence(program);
-                }
-                else if (expr.IndexExpression.Type is IntType)
+                if (expr.IndexExpression.Type is IntType)
                 {
                     result = DataframeIndex(headerPtr, indexVal);
                     return _builder.BuildBitCast(result, i8Ptr);
                 }
-
-                throw new Exception($"Invalid dataframe index type: {expr.IndexExpression.Type}");
             }
 
             return default;
         }
 
-        public SequenceNode ColumnAccessForDataframe(IndexNode indexNode)
+        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode) 
         {
             var dfType = indexNode.SourceExpression.Type as DataframeType
                 ?? throw new Exception("Expected dataframe type");
 
-            if (indexNode.IndexExpression is not StringNode strNode)
-                throw new Exception("Dataframe column access must be string");
-
-            var columnName = strNode.Value;
+            var columnName = indexNode.IdField;
 
             var fieldType = default(Type);
             foreach (var item in dfType.RowType.RecordFields)
@@ -3359,14 +3350,14 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
 
             // row = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)); 
             rowAccess.SetType(dfType.RowType);
 
             var rowAssign = new AssignNode(rowVar, rowAccess);
             loopBody.Statements.Add(rowAssign);
 
             // value = row[columnIndex]
-            var valueExpr = new RecordFieldNode(new IdNode(rowVar), columnName);
+            var valueExpr = new FieldNode(new IdNode(rowVar), columnName);
 
             valueExpr.SetType(fieldType);
 
@@ -3433,7 +3424,7 @@ namespace MyCompiler
             // blocks            
             var okBlock = ctx.AppendBasicBlock(func, "df_idx_ok");
             var errBlock = ctx.AppendBasicBlock(func, "df_idx_err");
-            var mergeBlock = ctx.AppendBasicBlock(func, "df_idx_merge"); // ⭐ NEW
+            var mergeBlock = ctx.AppendBasicBlock(func, "df_idx_merge");
 
             _builder.BuildCondBr(invalid, errBlock, okBlock);
 
@@ -3449,7 +3440,7 @@ namespace MyCompiler
 
             var nullVal = LLVMValueRef.CreateConstNull(i8Ptr);
 
-            _builder.BuildBr(mergeBlock); // ⭐ jump to merge
+            _builder.BuildBr(mergeBlock); // jump to merge
 
             var errEndBlock = _builder.InsertBlock; // capture block for PHI
 
@@ -3543,7 +3534,6 @@ namespace MyCompiler
         public LLVMValueRef AddToDataframe(AddNode expr, DataframeType dfType)
         {
             var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // 1. Get dataframe pointer
@@ -3902,9 +3892,9 @@ namespace MyCompiler
         {
             var i64 = _module.Context.Int64Type;
             var lengthGEP = _builder.BuildGEP2(i64, arrayPtr, new[] { LLVMValueRef.CreateConstInt(i64, 0) }, "length_ptr");
-            var d = _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
-            d.SetAlignment(8);
-            return d;
+            var length = _builder.BuildLoad2(i64, lengthGEP, "length");  // Load the array length
+            length.SetAlignment(8);
+            return length;
         }
 
         private LLVMValueRef GetArrayCapacity(LLVMValueRef arrayPtr)
@@ -4103,6 +4093,139 @@ namespace MyCompiler
             program.Statements.Add(sumAssign);
             program.Statements.Add(forLoop);
             program.Statements.Add(new IdNode(sumVar));
+
+            PerformSemanticAnalysis(program);
+
+            return VisitSequence(program);
+        }
+
+        public LLVMValueRef VisitCorrelation(CorrelationNode expr)
+        {
+            var xVar = "__corr_x";
+            var yVar = "__corr_y";
+            var iVar = "__corr_i";
+
+            var sumX = "__corr_sum_x";
+            var sumY = "__corr_sum_y";
+
+            var meanX = "__corr_mean_x";
+            var meanY = "__corr_mean_y";
+
+            var num = "__corr_num";
+            var denomX = "__corr_dx";
+            var denomY = "__corr_dy";
+
+            // assign arrays
+            var assignX = new AssignNode(xVar, expr.SourceExpression);
+            var assignY = new AssignNode(yVar, expr.TargetExpression);
+
+            var initSumX = new AssignNode(sumX, new NumberNode(0));
+            var initSumY = new AssignNode(sumY, new NumberNode(0));
+            var initI = new AssignNode(iVar, new NumberNode(0));
+
+            var lenX = new LengthNode(new IdNode(xVar));
+
+            // FIRST LOOP: compute means
+            var cond1 = new ComparisonNode(new IdNode(iVar), "<", lenX);
+            var step1 = new IncrementNode(new IdNode(iVar));
+
+            var x_i = new IndexNode(new IdNode(xVar), new IdNode(iVar));
+            var y_i = new IndexNode(new IdNode(yVar), new IdNode(iVar));
+
+            var addSumX = new AssignNode(sumX,
+                new BinaryOpNode(new IdNode(sumX), "+", x_i)
+            );
+
+            var addSumY = new AssignNode(sumY,
+                new BinaryOpNode(new IdNode(sumY), "+", y_i)
+            );
+
+            var loop1Body = new SequenceNode();
+            loop1Body.Statements.Add(addSumX);
+            loop1Body.Statements.Add(addSumY);
+
+            var loop1 = new ForLoopNode(initI, cond1, step1, loop1Body);
+
+            var meanAssignX = new AssignNode(meanX,
+                new BinaryOpNode(new IdNode(sumX), "/", lenX)
+            );
+
+            var meanAssignY = new AssignNode(meanY,
+                new BinaryOpNode(new IdNode(sumY), "/", lenX)
+            );
+
+            // reset index for second loop
+            var resetI = new AssignNode(iVar, new NumberNode(0));
+
+            // SECOND LOOP: covariance
+            var cond2 = new ComparisonNode(new IdNode(iVar), "<", lenX);
+            var step2 = new IncrementNode(new IdNode(iVar));
+
+            var dx = new BinaryOpNode(x_i, "-", new IdNode(meanX));
+            var dy = new BinaryOpNode(y_i, "-", new IdNode(meanY));
+
+            var addNum = new AssignNode(num,
+                new BinaryOpNode(new IdNode(num), "+",
+                    new BinaryOpNode(dx, "*", dy)
+                )
+            );
+
+            var addDenomX = new AssignNode(denomX,
+                new BinaryOpNode(new IdNode(denomX), "+",
+                    new BinaryOpNode(dx, "*", dx)
+                )
+            );
+
+            var addDenomY = new AssignNode(denomY,
+                new BinaryOpNode(new IdNode(denomY), "+",
+                    new BinaryOpNode(dy, "*", dy)
+                )
+            );
+
+            var loop2Body = new SequenceNode();
+            loop2Body.Statements.Add(addNum);
+            loop2Body.Statements.Add(addDenomX);
+            loop2Body.Statements.Add(addDenomY);
+
+            var loop2 = new ForLoopNode(resetI, cond2, step2, loop2Body);
+
+            // FINAL RESULT
+            var corr = new AssignNode("__corr_result",
+                new BinaryOpNode(
+                    new IdNode(num),
+                    "/",
+                    new SqrtNode(
+                        new BinaryOpNode(
+                            new IdNode(denomX),
+                            "*",
+                            new IdNode(denomY)
+                        )
+                    )
+                )
+            );
+
+            var program = new SequenceNode();
+            program.Statements.Add(assignX);
+            program.Statements.Add(assignY);
+
+            program.Statements.Add(initSumX);
+            program.Statements.Add(initSumY);
+            program.Statements.Add(initI);
+            program.Statements.Add(loop1);
+
+            program.Statements.Add(meanAssignX);
+            program.Statements.Add(meanAssignY);
+
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
+
+            program.Statements.Add(new AssignNode(num, new NumberNode(0)));
+            program.Statements.Add(new AssignNode(denomX, new NumberNode(0)));
+            program.Statements.Add(new AssignNode(denomY, new NumberNode(0)));
+
+            program.Statements.Add(loop2);
+
+            program.Statements.Add(corr);
+            program.Statements.Add(new IdNode("__corr_result"));
 
             PerformSemanticAnalysis(program);
 
@@ -4360,7 +4483,7 @@ namespace MyCompiler
             var recType = (RecordType)expr.IdRecord.Type;
             var fieldDef = recType.RecordFields.First(f => f.Label == expr.IdField);
 
-            if (fieldDef.Type is IntType or FloatType or BoolType)
+            if (!IsReferenceType(fieldDef.Type))
             {
                 // Primitives are boxed: load the pointer to the box, then store the value
                 var boxPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), fieldSlotPtr, "box_ptr");
@@ -4410,31 +4533,44 @@ namespace MyCompiler
             throw new Exception($"Field '{name}' not found.");
         }
 
-        public LLVMValueRef VisitRecordField(RecordFieldNode expr)
+        public LLVMValueRef VisitField(FieldNode expr)
         {
-            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
-            var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // Load the pointer stored in the record slot
-            var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_{expr.IdField}_ptr");
-
-            if (expr.Type is IntType)
-                return _builder.BuildLoad2(ctx.Int64Type, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is FloatType)
-                return _builder.BuildLoad2(ctx.DoubleType, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is BoolType)
-                return _builder.BuildLoad2(ctx.Int1Type, storedPtr, $"val_{expr.IdField}");
-
-            if (expr.Type is StringType)
+            if (expr.SourceExpression.Type is RecordType)
             {
-                // NO GEP HERE. The storedPtr is already the char* (or the pointer to the string)
+                var (fieldSlotPtr, _) = GetFieldPointer(expr.SourceExpression, expr.IdField);
+                var ctx = _module.Context;
+                var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+                // Load the pointer stored in the record slot
+                var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_{expr.IdField}_ptr");
+
+                if (expr.Type is IntType)
+                    return _builder.BuildLoad2(ctx.Int64Type, storedPtr, $"val_{expr.IdField}");
+
+                if (expr.Type is FloatType)
+                    return _builder.BuildLoad2(ctx.DoubleType, storedPtr, $"val_{expr.IdField}");
+
+                if (expr.Type is BoolType)
+                    return _builder.BuildLoad2(ctx.Int1Type, storedPtr, $"val_{expr.IdField}");
+
+                if (expr.Type is StringType)
+                {
+                    // NO GEP HERE. The storedPtr is already the char* (or the pointer to the string)
+                    return storedPtr;
+                }
+
                 return storedPtr;
             }
-
-            return storedPtr;
+            else if (expr.SourceExpression.Type is DataframeType)
+            {
+                var d = ColumnAccessForDataframe(expr);
+                PerformSemanticAnalysis(d);
+                return Visit(d);
+            }
+            else
+            {
+                throw new Exception("Field access is only supported on records");
+            }
         }
 
         public LLVMValueRef VisitToCsv(ToCsvNode expr)
@@ -4778,12 +4914,12 @@ namespace MyCompiler
 
                 foreach (var colName in resultType.ColumnNames)
                 {
-                    var fieldAccess = new RecordFieldNode(rowId, colName);
+                    var fieldAccess = new FieldNode(rowId, colName);
                     var fType = sourceType.RowType.RecordFields.First(f => f.Label == colName).Type;
                     fieldAccess.SetType(fType);
 
                     // VisitRecordField now returns unboxed raw values (i64, double, or i8* for strings)
-                    LLVMValueRef rawValue = VisitRecordField(fieldAccess);
+                    LLVMValueRef rawValue = VisitField(fieldAccess);
                     projectedValues.Add(rawValue);
                 }
 
