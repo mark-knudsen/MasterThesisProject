@@ -1,15 +1,18 @@
-﻿using System;
+﻿﻿using System;
 using System.IO;
 using System.Text;
 using LLVMSharp;
 using LLVMSharp.Interop;
 using System.Globalization;
+using System.Diagnostics;
 
 namespace MyCompiler
 {
     public class Program
     {
         public static StringBuilder OutputBuffer = new();
+        static Stopwatch sw;
+        static void StartStopWatch() => sw = Stopwatch.StartNew();
 
         // public static int ManagedPrint(int value)
         // {
@@ -19,7 +22,7 @@ namespace MyCompiler
 
         static void PrintVariableTable(ICompiler compiler)
         {
-            Console.WriteLine("Variable table:\n");
+            Console.WriteLine("\nVariable table:\n");
             var context = compiler.GetContext();
             var elements = context.GetAll();
 
@@ -32,35 +35,39 @@ namespace MyCompiler
 
         public static void Main(string[] args)
         {
+            // Force the entire application to use the dot as a decimal separator
+            CultureInfo.DefaultThreadCurrentCulture = CultureInfo.InvariantCulture;
+            CultureInfo.DefaultThreadCurrentUICulture = CultureInfo.InvariantCulture;
+
             try
             {
-
                 Console.WriteLine("--- AST Compiler Shell ---");
 
                 ICompiler compiler = new CompilerOrc();
-                bool KeepRunning;
+                bool KeepRunning = true;
                 //bool Debug = args.Length > 0 && args[0] == "True";
                 bool Debug = true;
-                KeepRunning = true;
-
+                bool useStopWatch = false;
+                bool showAllColumns = false;
+                bool showAllRows = false;
 
 #if LINUX
-            bool multipleLines = true;
-            string exitText = "e";
+                bool multipleLines = false;
+                string exitText = "e";
 #else
                 bool multipleLines = false;
                 string exitText = "exit";
 #endif
-
                 StringBuilder userInput = new StringBuilder();
 
                 // Multi-line input loop with Shift + Enter detection
                 do
                 {
+
                     Console.ForegroundColor = ConsoleColor.Gray;
                     Console.Write("> "); // Prompt for input
 
-                    var lines = new List<string>();
+                    var lines = new List<string>() { "\n" };
                     var currentLine = new StringBuilder();
                     int cursorPosition = 0;
                     bool isComplete = false;
@@ -133,11 +140,8 @@ namespace MyCompiler
                                 cursorPosition++;
                             }
 
-                            // Redraw line
                             Console.SetCursorPosition(0, Console.CursorTop);
                             Console.Write("> " + currentLine.ToString() + " ");
-
-                            // Move cursor to correct position
                             Console.SetCursorPosition(2 + cursorPosition, Console.CursorTop);
                         }
                     }
@@ -150,6 +154,7 @@ namespace MyCompiler
                     // Add the current lines to user input
                     if (multipleLines)
                     {
+                        Console.WriteLine();
                         if (currentLine.Length > 0)
                             lines.Add(currentLine.ToString());
                         userInput.Append(string.Join(Environment.NewLine, lines).Trim());
@@ -217,8 +222,77 @@ namespace MyCompiler
                         continue;
                     }
 
+                    if (userInput.ToString() == "stopwatch")
+                    {
+                        useStopWatch = !useStopWatch;
+                        if (useStopWatch)
+                            Console.WriteLine("\n stopwatch on");
+                        else
+                            Console.WriteLine("\n stopwatch off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+
+                    if (userInput.ToString() == "allcolumns")
+                    {
+                        showAllColumns = !showAllColumns;
+                        if (showAllColumns)
+                            Console.WriteLine("\n show all columns on");
+                        else
+                            Console.WriteLine("\n show all columns off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+                    if (userInput.ToString() == "allrows")
+                    {
+                        showAllRows = !showAllRows;
+                        if (showAllRows)
+                            Console.WriteLine("\n show all rows on");
+                        else
+                            Console.WriteLine("\n show all rows off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+                    if (userInput.ToString() == "showall")
+                    {
+                        showAllColumns = !showAllColumns;
+                        showAllRows = !showAllRows;
+                        if (showAllColumns && showAllRows)
+                            Console.WriteLine("\n show all columns and rows on");
+                        else
+                            Console.WriteLine("\n show all columns and rows off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+                    if (userInput.ToString() == "help")
+                    {
+                        Console.WriteLine("\nAvailable commands:\n");
+
+                        Console.WriteLine("exit          - Exit the shell");
+                        Console.WriteLine("table         - Show variable table");
+                        Console.WriteLine("clearTable    - Clear variable table");
+                        Console.WriteLine("verbose       - Toggle verbose/debug mode");
+                        Console.WriteLine("multi lines   - Toggle multi-line input");
+                        Console.WriteLine("stopwatch     - Toggle execution timing");
+                        Console.WriteLine("allcolumns    - Toggle showing all columns");
+                        Console.WriteLine("allrows       - Toggle showing all rows");
+                        Console.WriteLine("showall       - Toggle all columns and rows");
+                        Console.WriteLine("help          - Show this help menu");
+
+                        Console.WriteLine(); // spacing
+
+                        userInput.Clear();
+                        continue;
+                    }
+
                     try
                     {
+                        if (useStopWatch) StartStopWatch();
+
                         // Process the input (parse and generate IR)
                         using (MemoryStream stream = new MemoryStream(Encoding.UTF8.GetBytes(userInput.ToString())))
                         {
@@ -232,19 +306,19 @@ namespace MyCompiler
                                 {
                                     // 1. Set the color
                                     Console.ForegroundColor = ConsoleColor.Cyan;
-                                    Console.WriteLine("\nAST Structure:");
+                                    //Console.WriteLine("\nAST Structure:");
 
                                     // 2. Print the tree
-                                    PrintNode(parser.RootNode, 0);
+                                    //PrintNode(parser.RootNode, 0);
 
                                     // 3. RESET IMMEDIATELY before doing the dangerous work (compiler.Run)
-                                    //Console.ResetColor();
+                                    // Console.ResetColor();
                                 }
 
                                 try
                                 {
                                     // Now if this crashes, the console is already back to Gray/Default
-                                    object result = compiler.Run(parser.RootNode, Debug);
+                                    object result = compiler.Run(parser.RootNode, Debug, useStopWatch, showAllColumns, showAllRows);
 
                                     // Your HandleArray2 returns a string, so 'result is int[]' is no longer needed
                                     if (result == null)
@@ -256,7 +330,7 @@ namespace MyCompiler
                                     {
                                         Console.ForegroundColor = ConsoleColor.Green;
                                         // HandleArray2 already formats the string, so we just print it
-                                        string formatted = string.Format(CultureInfo.InvariantCulture, "{0}", result);
+                                        string formatted = string.Format("{0}", result);
                                         Console.WriteLine($"Result: {formatted}");
                                     }
                                 }
@@ -270,8 +344,9 @@ namespace MyCompiler
                                     Console.ResetColor(); // Final safety reset
                                 }
                             }
-
                         }
+
+                        if (useStopWatch) StopStopWatch("Ran the full stack");
                     }
                     catch (Exception ex)
                     {
@@ -283,6 +358,7 @@ namespace MyCompiler
                     // Clear input for the next round
                     userInput.Clear();
                     Console.ForegroundColor = ConsoleColor.Gray;
+
                 } while (KeepRunning);
 
             }
@@ -293,18 +369,154 @@ namespace MyCompiler
             }
         }
 
-        static void PrintNode(NodeExpr node, int indent)
+        static void PrintNode(Node node, int indent)
         {
             if (node == null) return;
             string space = new string(' ', indent * 2);
 
             switch (node)
             {
-                case SequenceNodeExpr seq:
+                case SequenceNode seq:
                     foreach (var stmt in seq.Statements) PrintNode(stmt, indent);
                     break;
 
-                case IfNodeExpr ifNode:
+                case AssignNode assign:
+                    Console.WriteLine($"{space}Assignment: {assign.Id} =");
+                    PrintNode(assign.Expression, indent + 1);
+                    break;
+
+                // --- Dataframe & Records ---
+                case DataframeNode df:
+                    Console.WriteLine($"{space}DATAFRAME:");
+                    Console.WriteLine($"{space}  Columns:");
+                    PrintNode(df.Columns, indent + 2);
+                    Console.WriteLine($"{space}  Rows:");
+                    PrintNode(df.Data, indent + 2);
+                    break;
+
+                case RecordNode rec:
+                    Console.WriteLine($"{space}RECORD {{");
+                    foreach (var field in rec.Fields)
+                    {
+                        Console.WriteLine($"{space}  Field: {field.Label}");
+                        PrintNode(field.Value, indent + 2);
+                    }
+                    Console.WriteLine($"{space}}}");
+                    break;
+
+                case FieldNode rf:
+                    Console.WriteLine($"{space}Get Field: {rf.IdField} from:");
+                    PrintNode(rf.SourceExpression, indent + 1);
+                    break;
+
+                case RecordFieldAssignNode rfa:
+                    Console.WriteLine($"{space}Set Field: {rfa.IdField} =");
+                    PrintNode(rfa.AssignExpression, indent + 1);
+                    Console.WriteLine($"{space}  On Record:");
+                    PrintNode(rfa.IdRecord, indent + 1);
+                    break;
+
+                // --- CSV Operations ---
+                case ReadCsvNode csv:
+                    Console.WriteLine($"{space}READ CSV:");
+                    Console.WriteLine($"{space}  Path:");
+                    PrintNode(csv.FileNameExpression, indent + 2);
+                    Console.WriteLine($"{space}  Schema:");
+                    PrintNode(csv.SchemaExpression, indent + 2);
+                    break;
+
+                case ToCsvNode toCsv:
+                    Console.WriteLine($"{space}TO CSV:");
+                    Console.WriteLine($"{space}  Source:");
+                    PrintNode(toCsv.SourceExpression, indent + 2);
+                    Console.WriteLine($"{space}  Destination:");
+                    PrintNode(toCsv.FileNameExpression, indent + 2);
+                    break;
+
+                // --- Functional (Map / Where) ---
+                case MapNode map:
+                    Console.WriteLine($"{space}MAP (Iterator: {map.IteratorId.Name}):");
+                    Console.WriteLine($"{space}  Source:");
+                    PrintNode(map.SourceExpression, indent + 2);
+                    Console.WriteLine($"{space}  Transformation:");
+                    PrintNode(map.Assignment, indent + 2);
+
+                    break;
+
+                case WhereNode whe:
+                    Console.WriteLine($"{space}WHERE (Iterator: {whe.IteratorId.Name}):");
+                    Console.WriteLine($"{space}  Source:");
+                    PrintNode(whe.SourceExpression, indent + 2);
+                    Console.WriteLine($"{space}  Predicate:");
+                    PrintNode(whe.Condition, indent + 2);
+                    break;
+
+                // --- Array Modifications ---
+                case AddNode add:
+                    Console.WriteLine($"{space}ARRAY ADD:");
+                    PrintNode(add.SourceExpression, indent + 1);
+                    PrintNode(add.AddExpression, indent + 1);
+                    break;
+
+                case AddRangeNode addR:
+                    Console.WriteLine($"{space}ARRAY ADD RANGE:");
+                    PrintNode(addR.SourceExpression, indent + 1);
+                    PrintNode(addR.AddRangeExpression, indent + 1);
+                    break;
+
+                case RemoveNode rem:
+                    Console.WriteLine($"{space}ARRAY REMOVE:");
+                    PrintNode(rem.SourceExpression, indent + 1);
+                    PrintNode(rem.RemoveExpression, indent + 1);
+                    break;
+
+                case IndexAssignNode idxAsgn:
+                    Console.WriteLine($"{space}INDEX ASSIGNMENT:");
+                    Console.WriteLine($"{space}  Target:");
+                    PrintNode(idxAsgn.ArrayExpression, indent + 2);
+                    Console.WriteLine($"{space}  Index:");
+                    PrintNode(idxAsgn.IndexExpression, indent + 2);
+                    Console.WriteLine($"{space}  New Value:");
+                    PrintNode(idxAsgn.AssignExpression, indent + 2);
+                    break;
+
+                // --- Literals & Basic Nodes ---
+                case TypeLiteralNode t:
+                    Console.WriteLine($"{space}Type Literal: {t.Type}");
+                    break;
+
+                case NamedArgumentNode na:
+                    Console.WriteLine($"{space}Named Arg: {na.Name} =>");
+                    PrintNode(na.Value, indent + 1);
+                    break;
+
+                case CopyNode cp:
+                    Console.WriteLine($"{space}COPY:");
+                    PrintNode(cp.SourceExpression, indent + 1);
+                    break;
+
+                case ArrayNode ar:
+                    Console.WriteLine($"{space}ARRAY (Size: {ar.Elements.Count}):");
+                    foreach (var el in ar.Elements) PrintNode(el, indent + 1);
+                    break;
+
+                case StringNode str:
+                    Console.WriteLine($"{space}String: \"{str.Value}\"");
+                    break;
+
+                case NumberNode num:
+                    Console.WriteLine($"{space}Int: {num.Value}");
+                    break;
+
+                case FloatNode f:
+                    Console.WriteLine($"{space}Float: {f.Value.ToString()}");
+                    break;
+
+                case IdNode id:
+                    Console.WriteLine($"{space}Variable: {id.Name}");
+                    break;
+
+                case IfNode ifNode:
                     Console.WriteLine($"{space}IF Statement:");
                     PrintNode(ifNode.Condition, indent + 2);
                     Console.WriteLine($"{space}Then:");
@@ -316,75 +528,55 @@ namespace MyCompiler
                     }
                     break;
 
-                case AssignNodeExpr assign:
-                    Console.WriteLine($"{space}Assignment: {assign.Id} =");
-                    PrintNode(assign.Expression, indent + 1);
+                //--- Aggregate Array Operations ---
+                case LengthNode len:
+                    Console.WriteLine($"{space}LENGTH OF:");
+                    PrintNode(len.ArrayExpression, indent + 1);
                     break;
 
-                case BinaryOpNodeExpr bin:
-                    Console.WriteLine($"{space}Op: {bin.Operator}");
-                    PrintNode(bin.Left, indent + 1);
-                    PrintNode(bin.Right, indent + 1);
+                case MinNode min:
+                    Console.WriteLine($"{space}MIN OF:");
+                    PrintNode(min.ArrayExpression, indent + 1);
                     break;
 
-                case FloatNodeExpr f: // Added missing Float case
-                    Console.WriteLine($"{space}Float Literal: {f.Value.ToString(CultureInfo.InvariantCulture)}");
+                case MaxNode max:
+                    Console.WriteLine($"{space}MAX OF:");
+                    PrintNode(max.ArrayExpression, indent + 1);
                     break;
 
-                case NumberNodeExpr num:
-                    Console.WriteLine($"{space}Int Literal: {num.Value}");
+                case MeanNode mean:
+                    Console.WriteLine($"{space}MEAN OF:");
+                    PrintNode(mean.ArrayExpression, indent + 1);
                     break;
 
-                case BooleanNodeExpr b:
-                    Console.WriteLine($"{space}Boolean: {b.Value}");
+                case SumNode sum:
+                    Console.WriteLine($"{space}SUM OF:");
+                    PrintNode(sum.ArrayExpression, indent + 1);
                     break;
 
-                case StringNodeExpr str:
-                    Console.WriteLine($"{space}String: \"{str.Value}\"");
+                // --- Unary Operations (e.g., -x) ---
+                case UnaryOpNode unary:
+                    Console.WriteLine($"{space}Unary Op: {unary.Operator}");
+                    PrintNode(unary.Operand, indent + 1);
                     break;
 
-                case IdNodeExpr id:
-                    Console.WriteLine($"{space}Variable: {id.Name}");
-                    break;
-
-                case PrintNodeExpr pn:
-                    Console.WriteLine($"{space}PRINT Statement:");
-                    PrintNode(pn.Expression, indent + 1);
-                    break;
-
-                case RandomNodeExpr rn:
-                    Console.WriteLine($"{space}Min value: {rn.MinValue}, Max value: {rn.MaxValue}");
-                    break;
-
-                case RoundNodeExpr ro:
-                    Console.WriteLine($"{space}Value: {ro.Value}, Decimals: {ro.Decimals}");
-                    break;
-
-                case ArrayNodeExpr ar:
-                    Console.WriteLine($"{space}Elements: {ar.Elements}, Decimals: {ar.ElementType}");
-                    break;
-
-                case IndexNodeExpr ind:
-                    Console.WriteLine($"{space}Array: ");
-                    PrintNode(ind.ArrayExpression, indent + 1);
-                    PrintNode(ind.IndexExpression, indent + 1);
-                    break;
-
-                case WhereNodeExpr whe:
-                    Console.WriteLine($"{space}Where: {whe.IteratorId.Name}");
-                    Console.WriteLine($"{space}Iterator name: {whe.IteratorId.Name}");
-                    PrintNode(whe.ArrayExpr, indent + 1);
-                    PrintNode(whe.Condition, indent + 1);
-                    break;
-
-                case ForLoopNodeExpr forNode:
-                    Console.WriteLine($"{space}FOR Loop:");
-                    PrintNode(forNode.Initialization, indent + 2);
-                    PrintNode(forNode.Condition, indent + 2);
-                    PrintNode(forNode.Step, indent + 2);
-                    PrintNode(forNode.Body, indent + 2);
+                default:
+                    Console.WriteLine($"{space}Node: {node.GetType().Name}");
                     break;
             }
+        }
+
+        static void StopStopWatch(string testName = null)
+        {
+            sw.Stop();
+            if (testName is not null)
+                Console.WriteLine("\n--- Execution Stats - " + testName + " ---");
+            else
+                Console.WriteLine("\n--- Execution Stats ---");
+
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
         }
     }
 }

@@ -20,6 +20,10 @@
 "print"         { return (int)Tokens.PRINT; }
 "random"        { return (int)Tokens.RANDOM; }
 "round"         { return (int)Tokens.ROUND; }
+"sqrt"          { return (int)Tokens.SQRT; }
+"pow"           { return (int)Tokens.POW; }
+"log"           { return (int)Tokens.LOG; }
+"exp"           { return (int)Tokens.EXP; }
 "func"          { return (int)Tokens.FUNC; }
 "for"           { return (int)Tokens.FOR; }
 "foreach"       { return (int)Tokens.FOREACH; }
@@ -48,12 +52,12 @@
 "max"           { return (int)Tokens.MAX; }
 "mean"          { return (int)Tokens.MEAN; }
 "sum"           { return (int)Tokens.SUM; }
+"corr"          { return (int)Tokens.CORR; }
 
 "record"        { return (int)Tokens.RECORD; }
-"addField"      { return (int)Tokens.ADDFIELD; }
-"removeField"   { return (int)Tokens.REMOVEFIELD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
-"show"          { return (int)Tokens.SHOW; }
+"columns"       { return (int)Tokens.COLUMNS; }
+"select"        { return (int)Tokens.SELECT; }  /* others: extract, derive, select  */
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
@@ -68,8 +72,8 @@
 
 [0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
 [0-9]+\.[0-9]+  { yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL; }
-\"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING; }
-[a-zA-Z_][a-zA-Z0-9_]* { yylval.obj = yytext; return (int)Tokens.ID; }    
+\"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL; }
+[a-zA-Z_][a-zA-Z0-9_\-]* { yylval.obj = yytext; return (int)Tokens.ID; }    
 
 "+"             { return (int)Tokens.PLUS; }
 "-"             { return (int)Tokens.MINUS; }

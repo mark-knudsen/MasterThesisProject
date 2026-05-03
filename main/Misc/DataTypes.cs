@@ -46,9 +46,9 @@ namespace MyCompiler
 
     public class RecordType : Type
     {
-        public List<RecordField> RecordFields { get; }
+        public IReadOnlyList<RecordField> RecordFields { get; }
 
-        public RecordType(List<RecordField> recordFields)
+        public RecordType(IReadOnlyList<RecordField> recordFields)
         {
             RecordFields = recordFields;
         }
@@ -67,26 +67,18 @@ namespace MyCompiler
 
     public class DataframeType : Type
     {
-        public List<string> Columns { get; }
-        public List<List<object>> DataPointers { get; }
-        public List<Type> DataTypes { get; }
+        public IReadOnlyList<string> ColumnNames { get; }
+        public IReadOnlyList<List<object>> DataPointers { get; }
+        public IReadOnlyList<Type> DataTypes { get; }
 
         public DataframeType(List<string> columns, List<List<object>> dataPointers, List<Type> dataTypes)
         {
-            Columns = columns;
+            ColumnNames = columns;
             DataPointers = dataPointers;
             DataTypes = dataTypes;
         }
 
-        public override string ToString()
-        {
-            string returnVal = "dataframe(";
-            for (int i = 0; i < Columns.Count; i++)
-            {
-                returnVal += Columns[i] + ": " + DataTypes[i].ToString() + ", ";
-            }
-            returnVal = returnVal[..^2];
-            return returnVal + ")";
-        }
+        public override string ToString() =>
+           $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
     }
 }
