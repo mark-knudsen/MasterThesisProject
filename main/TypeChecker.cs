@@ -500,8 +500,9 @@ namespace MyCompiler
 
                 if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
 
-                if (expr.ElementType.GetType() != indexType.GetType())
-                    throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+                System.Console.WriteLine("the element type: " + expr.ElementType + " the index type: " + indexType);
+                // if (expr.ElementType.GetType() != indexType.GetType())
+                //     throw new Exception("Not all elements are of the same type, which is not allowed in an array");
             }
 
             var arrayType = new ArrayType(expr.ElementType);
@@ -1035,14 +1036,10 @@ namespace MyCompiler
         public Type VisitDataframe(DataframeNode expr)
         {
             Visit(expr.Columns);
-            System.Console.WriteLine("we done with column in df");
-
-            System.Console.WriteLine("");
             Visit(expr.Data);
-            System.Console.WriteLine("we done with data in df");
+            System.Console.WriteLine(" you do we have data types?: " + expr.DataTypes is not null);
             Visit(expr.DataTypes);
-            System.Console.WriteLine("we done with types in df");
-
+            System.Console.WriteLine(" you we done visiting datatypes");
             return expr.Type;
         }
 

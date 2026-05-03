@@ -68,13 +68,13 @@ namespace MyCompiler
     public class DataframeType : Type
     {
         public IReadOnlyList<string> ColumnNames { get; }
-        public IReadOnlyList<List<object>> DataPointers { get; }
+        public IReadOnlyList<List<object>> DataColumns { get; }
         public IReadOnlyList<Type> DataTypes { get; }
 
-        public DataframeType(List<string> columns, List<List<object>> dataPointers, List<Type> dataTypes)
+        public DataframeType(List<string> columns, List<List<object>> dataColumns, List<Type> dataTypes)
         {
             ColumnNames = columns;
-            DataPointers = dataPointers;
+            DataColumns = dataColumns;
             DataTypes = dataTypes;
         }
 

@@ -1775,12 +1775,12 @@ namespace MyCompiler
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
-        // x=dataframe(["name", "age"], type=[string, int])
-        // x=dataframe(["name", "age"], [string, int])
-        // x=dataframe(["name", "age"], [["dan", "alice], [30, 25]])
+        // x=dataframe(["name", "age"], type=[string, int])                       // works
+        // x=dataframe(["name", "age"], [string, int])                            // works
+        // x=dataframe(["name", "age"], [["dan", 30], ["alice", 25]])            // works
 
-        // dataframe(columns=["name", "age"], data=[["dan", 30], ["alice", 25]])
-        // dataframe(["name", "age"], [["dan", 30], ["alice", 25]])
+        // x=dataframe(["name", "age"], [["dan", "alice], [30, 25]])             // doesn't work
+        // x=dataframe(columns=["name", "age"], [["dan", 30], ["alice", 25]])   // doesn't work
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})  
 
@@ -3512,7 +3512,7 @@ namespace MyCompiler
             // Example: compare against a global type tag
             // bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
             // var isBool = BuildIsBoolType(typeVal); // YOU implement this
-            bool isBool = true; // Placeholder: Assume all columns are bool for this example
+            //bool isBool = true; // Placeholder: Assume all columns are bool for this example
 
             // --- 3. branch ---
             var func = _builder.InsertBlock.Parent;

@@ -673,16 +673,10 @@ namespace MyCompiler
     {
         public ExpressionNode Columns { get; }
         public ExpressionNode Data { get; }
-        public ExpressionNode DataTypes { get; }
-
-        public DataframeMode Mode { get; }
+        public ExpressionNode DataTypes { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            ExpressionNode columns = null;
-            ExpressionNode data = null;
-            ExpressionNode types = null;
-
             var positional = new List<ExpressionNode>();
 
             foreach (var arg in args)
@@ -696,16 +690,16 @@ namespace MyCompiler
                 switch (arg.Name)
                 {
                     case "columns":
-                        columns = arg.Value;
+                        Columns = arg.Value;
                         break;
 
                     case "data":
-                        data = arg.Value;
+                        Data = arg.Value;
                         break;
 
                     case "type":
                     case "types":
-                        types = arg.Value;
+                        DataTypes = arg.Value;
                         break;
 
                     default:
@@ -713,18 +707,14 @@ namespace MyCompiler
                 }
             }
 
-            // -------------------------
-            // 2. Validation rules
-            // -------------------------
-
             bool hasData = Data != null;
             bool hasTypes = DataTypes != null;
 
             if (positional.Count > 2)
                 throw new Exception("Too many positional arguments for dataframe");
 
-            if (columns == null && positional.Count > 0)
-                columns = positional[0];
+            if (Columns == null && positional.Count > 0)
+                Columns = positional[0];
 
             if (positional.Count > 1)
             {
@@ -732,34 +722,31 @@ namespace MyCompiler
 
                 // Decide if it's data or types based on shape
                 if (IsTypeArray(second))
-                    types = second;
+                    DataTypes = second; // we never set types if we don't get it as an argument
                 else
-                    data = second;
+                    Data = second;
             }
 
-            Columns = columns;
-            Data = data;
-            DataTypes = types;
-
-            if (Data is null) Data = new ArrayNode(new List<ExpressionNode>());
-
-
-            System.Console.WriteLine("the data: " + Data + "the type: " + Data.Type);
-            foreach (var item in (Data as ArrayNode).Elements)
-            {
-                System.Console.WriteLine("item: " + item + " type: " + item.Type);
-            }
-
-            // -------------------------
-            // 3. Mode selection
-            // -------------------------
-            Mode = hasData ? DataframeMode.DataDriven : DataframeMode.SchemaOnly;
-
-            // -------------------------
-            // 4. Type construction
-            // -------------------------
             Type = BuildDataframeType();
 
+            Console.WriteLine("Yo the dat types in the ctor exist: ");
+            Console.WriteLine(DataTypes is not null);
+            // foreach (var item in (DataTypes as ArrayNode).Elements)
+            // {
+            //     Console.WriteLine("the data types: " + item);
+            // }
+        }
+
+        private Type Infer(object value)
+        {
+            return value switch
+            {
+                int => new IntType(),
+                double => new FloatType(),
+                string => new StringType(),
+                bool => new BoolType(),
+                _ => throw new Exception("Unsupported type for inference")
+            };
         }
 
         private bool IsTypeArray(ExpressionNode node)
@@ -773,10 +760,17 @@ namespace MyCompiler
         {
             var columns = ExtractColumns();
 
-            if (Mode == DataframeMode.DataDriven)
+            if ((Data as ArrayNode).Elements.Count != 0)
             {
                 var data = ExtractData();
                 var inferredTypes = InferTypes(data);
+
+                var argumentNodes = new List<ExpressionNode>();
+                foreach (var item in inferredTypes)
+                {
+                    argumentNodes.Add(new NamedArgumentNode(item.ToString(), InferNodeFromString(item.ToString())));
+                }
+                DataTypes = new ArrayNode(argumentNodes);
 
                 return new DataframeType(columns, data, inferredTypes);
             }
@@ -788,6 +782,18 @@ namespace MyCompiler
                 new List<List<object>>(), // empty data
                 types
             );
+        }
+
+        private ExpressionNode InferNodeFromString(string val)
+        {
+            return val switch
+            {
+                "string" => new StringNode(""),
+                "int" => new NumberNode(0),
+                "float" => new FloatNode(0),
+                "bool" => new BooleanNode(false),
+                _ => throw new Exception($"Unsupported value type: {val.GetType().Name}")
+            };
         }
         private List<string> ExtractColumns()
         {
@@ -859,14 +865,14 @@ namespace MyCompiler
             };
         }
 
-        private Type Infer(object value)
+        private Type InferTypeFromNode(Node value)
         {
             return value switch
             {
-                int => new IntType(),
-                double => new FloatType(),
-                string => new StringType(),
-                bool => new BoolType(),
+                NumberNode => new IntType(),
+                FloatNode => new FloatType(),
+                StringNode => new StringType(),
+                BooleanNode => new BoolType(),
                 _ => throw new Exception("Unsupported type for inference")
             };
         }
