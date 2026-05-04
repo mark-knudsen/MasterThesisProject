@@ -363,7 +363,7 @@ namespace MyCompiler
 
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false); 
+            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
             return _runtimeValueType;
         }
 
@@ -550,9 +550,9 @@ namespace MyCompiler
 
             if (_stopwatch)
             {
-                Console.WriteLine($"compiler list: {string.Join(", ", compilerTestList)}");
-                Console.WriteLine($"IR list: {string.Join(", ", IRTestList)}");
-                Console.WriteLine($"Runtime list: {string.Join(", ", RuntimeTestList)}");
+                Console.WriteLine($"\ncompiler list: \n{string.Join(", ", compilerTestList)}");
+                Console.WriteLine($"\nIR list: \n{string.Join(", ", IRTestList)}");
+                Console.WriteLine($"\nRuntime list: \n{string.Join(", ", RuntimeTestList)}");
             }
 
 
@@ -3306,7 +3306,7 @@ namespace MyCompiler
             return default;
         }
 
-        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode) 
+        public SequenceNode ColumnAccessForDataframe(FieldNode indexNode)
         {
             var dfType = indexNode.SourceExpression.Type as DataframeType
                 ?? throw new Exception("Expected dataframe type");
@@ -3350,7 +3350,7 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
 
             // row = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)); 
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
             rowAccess.SetType(dfType.RowType);
 
             var rowAssign = new AssignNode(rowVar, rowAccess);
@@ -5278,15 +5278,17 @@ namespace MyCompiler
         # TEST OF where and map on arrays
         1) SETUP:
             arr = [10]
-            for(i=20;i<10000000; i = i+10) arr.add(i)
+            for(i=20; i < 10000000; i = i+10) arr.add(i)
 
         2) WHERE:
             arr.where(x => x >=1000)
-            arr.where(x => x >=1000).where(x => x < 500000)
+            arr.where(x => x >=1000).where(x => x < 500000)            
+            arr.where(x => x >=1000 & x < 500000)
         
         3) MAP:
             arr.map(x => x * 2)
             arr.map(x => x * 2).map(x => x +5)
+            MAYBE: arr.map(x => (x +5) *2)
 
 
         lat_min = df.map(x => x.latitude).min; lat_max = df.map(x => x.latitude).max; lat_mean = df.map(x => x.latitude).mean; lat_sum = df.map(x => x.latitude).sum
@@ -5350,6 +5352,13 @@ sum_dy2 = components.map(x => x.dy2).sum
 correlation = numerator / sqrt(sum_dx2 * sum_dy2)
 
 print(correlation)
+
+df.latitude
+
+# MIN, max, mean  and sum test:
+min_val = df.latitude.min; max_val = df.latitude.max;  mean_val = df.latitude.mean; sum_val = df.latitude.sum;
+
+acc = 0; for(i=0, i < 50000000; i++) acc = acc + (i+i)
 
 
 
