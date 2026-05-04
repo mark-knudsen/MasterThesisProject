@@ -707,8 +707,8 @@ namespace MyCompiler
                 }
             }
 
-            bool hasData = Data != null;
-            bool hasTypes = DataTypes != null;
+            //bool hasData = Data != null;
+            //bool hasTypes = DataTypes != null;
 
             if (positional.Count > 2)
                 throw new Exception("Too many positional arguments for dataframe");
@@ -716,25 +716,84 @@ namespace MyCompiler
             if (Columns == null && positional.Count > 0)
                 Columns = positional[0];
 
-            if (positional.Count > 1)
+            if (positional.Count == 2)
             {
-                var second = positional[1];
-
-                // Decide if it's data or types based on shape
-                if (IsTypeArray(second))
-                    DataTypes = second; // we never set types if we don't get it as an argument
-                else
-                    Data = second;
+                Columns = positional[0];
+                Data = positional[1];
             }
 
-            Type = BuildDataframeType();
+            if (positional.Count == 3)
+            {
+                Columns = positional[0];
+                Data = positional[1];
+                DataTypes = positional[2];
+            }
 
-            Console.WriteLine("Yo the dat types in the ctor exist: ");
-            Console.WriteLine(DataTypes is not null);
-            // foreach (var item in (DataTypes as ArrayNode).Elements)
-            // {
-            //     Console.WriteLine("the data types: " + item);
-            // }
+            if (Data == null && DataTypes == null)
+                throw new Exception("Dataframe must contain either data or types.");
+
+            Type = BuildDataframeType();
+        }
+
+        private DataframeType BuildDataframeType()
+        {
+            var columns = ExtractColumns();
+
+            Type inferredType;
+
+            // CASE 1: no data → schema-only dataframe
+            if (Data == null)
+            {
+                if (DataTypes == null)
+                    throw new Exception("Empty dataframe requires explicit types");
+
+                var types = ExtractTypes();
+
+                inferredType = BuildRecordType(columns, types);
+
+                return new DataframeType(columns, types, inferredType as RecordType);
+            }
+
+            var dataArr = Data as ArrayNode
+                ?? throw new Exception("data must be an array");
+
+            // CASE 2: columnar dataframe
+            bool isColumnar = dataArr.Elements.All(e => e is IdNode);
+
+            if (isColumnar)
+            {
+                var types = ExtractTypes();
+                inferredType = BuildRecordType(columns, types);
+
+                return new DataframeType(columns, types, inferredType as RecordType);
+            }
+
+            // CASE 3: row dataframe
+            var data = ExtractData();
+            var inferredTypes = InferTypes(data);
+
+            inferredType = BuildRecordType(columns, inferredTypes);
+
+            DataTypes = new ArrayNode(
+                inferredTypes.Select(TypeToNode).ToList()
+            );
+
+            return new DataframeType(columns, inferredTypes, inferredType as RecordType);
+        }
+        private RecordType BuildRecordType(List<string> columns, List<Type> types)
+        {
+            var fields = new List<RecordField>();
+
+            for (int i = 0; i < columns.Count; i++)
+            {
+                fields.Add(new RecordField
+                {
+                    Label = columns[i],
+                    Type = types[i]
+                });
+            }
+
+            return new RecordType(fields);
         }
 
         private Type Infer(object value)
@@ -748,6 +807,17 @@ namespace MyCompiler
                 _ => throw new Exception("Unsupported type for inference")
             };
         }
+        private ExpressionNode InferNode(object value)
+        {
+            return value switch
+            {
+                int => new NumberNode(0),
+                double => new FloatNode(0),
+                string => new StringNode(""),
+                bool => new BooleanNode(false),
+                _ => throw new Exception("Unsupported type for inference")
+            };
+        }
 
         private bool IsTypeArray(ExpressionNode node)
         {
@@ -756,32 +826,117 @@ namespace MyCompiler
 
             return arr.Elements.All(e => e is TypeNode || e is TypeLiteralNode);
         }
-        private DataframeType BuildDataframeType()
+
+        private DataframeType BuildDataframeType3()
         {
             var columns = ExtractColumns();
 
-            if ((Data as ArrayNode).Elements.Count != 0)
+            var dataArr = Data as ArrayNode
+                ?? throw new Exception("data must be an array");
+
+            if (dataArr.Elements.Count == 0)
+                throw new Exception("data cannot be empty");
+
+            // NEW: detect columnar case
+            bool isColumnar = dataArr.Elements.All(e => e is IdNode);
+
+            if (isColumnar)
+            {
+                // data = [col1, col2, ...]
+                var types = ExtractTypes(); // already provided
+
+                var recordFields = new List<RecordField>();
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    recordFields.Add(new RecordField
+                    {
+                        Label = columns[i],
+                        Type = types[i]
+                    });
+                }
+
+                return new DataframeType(columns, types, new RecordType(recordFields));
+            }
+
+            // existing row-based logic
+            var data = ExtractData();
+            var inferredTypes = InferTypes(data);
+
+            var recordField = new List<RecordField>();
+            for (int i = 0; i < columns.Count; i++)
+            {
+                recordField.Add(new RecordField
+                {
+                    Label = columns[i],
+                    Type = inferredTypes[i]
+                });
+            }
+
+            DataTypes = new ArrayNode(
+                inferredTypes.Select(t => TypeToNode(t)).ToList()
+            );
+
+            return new DataframeType(columns, inferredTypes, new RecordType(recordField));
+        }
+
+        private ExpressionNode TypeToNode(Type type)
+        {
+            return type switch
+            {
+                IntType => new NumberNode(0),
+                FloatType => new FloatNode(0),
+                BoolType => new BooleanNode(false),
+                StringType => new StringNode(""),
+                _ => throw new Exception("Unsupported type for inference")
+            };
+        }
+        private DataframeType BuildDataframeType2()
+        {
+            var columns = ExtractColumns();
+
+            if ((Data as ArrayNode).Elements.Count != 0) // I mean, won't data always be an array node?
             {
                 var data = ExtractData();
                 var inferredTypes = InferTypes(data);
+                var inferredNodes = InferNode(data);
 
                 var argumentNodes = new List<ExpressionNode>();
+                var recordField = new List<RecordField>();
                 foreach (var item in inferredTypes)
                 {
+                    // recordField.Add(new RecordField() {"name", });
                     argumentNodes.Add(new NamedArgumentNode(item.ToString(), InferNodeFromString(item.ToString())));
                 }
-                DataTypes = new ArrayNode(argumentNodes);
 
-                return new DataframeType(columns, data, inferredTypes);
+                for (int i = 0; i < data.Count; i++)
+                {
+                    recordField.Add(new RecordField() { Label = columns[i], Value = inferredNodes[i], Type = inferredTypes[i] });
+                }
+
+                DataTypes = new ArrayNode(argumentNodes); // 
+
+                var d = new RecordType(recordField);
+
+                return new DataframeType(columns, inferredTypes, d);
             }
+            else
+                throw new Exception("data was not an arraynode");
 
-            var types = ExtractTypes();
+            // var types = ExtractTypes();
 
-            return new DataframeType(
-                columns,
-                new List<List<object>>(), // empty data
-                types
-            );
+            // var recordField2 = new List<RecordField>();
+            // for (int i = 0; i < columns.Count; i++)
+            // {
+            //     recordField2.Add(new RecordField() { Label = columns[i], Value = inferredNodes[i], Type = inferredTypes[i]});
+            // }
+
+            // var d2 = new RecordType(recordField2);
+
+            // return new DataframeType(
+            //     columns,
+            //     types,
+            //     new RecordType()
+            // );
         }
 
         private ExpressionNode InferNodeFromString(string val)
@@ -839,8 +994,11 @@ namespace MyCompiler
 
             return arr.Elements.Select(node =>
             {
+                System.Console.WriteLine("the datatypes are: " + node);
                 if (node is TypeLiteralNode t)
                     return InferFromString(t.TypeNode.Name); // or t.Type
+
+                return InferTypeFromNode(node);
 
                 throw new Exception("types must be type literals");
             }).ToList();
@@ -853,6 +1011,14 @@ namespace MyCompiler
             return data[0].Select(Infer).ToList();
         }
 
+        private List<ExpressionNode> InferNode(List<List<object>> data)
+        {
+            if (data.Count == 0)
+                throw new Exception("Cannot infer types from empty data");
+
+            return data[0].Select(InferNode).ToList();
+        }
+
         private Type InferFromString(string value)
         {
             return value switch
@@ -861,7 +1027,7 @@ namespace MyCompiler
                 "double" => new FloatType(),
                 "string" => new StringType(),
                 "bool" => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference")
+                _ => throw new Exception("Unsupported type for inference: " + value)
             };
         }
 

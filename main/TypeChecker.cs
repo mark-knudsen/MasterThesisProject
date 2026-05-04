@@ -134,6 +134,8 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
+            System.Console.WriteLine("we set " + expr.Name + " to type: " + entry.Type);
+
             expr.SetType(entry.Type);
             return entry.Type;
         }
@@ -534,8 +536,10 @@ namespace MyCompiler
                     inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
                 {
+                    System.Console.WriteLine("is index a dataframe? and the indexType is?: " + indexType);
                     if (indexType is StringType)
                     {
+                        System.Console.WriteLine("is index indexType a string?");
                         Type columnType = new IntType();
                         for (int i = 0; i < dfType.ColumnNames.Count; i++)
                         {
@@ -545,8 +549,7 @@ namespace MyCompiler
                         inferred = new ArrayType(columnType);
                     }
                     else
-                        inferred = new NullType(); //  BUG
-                                                   //inferred = dfType.RowType;
+                        inferred = dfType.RowType;
                 }
             }
 
@@ -603,15 +606,67 @@ namespace MyCompiler
             };
         }
 
-
         public Type VisitWhere(WhereNode expr)
+        {
+            // Visit source expression
+            var sourceType = Visit(expr.SourceExpression);
+
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception("where can only be used on arrays or dataframes");
+
+            // --- Create iterator variable ---
+            if (sourceType is ArrayType arrType)
+            {
+                ExpressionNode defaultVal = ResolveDataType(arrType.ElementType);
+
+                Visit(new AssignNode(expr.IteratorId.Name, defaultVal));
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                // Create a RecordNode matching the row type including 'index'
+                var rowFields = new List<NamedArgumentNode>();
+
+                for (int i = 0; i < dfType.ColumnNames.Count; i++)
+                {
+                    var colName = dfType.ColumnNames[i];
+                    var colType = dfType.DataTypes[i];
+
+                    ExpressionNode defaultVal = ResolveDataType(colType);
+                    rowFields.Add(new NamedArgumentNode(colName, defaultVal));
+                }
+
+                var rowRecord = new RecordNode(rowFields);
+                Visit(new AssignNode(expr.IteratorId.Name, rowRecord));
+
+                if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
+                    throw new Exception("Dataframe has duplicate column names");
+
+                // --- Create empty result dataframe with same schema (no index duplication) ---
+
+            }
+
+            var condType = Visit(expr.Condition);
+            if (condType is not BoolType)
+                throw new Exception("where condition must return bool");
+
+            // Set the type of the Where expression to match source
+            expr.SetType(expr.SourceExpression.Type);
+            return expr.Type;
+        }
+
+        public Type VisitWhere2(WhereNode expr)
         {
             if (_debug) Console.WriteLine("The array node in where: " + expr.SourceExpression);
             Visit(new AssignNode(expr.IteratorId.Name, new NumberNode(0)));
 
+            System.Console.WriteLine("we set the assign node for the iterator");
             Visit(expr.IteratorId);
+            System.Console.WriteLine("yo we visited iteratorId");
             var condType = Visit(expr.Condition);
+            System.Console.WriteLine("yo we set condition");
             var arrayType = Visit(expr.SourceExpression);
+            System.Console.WriteLine("we set the source expr in where");
+            System.Console.WriteLine("where sourceExpression type: " + arrayType);
 
             if (arrayType is not ArrayType)
                 throw new Exception("where can only be used on arrays");
@@ -794,7 +849,7 @@ namespace MyCompiler
                     recType.RecordFields[i].Type = types[i];
                 }
 
-                var dfType = new DataframeType(names, new List<List<object>>(), new List<Type>() { recType }); // it misses the 'types' as a variable
+                var dfType = new DataframeType(names, types, recType);
                 expr.SetType(dfType);
                 return dfType;
             }
@@ -831,6 +886,10 @@ namespace MyCompiler
         {
             var sourceType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
+
+            System.Console.WriteLine("yo addExpr is: " + expr.AddExpression + " and its type is: " + addType);
+            System.Console.WriteLine("the add exp indexExpr is: " + (expr.AddExpression as IndexNode).IndexExpression);
+            System.Console.WriteLine("the add exp sourceExpr is: " + (expr.AddExpression as IndexNode).SourceExpression);
 
             if (sourceType is DataframeType dfType)
             {
@@ -986,7 +1045,34 @@ namespace MyCompiler
             return recordType;
         }
 
+
         public Type VisitField(FieldNode expr)
+        {
+            Visit(expr.SourceExpression);
+            Type recordFieldType = new IntType();
+
+            if (expr.SourceExpression is IdNode idNode)
+            {
+                var entry = _context.Get(idNode.Name);
+                Console.WriteLine("entry type: " + entry?.Type);
+                if (entry?.Type is RecordType recType)
+                {
+                    Console.WriteLine("we have the record: " + recType);
+                    foreach (var item in recType.RecordFields)
+                    {
+                        if (expr.IdField == item.Label) recordFieldType = item.Value.Type;
+                        Console.WriteLine("rec field label: " + item.Label);
+                        Console.WriteLine("rec field value: " + item.Value);
+                    }
+                }
+            }
+
+            Console.WriteLine("rec field: " + recordFieldType);
+            expr.SetType(recordFieldType);
+            return recordFieldType;
+        }
+
+        public Type VisitField2(FieldNode expr)
         {
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type SourceType = Visit(expr.SourceExpression);
@@ -1021,7 +1107,9 @@ namespace MyCompiler
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 
             expr.SetType(resolvedFieldType);
-            return resolvedFieldType;
+
+            System.Console.WriteLine("yo the resolved type is: " + expr.Type);
+            return expr.Type;
         }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
@@ -1068,7 +1156,7 @@ namespace MyCompiler
                     "float" => new FloatType(),
                     "bool" => new BoolType(),
                     "string" => new StringType(),
-                    "dataframe" => new DataframeType(new List<string>(), new List<List<object>>(), new List<Type>()),
+                    "dataframe" => new DataframeType(new List<string>(), new List<Type>(), new RecordType(new List<RecordField>())),
                     _ => throw new Exception($"Unknown type '{typeLit.TypeNode.Name}'")
                 };
             }
@@ -1105,7 +1193,7 @@ namespace MyCompiler
                 throw new Exception("Show requires a Dataframe source.");
 
             var columnNames = new List<string>();
-            var columnTypes = new List<List<object>>();
+            var columnTypes = new List<Type>();
             var semanticFields = new List<RecordField>();
 
             // 2. Validate requested columns against the source schema
@@ -1131,7 +1219,7 @@ namespace MyCompiler
                         throw new Exception($"Internal Error: Column '{name}' has a null type in source dataframe.");
 
                     columnNames.Add(name);
-                    columnTypes.Add(new List<object>() { colType });
+                    columnTypes.Add(colType);
 
                     // 3. Build the RecordField for the new RowType
                     semanticFields.Add(new RecordField
@@ -1150,7 +1238,7 @@ namespace MyCompiler
 
             // 5. Construct the resulting DataframeType
             // Note: Show creates a "View" or a new DF structure with only selected columns
-            var resultType = new DataframeType(columnNames, columnTypes, new List<Type>());
+            var resultType = new DataframeType(columnNames, columnTypes, rowType);
 
             expr.SetType(resultType);
             return resultType;

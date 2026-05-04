@@ -629,7 +629,7 @@ namespace MyCompiler
 
             int rowCount = columns.Count > 0 ? columns[0].Count : 0;
 
-   
+
             // --- 3. Determine column widths ---
             var colWidths = new int[colCount];
 
@@ -1794,7 +1794,7 @@ namespace MyCompiler
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
         // x.map(d => d.age + 10) // this should return the dataframe not the column
-        // x.where(d=> d.age > 90)  
+        // x.where(d=> d.age > 25)  
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
@@ -1802,6 +1802,343 @@ namespace MyCompiler
         // x=read_csv("CSV/test.csv")
 
         public LLVMValueRef VisitWhere(WhereNode expr)
+        {
+            var sourceType = expr.SourceExpression.Type;
+
+            SequenceNode program;
+
+            if (sourceType is ArrayType)
+                program = BuildWhereArray(expr, (ArrayType)sourceType);
+            else if (sourceType is DataframeType)
+                program = BuildWhereDataframe(expr, (DataframeType)sourceType);
+            else
+                throw new Exception("Where only supports arrays and dataframes");
+
+            // IMPORTANT: full second-pass semantic analysis
+            PerformSemanticAnalysis(program);
+
+            return VisitSequence(program);
+        }
+
+        private SequenceNode BuildWhereDataframe(WhereNode expr, DataframeType dfType)
+        {
+            System.Console.WriteLine("ZZZ we in build where for dataframe");
+            var iVar = "__i";
+            var resultVar = "__result";
+
+            var program = new SequenceNode();
+
+            // result dataframe (same schema)
+            var columnsArray = new ArrayNode(
+                dfType.ColumnNames
+                    .Select(c => (ExpressionNode)new StringNode(c))
+                    .ToList()
+            );
+
+            var typesArray = new ArrayNode(
+                dfType.DataTypes.Select(t =>
+                    t switch
+                    {
+                        IntType => new TypeLiteralNode(new TypeNode("int")) as ExpressionNode,
+                        FloatType => new TypeLiteralNode(new TypeNode("float")) as ExpressionNode,
+                        BoolType => new TypeLiteralNode(new TypeNode("bool")) as ExpressionNode,
+                        StringType => new TypeLiteralNode(new TypeNode("string"))as ExpressionNode,
+                        _ => throw new Exception("Unsupported type")
+                    }
+                ).ToList()
+            );
+
+            var resultDf = new DataframeNode(new List<NamedArgumentNode>
+            {
+                new NamedArgumentNode("columns", columnsArray),
+                new NamedArgumentNode("type", typesArray)
+            });
+
+            // result = dataframe(...)
+            program.Statements.Add(new AssignNode(resultVar, resultDf));
+
+            // i = 0
+            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
+
+            var cond = new ComparisonNode(
+                new IdNode(iVar),
+                "<",
+                new LengthNode(expr.SourceExpression)
+            );
+
+            var step = new IncrementNode(new IdNode(iVar));
+
+            // row = src[i]
+            var currentRow = new IndexNode(
+                expr.SourceExpression,
+                new IdNode(iVar)
+            );
+
+            // predicate uses REAL AST, no string variables
+            var predicate = ReplaceIterator(
+                expr.Condition,
+                expr.IteratorId.Name,
+                currentRow
+            );
+
+            // result.add(row)
+            var add = new AddNode(
+                new IdNode(resultVar),
+                currentRow
+            );
+
+            var ifBody = new SequenceNode();
+            ifBody.Statements.Add(add);
+
+            var ifNode = new IfNode(predicate, ifBody);
+
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(ifNode);
+
+            var loop = new ForLoopNode(
+                new AssignNode(iVar, new NumberNode(0)),
+                cond,
+                step,
+                loopBody
+            );
+
+            program.Statements.Add(loop);
+            program.Statements.Add(new IdNode(resultVar));
+
+            return program;
+        }
+
+        private SequenceNode BuildWhereArray(WhereNode expr, ArrayType arrType)
+        {
+            var iVar = "__i"; // safe local (only AST, no runtime dependency)
+
+            var resultVar = "__result";
+
+            var program = new SequenceNode();
+
+            // result = []
+            program.Statements.Add(
+                new AssignNode(
+                    resultVar,
+                    new ArrayNode(new List<ExpressionNode>())
+                    {
+                        ElementType = arrType.ElementType
+                    }
+                )
+            );
+
+            // i = 0
+            program.Statements.Add(
+                new AssignNode(iVar, new NumberNode(0))
+            );
+
+            var cond = new ComparisonNode(
+                new IdNode(iVar),
+                "<",
+                new LengthNode(expr.SourceExpression)
+            );
+
+            var step = new IncrementNode(new IdNode(iVar));
+
+            // element = src[i]
+            var element = new IndexNode(
+                expr.SourceExpression,
+                new IdNode(iVar)
+            );
+
+            // rewrite predicate using real AST node (NO string variables)
+            var predicate = ReplaceIterator(
+                expr.Condition,
+                expr.IteratorId.Name,
+                element
+            );
+
+            var add = new AddNode(
+                new IdNode(resultVar),
+                element
+            );
+
+            var ifBody = new SequenceNode();
+            ifBody.Statements.Add(add);
+
+            var ifNode = new IfNode(predicate, ifBody);
+
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(ifNode);
+
+            var loop = new ForLoopNode(
+                new AssignNode(iVar, new NumberNode(0)),
+                cond,
+                step,
+                loopBody
+            );
+
+            program.Statements.Add(loop);
+            program.Statements.Add(new IdNode(resultVar));
+
+            return program;
+        }
+
+        private ExpressionNode RewritePredicate(ExpressionNode expr, string iteratorName, string srcVar, string idxVar)
+        {
+            switch (expr)
+            {
+                case FieldNode field:
+                    {
+                        // d.age
+                        if (field.SourceExpression is IdNode id && id.Name == iteratorName)
+                        {
+                            return new IndexNode(
+                                new FieldNode(new IdNode(srcVar), field.IdField),
+                                new IdNode(idxVar)
+                            );
+                        }
+
+                        break;
+                    }
+
+                case ComparisonNode cmp:
+                    return new ComparisonNode(
+                        RewritePredicate(cmp.Left, iteratorName, srcVar, idxVar),
+                        cmp.Operator,
+                        RewritePredicate(cmp.Right, iteratorName, srcVar, idxVar)
+                    );
+
+                case BinaryOpNode bin:
+                    return new BinaryOpNode(
+                        RewritePredicate(bin.Left, iteratorName, srcVar, idxVar),
+                        bin.Operator,
+                        RewritePredicate(bin.Right, iteratorName, srcVar, idxVar)
+                    );
+            }
+
+            return expr;
+        }
+
+        public LLVMValueRef VisitWhere3(WhereNode expr)
+        {
+            // ---- 1. Setup ----
+            var srcVar = "__where_src";
+            var idxVar = "__where_i";
+
+            var program = new SequenceNode();
+
+            // src = <expression>
+            program.Statements.Add(
+                new AssignNode(srcVar, expr.SourceExpression)
+            );
+
+            var dfType = expr.SourceExpression.Type as DataframeType;
+            var columns = dfType.ColumnNames;
+            var types = dfType.DataTypes;
+
+            // ---- 2. Create result arrays (one per column) ----
+            var resultVars = new List<string>();
+
+            for (int c = 0; c < columns.Count; c++)
+            {
+                var colName = columns[c];
+                var resVar = $"__where_res_{colName}";
+
+                resultVars.Add(resVar);
+
+                program.Statements.Add(
+                    new AssignNode(
+                        resVar,
+                        new ArrayNode(new List<ExpressionNode>())
+                        {
+                            ElementType = types[c]
+                        }
+                    )
+                );
+            }
+
+            // ---- 3. Loop index ----
+            program.Statements.Add(
+                new AssignNode(idxVar, new NumberNode(0))
+            );
+
+            var loopCond = new ComparisonNode(
+                new IdNode(idxVar),
+                "<",
+                new LengthNode(new IdNode(srcVar))
+            );
+
+            var loopStep = new IncrementNode(new IdNode(idxVar));
+
+            // ---- 4. Rewrite predicate ----
+            // d.age  ->  GetColumn(src, "age")[i]
+            var rewrittenCond = RewritePredicate(
+                expr.Condition,
+                expr.IteratorId.Name,
+                srcVar,
+                idxVar
+            );
+
+            // ---- 5. IF body: push into each result column ----
+            var ifBody = new SequenceNode();
+
+            for (int c = 0; c < columns.Count; c++)
+            {
+                var colName = columns[c];
+
+                var valueExpr =
+                    new IndexNode(
+                        new FieldNode(new IdNode(srcVar), colName),
+                        new IdNode(idxVar)
+                    );
+
+                ifBody.Statements.Add(
+                    new AddNode(new IdNode(resultVars[c]), valueExpr)
+                );
+            }
+
+            var ifNode = new IfNode(rewrittenCond, ifBody);
+
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(ifNode);
+
+            var forLoop = new ForLoopNode(
+                null,       // already initialized idx
+                loopCond,
+                loopStep,
+                loopBody
+            );
+
+            program.Statements.Add(forLoop);
+
+            // ---- 6. Build resulting dataframe ----
+            var resultDf = new DataframeNode(
+                new List<NamedArgumentNode>()
+                {
+                    new NamedArgumentNode("columns", new ArrayNode(columns.ToList().Select(c => new StringNode(c) as ExpressionNode).ToList())),
+                    new NamedArgumentNode("data",  new ArrayNode(resultVars.Select(v => new IdNode(v) as ExpressionNode).ToList())),
+                    new NamedArgumentNode("types",  new ArrayNode(types.Select(t => TypeToNode(t)).ToList())),
+
+                }
+            );
+
+            program.Statements.Add(resultDf);
+
+            // ---- 7. Semantic + codegen ----
+            PerformSemanticAnalysis(program);
+
+            return VisitSequence(program);
+        }
+
+        private ExpressionNode TypeToNode(Type type)
+        {
+            return type switch
+            {
+                IntType => new NumberNode(0),
+                FloatType => new FloatNode(0),
+                BoolType => new BooleanNode(false),
+                StringType => new StringNode(""),
+                _ => throw new Exception("Unsupported type for inference")
+            };
+        }
+
+        public LLVMValueRef VisitWhere2(WhereNode expr)
         {
             // 1 Allocate local variables for source and result
             var srcVarName = "__where_src";
@@ -3267,7 +3604,6 @@ namespace MyCompiler
             var types = expr.DataTypes as ArrayNode;
 
             int colCount = columns.Elements.Count;
-            int rowCount = rows.Elements.Count;
 
             // --- 1. transpose rows -> columns ---
             var columnData = new List<List<ExpressionNode>>();
@@ -3832,12 +4168,39 @@ namespace MyCompiler
 
                 return storedPtr;
             }
-            else if (expr.SourceExpression.Type is DataframeType)
+            else if (expr.SourceExpression.Type is DataframeType dfType)
             {
-                // var d = ColumnAccessForDataframe(expr);
-                // PerformSemanticAnalysis(d);
-                // return Visit(d);
-                throw new Exception("Not implemented visitfield for dataframe"); // HACK, not implemented
+                var ctx = _module.Context;
+                var i64 = ctx.Int64Type;
+                var i8 = ctx.Int8Type;
+                var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+                var dfVal = Visit(expr.SourceExpression);
+
+                // --- 1. Get column index ---
+                int colIndex = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
+                if (colIndex < 0)
+                    throw new Exception($"Column {expr.IdField} not found");
+
+                var colIndexVal = LLVMValueRef.CreateConstInt(i64, (ulong)colIndex);
+
+                // --- 2. Load dataframe.dataPointersData ---
+                var dataFieldPtr = _builder.BuildStructGEP2(dfVal.TypeOf, dfVal, 1, "df_data_ptr");
+                var dataHeaderPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_header");
+
+                // ArrayObject = { i64, i64, i8* }
+                var arrayStructType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+
+                // --- 3. Get raw data pointer (the pointer-to-columns array) ---
+                var rawDataPtrPtr = _builder.BuildStructGEP2(arrayStructType, dataHeaderPtr, 2, "raw_ptr_ptr");
+                var rawDataPtr = _builder.BuildLoad2(i8Ptr, rawDataPtrPtr, "raw_ptr");
+
+                // --- 4. Index into column pointer array ---
+                var colPtrPtr = _builder.BuildGEP2(i8Ptr, rawDataPtr, new[] { colIndexVal }, "col_ptr_ptr");
+                var colPtr = _builder.BuildLoad2(i8Ptr, colPtrPtr, "col_ptr");
+
+                // --- 5. Cast to ArrayObject* (column array) ---
+                return _builder.BuildBitCast(colPtr, i8Ptr, "col_array");
             }
             else
             {

@@ -68,14 +68,14 @@ namespace MyCompiler
     public class DataframeType : Type
     {
         public IReadOnlyList<string> ColumnNames { get; }
-        public IReadOnlyList<List<object>> DataColumns { get; }
         public IReadOnlyList<Type> DataTypes { get; }
+        public RecordType RowType { get; }
 
-        public DataframeType(List<string> columns, List<List<object>> dataColumns, List<Type> dataTypes)
+        public DataframeType(IReadOnlyList<string> columns, IReadOnlyList<Type> types, RecordType rowType)
         {
             ColumnNames = columns;
-            DataColumns = dataColumns;
-            DataTypes = dataTypes;
+            DataTypes = types;
+            RowType = rowType;
         }
 
         public override string ToString() =>
