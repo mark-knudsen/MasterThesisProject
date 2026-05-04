@@ -272,19 +272,21 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparison(this);
     }
-
     public class ArrayNode : ExpressionNode
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public uint? Capacity { get; }
+        public uint Capacity { get; } // Now non-nullable for deterministic sizing
 
-        public ArrayNode(List<ExpressionNode> elements)
+        public ArrayNode(List<ExpressionNode> elements, uint? explicitCapacity = null)
         {
             Elements = elements;
+            // Optimization: Use exact count if no capacity is forced. 
+            // This prevents OOM on large datasets with many small internal arrays.
+            Capacity = explicitCapacity ?? (uint)elements.Count;
 
             if (elements.Count > 0)
-                ElementType = elements[0].Type; // infer type from first element
+                ElementType = elements[0].Type;
             else
                 ElementType = new IntType();
 

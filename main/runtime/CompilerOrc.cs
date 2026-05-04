@@ -333,21 +333,33 @@ namespace MyCompiler
                 Marshal.GetFunctionPointerForDelegate(_toCsvDelegate = new ToCsvDelegate(LanguageRuntime.ToCsvInternal)));
         }
 
+        private uint GetEnumAttributeKind(string name)
+        {
+            // In LLVMSharp, we need to convert the string to a marshalled SByte pointer
+            using (var marshaledName = new MarshaledString(name))
+            {
+                return LLVM.GetEnumAttributeKindForName(marshaledName, (UIntPtr)name.Length);
+            }
+        }
         private LLVMValueRef GetOrDeclareMalloc()
         {
-            var i64 = _module.Context.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var ctx = _module.Context; // Use the context of the CURRENT module
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // ptr malloc(i64)
-            if (_mallocType.Handle == IntPtr.Zero)
-            {
-                _mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            }
+            // Re-generate the function type every time to ensure Context compatibility
+            // This is cheap and prevents AccessViolation if _mallocType was from an old Context
+            _mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
 
             var mallocFn = _module.GetNamedFunction("malloc");
             if (mallocFn.Handle == IntPtr.Zero)
             {
                 mallocFn = _module.AddFunction("malloc", _mallocType);
+
+                // Optional: Add the 'noalias' attribute to return value for better optimization
+                // and tell LLVM it's a system allocation
+                mallocFn.AddAttributeAtIndex(LLVMAttributeIndex.LLVMAttributeReturnIndex,
+                    _module.Context.CreateEnumAttribute(GetEnumAttributeKind("noalias"), 0));
             }
             return mallocFn;
         }
@@ -3106,132 +3118,141 @@ namespace MyCompiler
                 return 24; // len, cap, data*
             throw new Exception("Unknown type for struct size calculation: " + type);
         }
-
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
 
+            // 1. Calculate sizing
             uint count = (uint)expr.Elements.Count;
+            uint capacity = expr.Capacity;
 
-            var mallocFunc = GetOrDeclareMalloc();
-
-            // 1. Resolve element type            
             var elementType = GetLLVMType(expr.ElementType);
-            var elementPtrType = LLVMTypeRef.CreatePointer(elementType, 0);
-
             bool isRefType = IsReferenceType(expr.ElementType);
 
-            // 2. Compute sizes using elementType
-            uint elementSize = isRefType
-            ? (uint)IntPtr.Size   // 8 bytes
-            : GetTypeSize(expr.ElementType);
-
-            uint capacity = count > 0 ? Math.Min(count * 2, 100) : 100; // we set very high capacity to avoid frequent reallocations, should be handled better
-            if (expr.Capacity != null)
-                capacity = Math.Min(count * 2, 100);
-
+            uint elementSize = isRefType ? (uint)IntPtr.Size : GetTypeSize(expr.ElementType);
             uint totalSize = elementSize * capacity;
 
-            // 3. Allocate header (len, cap, data*)            
-            var headerSize = GetStructSize(expr.Type);
+            // Align data buffer to 32 bytes for AVX vectorization
+            uint alignedSize = (totalSize + 31) & ~31u;
+            if (alignedSize == 0) alignedSize = 8;
 
+            uint headerSize = GetStructSize(expr.Type);
+
+            // 2. Resolve Malloc and Types
+            var mallocFn = GetOrDeclareMalloc();
+
+            // 3. Allocate Header
+            var headerSizeVal = LLVMValueRef.CreateConstInt(i64, headerSize);
             var headerRaw = _builder.BuildCall2(
                 _mallocType,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, headerSize) },
+                mallocFn,
+                new[] { headerSizeVal },
                 "arr_header"
             );
 
-            // 4. Allocate data buffer            
+            // 4. Allocate Data Buffer
+            var dataSizeVal = LLVMValueRef.CreateConstInt(i64, (ulong)alignedSize);
             var rawDataPtr = _builder.BuildCall2(
                 _mallocType,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, totalSize) },
+                mallocFn,
+                new[] { dataSizeVal },
                 "arr_data_raw"
             );
 
-            // Cast i8* → elementType*
-            var dataPtr = _builder.BuildBitCast(rawDataPtr, elementPtrType, "arr_data");
-
-            // 5. Store metadata
+            // 5. Store Metadata
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0, "len_ptr");
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1, "cap_ptr");
             var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2, "data_field_ptr");
 
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(i64, count),
-                lenPtr
-            ).SetAlignment(8);
+            // Explicitly set alignment to 8 for i64 metadata to fix the 'align 4' issue
+            var storeLen = _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr);
+            storeLen.SetAlignment(8);
 
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(i64, capacity),
-                capPtr
-            ).SetAlignment(8);
+            var storeCap = _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr);
+            storeCap.SetAlignment(8);
 
-            // Store as i8* in struct
-            var dataAsI8 = _builder.BuildBitCast(dataPtr, i8Ptr, "data_as_i8");
-            _builder.BuildStore(dataAsI8, dataFieldPtr);
+            // Cast raw data (i8*) to the actual element type pointer
+            var dataPtr = _builder.BuildBitCast(
+                rawDataPtr,
+                LLVMTypeRef.CreatePointer(elementType, 0),
+                "arr_data"
+            );
+
+            // Pointers are 8 bytes on 64-bit systems
+            var storeDataPtr = _builder.BuildStore(rawDataPtr, dataFieldPtr);
+            storeDataPtr.SetAlignment(8);
 
             // 6. Populate elements
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+                var elementPtr = _builder.BuildGEP2(elementType, dataPtr, new[] { idx }, "elem_ptr");
 
-                var elementPtr = _builder.BuildGEP2(
-                    elementType,
-                    dataPtr,
-                    new[] { idx },
-                    "elem_ptr"
-                );
+                var store = _builder.BuildStore(val, elementPtr);
 
-                if (isRefType)
+                if (!isRefType)
                 {
-                    // Ensure value is pointer-compatible
-                    var castVal = _builder.BuildBitCast(val, elementType, "ref_cast");
-                    _builder.BuildStore(castVal, elementPtr);
+                    uint align = Math.Min(elementSize, 32);
+                    if ((align & (align - 1)) == 0 && align > 0)
+                    {
+                        store.SetAlignment(align);
+                    }
                 }
                 else
                 {
-                    // Value types stored directly
-                    _builder.BuildStore(val, elementPtr).SetAlignment(elementSize);
+                    // Reference types (pointers) should always be 8-byte aligned
+                    store.SetAlignment(8);
                 }
             }
 
             return headerRaw;
         }
 
+        private LLVMTypeRef GetRuntimeObjType()
+        {
+            var ctx = _module.Context;
+
+            // Check module for existing named type
+            var existing = _module.GetTypeByName("RuntimeObj");
+            if (existing.Handle != IntPtr.Zero) return existing;
+
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // Static overload: CreateStruct(LLVMTypeRef[] elementTypes, bool packed)
+            // No context argument here!
+            return LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
+        }
+
         public LLVMValueRef VisitIndex(IndexNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Visit Array (Header Pointer) and Index
             var headerPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.IndexExpression);
-
             var sourceType = expr.SourceExpression.Type;
 
-            if (sourceType is ArrayType)
+            if (sourceType is ArrayType arrayType)
             {
+                // Ensure index is an integer
                 if (indexVal.TypeOf == ctx.DoubleType)
                     indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-                // 2. Load Metadata from Header
+                // 1. Load Metadata
                 var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
                 var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
 
                 var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
-                arrayLen.SetAlignment(8);
-                var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+                arrayLen.SetAlignment(8); // Ensure 8-byte alignment
+                var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+                rawDataPtr.SetAlignment(8);
 
-                // 3. --- BOUNDS CHECK ---
+                // 2. Bounds Check
                 var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
                 var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
                 var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
@@ -3244,43 +3265,43 @@ namespace MyCompiler
                 _builder.PositionAtEnd(failBlock);
                 var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
                 _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-                _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
+
+                // Create the pointer to the RuntimeObj {i64, i8*}
+                var runtimeObjType = GetRuntimeObjType();
+                var runtimeObjPtrType = LLVMTypeRef.CreatePointer(runtimeObjType, 0);
+
+                // Return NULL to the REPL
+                _builder.BuildRet(LLVMValueRef.CreateConstNull(runtimeObjPtrType));
 
                 // --- SAFE BLOCK ---
                 _builder.PositionAtEnd(safeBlock);
+                _builder.PositionAtEnd(safeBlock);
 
-                // 4. STRIDE-AWARE ACCESS
-                // Check if the actual language type is boolean
-                bool isBool = ((ArrayType)expr.SourceExpression.Type).ElementType is BoolType;
+                // 3. CORRECT TYPE RESOLUTION
+                // Get the actual LLVM type of the elements (i64, double, i1, or ptr)
+                var llvmElementType = GetLLVMType(arrayType.ElementType);
 
-                // If bool, elements are i8 (1 byte). Otherwise, they are pointers/i64 (8 bytes).
-                var gepType = isBool ? i8 : i8Ptr;
+                // Bitcast the raw i8* data pointer to the correct pointer type
+                var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(llvmElementType, 0), "typed_data_ptr");
 
-                // We index into dataPtr starting at 0 (no +2 offset anymore!)
-                var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
-                var rawValue = _builder.BuildLoad2(gepType, elementPtr, "raw_val");
+                // Use GEP with the actual element type so the stride is correct
+                var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { indexVal }, "elem_ptr");
+                var loadedValue = _builder.BuildLoad2(llvmElementType, elementPtr, "loaded_val");
+                loadedValue.SetAlignment(8);
 
-                // 5. Transform based on Type
-                // Note: If isBool, rawValue is i8. If Int/Float/String, rawValue is i8Ptr (8 bytes).
-                return expr.Type switch
+                // 4. Return value (The REPL wrapper logic usually handles boxing later)
+                // If your language expects i64 for ints and double for floats, return the raw loadedValue.
+                return arrayType.ElementType switch
                 {
-                    StringType => _builder.BuildBitCast(rawValue, i8Ptr),
-                    FloatType => _builder.BuildBitCast(rawValue, ctx.DoubleType),
-                    IntType => _builder.BuildPtrToInt(rawValue, i64),
-                    BoolType => _builder.BuildTrunc(rawValue, ctx.Int1Type, "to_bool"), // i8 -> i1
-                    RecordType => _builder.BuildBitCast(rawValue, i8Ptr),
-                    DataframeType => _builder.BuildBitCast(rawValue, i8Ptr),
-                    NullType => _builder.BuildTrunc(rawValue, i8Ptr),
-                    _ => rawValue
+                    BoolType => _builder.BuildZExt(loadedValue, ctx.Int1Type, "bool_val"),
+                    _ => loadedValue
                 };
             }
             else if (sourceType is DataframeType)
             {
-                LLVMValueRef result;
-
                 if (expr.IndexExpression.Type is IntType)
                 {
-                    result = DataframeIndex(headerPtr, indexVal);
+                    var result = DataframeIndex(headerPtr, indexVal);
                     return _builder.BuildBitCast(result, i8Ptr);
                 }
             }
@@ -4812,32 +4833,29 @@ namespace MyCompiler
         {
             return LLVMTypeRef.CreatePointer(GetOrCreateDataframeType(), 0);
         }
-
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. Get pointers
             var colsPtr = Visit(expr.Columns);
             var rowsPtr = Visit(expr.Rows);
 
-            // 2. Build datatype array from TYPE (not AST)
-            var dfType = expr.Type as DataframeType
-                ?? throw new Exception("Expected dataframe type.");
+            var dfType = expr.Type as DataframeType ?? throw new Exception("Expected dataframe type.");
 
+            // Create the datatype array with capacity = count (No extra padding)
             var datatypeNodes = dfType.DataTypes
                 .Select(t => new NumberNode(GetTypeByTag(t)))
                 .Cast<ExpressionNode>()
                 .ToList();
 
-            var datatypeArray = new ArrayNode(datatypeNodes);
+            // Use the explicit capacity constructor
+            var datatypeArray = new ArrayNode(datatypeNodes, (uint)datatypeNodes.Count);
             var dataTypesPtr = Visit(datatypeArray);
 
-            // 3. Struct: { cols, rows, types }
             var dfStructType = GetOrCreateDataframeType();
-            var dfPtr = _builder.BuildMalloc(dfStructType, "df");
+            // Use BuildMalloc for the header (managed by LLVM)
+            var dfPtr = _builder.BuildMalloc(dfStructType, "df_header");
 
             _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
             _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
