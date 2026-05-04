@@ -1124,7 +1124,7 @@ namespace MyCompiler
         public Type VisitDataframe(DataframeNode expr)
         {
             Visit(expr.Columns);
-            Visit(expr.Data);
+            Visit(expr.Data); // the data is empty
             System.Console.WriteLine(" you do we have data types?: " + expr.DataTypes is not null);
             Visit(expr.DataTypes);
             System.Console.WriteLine(" you we done visiting datatypes");

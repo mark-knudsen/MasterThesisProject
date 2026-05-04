@@ -677,6 +677,7 @@ namespace MyCompiler
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
+            Data = new ArrayNode(new List<ExpressionNode>());
             var positional = new List<ExpressionNode>();
 
             foreach (var arg in args)
@@ -729,10 +730,10 @@ namespace MyCompiler
                 DataTypes = positional[2];
             }
 
-            if (Data == null && DataTypes == null)
-                throw new Exception("Dataframe must contain either data or types.");
-
             Type = BuildDataframeType();
+            
+            if (DataTypes == null)
+                throw new Exception("Dataframe must contain types.");
         }
 
         private DataframeType BuildDataframeType()
