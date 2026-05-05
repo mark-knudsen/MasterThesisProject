@@ -2381,17 +2381,25 @@ namespace MyCompiler
 
             var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
-            var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+
+            // --- OPTIMIZATION: Create Trusted Index ---
+            var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar))
+            {
+                SkipBoundsCheck = true // Tell the visitor to skip safety checks
+            };
+
             var predicate = ReplaceIterator(expr.Condition, expr.IteratorId.Name, current);
 
             var ifBody = new SequenceNode();
             ifBody.Statements.Add(new AddNode(new IdNode(resultVar), current));
 
-            var loop = new ForLoopNode(indexInit, cond, step, new SequenceNode { Statements = { new IfNode(predicate, ifBody) } });
+            var loop = new ForLoopNode(indexInit, cond, step, new SequenceNode
+            {
+                Statements = { new IfNode(predicate, ifBody) }
+            });
 
             return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVar) } };
         }
-
 
         public SequenceNode WhereForArray(Type sourceType, WhereNode expr)
         {
@@ -3205,7 +3213,6 @@ namespace MyCompiler
             // No context argument here!
             return LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
         }
-
         public LLVMValueRef VisitIndex(IndexNode expr)
         {
             var ctx = _module.Context;
@@ -3227,50 +3234,44 @@ namespace MyCompiler
                 var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
                 var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
 
-                var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
-                arrayLen.SetAlignment(8); // Ensure 8-byte alignment
                 var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
                 rawDataPtr.SetAlignment(8);
 
-                // 2. Bounds Check
-                var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
-                var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
-                var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
+                // --- OPTIMIZATION: Conditional Bounds Check ---
+                if (!expr.SkipBoundsCheck)
+                {
+                    var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+                    arrayLen.SetAlignment(8);
 
-                var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
-                var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
-                _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
+                    // Bounds Check Logic
+                    var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
+                    var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
+                    var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
 
-                // --- FAIL BLOCK ---
-                _builder.PositionAtEnd(failBlock);
-                var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
-                _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+                    var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
+                    var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
+                    _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
 
-                // Create the pointer to the RuntimeObj {i64, i8*}
-                var runtimeObjType = GetRuntimeObjType();
-                var runtimeObjPtrType = LLVMTypeRef.CreatePointer(runtimeObjType, 0);
+                    // --- FAIL BLOCK ---
+                    _builder.PositionAtEnd(failBlock);
+                    var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
+                    _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
 
-                // Return NULL to the REPL
-                _builder.BuildRet(LLVMValueRef.CreateConstNull(runtimeObjPtrType));
+                    var runtimeObjPtrType = LLVMTypeRef.CreatePointer(GetRuntimeObjType(), 0);
+                    _builder.BuildRet(LLVMValueRef.CreateConstNull(runtimeObjPtrType));
 
-                // --- SAFE BLOCK ---
-                _builder.PositionAtEnd(safeBlock);
-                _builder.PositionAtEnd(safeBlock);
+                    // --- CONTINUE IN SAFE BLOCK ---
+                    _builder.PositionAtEnd(safeBlock);
+                }
 
-                // 3. CORRECT TYPE RESOLUTION
-                // Get the actual LLVM type of the elements (i64, double, i1, or ptr)
+                // 2. DATA ACCESS (Now potentially branchless)
                 var llvmElementType = GetLLVMType(arrayType.ElementType);
-
-                // Bitcast the raw i8* data pointer to the correct pointer type
                 var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(llvmElementType, 0), "typed_data_ptr");
 
-                // Use GEP with the actual element type so the stride is correct
                 var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { indexVal }, "elem_ptr");
                 var loadedValue = _builder.BuildLoad2(llvmElementType, elementPtr, "loaded_val");
                 loadedValue.SetAlignment(8);
 
-                // 4. Return value (The REPL wrapper logic usually handles boxing later)
-                // If your language expects i64 for ints and double for floats, return the raw loadedValue.
                 return arrayType.ElementType switch
                 {
                     BoolType => _builder.BuildZExt(loadedValue, ctx.Int1Type, "bool_val"),
@@ -3281,7 +3282,9 @@ namespace MyCompiler
             {
                 if (expr.IndexExpression.Type is IntType)
                 {
-                    var result = DataframeIndex(headerPtr, indexVal);
+                    // Note: You should update your DataframeIndex helper to also accept expr.SkipBoundsCheck
+                    // to eliminate the internal checks for rows.
+                    var result = DataframeIndex(headerPtr, indexVal, expr.SkipBoundsCheck);
                     return _builder.BuildBitCast(result, i8Ptr);
                 }
             }
@@ -3353,8 +3356,7 @@ namespace MyCompiler
             return program;
         }
 
-
-        private LLVMValueRef DataframeIndex(LLVMValueRef dataframePtr, LLVMValueRef indexValue)
+        private LLVMValueRef DataframeIndex(LLVMValueRef dataframePtr, LLVMValueRef indexValue, bool skipBoundsCheck = false)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
@@ -3369,11 +3371,7 @@ namespace MyCompiler
             var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsPtrPtr, "rows");
             rowsPtr.SetAlignment(8);
 
-            // 2. Load Array Metadata (Length and Data Buffer)
-            var lenPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 0, "len_ptr");
-            var len = _builder.BuildLoad2(i64, lenPtr, "len");
-            len.SetAlignment(8); // Explicit Alignment
-
+            // 2. Load Data Buffer Pointer
             var dataPtrPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 2, "data_ptr_ptr");
             var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
             dataPtr.SetAlignment(8);
@@ -3382,7 +3380,21 @@ namespace MyCompiler
             if (indexValue.TypeOf != i64)
                 indexValue = _builder.BuildIntCast(indexValue, i64, "idx_cast");
 
-            // 3. Bounds Check (Simplified: Using ULT handles negative and too large in one check)
+            // --- OPTIMIZATION: Branchless path ---
+            if (skipBoundsCheck)
+            {
+                // Direct GEP and Load without any safety checks or merge blocks
+                var elemPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { indexValue }, "elem_ptr");
+                var record = _builder.BuildLoad2(i8Ptr, elemPtr, "record");
+                record.SetAlignment(8);
+                return record;
+            }
+
+            // --- STANDARD SAFE PATH (With Bounds Checking) ---
+            var lenPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 0, "len_ptr");
+            var len = _builder.BuildLoad2(i64, lenPtr, "len");
+            len.SetAlignment(8);
+
             var inBounds = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, indexValue, len, "in_bounds");
 
             var okBlock = ctx.AppendBasicBlock(func, "df_idx_ok");
@@ -3398,18 +3410,16 @@ namespace MyCompiler
                 "df_idx_err_msg"
             );
             _builder.BuildCall2(_printfType, _printf, new[] { msg }, "print_err");
-
             var nullVal = LLVMValueRef.CreateConstNull(i8Ptr);
             _builder.BuildBr(mergeBlock);
             var errEndBlock = _builder.InsertBlock;
 
             // --- OK BLOCK ---
             _builder.PositionAtEnd(okBlock);
+            var okElemPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { indexValue }, "elem_ptr");
 
-            // We are indexing an array of pointers (Records). 
-            // Stride must be 8 bytes. i8Ptr is correct.
-            var elemPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { indexValue }, "elem_ptr");
-            var okVal = _builder.BuildLoad2(i8Ptr, elemPtr, "record");
+            // FIX: Declare 'okVal' here by loading from the element pointer
+            var okVal = _builder.BuildLoad2(i8Ptr, okElemPtr, "record");
             okVal.SetAlignment(8);
 
             _builder.BuildBr(mergeBlock);

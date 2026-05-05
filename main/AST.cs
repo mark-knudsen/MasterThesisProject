@@ -319,6 +319,8 @@ namespace MyCompiler
     {
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode IndexExpression { get; }
+        // NEW FLAG
+        public bool SkipBoundsCheck { get; set; } = false;
 
         public IndexNode(ExpressionNode sourceExpr, ExpressionNode indexExpr)
         {

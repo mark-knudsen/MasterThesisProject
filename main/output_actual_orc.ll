@@ -45,11 +45,8 @@ source_filename = "repl_module"
 @str.36 = private unnamed_addr constant [20 x i8] c"land_cover_class_17\00", align 1
 @__where_result = external global ptr, align 8
 @__where_i = external global i64, align 8
-@df_idx_err_msg = private unnamed_addr constant [50 x i8] c"Runtime Error: Dataframe row index out of bounds\0A\00", align 1
-@df_idx_err_msg.37 = private unnamed_addr constant [50 x i8] c"Runtime Error: Dataframe row index out of bounds\0A\00", align 1
-@df_idx_err_msg.38 = private unnamed_addr constant [50 x i8] c"Runtime Error: Dataframe row index out of bounds\0A\00", align 1
 
-define ptr @main_7() {
+define ptr @main_5() {
 entry:
   %df_load = load ptr, ptr @df, align 8
   store ptr %df_load, ptr @__where_src, align 8
@@ -269,12 +266,28 @@ for.body:                                         ; preds = %for.cond
   %__where_i_load97 = load i64, ptr @__where_i, align 8
   %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %__where_src_load96, i32 0, i32 1
   %rows = load ptr, ptr %rows_ptr_ptr, align 8
-  %len_ptr98 = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 0
-  %len = load i64, ptr %len_ptr98, align 8
   %data_ptr_ptr = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 2
   %data = load ptr, ptr %data_ptr_ptr, align 8
-  %in_bounds = icmp ult i64 %__where_i_load97, %len
-  br i1 %in_bounds, label %df_idx_ok, label %df_idx_err
+  %elem_ptr98 = getelementptr ptr, ptr %data, i64 %__where_i_load97
+  %record = load ptr, ptr %elem_ptr98, align 8
+  %ptr_latitude = getelementptr ptr, ptr %record, i64 1
+  %load_latitude_ptr = load ptr, ptr %ptr_latitude, align 8
+  %val_latitude = load double, ptr %load_latitude_ptr, align 8
+  %fcmp_tmp = fcmp ogt double %val_latitude, -1.800000e+01
+  %__where_src_load99 = load ptr, ptr @__where_src, align 8
+  %__where_i_load100 = load i64, ptr @__where_i, align 8
+  %rows_ptr_ptr101 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load99, i32 0, i32 1
+  %rows102 = load ptr, ptr %rows_ptr_ptr101, align 8
+  %data_ptr_ptr103 = getelementptr inbounds nuw %array, ptr %rows102, i32 0, i32 2
+  %data104 = load ptr, ptr %data_ptr_ptr103, align 8
+  %elem_ptr105 = getelementptr ptr, ptr %data104, i64 %__where_i_load100
+  %record106 = load ptr, ptr %elem_ptr105, align 8
+  %ptr_longitude = getelementptr ptr, ptr %record106, i64 2
+  %load_longitude_ptr = load ptr, ptr %ptr_longitude, align 8
+  %val_longitude = load double, ptr %load_longitude_ptr, align 8
+  %fcmp_tmp107 = fcmp olt double %val_longitude, -6.900000e+01
+  %andtmp = and i1 %fcmp_tmp, %fcmp_tmp107
+  br i1 %andtmp, label %then, label %else
 
 for.step:                                         ; preds = %ifcont
   %x_load = load i64, ptr @__where_i, align 8
@@ -283,117 +296,59 @@ for.step:                                         ; preds = %ifcont
   br label %for.cond, !llvm.loop !0
 
 for.end:                                          ; preds = %for.cond
-  %__where_result_load138 = load ptr, ptr @__where_result, align 8
+  %__where_result_load120 = load ptr, ptr @__where_result, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
   store i64 7, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %__where_result_load138, ptr %data_ptr, align 8
+  store ptr %__where_result_load120, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 
-df_idx_ok:                                        ; preds = %for.body
-  %elem_ptr99 = getelementptr ptr, ptr %data, i64 %__where_i_load97
-  %record = load ptr, ptr %elem_ptr99, align 8
-  br label %df_idx_merge
-
-df_idx_err:                                       ; preds = %for.body
-  %print_err = call i32 (ptr, ...) @printf(ptr @df_idx_err_msg)
-  br label %df_idx_merge
-
-df_idx_merge:                                     ; preds = %df_idx_ok, %df_idx_err
-  %df_idx_result = phi ptr [ null, %df_idx_err ], [ %record, %df_idx_ok ]
-  %ptr_latitude = getelementptr ptr, ptr %df_idx_result, i64 1
-  %load_latitude_ptr = load ptr, ptr %ptr_latitude, align 8
-  %val_latitude = load double, ptr %load_latitude_ptr, align 8
-  %fcmp_tmp = fcmp ogt double %val_latitude, -1.800000e+01
-  %__where_src_load100 = load ptr, ptr @__where_src, align 8
-  %__where_i_load101 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr102 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load100, i32 0, i32 1
-  %rows103 = load ptr, ptr %rows_ptr_ptr102, align 8
-  %len_ptr104 = getelementptr inbounds nuw %array, ptr %rows103, i32 0, i32 0
-  %len105 = load i64, ptr %len_ptr104, align 8
-  %data_ptr_ptr106 = getelementptr inbounds nuw %array, ptr %rows103, i32 0, i32 2
-  %data107 = load ptr, ptr %data_ptr_ptr106, align 8
-  %in_bounds108 = icmp ult i64 %__where_i_load101, %len105
-  br i1 %in_bounds108, label %df_idx_ok109, label %df_idx_err110
-
-df_idx_ok109:                                     ; preds = %df_idx_merge
-  %elem_ptr113 = getelementptr ptr, ptr %data107, i64 %__where_i_load101
-  %record114 = load ptr, ptr %elem_ptr113, align 8
-  br label %df_idx_merge111
-
-df_idx_err110:                                    ; preds = %df_idx_merge
-  %print_err112 = call i32 (ptr, ...) @printf(ptr @df_idx_err_msg.37)
-  br label %df_idx_merge111
-
-df_idx_merge111:                                  ; preds = %df_idx_ok109, %df_idx_err110
-  %df_idx_result115 = phi ptr [ null, %df_idx_err110 ], [ %record114, %df_idx_ok109 ]
-  %ptr_longitude = getelementptr ptr, ptr %df_idx_result115, i64 2
-  %load_longitude_ptr = load ptr, ptr %ptr_longitude, align 8
-  %val_longitude = load double, ptr %load_longitude_ptr, align 8
-  %fcmp_tmp116 = fcmp olt double %val_longitude, -6.900000e+01
-  %andtmp = and i1 %fcmp_tmp, %fcmp_tmp116
-  br i1 %andtmp, label %then, label %else
-
-then:                                             ; preds = %df_idx_merge111
+then:                                             ; preds = %for.body
   %__where_result_load = load ptr, ptr @__where_result, align 8
-  %__where_src_load117 = load ptr, ptr @__where_src, align 8
-  %__where_i_load118 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr119 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load117, i32 0, i32 1
-  %rows120 = load ptr, ptr %rows_ptr_ptr119, align 8
-  %len_ptr121 = getelementptr inbounds nuw %array, ptr %rows120, i32 0, i32 0
-  %len122 = load i64, ptr %len_ptr121, align 8
-  %data_ptr_ptr123 = getelementptr inbounds nuw %array, ptr %rows120, i32 0, i32 2
-  %data124 = load ptr, ptr %data_ptr_ptr123, align 8
-  %in_bounds125 = icmp ult i64 %__where_i_load118, %len122
-  br i1 %in_bounds125, label %df_idx_ok126, label %df_idx_err127
+  %__where_src_load108 = load ptr, ptr @__where_src, align 8
+  %__where_i_load109 = load i64, ptr @__where_i, align 8
+  %rows_ptr_ptr110 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load108, i32 0, i32 1
+  %rows111 = load ptr, ptr %rows_ptr_ptr110, align 8
+  %data_ptr_ptr112 = getelementptr inbounds nuw %array, ptr %rows111, i32 0, i32 2
+  %data113 = load ptr, ptr %data_ptr_ptr112, align 8
+  %elem_ptr114 = getelementptr ptr, ptr %data113, i64 %__where_i_load109
+  %record115 = load ptr, ptr %elem_ptr114, align 8
+  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_result_load, i32 0, i32 1
+  %rows_array = load ptr, ptr %rows_field, align 8
+  %len_ptr116 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
+  %cap_ptr117 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
+  %data_ptr_ptr118 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
+  %len = load i64, ptr %len_ptr116, align 8
+  %cap = load i64, ptr %cap_ptr117, align 8
+  %data119 = load ptr, ptr %data_ptr_ptr118, align 8
+  %is_full = icmp uge i64 %len, %cap
+  br i1 %is_full, label %grow, label %cont
 
-else:                                             ; preds = %df_idx_merge111
+else:                                             ; preds = %for.body
   br label %ifcont
 
 ifcont:                                           ; preds = %else, %cont
   %iftmp = phi ptr [ %__where_result_load, %cont ], [ 0.000000e+00, %else ]
   br label %for.step
 
-df_idx_ok126:                                     ; preds = %then
-  %elem_ptr130 = getelementptr ptr, ptr %data124, i64 %__where_i_load118
-  %record131 = load ptr, ptr %elem_ptr130, align 8
-  br label %df_idx_merge128
-
-df_idx_err127:                                    ; preds = %then
-  %print_err129 = call i32 (ptr, ...) @printf(ptr @df_idx_err_msg.38)
-  br label %df_idx_merge128
-
-df_idx_merge128:                                  ; preds = %df_idx_ok126, %df_idx_err127
-  %df_idx_result132 = phi ptr [ null, %df_idx_err127 ], [ %record131, %df_idx_ok126 ]
-  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_result_load, i32 0, i32 1
-  %rows_array = load ptr, ptr %rows_field, align 8
-  %len_ptr133 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
-  %cap_ptr134 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
-  %data_ptr_ptr135 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
-  %len136 = load i64, ptr %len_ptr133, align 8
-  %cap = load i64, ptr %cap_ptr134, align 8
-  %data137 = load ptr, ptr %data_ptr_ptr135, align 8
-  %is_full = icmp uge i64 %len136, %cap
-  br i1 %is_full, label %grow, label %cont
-
-grow:                                             ; preds = %df_idx_merge128
+grow:                                             ; preds = %then
   %3 = icmp eq i64 %cap, 0
   %4 = mul i64 %cap, 2
   %new_cap = select i1 %3, i64 4, i64 %4
   %bytes = mul i64 %new_cap, 8
-  %realloc = call ptr @realloc(ptr %data137, i64 %bytes)
-  store i64 %new_cap, ptr %cap_ptr134, align 8
-  store ptr %realloc, ptr %data_ptr_ptr135, align 8
+  %realloc = call ptr @realloc(ptr %data119, i64 %bytes)
+  store i64 %new_cap, ptr %cap_ptr117, align 8
+  store ptr %realloc, ptr %data_ptr_ptr118, align 8
   br label %cont
 
-cont:                                             ; preds = %grow, %df_idx_merge128
-  %final_data_ptr = phi ptr [ %data137, %df_idx_merge128 ], [ %realloc, %grow ]
-  %target = getelementptr ptr, ptr %final_data_ptr, i64 %len136
-  store ptr %df_idx_result132, ptr %target, align 8
-  %new_len = add i64 %len136, 1
-  store i64 %new_len, ptr %len_ptr133, align 8
+cont:                                             ; preds = %grow, %then
+  %final_data_ptr = phi ptr [ %data119, %then ], [ %realloc, %grow ]
+  %target = getelementptr ptr, ptr %final_data_ptr, i64 %len
+  store ptr %record115, ptr %target, align 8
+  %new_len = add i64 %len, 1
+  store i64 %new_len, ptr %len_ptr116, align 8
   br label %ifcont
 }
 
