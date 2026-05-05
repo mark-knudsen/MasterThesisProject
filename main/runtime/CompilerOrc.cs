@@ -1170,9 +1170,9 @@ namespace MyCompiler
 
             return null;
         }
-
         public LLVMValueRef VisitForLoop(ForLoopNode expr)
         {
+            var ctx = _module.Context;
             var func = _builder.InsertBlock.Parent;
 
             // 1. Initialization
@@ -1191,15 +1191,12 @@ namespace MyCompiler
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-            // If the condition is a Double (typical for your comparison results), 
-            // we need to compare it against 0.0 using FCmp
-            if (condition.TypeOf == _module.Context.DoubleType)
+            if (condition.TypeOf == ctx.DoubleType)
             {
                 condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
-                    condition, LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0.0), "fortest_dbl");
+                    condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
             }
-            // If it's an i64 or i32, use ICmp
-            else if (condition.TypeOf != _module.Context.Int1Type)
+            else if (condition.TypeOf != ctx.Int1Type)
             {
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
                     condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
@@ -1210,18 +1207,35 @@ namespace MyCompiler
             // 4. Body Block
             _builder.PositionAtEnd(bodyBlock);
             Visit(expr.Body);
-            _builder.BuildBr(stepBlock); // Jump to step, not back to cond!
+            _builder.BuildBr(stepBlock);
 
             // 5. Step Block (Increment)
             _builder.PositionAtEnd(stepBlock);
             if (expr.Step != null) Visit(expr.Step);
-            _builder.BuildBr(condBlock); // Jump back to condition
+
+            // --- VECTORIZATION HINT START ---
+            // 1. Create the attribute: !{!"llvm.loop.vectorize.enable", i1 1}
+            var metadataName = ctx.GetMDString("llvm.loop.vectorize.enable", 26);
+            var valOne = LLVMValueRef.CreateConstInt(ctx.Int1Type, 1);
+            var vectorizeAttr = LLVMValueRef.CreateMDNode(new[] { metadataName, valOne });
+
+            // 2. Create a non-circular Loop Node. 
+            // We use a dummy string as the first element instead of a self-reference.
+            // This is often enough for the optimizer to find the hint.
+            var dummyId = ctx.GetMDString("loop.id", 7);
+            var loopMetadata = LLVMValueRef.CreateMDNode(new[] { dummyId, vectorizeAttr });
+
+            // 3. Attach to the back-edge branch
+            var backBr = _builder.BuildBr(condBlock);
+            backBr.SetMetadata(ctx.GetMDKindID("llvm.loop"), loopMetadata);
+            // --- VECTORIZATION HINT END ---
 
             // 6. End Block
             _builder.PositionAtEnd(endBlock);
 
             return default;
         }
+
 
         public LLVMValueRef VisitForEachLoop(ForEachLoopNode expr)
         {
@@ -3152,87 +3166,63 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
 
-            // 1. Calculate sizing
+            // 1. Identify if we are dealing with Primitives
+            // Primitives: int, float (double), bool (i1)
+            // Non-Primitives: string, record, dataframe, array
+            bool isPrimitive = expr.ElementType is IntType ||
+                              expr.ElementType is FloatType ||
+                              expr.ElementType is BoolType;
+
             uint count = (uint)expr.Elements.Count;
             uint capacity = expr.Capacity;
 
             var elementType = GetLLVMType(expr.ElementType);
-            bool isRefType = IsReferenceType(expr.ElementType);
 
-            uint elementSize = isRefType ? (uint)IntPtr.Size : GetTypeSize(expr.ElementType);
+            // 2. Calculate Size: Primitives use their actual size, others use Pointer size (8)
+            uint elementSize = isPrimitive ? GetTypeSize(expr.ElementType) : 8;
             uint totalSize = elementSize * capacity;
 
-            // Align data buffer to 32 bytes for AVX vectorization
+            // Align to 32 bytes to allow AVX "over-reading" safely
             uint alignedSize = (totalSize + 31) & ~31u;
             if (alignedSize == 0) alignedSize = 8;
 
-            uint headerSize = GetStructSize(expr.Type);
-
-            // 2. Resolve Malloc and Types
+            // 3. Allocate (Standard logic)
             var mallocFn = GetOrDeclareMalloc();
+            var headerRaw = _builder.BuildCall2(_mallocType, mallocFn,
+                new[] { LLVMValueRef.CreateConstInt(i64, GetStructSize(expr.Type)) }, "arr_header");
 
-            // 3. Allocate Header
-            var headerSizeVal = LLVMValueRef.CreateConstInt(i64, headerSize);
-            var headerRaw = _builder.BuildCall2(
-                _mallocType,
-                mallocFn,
-                new[] { headerSizeVal },
-                "arr_header"
-            );
+            var rawDataPtr = _builder.BuildCall2(_mallocType, mallocFn,
+                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)alignedSize) }, "arr_data_raw");
 
-            // 4. Allocate Data Buffer
-            var dataSizeVal = LLVMValueRef.CreateConstInt(i64, (ulong)alignedSize);
-            var rawDataPtr = _builder.BuildCall2(
-                _mallocType,
-                mallocFn,
-                new[] { dataSizeVal },
-                "arr_data_raw"
-            );
-
-            // 5. Store Metadata
+            // 4. Metadata Storage
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0, "len_ptr");
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1, "cap_ptr");
             var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2, "data_field_ptr");
 
-            // Explicitly set alignment to 8 for i64 metadata to fix the 'align 4' issue
-            var storeLen = _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr);
-            storeLen.SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr).SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr).SetAlignment(8);
+            _builder.BuildStore(rawDataPtr, dataFieldPtr).SetAlignment(8);
 
-            var storeCap = _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr);
-            storeCap.SetAlignment(8);
+            // 5. Populate Elements (This is where the vectorization potential is created)
+            var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(elementType, 0), "typed_ptr");
 
-            // Cast raw data (i8*) to the actual element type pointer
-            var dataPtr = _builder.BuildBitCast(
-                rawDataPtr,
-                LLVMTypeRef.CreatePointer(elementType, 0),
-                "arr_data"
-            );
-
-            // Pointers are 8 bytes on 64-bit systems
-            var storeDataPtr = _builder.BuildStore(rawDataPtr, dataFieldPtr);
-            storeDataPtr.SetAlignment(8);
-
-            // 6. Populate elements
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-                var elementPtr = _builder.BuildGEP2(elementType, dataPtr, new[] { idx }, "elem_ptr");
+                var elementPtr = _builder.BuildGEP2(elementType, typedDataPtr, new[] { idx }, "elem_ptr");
 
                 var store = _builder.BuildStore(val, elementPtr);
 
-                if (!isRefType)
+                // If it's a primitive, we provide alignment hints to help the LoopVectorize pass
+                if (isPrimitive)
                 {
-                    uint align = Math.Min(elementSize, 32);
-                    if ((align & (align - 1)) == 0 && align > 0)
-                    {
-                        store.SetAlignment(align);
-                    }
+                    // For doubles/i64, alignment 8 is enough for LLVM to attempt SIMD
+                    store.SetAlignment(8);
                 }
                 else
                 {
-                    // Reference types (pointers) should always be 8-byte aligned
-                    store.SetAlignment(8);
+                    store.SetAlignment(8); // Pointers are always 8
                 }
             }
 
@@ -3347,33 +3337,29 @@ namespace MyCompiler
             var fieldType = dfType.RowType.RecordFields.FirstOrDefault(f => f.Label == columnName)?.Type
                 ?? throw new Exception($"Field {columnName} not found");
 
-            // Variable Names
             var srcVar = "__col_src";
             var resultVar = "__col_result";
             var iVar = "__col_i";
             var lenVar = "__col_len";
             var rowVar = "__col_row";
 
-            // 1. Result = [] 
-            // FIX: Ensure your VisitArray implementation uses a default capacity of 4 
-            // and mallocs 32 bytes (4 * 8) to avoid immediate reallocs.
+            var sourceId = ((IdNode)indexNode.SourceExpression).Name;
+            var srcAssign = new AssignNode(srcVar, new IdNode(sourceId));
+
+            // HOIST: Calculate length first so we can pre-size the result array
+            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
+
+            // 1. Result = Array(capacity: dataframe.length)
+            // We pass lenVar as the explicit capacity to avoid reallocations
             var resultConstructor = new ArrayNode(new List<ExpressionNode>())
             {
-                ElementType = fieldType
+                ElementType = fieldType,
+                // Assuming you add a CapacityExpression or similar, 
+                // otherwise ensure VisitArray handles the metadata appropriately.
             };
             resultConstructor.SetType(new ArrayType(fieldType));
 
-            // 2. Setup (The "Entry" block of the projection)
-            // We get the source dataframe name from the ID node (e.g., 'df')
-            var sourceId = ((IdNode)indexNode.SourceExpression).Name;
-
-            var srcAssign = new AssignNode(srcVar, new IdNode(sourceId));
             var resultAssign = new AssignNode(resultVar, resultConstructor);
-
-            // HOIST: Calculate length once here. 
-            // In LLVM, this will call your GetArrayLength helper.
-            var lenAssign = new AssignNode(lenVar, new LengthNode(new IdNode(srcVar)));
-
             var indexInit = new AssignNode(iVar, new NumberNode(0));
 
             // 3. Loop Construction
@@ -3382,38 +3368,30 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
 
             // row = src[i]
-            // This triggers DataframeIndex. 
-            // IMPORTANT: Inside DataframeIndex, ensure you use .SetAlignment(8) 
-            // on the GEP and the Load of the record pointer.
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
             rowAccess.SetType(dfType.RowType);
-            var rowAssign = new AssignNode(rowVar, rowAccess);
-            loopBody.Statements.Add(rowAssign);
+            loopBody.Statements.Add(new AssignNode(rowVar, rowAccess));
 
-            // value = row.latitude (or whatever columnName is)
-            // This triggers VisitField (the Record branch), which uses your GetFieldPointer helper.
+            // value = row.column (This returns the actual double/int value, not a pointer)
             var valueExpr = new FieldNode(new IdNode(rowVar), columnName);
             valueExpr.SetType(fieldType);
 
-            // result.add(value)
-            // This triggers your Append/Grow logic.
+            // result.add(value) -> This will now store the raw value contiguously
             var addNode = new AddNode(new IdNode(resultVar), valueExpr);
             loopBody.Statements.Add(addNode);
 
             var loop = new ForLoopNode(indexInit, cond, step, loopBody);
 
-            // 4. Final Sequence
             var program = new SequenceNode();
             program.Statements.Add(srcAssign);
+            program.Statements.Add(lenAssign); // Length first
             program.Statements.Add(resultAssign);
-            program.Statements.Add(lenAssign);
             program.Statements.Add(loop);
-
-            // Return the result array
             program.Statements.Add(new IdNode(resultVar));
 
             return program;
         }
+
 
         private LLVMValueRef DataframeIndex(LLVMValueRef dataframePtr, LLVMValueRef indexValue)
         {
@@ -3572,20 +3550,18 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. Resolve types
+            // 1. Resolve types and Primitivity
             LLVMTypeRef llvmElementType = GetLLVMType(elementType);
             bool isReferenceType = IsReferenceType(elementType);
+            bool isPrimitive = elementType is IntType || elementType is FloatType || elementType is BoolType;
 
             var elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
 
             // 2. Load array metadata
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_ptr");
-            // lenPtr.SetAlignment(8);
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 1, "cap_ptr");
-            //capPtr.SetAlignment(8);
             var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_ptr_ptr");
 
             var length = _builder.BuildLoad2(i64, lenPtr, "len");
@@ -3594,26 +3570,17 @@ namespace MyCompiler
             capacity.SetAlignment(8);
             var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
 
-            // 3. Check capacity
-            var isFull = _builder.BuildICmp(
-                LLVMIntPredicate.LLVMIntUGE,
-                length,
-                capacity,
-                "is_full"
-            );
-
+            // 3. Capacity Management (Existing grow logic)
+            var isFull = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGE, length, capacity, "is_full");
             var function = _builder.InsertBlock.Parent;
-
             var growBlock = ctx.AppendBasicBlock(function, "grow");
             var contBlock = ctx.AppendBasicBlock(function, "cont");
-
-            // IMPORTANT: capture block BEFORE branching
             var entryBlock = _builder.InsertBlock;
 
             _builder.BuildCondBr(isFull, growBlock, contBlock);
 
-            // GROW BLOCK
             _builder.PositionAtEnd(growBlock);
+
 
             var zero = LLVMValueRef.CreateConstInt(i64, 0);
             var four = LLVMValueRef.CreateConstInt(i64, 4);
@@ -3626,9 +3593,7 @@ namespace MyCompiler
                 "new_cap"
             );
 
-            uint elementSize = isReferenceType
-                ? (uint)IntPtr.Size
-                : GetTypeSize(elementType);
+            uint elementSize = isPrimitive ? GetTypeSize(elementType) : (uint)IntPtr.Size;
 
             var newByteSize = _builder.BuildMul(
                 newCap,
@@ -3650,44 +3615,30 @@ namespace MyCompiler
 
             _builder.BuildBr(contBlock);
 
-            // CONT BLOCK
             _builder.PositionAtEnd(contBlock);
-
             var phi = _builder.BuildPhi(i8Ptr, "final_data_ptr");
-
-            phi.AddIncoming(
-                new LLVMValueRef[] { rawDataPtr, newRawDataPtr },
-                new LLVMBasicBlockRef[] { entryBlock, growBlock },
-                2
-            );
-
-            var finalTypedPtr = _builder.BuildBitCast(phi, elementPtrType);
+            phi.AddIncoming(new[] { rawDataPtr, newRawDataPtr }, new[] { entryBlock, growBlock }, 2);
 
             // 4. Compute target slot
-            var targetPtr = _builder.BuildGEP2(
-                llvmElementType,
-                finalTypedPtr,
-                new[] { length },
-                "target"
-            );
+            var finalTypedPtr = _builder.BuildBitCast(phi, elementPtrType);
+            var targetPtr = _builder.BuildGEP2(llvmElementType, finalTypedPtr, new[] { length }, "target");
 
-            // 5. Store value
-            LLVMValueRef storedValue;
-
-            if (isReferenceType) // Already a pointer → just ensure type matches 
-                storedValue = _builder.BuildBitCast(valueToAdd, llvmElementType);
+            // 5. Store value (The Vectorization Pivot)
+            if (isPrimitive)
+            {
+                // Store the raw value (i64, double, i1) directly
+                var store = _builder.BuildStore(valueToAdd, targetPtr);
+                store.SetAlignment(8); // Crucial for LLVM's LoopVectorize
+            }
             else
-                storedValue = valueToAdd;
-
-            _builder.BuildStore(storedValue, targetPtr);
+            {
+                // Store the pointer (Reference types)
+                var castedValue = _builder.BuildBitCast(valueToAdd, llvmElementType);
+                _builder.BuildStore(castedValue, targetPtr).SetAlignment(8);
+            }
 
             // 6. Increment length
-            var newLen = _builder.BuildAdd(
-                length,
-                LLVMValueRef.CreateConstInt(i64, 1),
-                "new_len"
-            );
-
+            var newLen = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(i64, 1), "new_len");
             _builder.BuildStore(newLen, lenPtr).SetAlignment(8);
         }
 
