@@ -315,6 +315,7 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
     }
 
+
     public class IndexNode : ExpressionNode
     {
         public ExpressionNode SourceExpression { get; }
@@ -877,6 +878,20 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
     }
+
+    // public class ResizeArrayNode : StatementNode
+    // {
+    //     public ExpressionNode ArrayExpr { get; }
+    //     public ExpressionNode NewSize { get; }
+
+    //     public ResizeArrayNode(ExpressionNode arrayExpr, ExpressionNode newSize)
+    //     {
+    //         ArrayExpr = arrayExpr;
+    //         NewSize = newSize;
+    //     }
+
+    //     public override void Accept(IExpressionVisitor visitor) => visitor.VisitResizeArray(this);
+    // }
 }
 
 

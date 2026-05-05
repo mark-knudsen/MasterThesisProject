@@ -2461,7 +2461,7 @@ namespace MyCompiler
             var program = new SequenceNode();
             var srcVar = "__map_src";
             var resVar = "__map_result";
-            var iVar = "__map_i"; // Your variable is named iVar
+            var iVar = "__map_i";
 
             // 1. Get the correct element type from the MapNode's result type
             MyCompiler.Type resultElementType = null;
@@ -2480,20 +2480,21 @@ namespace MyCompiler
 
             var loopBody = new SequenceNode();
 
-            // FIX: Use iVar here instead of indexVarName
+            // --- OPTIMIZATION: Index with SkipBoundsCheck ---
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            rowAccess.SkipBoundsCheck = true;
 
             // 3. Transform the lambda body
             ExpressionNode lastExpr = null;
             foreach (var e in expr.Assignments)
             {
-                lastExpr = ReplaceIterator(e as ExpressionNode, expr.IteratorId.Name, rowAccess);
+                lastExpr = (ExpressionNode)ReplaceIteratorInNode(e, expr.IteratorId.Name, rowAccess);
             }
 
             // 4. Add to the result list
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
 
-            // 5. Loop Logic - Use iVar here as well
+            // 5. Loop Logic
             var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
@@ -2501,6 +2502,8 @@ namespace MyCompiler
             program.Statements.Add(new IdNode(resVar));
             return program;
         }
+
+
 
         private string InferFieldName(Node node)
         {
@@ -2535,16 +2538,26 @@ namespace MyCompiler
             var currentRowVar = "__current_row";
             var dfType = (DataframeType)expr.Type;
 
-            // 1. Assign source
+            // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 2. Initialize Result Dataframe (Structure only)
+            // 2. Capture length
+            var srcLength = new LengthNode(new IdNode(srcVar));
+            srcLength.SetType(new IntType());
+
+            // 3. Initialize Result Dataframe with Capacity
             var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-            var dummyValues = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
+            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
+
+            // Passing srcLength to ArrayNode is the key to stopping reallocs
+            var rowsArray = new ArrayNode(new List<ExpressionNode>(), srcLength);
+            rowsArray.SetType(new ArrayType(dfType.RowType));
+
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                new NamedArgumentNode("columns", new ArrayNode(columns)),
-                new NamedArgumentNode("type", new ArrayNode(dummyValues))
-            });
+        new NamedArgumentNode("columns", new ArrayNode(columns)),
+        new NamedArgumentNode("rows", rowsArray),
+        new NamedArgumentNode("type", new ArrayNode(dummyTypes))
+    });
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2553,65 +2566,46 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // row = src[i]
+            // 4. Fetch row: currentRow = src[i]
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            rowAccess.SkipBoundsCheck = true;
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
-            bool isStatementStyle = expr.Assignments.Any(a =>
-                a is AssignNode || a is RecordFieldAssignNode || a.GetType().Name.Contains("Assign")
-            );
+            // 5. Transformation Logic
+            ExpressionNode finalRowExpr;
+            // Check if assignments are complex or a single expression
+            bool isStatementStyle = expr.Assignments.Any(a => a.GetType().Name.Contains("Assign"));
 
             if (expr.Assignments.Count == 1 && !isStatementStyle)
             {
-                //if (_debug) Console.WriteLine("DEBUG: Compiling MAP using Path A (Functional)");
-
-                // Path A logic
-                var bodyNode = expr.Assignments.First();
-
-                if (bodyNode is BinaryOpNode bin && bin.Operator == "+" && bin.Right is RecordNode rec)
-                {
-                    // If NodeContainsId correctly returns TRUE for { lat2: x.latitude }, 
-                    // this block is skipped, and no hoisting occurs.
-                    if (!NodeContainsId(rec, expr.IteratorId.Name) && IsPure(rec))
-                    {
-                        var invVar = "__const_record";
-                        program.Statements.Add(new AssignNode(invVar, rec));
-                        bodyNode = new BinaryOpNode(bin.Left, "+", new IdNode(invVar));
-                    }
-                }
-
-                // Perform the replacement on the bodyNode (hoisted or not)
-                var replacedBody = (ExpressionNode)ReplaceIteratorInNode(bodyNode, expr.IteratorId.Name, replacementNode);
-                loopBody.Statements.Add(new AddNode(new IdNode(resVar), replacedBody));
+                finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
             }
             else
             {
-                //if (_debug) Console.WriteLine("DEBUG: Compiling MAP using Path B (Imperative)");
-
-                // 1. Clone row (mutate safely)
+                // Record Cloning (Necessary if updating existing rows)
                 var cloneNode = new BinaryOpNode(new IdNode(currentRowVar), "+", new RecordNode(new List<NamedArgumentNode>()));
                 cloneNode.SetType(dfType.RowType);
                 loopBody.Statements.Add(new AssignNode(currentRowVar, cloneNode));
 
-                // 2. Apply all assignments
                 foreach (var action in expr.Assignments)
                 {
                     var replacedAction = ReplaceIteratorInNode(action, expr.IteratorId.Name, replacementNode);
                     loopBody.Statements.Add((StatementNode)replacedAction);
                 }
-
-                // 3. Collect row
-                loopBody.Statements.Add(new AddNode(new IdNode(resVar), new IdNode(currentRowVar)));
+                finalRowExpr = new IdNode(currentRowVar);
             }
 
-            // 3. The Loop Structure
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            // 6. Use AddNode (since AssignNode won't take targetIndex)
+            // Because we initialized 'rowsArray' with 'srcLength', 
+            // the 'grow' block in the IR will exist but will NEVER be executed.
+            loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
+
+            // 7. Loop Setup
+            var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
-            // Return the new dataframe
             program.Statements.Add(new IdNode(resVar));
-
             return program;
         }
 
@@ -2632,6 +2626,7 @@ namespace MyCompiler
 
             return true;
         }
+
 
         private bool NodeContainsId(Node node, string idName)
         {
@@ -5226,6 +5221,17 @@ namespace MyCompiler
 
         # min, max, mean & sum:
         df_min = df_lat.min; df_max = df_lat.max; df_mean = df_lat.mean; df_sum = df_lat.sum;
+
+
+        compiler list: 
+        16.6333, 0.9592, 0.5678, 0.5073, 4.9772, 6.3993, 0.5997, 1.033, 0.5602
+
+        IR list: 
+        12.6831, 11.2088, 6.7141, 7.0108, 10.1785, 14.9467, 19.4002, 13.9254, 9.777
+
+        Runtime list: 
+        107.503, 108.0411, 60.8264, 59.0818, 64.1876, 1033.8113, 880.304, 1015.3324, 916.654
+
 */
 
 

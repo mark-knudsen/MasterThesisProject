@@ -680,36 +680,32 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-
-            // Get the type of 'x'
             Type iteratorType;
+
             if (sourceType is DataframeType df)
                 iteratorType = df.RowType;
             else if (sourceType is ArrayType arr)
                 iteratorType = arr.ElementType;
             else
-                throw new Exception($"Cannot map over type {sourceType}. Source must be a Dataframe or Array.");
+                throw new Exception($"Cannot map over type {sourceType}.");
 
             var previousContext = _context;
-            // Inject 'x' into scope
+            // Inject iterator 'x' into scope
             _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
             try
             {
-                foreach (var node in expr.Assignments) // IMPORTANT: Capture the type returned by the visitor
+                Type currentType = iteratorType;
+                foreach (var node in expr.Assignments)
                 {
-                    Type t = Visit(node);
-                    if (node is ExpressionNode en2) en2.SetType(t);
+                    currentType = Visit(node);
+                    if (node is ExpressionNode en2) en2.SetType(currentType);
                 }
 
-                // Determine result type based on the LAST node
                 var lastNode = expr.Assignments.Last();
+                Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
 
-                // If last node is a statement (Assignment), type is the modified iteratorType.
-                // If last node is an expression (Record + Record), type is that expression's type.
-                Type lastType = (lastNode is ExpressionNode en) ? en.Type : iteratorType;
-
-                if (lastType is RecordType rec)
+                if (finalRowType is RecordType rec)
                 {
                     var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
@@ -720,16 +716,13 @@ namespace MyCompiler
                     return resultType;
                 }
 
-                // Fallback for primitive arrays
-                var finalArrayType = new ArrayType(lastType);
+                var finalArrayType = new ArrayType(finalRowType);
                 expr.SetType(finalArrayType);
                 return finalArrayType;
             }
-            finally
-            {
-                _context = previousContext;
-            }
+            finally { _context = previousContext; }
         }
+
 
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
         private string InferFieldName(Node node)
