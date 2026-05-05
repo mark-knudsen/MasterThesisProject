@@ -2347,79 +2347,54 @@ namespace MyCompiler
         public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         {
             var srcVar = "__where_src";
-            var resultVar = "__where_result"; // 10 000 002
+            var resultVar = "__where_result";
             var iVar = "__where_i";
 
             if (sourceType is not DataframeType dfType)
                 throw new Exception("Where only supports dataframe");
 
-            // --- Construct empty result dataframe (same schema) ---
-            var columnsArray = new ArrayNode(
-                dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList()
-            );
-
-            var recType = sourceType as DataframeType;
-            var types = new List<ExpressionNode>();
-            foreach (var item in recType.DataTypes)
-            {
-                if (item is IntType) types.Add(new TypeLiteralNode(new TypeNode("int")));
-                else if (item is FloatType) types.Add(new TypeLiteralNode(new TypeNode("float")));
-                else if (item is BoolType) types.Add(new TypeLiteralNode(new TypeNode("bool")));
-                else if (item is StringType) types.Add(new TypeLiteralNode(new TypeNode("string")));
-            }
-
-            var typeArray = new ArrayNode(types);
-
-            var resultDf = new DataframeNode(new List<NamedArgumentNode>
-            {
-                new NamedArgumentNode("columns", columnsArray),
-                new NamedArgumentNode("type", typeArray)
-            });
-
-            // --- Assignments ---
             var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
-            var resultAssign = new AssignNode(resultVar, resultDf);
             var indexInit = new AssignNode(iVar, new NumberNode(0));
 
-            // --- Loop condition ---
-            var cond = new ComparisonNode(
-                new IdNode(iVar),
-                "<",
-                new LengthNode(new IdNode(srcVar))
-            );
+            // Construct metadata for columns and types
+            var columnsArray = new ArrayNode(dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList());
+            var types = dfType.DataTypes.Select<Type, ExpressionNode>(item =>
+            {
+                if (item is IntType) return new TypeLiteralNode(new TypeNode("int"));
+                if (item is FloatType) return new TypeLiteralNode(new TypeNode("float"));
+                if (item is BoolType) return new TypeLiteralNode(new TypeNode("bool"));
+                if (item is StringType) return new TypeLiteralNode(new TypeNode("string"));
+                throw new Exception("Unknown type");
+            }).ToList();
+            var typeArray = new ArrayNode(types);
 
+            // PRE-ALLOCATION: Pass the source length as the capacity hint
+            var resultDf = new DataframeNode(new List<NamedArgumentNode> {
+        new NamedArgumentNode("columns", columnsArray),
+        new NamedArgumentNode("type", typeArray)
+    })
+            {
+                CapacityExpression = new LengthNode(new IdNode(srcVar))
+            };
+
+            var resultAssign = new AssignNode(resultVar, resultDf);
+
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
-
-            // --- Correct row access ---
             var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-
-            // Replace iterator in predicate
             var predicate = ReplaceIterator(expr.Condition, expr.IteratorId.Name, current);
 
-            // result.add(current)
-            var add = new AddNode(new IdNode(resultVar), current);
-
             var ifBody = new SequenceNode();
-            ifBody.Statements.Add(add);
+            ifBody.Statements.Add(new AddNode(new IdNode(resultVar), current));
 
-            var ifNode = new IfNode(predicate, ifBody);
+            var loop = new ForLoopNode(indexInit, cond, step, new SequenceNode { Statements = { new IfNode(predicate, ifBody) } });
 
-            var loopBody = new SequenceNode();
-            loopBody.Statements.Add(ifNode);
-
-            var loop = new ForLoopNode(indexInit, cond, step, loopBody);
-
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(loop);
-            program.Statements.Add(new IdNode(resultVar));
-            return program;
+            return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVar) } };
         }
+
 
         public SequenceNode WhereForArray(Type sourceType, WhereNode expr)
         {
-            // Cast here so we can access ElementType
             var arrType = (ArrayType)sourceType;
             var elementType = arrType.ElementType;
 
@@ -2427,49 +2402,28 @@ namespace MyCompiler
             var resultVarName = "__where_result";
             var indexVarName = "__where_i";
 
-            if (elementType is not IntType && elementType is not FloatType &&
-                elementType is not StringType && elementType is not BoolType)
-                throw new Exception("Unsupported array element type: " + elementType);
-
-            var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
-
             var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-            var resultAssign = new AssignNode(resultVarName, resultArray);
 
-            // Create the initialization node
+            // PRE-ALLOCATION: Use LengthNode as the capacity hint for the array
+            var capacityHint = new LengthNode(new IdNode(srcVarName));
+            var resultArray = new ArrayNode(new List<ExpressionNode>(), capacityHint)
+            {
+                ElementType = elementType
+            };
+
+            var resultAssign = new AssignNode(resultVarName, resultArray);
             var indexInit = new AssignNode(indexVarName, new NumberNode(0));
 
-            var loopCond = new ComparisonNode(
-                new IdNode(indexVarName),
-                "<",
-                new LengthNode(new IdNode(srcVarName))
-            );
-
+            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
             var loopStep = new IncrementNode(new IdNode(indexVarName));
             var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
 
-            // CRITICAL: Ensure ReplaceIterator handles LogicalOpNodes!
             ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+            var ifBody = new SequenceNode { Statements = { new AddNode(new IdNode(resultVarName), currentElement) } };
 
-            var addNode = new AddNode(new IdNode(resultVarName), currentElement);
+            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, new SequenceNode { Statements = { new IfNode(ifCond, ifBody) } });
 
-            var ifBody = new SequenceNode();
-            ifBody.Statements.Add(addNode);
-            var ifNode = new IfNode(ifCond, ifBody);
-
-            var loopBody = new SequenceNode();
-            loopBody.Statements.Add(ifNode);
-
-            // Pass the AssignNode (indexInit) here
-            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, loopBody);
-
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(new IdNode(resultVarName));
-
-            return program;
+            return new SequenceNode { Statements = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
         }
 
         public LLVMValueRef VisitMap(MapNode expr)
@@ -3166,64 +3120,71 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
 
-            // 1. Identify if we are dealing with Primitives
-            // Primitives: int, float (double), bool (i1)
-            // Non-Primitives: string, record, dataframe, array
             bool isPrimitive = expr.ElementType is IntType ||
                               expr.ElementType is FloatType ||
                               expr.ElementType is BoolType;
 
-            uint count = (uint)expr.Elements.Count;
-            uint capacity = expr.Capacity;
+            // --- NEW: Handle Dynamic vs Static Capacity ---
+            LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Elements.Count);
+            LLVMValueRef capacityVal;
+
+            if (expr.CapacityExpression != null)
+            {
+                // Visit the expression (e.g., LengthNode) to get the runtime i64
+                capacityVal = Visit(expr.CapacityExpression);
+            }
+            else
+            {
+                capacityVal = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Capacity);
+            }
 
             var elementType = GetLLVMType(expr.ElementType);
-
-            // 2. Calculate Size: Primitives use their actual size, others use Pointer size (8)
             uint elementSize = isPrimitive ? GetTypeSize(expr.ElementType) : 8;
-            uint totalSize = elementSize * capacity;
 
-            // Align to 32 bytes to allow AVX "over-reading" safely
-            uint alignedSize = (totalSize + 31) & ~31u;
-            if (alignedSize == 0) alignedSize = 8;
+            // --- NEW: Dynamic Size Calculation ---
+            // Instead of C# math: (elementSize * capacity)
+            // We do LLVM IR math: BuildMul(elementSize, capacityVal)
+            var llvmElementSize = LLVMValueRef.CreateConstInt(i64, (ulong)elementSize);
+            var totalSizeVal = _builder.BuildMul(llvmElementSize, capacityVal, "total_size");
 
-            // 3. Allocate (Standard logic)
+            // Align to 32 bytes (totalSize + 31) & ~31
+            var thirtyOne = LLVMValueRef.CreateConstInt(i64, 31);
+            var mask = LLVMValueRef.CreateConstInt(i64, unchecked((ulong)~31));
+            var padded = _builder.BuildAdd(totalSizeVal, thirtyOne, "padded_size");
+            var alignedSizeVal = _builder.BuildAnd(padded, mask, "aligned_size");
+
+            // Ensure at least 8 bytes to avoid malloc(0)
+            var eight = LLVMValueRef.CreateConstInt(i64, 8);
+            var isZero = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, alignedSizeVal, LLVMValueRef.CreateConstInt(i64, 0), "is_zero");
+            alignedSizeVal = _builder.BuildSelect(isZero, eight, alignedSizeVal, "final_malloc_size");
+
+            // 3. Allocate
             var mallocFn = GetOrDeclareMalloc();
             var headerRaw = _builder.BuildCall2(_mallocType, mallocFn,
                 new[] { LLVMValueRef.CreateConstInt(i64, GetStructSize(expr.Type)) }, "arr_header");
 
+            // Pass the DYNAMIC alignedSizeVal to malloc
             var rawDataPtr = _builder.BuildCall2(_mallocType, mallocFn,
-                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)alignedSize) }, "arr_data_raw");
+                new[] { alignedSizeVal }, "arr_data_raw");
 
             // 4. Metadata Storage
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0, "len_ptr");
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1, "cap_ptr");
             var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2, "data_field_ptr");
 
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr).SetAlignment(8);
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr).SetAlignment(8);
+            // Store the dynamic values
+            _builder.BuildStore(countVal, lenPtr).SetAlignment(8);
+            _builder.BuildStore(capacityVal, capPtr).SetAlignment(8);
             _builder.BuildStore(rawDataPtr, dataFieldPtr).SetAlignment(8);
 
-            // 5. Populate Elements (This is where the vectorization potential is created)
+            // 5. Populate Elements (Static elements only)
             var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(elementType, 0), "typed_ptr");
-
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
                 var elementPtr = _builder.BuildGEP2(elementType, typedDataPtr, new[] { idx }, "elem_ptr");
-
-                var store = _builder.BuildStore(val, elementPtr);
-
-                // If it's a primitive, we provide alignment hints to help the LoopVectorize pass
-                if (isPrimitive)
-                {
-                    // For doubles/i64, alignment 8 is enough for LLVM to attempt SIMD
-                    store.SetAlignment(8);
-                }
-                else
-                {
-                    store.SetAlignment(8); // Pointers are always 8
-                }
+                _builder.BuildStore(val, elementPtr).SetAlignment(8);
             }
 
             return headerRaw;
@@ -4797,28 +4758,45 @@ namespace MyCompiler
         {
             return LLVMTypeRef.CreatePointer(GetOrCreateDataframeType(), 0);
         }
+
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
 
             var colsPtr = Visit(expr.Columns);
-            var rowsPtr = Visit(expr.Rows);
+
+            // --- OPTIMIZATION START ---
+            LLVMValueRef rowsPtr;
+            if (expr.CapacityExpression != null)
+            {
+                // 1. Evaluate the capacity (e.g., the length of the source dataframe)
+                var capVal = Visit(expr.CapacityExpression);
+
+                // 2. Pass this capacity to the rows ArrayNode before visiting it
+                expr.Rows.CapacityExpression = expr.CapacityExpression;
+
+                // 3. Now visiting expr.Rows will use the pre-allocated capacity
+                rowsPtr = Visit(expr.Rows);
+            }
+            else
+            {
+                rowsPtr = Visit(expr.Rows);
+            }
+            // --- OPTIMIZATION END ---
 
             var dfType = expr.Type as DataframeType ?? throw new Exception("Expected dataframe type.");
 
-            // Create the datatype array with capacity = count (No extra padding)
+            // ... rest of your code for dataTypes ...
             var datatypeNodes = dfType.DataTypes
                 .Select(t => new NumberNode(GetTypeByTag(t)))
                 .Cast<ExpressionNode>()
                 .ToList();
 
-            // Use the explicit capacity constructor
             var datatypeArray = new ArrayNode(datatypeNodes, (uint)datatypeNodes.Count);
             var dataTypesPtr = Visit(datatypeArray);
 
             var dfStructType = GetOrCreateDataframeType();
-            // Use BuildMalloc for the header (managed by LLVM)
             var dfPtr = _builder.BuildMalloc(dfStructType, "df_header");
 
             _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
@@ -5230,11 +5208,14 @@ namespace MyCompiler
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
 
+        # MAP:
         df.map(x => x.latitude - 100.0)
         df.map(x => x + {latitude: x.latitude - 100.0})
         df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
         df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
 
+        # min, max, mean & sum:
+        df_min = df_lat.min; df_max = df_lat.max; df_mean = df_lat.mean; df_sum = df_lat.sum;
 */
 
 

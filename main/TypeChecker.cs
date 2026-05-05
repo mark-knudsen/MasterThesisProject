@@ -490,6 +490,17 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNode expr)
         {
+            // NEW: Typecheck the capacity hint if it exists
+            if (expr.CapacityExpression != null)
+            {
+                Type capType = Visit(expr.CapacityExpression);
+                if (capType is not IntType)
+                {
+                    // Optional: Force it to int if your JIT expects i64
+                    // throw new Exception("Capacity must be an integer");
+                }
+            }
+
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
@@ -1084,7 +1095,7 @@ namespace MyCompiler
                 else
                     throw new Exception($"Field '{expr.IdField}' not found in record.");
             }
-            else if(SourceType is DataframeType dfType)
+            else if (SourceType is DataframeType dfType)
             {
                 // 4. Look up the field label in the dataframe definition
                 int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
@@ -1100,7 +1111,7 @@ namespace MyCompiler
 
             expr.SetType(resolvedFieldType);
             return resolvedFieldType;
-        }  
+        }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
@@ -1113,6 +1124,11 @@ namespace MyCompiler
 
         public Type VisitDataframe(DataframeNode expr)
         {
+            if (expr.CapacityExpression != null)
+            {
+                Visit(expr.CapacityExpression);
+            }
+
             // List<Type> columnTypes;
             RecordType rowType = new RecordType(new List<RecordField>());
             // 1. Extract and Normalize Columns
@@ -1153,6 +1169,7 @@ namespace MyCompiler
 
         private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
         {
+
             if (expr.Type is Type type)
                 return type;
 

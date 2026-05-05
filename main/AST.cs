@@ -272,18 +272,26 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparison(this);
     }
+
     public class ArrayNode : ExpressionNode
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public uint Capacity { get; } // Now non-nullable for deterministic sizing
+        public ExpressionNode CapacityExpression { get; set; }
 
-        public ArrayNode(List<ExpressionNode> elements, uint? explicitCapacity = null)
+        // Update constructor to handle both fixed uint and dynamic ExpressionNodes
+        public ArrayNode(List<ExpressionNode> elements, object capacity = null)
         {
             Elements = elements;
-            // Optimization: Use exact count if no capacity is forced. 
-            // This prevents OOM on large datasets with many small internal arrays.
-            Capacity = explicitCapacity ?? (uint)elements.Count;
+
+            // FIXES CS1503: Handle cases where uint is passed instead of ExpressionNode
+            // Inside ArrayNode constructor
+            if (capacity is uint u)
+                CapacityExpression = new NumberNode((int)u); // Explicit cast fixes CS1503
+            else if (capacity is ExpressionNode exp)
+                CapacityExpression = exp;
+            else
+                CapacityExpression = null;
 
             if (elements.Count > 0)
                 ElementType = elements[0].Type;
@@ -292,6 +300,10 @@ namespace MyCompiler
 
             Type = new ArrayType(ElementType);
         }
+
+        // ADD THIS PROPERTY: To fix CS1061 
+        // Some of your code is looking for '.Capacity'. We redirect it to the expression if it's a number.
+        public uint Capacity => (CapacityExpression is NumberNode n) ? (uint)n.Value : (uint)Elements.Count;
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
     }
@@ -340,6 +352,8 @@ namespace MyCompiler
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
         public ExpressionNode Condition { get; }
+        // ADD THIS LINE
+        public ExpressionNode CapacityExpression { get; set; }
 
         public WhereNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode condition)
         {
@@ -689,6 +703,9 @@ namespace MyCompiler
         public ArrayNode Columns { get; }
         public ArrayNode Rows { get; }
         public ArrayNode DataTypes { get; }
+
+        // ADD THIS: To fix CS0117
+        public ExpressionNode CapacityExpression { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
