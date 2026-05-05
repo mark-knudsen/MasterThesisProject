@@ -287,7 +287,7 @@ namespace MyCompiler
             DeclareDataframeStruct();
             SetupCsvFunctions();
         }
-        void StopStopWatch(string testName = null)
+        double StopStopWatch(string testName = null)
         {
             sw.Stop();
             if (testName is not null)
@@ -298,7 +298,10 @@ namespace MyCompiler
             Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
+
+            return sw.Elapsed.TotalMilliseconds;
         }
+
 
         private unsafe void RegisterNativeFunc(LLVMOrcOpaqueJITDylib* dylib, string name, IntPtr fnAddr)
         {
@@ -507,6 +510,9 @@ namespace MyCompiler
             _builder = builder;
         }
 
+        public List<double> compilerTestList = new List<double>();
+        public List<double> IRTestList = new List<double>();
+        public List<double> RuntimeTestList = new List<double>();
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
             _debug = debug;
@@ -521,11 +527,19 @@ namespace MyCompiler
             DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
+            if (!_stopwatch)
+            {
+                compilerTestList = new List<double>();
+                IRTestList = new List<double>();
+                RuntimeTestList = new List<double>();
 
+            }
             if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
-            if (_stopwatch) StopStopWatch("Ran codegen");
+            if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
 
+
+            if (_stopwatch) StartStopWatch();
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
@@ -548,13 +562,25 @@ namespace MyCompiler
             // 7 Call it
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
+            if (_stopwatch) IRTestList.Add(StopStopWatch("Ran IR codegen"));
 
-            var tempResult = delegateResult();
-            if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
 
             if (_stopwatch) StartStopWatch();
+            var tempResult = delegateResult();
+            if (_stopwatch) RuntimeTestList.Add(StopStopWatch("Ran program"));
+
+            if (_stopwatch)
+            {
+                Console.WriteLine($"\ncompiler list: \n{string.Join(", ", compilerTestList)}");
+                Console.WriteLine($"\nIR list: \n{string.Join(", ", IRTestList)}");
+                Console.WriteLine($"\nRuntime list: \n{string.Join(", ", RuntimeTestList)}");
+            }
+
+
+
+            if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
+
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
-            if (_stopwatch) StopStopWatch("Ran compiler");
 
             switch ((ValueTag)result.tag)
             {
@@ -602,7 +628,10 @@ namespace MyCompiler
             }
 
             return result;
+
         }
+
+
 
         private string HandleArray(IntPtr arrayObjPtr, Type type)
         {
@@ -5244,7 +5273,7 @@ namespace MyCompiler
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
          for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
 
-        df.subset(["latitude", "longitude"])
+        df.select(["latitude", "longitude"])
 
         df.where(x => x.latitude > -18.0)
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
