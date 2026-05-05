@@ -887,10 +887,6 @@ namespace MyCompiler
             var sourceType = Visit(expr.SourceExpression);
             var addType = Visit(expr.AddExpression);
 
-            System.Console.WriteLine("yo addExpr is: " + expr.AddExpression + " and its type is: " + addType);
-            // System.Console.WriteLine("the add exp indexExpr is: " + (expr.AddExpression as IndexNode).IndexExpression);
-            // System.Console.WriteLine("the add exp sourceExpr is: " + (expr.AddExpression as IndexNode).SourceExpression);
-
             if (sourceType is DataframeType dfType)
             {
                 if (addType is not RecordType recType)

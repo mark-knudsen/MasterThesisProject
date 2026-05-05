@@ -310,7 +310,7 @@ namespace MyCompiler
 
             //_lastNode = GetLastExpression(expr);
 
-            var programedResult = GetProgramResult(expr);
+            var programedResult = GetLastExpression(expr);
 
             if (programedResult == null) return new VoidType();
             if (programedResult is ExpressionNode exp) return exp.Type;
@@ -443,11 +443,10 @@ namespace MyCompiler
                 case ValueTag.Record:
                     if (_debug) Console.WriteLine("return Record");
 
-                    if (prediction is RecordType recType) // record(["name", "age"],["dan", 100]) 
-                    {
+                    if (prediction is RecordType recType)
                         return HandleRecord(result.data, recType);
-                    }
-                    return "Record Failure";
+
+                    throw new Exception("Run time object failed for tag record");
 
                 case ValueTag.Dataframe:
                     if (_debug) Console.WriteLine("return Dataframe");
@@ -469,7 +468,7 @@ namespace MyCompiler
         {
             if (arrayObjPtr == IntPtr.Zero) return "[]";
 
-            var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr); 
+            var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
             var elementType = ((ArrayType)type).ElementType;
             var elements = new List<object>();
             var stride = (elementType is BoolType) ? 1 : 8;
@@ -503,10 +502,10 @@ namespace MyCompiler
 
         private string HandleRecord(IntPtr dataPtr, RecordType record)
         {
-            if (dataPtr == IntPtr.Zero) return "{ empty }";
+            if (dataPtr == IntPtr.Zero) return "{ empty record }";
 
             var result = new Dictionary<string, object>();
-            int fieldSize = 8; // Assuming 64-bit alignment for all fields
+            int fieldSize = 8;
 
             if (_debug) Console.WriteLine("Record type: " + record);
             if (_debug) Console.WriteLine("Record type count: " + record.RecordFields?.Count);
@@ -515,55 +514,55 @@ namespace MyCompiler
             {
                 var rec = record.RecordFields[i];
                 string label = rec.Label;
-                Type recType = rec.Value.Type;
 
-                if (_debug) Console.WriteLine($"Record {i} - label: {label}, type: {recType}");
+                Type recType = rec.Type;
+                if (_debug) Console.WriteLine($"Label: {label}, type: {recType}");
 
-                // Calculate the address where this specific field is stored inside the record
                 IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
+                IntPtr ptr = fieldLocation;
+                //IntPtr ptr = Marshal.ReadIntPtr(fieldLocation); // we should have to do this
 
                 switch (recType)
                 {
                     case IntType:
-                        // Read 8 bytes directly as a long/int64
-                        result[label] = Marshal.ReadInt64(fieldLocation);
+                        result[label] = Marshal.ReadInt64(ptr);
                         break;
-
                     case FloatType:
-                        // Read the 8 bytes as a long, then convert the bits to a double
-                        long doubleBits = Marshal.ReadInt64(fieldLocation);
-                        result[label] = BitConverter.Int64BitsToDouble(doubleBits);
+                        result[label] = BitConverter.Int64BitsToDouble(Marshal.ReadInt64(ptr));
                         break;
-
                     case BoolType:
-                        // LLVM i1 is usually stored as a single byte (0 or 1) 
-                        // but padded to the field size in a struct.
-                        byte boolVal = Marshal.ReadByte(fieldLocation);
-                        result[label] = boolVal != 0;
+                        result[label] = Marshal.ReadByte(ptr) != 0;
                         break;
-
                     case StringType:
-                        // The record contains a pointer (address) to the string data
-                        IntPtr stringPtr = Marshal.ReadIntPtr(fieldLocation);
-
-                        if (stringPtr == IntPtr.Zero)
-                        {
-                            result[label] = "null";
-                        }
-                        else
-                        {
-                            // Use PtrToStringAnsi for C-style strings (null-terminated)
-                            result[label] = Marshal.PtrToStringAnsi(stringPtr);
-                        }
+                    System.Console.WriteLine("we got string");
+                    System.Console.WriteLine("" + ptr is null);
+                    System.Console.WriteLine("ptr" + ptr);
+                        result[label] = ptr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(ptr);
+                        System.Console.WriteLine("we got result: " + result[label]);
                         break;
-
+                    case RecordType recT:
+                        result[label] = HandleRecord(ptr, recT);
+                        break;
+                    case ArrayType arrT:
+                        result[label] = HandleArray(ptr, arrT);
+                        break;
                     default:
                         result[label] = "Unknown Type";
                         break;
                 }
             }
+            System.Console.WriteLine("hi");
 
-            return "{ " + string.Join(", ", result.Select(kv => $"{kv.Key}: {kv.Value}")) + " }";
+            // Standardize formatting here using InvariantCulture
+            var entries = result.Select(kv =>
+            {
+                string valStr = kv.Value is IFormattable f
+                    ? f.ToString()
+                    : kv.Value?.ToString() ?? "null";
+                return $"{kv.Key}: {valStr}";
+            });
+
+            return "{ " + string.Join(", ", entries) + " }";
         }
 
         private Dictionary<int, object> ExtractArrayIndexed(IntPtr arrayObjPtr, ArrayType type, List<int> indices)
@@ -671,7 +670,7 @@ namespace MyCompiler
 
             // --- Index width (dynamic) ---
             int indexWidth = Math.Max(
-                "idx".Length,
+                "index".Length,
                 rowCount > 0 ? (rowCount - 1).ToString().Length : 1
             );
 
@@ -696,7 +695,7 @@ namespace MyCompiler
             var lines = new List<string>();
 
             // Header
-            lines.Add(FormatRow("idx", type.ColumnNames.ToList()));
+            lines.Add(FormatRow("index", type.ColumnNames.ToList()));
 
             // Separator
             lines.Add(separator);
@@ -731,14 +730,6 @@ namespace MyCompiler
 
             return "Dataframe:\n" + indented;
         }
-
-        // dataframe(["name", "age", "score", "isCool"], [["dan", 30, 1.1, true]])
-        // dataframe(["name", "age"], [["dan", 30], ["alice", 25]])
-        // x = dataframe(["name", "title", "age", "score"], [["dan", "prince", 30, 1.1], ["alice", "princess", 25, 2.2], ["bob", "knight", 40, 0.5], ["charlie", "lord", 22, 958.1], ["harry", "wizard", 52, 924.8]])
-        // x = dataframe(["name", "title", "age", "score"], [["dan", "prince", 30, 1.1], ["alice", "princess", 25, 2.2], ["bob", "knight", 40, 0.5], ["charlie", "lord", 22, 958.1]])
-
-        // this one wont work
-        // dataframe(["name", "age", "score", "isCool"], [["dan", 30, 1.1, true], ["alice", 25, 2.2, false],["alice", 25, 2.2, false]])
 
         private LLVMValueRef BoxValue(LLVMValueRef value, Type type)
         {
