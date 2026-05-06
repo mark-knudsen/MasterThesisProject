@@ -3352,7 +3352,7 @@ namespace MyCompiler
 
                 var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { indexVal }, "elem_ptr");
                 var loadedValue = _builder.BuildLoad2(llvmElementType, elementPtr, "loaded_val");
-                loadedValue.SetAlignment(8);
+                //loadedValue.SetAlignment(8);
 
                 return arrayType.ElementType switch
                 {
