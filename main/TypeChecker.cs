@@ -134,7 +134,7 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
-            System.Console.WriteLine("we set " + expr.Name + " to type: " + entry.Type);
+            Console.WriteLine("we set " + expr.Name + " to type: " + entry.Type);
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -502,7 +502,6 @@ namespace MyCompiler
 
                 if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
 
-                System.Console.WriteLine("the element type: " + expr.ElementType + " the index type: " + indexType);
                 // if (expr.ElementType.GetType() != indexType.GetType())
                 //     throw new Exception("Not all elements are of the same type, which is not allowed in an array");
             }
@@ -536,10 +535,8 @@ namespace MyCompiler
                     inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
                 else if (entry?.Type is DataframeType dfType)
                 {
-                    System.Console.WriteLine("is index a dataframe? and the indexType is?: " + indexType);
                     if (indexType is StringType)
                     {
-                        System.Console.WriteLine("is index indexType a string?");
                         Type columnType = new IntType();
                         for (int i = 0; i < dfType.ColumnNames.Count; i++)
                         {
@@ -640,9 +637,6 @@ namespace MyCompiler
 
                 if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
                     throw new Exception("Dataframe has duplicate column names");
-
-                // --- Create empty result dataframe with same schema (no index duplication) ---
-
             }
 
             var condType = Visit(expr.Condition);
@@ -650,32 +644,6 @@ namespace MyCompiler
                 throw new Exception("where condition must return bool");
 
             // Set the type of the Where expression to match source
-            expr.SetType(expr.SourceExpression.Type);
-            return expr.Type;
-        }
-
-        public Type VisitWhere2(WhereNode expr)
-        {
-            if (_debug) Console.WriteLine("The array node in where: " + expr.SourceExpression);
-            Visit(new AssignNode(expr.IteratorId.Name, new NumberNode(0)));
-
-            System.Console.WriteLine("we set the assign node for the iterator");
-            Visit(expr.IteratorId);
-            System.Console.WriteLine("yo we visited iteratorId");
-            var condType = Visit(expr.Condition);
-            System.Console.WriteLine("yo we set condition");
-            var arrayType = Visit(expr.SourceExpression);
-            System.Console.WriteLine("we set the source expr in where");
-            System.Console.WriteLine("where sourceExpression type: " + arrayType);
-
-            if (arrayType is not ArrayType)
-                throw new Exception("where can only be used on arrays");
-
-            // 5. Check condition
-            if (condType is not BoolType)
-                throw new Exception("where condition must return bool");
-
-            // 2. Determine element type (adjust depending on your language)
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
@@ -1041,34 +1009,7 @@ namespace MyCompiler
             return recordType;
         }
 
-
         public Type VisitField(FieldNode expr)
-        {
-            Visit(expr.SourceExpression);
-            Type recordFieldType = new IntType();
-
-            if (expr.SourceExpression is IdNode idNode)
-            {
-                var entry = _context.Get(idNode.Name);
-                Console.WriteLine("entry type: " + entry?.Type);
-                if (entry?.Type is RecordType recType)
-                {
-                    Console.WriteLine("we have the record: " + recType);
-                    foreach (var item in recType.RecordFields)
-                    {
-                        if (expr.IdField == item.Label) recordFieldType = item.Value.Type;
-                        Console.WriteLine("rec field label: " + item.Label);
-                        Console.WriteLine("rec field value: " + item.Value);
-                    }
-                }
-            }
-
-            Console.WriteLine("rec field: " + recordFieldType);
-            expr.SetType(recordFieldType);
-            return recordFieldType;
-        }
-
-        public Type VisitField2(FieldNode expr)
         {
             // 1. Visit the record source (could be an Id, an Index df[2], a Function call, etc.)
             Type SourceType = Visit(expr.SourceExpression);
@@ -1103,9 +1044,7 @@ namespace MyCompiler
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 
             expr.SetType(resolvedFieldType);
-
-            System.Console.WriteLine("yo the resolved type is: " + expr.Type);
-            return expr.Type;
+            return resolvedFieldType;
         }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
@@ -1121,9 +1060,7 @@ namespace MyCompiler
         {
             Visit(expr.Columns);
             Visit(expr.Data); // the data is empty
-            System.Console.WriteLine(" you do we have data types?: " + expr.DataTypes is not null);
             Visit(expr.DataTypes);
-            System.Console.WriteLine(" you we done visiting datatypes");
             return expr.Type;
         }
 

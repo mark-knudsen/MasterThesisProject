@@ -145,7 +145,7 @@ public class CompilerIntegrationTest
             if (process.ExitCode != 0) // this should be the return value, we don't want to trhow an error tough
             {
                 var d = process.ExitCode;
-                System.Console.WriteLine(d);
+                Console.WriteLine(d);
                 //throw new Exception($"Clang compilation failed: {error}");
             }
 

@@ -240,7 +240,7 @@ namespace MyCompiler.Tests
             Program.Main(new string[] { "True" });
 
             var output = Program.OutputBuffer.ToString();
-            System.Console.WriteLine("output:" + output);
+            Console.WriteLine("output:" + output);
 
             var lines = outputWriter.ToString()
                 .Split(Environment.NewLine)
@@ -271,7 +271,7 @@ namespace MyCompiler.Tests
             Program.Main(new string[] { "True" });
 
             var output = Program.OutputBuffer.ToString();
-            System.Console.WriteLine("output:" + output);
+            Console.WriteLine("output:" + output);
 
             var lines = outputWriter.ToString()
                 .Split(Environment.NewLine)

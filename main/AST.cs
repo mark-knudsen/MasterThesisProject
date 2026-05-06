@@ -709,9 +709,6 @@ namespace MyCompiler
                 }
             }
 
-            //bool hasData = Data != null;
-            //bool hasTypes = DataTypes != null;
-
             if (positional.Count > 2)
                 throw new Exception("Too many positional arguments for dataframe");
 
@@ -810,25 +807,6 @@ namespace MyCompiler
                 _ => throw new Exception("Unsupported type for inference")
             };
         }
-        private ExpressionNode InferNode(object value)
-        {
-            return value switch
-            {
-                int => new NumberNode(0),
-                double => new FloatNode(0),
-                string => new StringNode(""),
-                bool => new BooleanNode(false),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
-
-        private bool IsTypeArray(ExpressionNode node)
-        {
-            if (node is not ArrayNode arr)
-                return false;
-
-            return arr.Elements.All(e => e is TypeNode || e is TypeLiteralNode);
-        }
 
         private ExpressionNode TypeToNode(Type type)
         {
@@ -842,17 +820,6 @@ namespace MyCompiler
             };
         }
 
-        private ExpressionNode InferNodeFromString(string val)
-        {
-            return val switch
-            {
-                "string" => new StringNode(""),
-                "int" => new NumberNode(0),
-                "float" => new FloatNode(0),
-                "bool" => new BooleanNode(false),
-                _ => throw new Exception($"Unsupported value type: {val.GetType().Name}")
-            };
-        }
         private List<string> ExtractColumns()
         {
             var arr = Columns as ArrayNode
@@ -897,7 +864,6 @@ namespace MyCompiler
 
             return arr.Elements.Select(node =>
             {
-                System.Console.WriteLine("the datatypes are: " + node);
                 if (node is TypeLiteralNode t)
                     return InferFromString(t.TypeNode.Name); // or t.Type
 
@@ -912,14 +878,6 @@ namespace MyCompiler
                 throw new Exception("Cannot infer types from empty data");
 
             return data[0].Select(Infer).ToList();
-        }
-
-        private List<ExpressionNode> InferNode(List<List<object>> data)
-        {
-            if (data.Count == 0)
-                throw new Exception("Cannot infer types from empty data");
-
-            return data[0].Select(InferNode).ToList();
         }
 
         private Type InferFromString(string value)
@@ -948,194 +906,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitDataframe(this);
     }
-
-
-    // public class DataframeNode : ExpressionNode
-    // {
-    //     public ExpressionNode Columns { get; private set; }
-    //     public ExpressionNode Data { get; private set; }
-    //     public ExpressionNode DataTypes { get; private set; }
-
-    //     public DataframeMode Mode { get; private set; }
-
-    //     public DataframeNode(List<NamedArgumentNode> args)
-    //     {
-    //         var positional = new List<ExpressionNode>();
-
-    //         // -------------------------
-    //         // 1. Collect arguments
-    //         // -------------------------
-    //         foreach (var arg in args)
-    //         {
-    //             if (arg.Name == null)
-    //             {
-    //                 positional.Add(arg.Value);
-    //                 continue;
-    //             }
-
-    //             switch (arg.Name)
-    //             {
-    //                 case "columns":
-    //                     Columns = arg.Value;
-    //                     break;
-
-    //                 case "data":
-    //                     Data = arg.Value;
-    //                     break;
-
-    //                 case "type":
-    //                 case "types":
-    //                     DataTypes = arg.Value;
-    //                     break;
-
-    //                 default:
-    //                     throw new Exception($"Unknown dataframe argument '{arg.Name}'");
-    //             }
-    //         }
-
-    //         // -------------------------
-    //         // 2. Positional fallback
-    //         // -------------------------
-    //         if (Columns == null && positional.Count > 0)
-    //             Columns = positional[0];
-
-    //         if (Data == null && positional.Count > 1)
-    //             Data = positional[1];
-
-    //         // -------------------------
-    //         // 3. Mode resolution
-    //         // -------------------------
-    //         bool hasData = Data != null;
-    //         bool hasTypes = DataTypes != null;
-
-    //         if (hasData && hasTypes)
-    //             throw new Exception("Cannot specify both 'data' and 'type' in dataframe");
-
-    //         if (Columns == null)
-    //             throw new Exception("Dataframe requires 'columns'");
-
-    //         if (!hasData && !hasTypes)
-    //             throw new Exception("Dataframe must specify either 'data' or 'type'");
-
-    //         Mode = hasData ? DataframeMode.DataDriven : DataframeMode.SchemaOnly;
-
-    //         if (!hasData) Data = new ArrayNode(new List<ExpressionNode>()); // empty
-    //         System.Console.WriteLine("the data in ctor: " + Data);
-
-    //         // -------------------------
-    //         // 4. Build runtime type
-    //         // -------------------------
-    //         Type = CreateDataframeType();
-    //     }
-
-    //     private DataframeType CreateDataframeType()
-    //     {
-    //         var columns = ExtractColumns();
-
-    //         if (Mode == DataframeMode.DataDriven)
-    //         {
-    //             var data = ExtractData();
-    //             var inferredTypes = InferTypes(data);
-
-    //             return new DataframeType(columns, data, inferredTypes);
-    //         }
-
-    //         // Schema-only mode
-    //         var explicitTypes = ExtractTypes();
-    //         var emptyData = new List<List<object>>();
-
-    //         return new DataframeType(columns, emptyData, explicitTypes);
-    //     }
-    //     private List<string> ExtractColumns()
-    //     {
-    //         if (Columns is not ArrayNode arr)
-    //             throw new Exception("columns must be an array");
-
-    //         return arr.Elements.Select(e =>
-    //         {
-    //             if (e is StringNode s)
-    //                 return s.Value;
-
-    //             throw new Exception("column names must be strings");
-    //         }).ToList();
-    //     }
-    //     private List<List<object>> ExtractData()
-    //     {
-    //         if (Data is not ArrayNode outer)
-    //             throw new Exception("data must be an array of rows");
-
-    //         return outer.Elements.Select(row =>
-    //         {
-    //             if (row is not ArrayNode inner)
-    //                 throw new Exception("each row must be an array");
-
-    //             return inner.Elements.Select(ValueOf).ToList();
-    //         }).ToList();
-    //     }
-    //     private object ValueOf(ExpressionNode node)
-    //     {
-    //         return node switch
-    //         {
-    //             NumberNode n => n.Value,
-    //             FloatNode f => f.Value,
-    //             StringNode s => s.Value,
-    //             BooleanNode b => b.Value,
-    //             _ => throw new Exception($"Unsupported value: {node.GetType().Name}")
-    //         };
-    //     }
-    //     private List<Type> ExtractTypes()
-    //     {
-    //         if (DataTypes is not ArrayNode arr)
-    //             throw new Exception("type must be an array");
-
-    //         return arr.Elements.Select(node =>
-    //         {
-    //             System.Console.WriteLine("extract type for node: " + node);
-    //             System.Console.WriteLine("extract type for node: " + node.Type);
-    //             if (node is TypeLiteralNode t)
-    //             {
-    //                 var val = InferTypeFromString(t.TypeNode.Name);
-    //                 System.Console.WriteLine("the infered type is: " + val);
-    //                 return val;
-    //             }
-
-
-    //             throw new Exception("types must be type literals");
-    //         }).ToList();
-    //     }
-    //     private List<Type> InferTypes(List<List<object>> data)
-    //     {
-    //         if (data.Count == 0)
-    //             throw new Exception("Cannot infer types from empty data");
-
-    //         return data[0].Select(Infer).ToList();
-    //     }
-
-    //     private Type InferTypeFromString(string val)
-    //     {
-    //         return val switch
-    //         {
-    //             "string" => new StringType(),
-    //             "int" => new IntType(),
-    //             "float" => new FloatType(),
-    //             "bool" => new BoolType()
-    //         };
-    //     }
-
-    //     private Type Infer(object value)
-    //     {
-    //         return value switch
-    //         {
-    //             int => new IntType(),
-    //             double => new FloatType(),
-    //             string => new StringType(),
-    //             bool => new BoolType(),
-    //             _ => throw new Exception("Unsupported type for inference")
-    //         };
-    //     }
-    //     public override LLVMValueRef Accept(IExpressionVisitor visitor)
-    //         => visitor.VisitDataframe(this);
-    // }
 
     public class ColumnsNode : ExpressionNode
     {
