@@ -5229,18 +5229,37 @@ namespace MyCompiler
 
         df.select(["latitude", "longitude"])
 
+        # TEST: WHERE
         df.where(x => x.latitude > -18.0)
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
 
-        # MAP:
+        # TEST: MAP
         df.map(x => x.latitude - 100.0)
         df.map(x => x + {latitude: x.latitude - 100.0})
         df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
         df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
 
-        # min, max, mean & sum:
+
+        # TEST: MIN, MAX, MEAN & SUM
+        df_lat = df.map(x => x.latitude);
         df_min = df_lat.min; df_max = df_lat.max; df_mean = df_lat.mean; df_sum = df_lat.sum;
+
+
+        # TEST: WHERE on array (VECTOR TEST)
+        df_lat = df.map(x => x.latitude)
+        df_lat.where(x => x > -18.0)
+        df_lat.where(x => x > -18.0).where(x => x <  -16.0)
+
+
+        # TEST: MAP on array (VECTOR TEST)
+        df_lat = df.map(x => x.latitude)
+        df_lat.map(x => x + 100.0)
+        df_lat.map(x => x + 100.0).map(x => x - 0.05)
+
+
+        # TEST: corr        
+        df.latitude.corr(df.wind-speed-max)
 
 
         compiler list: 
