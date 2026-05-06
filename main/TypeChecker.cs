@@ -495,6 +495,8 @@ namespace MyCompiler
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
+            if(expr.Elements.Count == 0 ) System.Console.WriteLine("DANGER DANGER, we have a empty array, but that is ok for a dataframe");
+
             for (int i = 1; i < expr.Elements.Count; i++)
             {
                 Type indexType = Visit(expr.Elements[i]);

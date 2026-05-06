@@ -673,12 +673,12 @@ namespace MyCompiler
     public class DataframeNode : ExpressionNode
     {
         public ExpressionNode Columns { get; }
-        public ExpressionNode Data { get; }
+        public ExpressionNode Data { get; private set;}
         public ExpressionNode DataTypes { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            Data = new ArrayNode(new List<ExpressionNode>());
+            //Data = new ArrayNode(new List<ExpressionNode>());
             var positional = new List<ExpressionNode>();
 
             foreach (var arg in args)
@@ -729,13 +729,14 @@ namespace MyCompiler
             }
 
             Type = BuildDataframeType();
-            
+
             if (DataTypes == null)
                 throw new Exception("Dataframe must contain types.");
         }
 
         private DataframeType BuildDataframeType()
         {
+            System.Console.WriteLine("we building dataframe type");
             var columns = ExtractColumns();
 
             Type inferredType;
@@ -743,10 +744,35 @@ namespace MyCompiler
             // CASE 1: no data → schema-only dataframe
             if (Data == null)
             {
+                System.Console.WriteLine("and we don't have data");
                 if (DataTypes == null)
                     throw new Exception("Empty dataframe requires explicit types");
 
                 var types = ExtractTypes();
+
+                var dataArr2 = Data as ArrayNode;
+
+                bool isEmpty = dataArr2 == null || dataArr2.Elements.Count == 0;
+
+                if (isEmpty)
+                {
+                    System.Console.WriteLine("yo we in here and setting the array element type");
+                    // Build columnar empty data
+                    Data = new ArrayNode(
+                        types.Select(t =>
+                            (ExpressionNode)new ArrayNode(new List<ExpressionNode>())
+                            {
+                                ElementType = t
+                            }
+                        ).ToList()
+                    );
+
+                    return new DataframeType(
+                        columns,
+                        types,
+                        BuildRecordType(columns, types)
+                    );
+                }
 
                 inferredType = BuildRecordType(columns, types);
 
