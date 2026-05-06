@@ -140,116 +140,97 @@ namespace MyCompiler
 
         public Type VisitBinary(BinaryOpNode expr)
         {
-            Type leftType = new NullType();
-            Type rightType = new NullType();
+            // 1. Visit children EXACTLY once
+            Type leftType = Visit(expr.Left);
+            Type rightType = Visit(expr.Right);
 
+            // 2. Immediate safety check
+            if (leftType == null || rightType == null)
+            {
+                throw new Exception($"Type resolution failed for BinaryOp {expr.Operator}. " +
+                                    $"Left: {expr.Left?.GetType().Name ?? "null"}, " +
+                                    $"Right: {expr.Right?.GetType().Name ?? "null"}");
+            }
+
+            // 3. Handle specific operator behavior (like floating point promotion for division)
             if (expr.Operator == "/")
             {
-                expr.Left = InsertCast(expr.Left, Visit(expr.Left), new FloatType());
-                expr.Right = InsertCast(expr.Right, Visit(expr.Right), new FloatType());
+                expr.Left = InsertCast(expr.Left, leftType, new FloatType());
+                expr.Right = InsertCast(expr.Right, rightType, new FloatType());
 
-                leftType = Visit(expr.Left);
-                rightType = Visit(expr.Right);
-            }
-            else
-            {
-                leftType = Visit(expr.Left);
-                rightType = Visit(expr.Right);
+                // Update local types to reflect the new casts
+                leftType = new FloatType();
+                rightType = new FloatType();
             }
 
-            // Helper to check if a type is numeric (Int or Float)
+            // Helper to check if a type is numeric
             bool isLeftNum = leftType is IntType || leftType is FloatType;
             bool isRightNum = rightType is IntType || rightType is FloatType;
 
             if (expr.Operator == "+")
             {
-                // 1. Handle Numeric Addition (allow mixing Int and Float)
+                // Numeric Addition
                 if (isLeftNum && isRightNum)
                 {
-                    // If both are Int, result is Int. If any is Float, promote to Float.
                     Type resultType = (leftType is FloatType || rightType is FloatType) ? new FloatType() : new IntType();
                     expr.SetType(resultType);
-                    return expr.Type;
-                }
-                // 2. Handle String Concatenation (Updated to allow Mixed Types)
-                if (expr.Operator == "+")
-                {
-                    // If either side is a string, the result is a string
-                    if (leftType is StringType || rightType is StringType)
-                    {
-                        expr.SetType(new StringType());
-                        return expr.Type;
-                    }
+                    return resultType;
                 }
 
+                // String Concatenation
+                if (leftType is StringType || rightType is StringType)
+                {
+                    expr.SetType(new StringType());
+                    return new StringType();
+                }
+
+                // Record Merging
                 if (leftType is RecordType l && rightType is RecordType r)
                 {
                     var resultFields = new List<RecordField>();
-
                     var rhsMap = r.RecordFields.ToDictionary(f => f.Label);
 
-                    // 1. Preserve LHS order
                     foreach (var lf in l.RecordFields)
                     {
-                        if (rhsMap.TryGetValue(lf.Label, out var rf))
-                        {
-                            // override type from RHS
-                            resultFields.Add(rf);
-                        }
-                        else
-                        {
-                            resultFields.Add(lf);
-                        }
+                        if (rhsMap.TryGetValue(lf.Label, out var rf)) resultFields.Add(rf);
+                        else resultFields.Add(lf);
                     }
 
-                    // 2. Append RHS-only fields
                     var lhsLabels = l.RecordFields.Select(f => f.Label).ToHashSet();
-
                     foreach (var rf in r.RecordFields)
                     {
-                        if (!lhsLabels.Contains(rf.Label))
-                        {
-                            resultFields.Add(rf);
-                        }
+                        if (!lhsLabels.Contains(rf.Label)) resultFields.Add(rf);
                     }
 
                     var mergedType = new RecordType(resultFields);
                     expr.SetType(mergedType);
                     return mergedType;
                 }
-
-                throw new Exception($"Invalid operands {leftType} and {rightType} for +");
             }
 
+            // Handle Arithmetic (-, *, /)
             if (expr.Operator is "-" or "*" or "/")
             {
-                // Allow math on any numeric types
                 if (isLeftNum && isRightNum)
                 {
-                    Type resultType = (leftType is FloatType || rightType is FloatType)
-                                        ? new FloatType() : new IntType();
+                    Type resultType = (leftType is FloatType || rightType is FloatType) ? new FloatType() : new IntType();
                     expr.SetType(resultType);
-                    return expr.Type;
+                    return resultType;
                 }
-
-                throw new Exception($"Arithmetic operator {expr.Operator} requires numeric types, got {leftType} and {rightType}");
             }
 
-            // Handle Comparisons (==, !=, <, >)
+            // Handle Comparisons
             if (expr.Operator is "==" or "!=" or "<" or ">")
             {
-                // For comparisons, we just need the types to be compatible 
-                // (e.g., comparing a Float and an Int is fine)
-                if (isLeftNum && isRightNum || leftType == rightType)
+                if ((isLeftNum && isRightNum) || leftType.GetType() == rightType.GetType())
                 {
                     expr.SetType(new BoolType());
-                    return expr.Type;
+                    return new BoolType();
                 }
             }
 
             throw new Exception($"Unknown operator {expr.Operator} or type mismatch: {leftType} and {rightType}");
         }
-
         public Type VisitCast(CastNode expr)
         {
             Type fromType = Visit(expr.Expression);
@@ -679,33 +660,49 @@ namespace MyCompiler
 
         public Type VisitMap(MapNode expr)
         {
+            // 1. Resolve the source (could be a Dataframe or another MapNode result)
             var sourceType = Visit(expr.SourceExpr);
-            Type iteratorType;
+            if (sourceType == null)
+                throw new Exception("Source type for map could not be resolved.");
 
+            // 2. Extract the row/element type to use for the iterator
+            Type iteratorType = null;
             if (sourceType is DataframeType df)
                 iteratorType = df.RowType;
             else if (sourceType is ArrayType arr)
                 iteratorType = arr.ElementType;
-            else
-                throw new Exception($"Cannot map over type {sourceType}.");
+
+            if (iteratorType == null)
+                throw new Exception($"Cannot map over source type {sourceType.GetType().Name}. Expected Dataframe or Array.");
+
+            // 3. IMPORTANT: Set the type on the IteratorId itself
+            // This ensures that when ReplaceIterator uses this IdNode, the type is available
+            expr.IteratorId.SetType(iteratorType);
 
             var previousContext = _context;
-            // Inject iterator 'x' into scope
+            // Add the iterator to the symbol table for child nodes to find
             _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
             try
             {
                 Type currentType = iteratorType;
+
+                // 4. Visit assignments and propagate types
                 foreach (var node in expr.Assignments)
                 {
                     currentType = Visit(node);
-                    if (node is ExpressionNode en2) en2.SetType(currentType);
+
+                    // If the assignment is an expression (like a record merge), save the type
+                    if (node is ExpressionNode en)
+                        en.SetType(currentType);
+
+                    // If it's a standard Assignment (y = x.a), the AssignNode itself needs the type
+                    else if (node is AssignNode ass)
+                        ass.SetType(currentType);
                 }
 
-                var lastNode = expr.Assignments.Last();
-                Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
-
-                if (finalRowType is RecordType rec)
+                // 5. Wrap the result in a DataframeType if it produces records
+                if (currentType is RecordType rec)
                 {
                     var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
@@ -716,12 +713,17 @@ namespace MyCompiler
                     return resultType;
                 }
 
-                var finalArrayType = new ArrayType(finalRowType);
-                expr.SetType(finalArrayType);
-                return finalArrayType;
+                // Fallback for simple maps (e.g., mapping to a list of ints)
+                expr.SetType(currentType);
+                return currentType;
             }
-            finally { _context = previousContext; }
+            finally
+            {
+                // Restore context to prevent iterator leak to outer scopes
+                _context = previousContext;
+            }
         }
+
 
 
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")

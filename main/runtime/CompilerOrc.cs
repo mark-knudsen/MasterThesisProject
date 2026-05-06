@@ -2538,26 +2538,25 @@ namespace MyCompiler
             var currentRowVar = "__current_row";
             var dfType = (DataframeType)expr.Type;
 
-            // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 2. Capture length
             var srcLength = new LengthNode(new IdNode(srcVar));
             srcLength.SetType(new IntType());
 
-            // 3. Initialize Result Dataframe with Capacity
-            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
-
-            // Passing srcLength to ArrayNode is the key to stopping reallocs
+            // 1. PRE-ALLOCATION WITH FULL LENGTH
+            // By passing srcLength here, the IR should generate an array 
+            // where 'len' and 'cap' are already equal to the source length.
             var rowsArray = new ArrayNode(new List<ExpressionNode>(), srcLength);
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
+            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
+
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-        new NamedArgumentNode("columns", new ArrayNode(columns)),
-        new NamedArgumentNode("rows", rowsArray),
-        new NamedArgumentNode("type", new ArrayNode(dummyTypes))
-    });
+                new NamedArgumentNode("columns", new ArrayNode(columns)),
+                new NamedArgumentNode("rows", rowsArray),
+                new NamedArgumentNode("type", new ArrayNode(dummyTypes))
+            });
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2566,14 +2565,13 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // 4. Fetch row: currentRow = src[i]
+            // 2. Fetch row
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
             rowAccess.SkipBoundsCheck = true;
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
-            // 5. Transformation Logic
+            // 3. Transformation Logic
             ExpressionNode finalRowExpr;
-            // Check if assignments are complex or a single expression
             bool isStatementStyle = expr.Assignments.Any(a => a.GetType().Name.Contains("Assign"));
 
             if (expr.Assignments.Count == 1 && !isStatementStyle)
@@ -2582,7 +2580,6 @@ namespace MyCompiler
             }
             else
             {
-                // Record Cloning (Necessary if updating existing rows)
                 var cloneNode = new BinaryOpNode(new IdNode(currentRowVar), "+", new RecordNode(new List<NamedArgumentNode>()));
                 cloneNode.SetType(dfType.RowType);
                 loopBody.Statements.Add(new AssignNode(currentRowVar, cloneNode));
@@ -2595,12 +2592,13 @@ namespace MyCompiler
                 finalRowExpr = new IdNode(currentRowVar);
             }
 
-            // 6. Use AddNode (since AssignNode won't take targetIndex)
-            // Because we initialized 'rowsArray' with 'srcLength', 
-            // the 'grow' block in the IR will exist but will NEVER be executed.
-            loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
+            // 4. THE FIX: IndexAssignNode
+            // Instead of using AddNode (which checks capacity), we use IndexAssign.
+            // If your compiler allows IndexAssignNode on a Dataframe directly, use this:
+            var directAssign = new IndexAssignNode(new IdNode(resVar), new IdNode(iVar), finalRowExpr);
+            loopBody.Statements.Add(directAssign);
 
-            // 7. Loop Setup
+            // 5. Loop Setup
             var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
@@ -2608,25 +2606,6 @@ namespace MyCompiler
             program.Statements.Add(new IdNode(resVar));
             return program;
         }
-
-        // Helper to check if a node tree uses a specific variable
-        private bool IsPure(Node node)
-        {
-            if (node == null) return true;
-            if (node is RandomNode) return false;
-
-            if (node is RecordNode rec)
-            {
-                foreach (var f in rec.Fields)
-                    if (!IsPure(f.Value)) return false;
-            }
-
-            if (node is BinaryOpNode bin)
-                return IsPure(bin.Left) && IsPure(bin.Right);
-
-            return true;
-        }
-
 
         private bool NodeContainsId(Node node, string idName)
         {
@@ -2956,7 +2935,8 @@ namespace MyCompiler
             // Handle Record Field Assignment (x.latitude = 5)
             if (node is RecordFieldAssignNode rfan)
             {
-                var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
+                // Ensure rfan.IdRecord is cast to IdNode if the constructor requires it
+                var newRec = (IdNode)ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
                 var newExpr = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
                 return new RecordFieldAssignNode(newRec, rfan.IdField, newExpr);
             }
@@ -2974,6 +2954,8 @@ namespace MyCompiler
                 return ReplaceIterator(expr, iteratorName, replacement);
             }
 
+
+
             return node;
         }
 
@@ -2984,6 +2966,8 @@ namespace MyCompiler
             // 1. Base Case: The ID itself (e.g., x)
             if (node is IdNode id && id.Name == iteratorName)
             {
+                // The replacement (e.g., __current_row) must carry the type of the iterator
+                replacement.SetType(id.Type);
                 return replacement;
             }
 
@@ -3046,12 +3030,15 @@ namespace MyCompiler
             // 7. Binary Operations (Handles x.longitude - 100.0)
             if (node is BinaryOpNode bin)
             {
-                var newBin = new BinaryOpNode(
-                    ReplaceIterator(bin.Left, iteratorName, replacement),
-                    bin.Operator,
-                    ReplaceIterator(bin.Right, iteratorName, replacement)
-                );
+                var newLeft = ReplaceIterator(bin.Left, iteratorName, replacement);
+                var newRight = ReplaceIterator(bin.Right, iteratorName, replacement);
+
+                var newBin = new BinaryOpNode(newLeft, bin.Operator, newRight);
+
+                // CRITICAL: If the original node had a type, the new one MUST have it too.
+                // This is likely where the "Object reference" starts its journey to a crash.
                 newBin.SetType(bin.Type);
+
                 return newBin;
             }
 
@@ -3090,6 +3077,30 @@ namespace MyCompiler
             {
                 var newArgs = ran.Arguments.Select(a => ReplaceIterator(a, iteratorName, replacement)).ToList();
                 return new RandomNode(newArgs);
+            }
+
+            // 12. Map calls
+            // 12. Map calls
+            if (node is MapNode map)
+            {
+                // 1. Always replace the source (the part before the .map)
+                var newSource = ReplaceIterator(map.SourceExpr, iteratorName, replacement);
+
+                // 2. ONLY replace inside assignments if this map doesn't shadow our iterator name
+                List<Node> newAssignments = map.Assignments;
+                if (map.IteratorId.Name != iteratorName)
+                {
+                    newAssignments = map.Assignments
+                        .Select(a => ReplaceIteratorInNode(a, iteratorName, replacement))
+                        .ToList();
+                }
+
+                // FIX: Match constructor (IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+                // Note: We cast map.IteratorId to IdNode to satisfy the compiler
+                var newMap = new MapNode((IdNode)map.IteratorId, newSource, newAssignments);
+
+                newMap.SetType(map.Type);
+                return newMap;
             }
 
             return node;
