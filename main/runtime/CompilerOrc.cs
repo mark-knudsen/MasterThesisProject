@@ -1199,6 +1199,8 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitForLoop(ForLoopNode expr)
         {
+            if (expr.Initialization != null) Visit(expr.Initialization);
+
             var ctx = _module.Context;
             var func = _builder.InsertBlock.Parent;
 
@@ -1217,6 +1219,8 @@ namespace MyCompiler
             // 3. Condition Block
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
+            if (condition.Handle == IntPtr.Zero)
+                throw new Exception("For loop condition generated a null LLVM value.");
 
             if (condition.TypeOf == ctx.DoubleType)
             {
@@ -1285,7 +1289,7 @@ namespace MyCompiler
             // original body
             bodySeq.Statements.Add(expr.Body);
 
-            // 🔥 decide if we need write-back
+            // decide if we need write-back
             Type elementType = new NullType();
             if (expr.Source.Type is DataframeType df) elementType = df.RowType;
             else if (expr.Source.Type is ArrayType arr) elementType = arr.ElementType;
@@ -1404,6 +1408,18 @@ namespace MyCompiler
 
         public LLVMValueRef VisitComparison(ComparisonNode expr)
         {
+            Console.WriteLine("Enter VisitComparison in CodeGen.");
+            if (expr.Left == null) throw new Exception("Comparison Left node is null");
+            if (expr.Right == null) throw new Exception("Comparison Right node is null");
+
+            // This is where your crash is happening:
+            if (expr.Left.Type == null)
+                throw new Exception($"Type missing on LHS of comparison: {expr.Left.GetType().Name}");
+            if (expr.Right.Type == null)
+                throw new Exception($"Type missing on RHS of comparison: {expr.Right.GetType().Name}");
+
+
+
             var leftPtr = Visit(expr.Left);
             var rightPtr = Visit(expr.Right);
 
@@ -2485,19 +2501,16 @@ namespace MyCompiler
         {
             SequenceNode program;
 
-            // Check what the TYPE CHECKER said the result would be
+            // Use MapForDataframe ONLY if the final result was calculated to be a Dataframe
             if (expr.Type is DataframeType)
             {
                 program = MapForDataframe(expr);
             }
-            else if (expr.Type is ArrayType)
+            else
             {
-                // MapForArray works perfectly even if the source is a Dataframe,
-                // because it just loops and performs the 'add' to a new array.
+                // If the result is an Array (even if the source was a DF), use MapForArray
                 program = MapForArray(expr);
             }
-            else
-                throw new Exception($"Unsupported map result type: {expr.Type}");
 
             PerformSemanticAnalysis(program);
             return VisitSequence(program);
@@ -2532,14 +2545,19 @@ namespace MyCompiler
             rowAccess.SkipBoundsCheck = true;
 
             // 3. Transform the lambda body
-            ExpressionNode lastExpr = null;
-            foreach (var e in expr.Assignments)
-            {
-                lastExpr = (ExpressionNode)ReplaceIteratorInNode(e, expr.IteratorId.Name, rowAccess);
-            }
+            var transformed =
+            (ExpressionNode)ReplaceIteratorInNode(
+                expr.Body,
+                expr.IteratorId.Name,
+                rowAccess
+            );
+
+            loopBody.Statements.Add(
+                new AddNode(new IdNode(resVar), transformed)
+            );
 
             // 4. Add to the result list
-            loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
+            loopBody.Statements.Add(new AddNode(new IdNode(resVar), transformed));
 
             // 5. Loop Logic
             var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
@@ -2579,15 +2597,17 @@ namespace MyCompiler
         public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
+
             var srcVar = "__map_src";
             var resVar = "__map_result";
             var iVar = "__map_i";
             var currentRowVar = "__current_row";
 
+            // expr.Type was set by the TypeChecker as DataframeType
             var dfType = (DataframeType)expr.Type;
             var rowType = (RecordType)dfType.RowType;
 
-            // 1. Assign Source: __map_src = <sourceExpr>
+            // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
             // 2. Capture length
@@ -2596,28 +2616,25 @@ namespace MyCompiler
 
             // 3. Initialize Result Dataframe
             var columns = dfType.ColumnNames
-                .Select(c => (ExpressionNode)new StringNode(c)).ToList();
+                .Select(c => (ExpressionNode)new StringNode(c))
+                .ToList();
 
-            // FIXED: Map types to integer IDs instead of string keywords
-            // This matches the mapping in your C# ToCsvInternal and GetTypeByTag
             var actualTypes = rowType.RecordFields.Select(f =>
             {
-                int typeId = 4; // Default: String
+                int typeId = 4; // string default
                 if (f.Type is IntType) typeId = 1;
                 else if (f.Type is FloatType) typeId = 2;
                 else if (f.Type is BoolType) typeId = 3;
                 else if (f.Type is StringType) typeId = 4;
 
                 var numNode = new NumberNode(typeId);
-                numNode.SetType(new IntType()); // Ensure LLVM treats this as an i64
+                numNode.SetType(new IntType());
                 return (ExpressionNode)numNode;
             }).ToList();
 
-            // Pre-allocate the rows array
             var rowsArray = new ArrayNode(new List<ExpressionNode>(), srcLength);
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
-            // Create the constructor with the explicit "types" argument
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
         new NamedArgumentNode("columns", new ArrayNode(columns)),
         new NamedArgumentNode("rows", rowsArray),
@@ -2630,80 +2647,57 @@ namespace MyCompiler
             program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
 
             var loopBody = new SequenceNode();
-            var replacementNode = new IdNode(currentRowVar);
 
-            // 4. Fetch current row: __current_row = __map_src[__map_i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
-            loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
-
-            // 5. Transformation Logic
-            var updates = new Dictionary<string, ExpressionNode>();
-            foreach (var action in expr.Assignments)
+            // 4. Fetch current row
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar))
             {
-                string fieldName = null;
-                ExpressionNode valueNode = null;
+                SkipBoundsCheck = true
+            };
 
-                if (action is RecordFieldAssignNode rfa)
-                {
-                    fieldName = rfa.IdField;
-                    valueNode = rfa.AssignExpression;
-                }
-                else if (action is AssignNode asn && asn.Expression is IdNode id)
-                {
-                    fieldName = id.Name;
-                    valueNode = asn.Expression;
-                }
+            loopBody.Statements.Add(
+                new AssignNode(currentRowVar, rowAccess)
+            );
 
-                if (fieldName != null)
-                {
-                    updates[fieldName] = (ExpressionNode)ReplaceIteratorInNode(valueNode, expr.IteratorId.Name, replacementNode);
-                }
+            // 5. Apply lambda body
+            // We replace the iterator (e.g., 'x') with the current row variable
+            var transformed = (ExpressionNode)ReplaceIteratorInNode(
+                expr.Body,
+                expr.IteratorId.Name,
+                new IdNode(currentRowVar)
+            );
+
+            // 6. Ensure the result of the expression is a record (Logic Fix)
+            // We check the Metadata Type, not the C# Class type.
+            if (!(transformed.Type is RecordType))
+            {
+                throw new Exception($"Map over dataframe must return a record, but got {transformed.Type}");
             }
 
-            // 6. Reconstruct the record field-by-field
-            var recordArgs = new List<NamedArgumentNode>();
+            // 7. Add to result dataframe
+            // We use the 'transformed' node directly. 
+            // If it's a BinaryOpNode (x + {..}), it will be evaluated correctly.
+            loopBody.Statements.Add(
+                new AddNode(new IdNode(resVar), transformed)
+            );
 
-            foreach (var fieldSchema in rowType.RecordFields)
-            {
-                ExpressionNode fieldValue;
+            // 8. Loop Logic
+            var cond = new ComparisonNode(
+                new IdNode(iVar),
+                "<",
+                srcLength
+            );
 
-                if (updates.ContainsKey(fieldSchema.Label))
-                {
-                    fieldValue = updates[fieldSchema.Label];
-                }
-                else
-                {
-                    // Default: copy from source row
-                    var access = new FieldNode(new IdNode(currentRowVar), fieldSchema.Label);
-                    access.SetType(fieldSchema.Type);
-                    fieldValue = access;
-                }
-
-                // FORCE 8-byte alignment for Bool and Float via Cast
-                if (fieldSchema.Type is BoolType || fieldSchema.Type is FloatType)
-                {
-                    var cast = new CastNode(fieldValue, fieldSchema.Type, new IntType());
-                    fieldValue = cast;
-                }
-
-                recordArgs.Add(new NamedArgumentNode(fieldSchema.Label, fieldValue));
-            }
-
-            // 7. Create the new Record and add to result Dataframe
-            var finalRowExpr = new RecordNode(recordArgs);
-            finalRowExpr.SetType(rowType);
-
-            loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
-
-            // 8. Loop Setup: for (__map_i = 0; __map_i < srcLength; __map_i++)
-            var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
-            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
+            program.Statements.Add(
+                new ForLoopNode(null, cond, step, loopBody)
+            );
+
+            // 9. Return the result variable
             program.Statements.Add(new IdNode(resVar));
+
             return program;
         }
-
 
 
         // Helper to check if a node tree uses a specific variable
@@ -2999,7 +2993,7 @@ namespace MyCompiler
 
             // 6. Replace iterator (d => ...) with actual element
             var mappedExpr = ReplaceIterator(
-                expr.Assignments[0] as ExpressionNode,
+                expr.SourceExpr as ExpressionNode,
                 expr.IteratorId.Name,
                 currentElement
             );
@@ -3045,7 +3039,7 @@ namespace MyCompiler
             {
                 var newRec = ReplaceIterator(rfan.IdRecord, iteratorName, replacement);
                 var newExpr = ReplaceIterator(rfan.AssignExpression, iteratorName, replacement);
-                return new RecordFieldAssignNode(newRec, rfan.IdField, newExpr);
+                return new RecordFieldAssignNode(newRec, rfan.IdField, newExpr); // TYPE IS LOST HERE
             }
 
             // Handle standard Assignment (y = x.latitude)
@@ -3069,17 +3063,27 @@ namespace MyCompiler
             if (node == null) return null;
 
             // 1. Base Case: The ID itself (e.g., x)
-            if (node is IdNode id && id.Name == iteratorName)
+            if (node is IdNode id)
             {
-                return replacement;
+                if (id.Name == iteratorName)
+                {
+                    Console.WriteLine($"Replacing {iteratorName} with {replacement}");
+                    return replacement;
+                }
+                // If it prints 'x' here but doesn't replace it, the names don't match exactly
+                Console.WriteLine($"Found ID: {id.Name}, looking for: {iteratorName}");
             }
+
 
             // 2. FieldNode (Handles x.columnName)
             if (node is FieldNode rf)
             {
                 var newSrc = ReplaceIterator(rf.SourceExpression, iteratorName, replacement);
                 var newRf = new FieldNode(newSrc, rf.IdField);
+
+                // CRITICAL: Copy the type that was already resolved during type checking
                 newRf.SetType(rf.Type);
+
                 return newRf;
             }
 
@@ -3094,25 +3098,29 @@ namespace MyCompiler
                 return newNode;
             }
 
-            // 4. NamedArgumentNode
+            // Case 4: NamedArgumentNode
             if (node is NamedArgumentNode arg)
             {
                 var newValue = ReplaceIterator(arg.Value, iteratorName, replacement);
                 var newArg = new NamedArgumentNode(arg.Name, newValue);
-                newArg.SetType(arg.Type);
+                // Safety check: only set type if the original had one
+                if (arg.Type != null) newArg.SetType(arg.Type);
                 return newArg;
             }
 
-            // 5. RecordNode
+            // Case 5: RecordNode
             if (node is RecordNode rec)
             {
                 var newFields = rec.Fields.Select(f =>
                 {
-                    var val = ReplaceIterator(f.Value, iteratorName, replacement);
-                    var argNode = new NamedArgumentNode(f.Label, val);
-                    argNode.SetType(f.Type);
-                    return argNode;
+                    // Recursively replace inside the argument value
+                    var newVal = ReplaceIterator(f.Value, iteratorName, replacement);
+                    var newArg = new NamedArgumentNode(f.Label, newVal);
+                    // Ensure the field's metadata type is preserved
+                    if (f.Type != null) newArg.SetType(f.Type);
+                    return newArg;
                 }).ToList();
+
                 var newRec = new RecordNode(newFields);
                 newRec.SetType(rec.Type);
                 return newRec;
@@ -3121,12 +3129,11 @@ namespace MyCompiler
             // 6. Comparison
             if (node is ComparisonNode comp)
             {
-                var newComp = new ComparisonNode(
-                    ReplaceIterator(comp.Left, iteratorName, replacement),
-                    comp.Operator,
-                    ReplaceIterator(comp.Right, iteratorName, replacement)
-                );
-                newComp.SetType(comp.Type);
+                var newLeft = ReplaceIterator(comp.Left, iteratorName, replacement);
+                var newRight = ReplaceIterator(comp.Right, iteratorName, replacement);
+
+                var newComp = new ComparisonNode(newLeft, comp.Operator, newRight);
+                newComp.SetType(comp.Type ?? new BoolType());
                 return newComp;
             }
 
@@ -4293,16 +4300,17 @@ namespace MyCompiler
 
             foreach (var stmt in expr.Statements)
             {
+                // Safety check: if a statement was added as null to the list
+                if (stmt == null) continue;
                 last = Visit(stmt);
             }
 
-            // Use the semantic type from the AST rather than inferring from LLVM types.
-            // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
-            // MapLLVMTypeToMyType from throwing for pointer types.
             var lastExpr = GetLastExpression(expr) as ExpressionNode;
-            if (lastExpr != null && lastExpr.Type is not BoolType)
+
+            // Check BOTH lastExpr AND lastExpr.Type for null
+            if (lastExpr != null && lastExpr.Type != null && lastExpr.Type is not BoolType)
             {
-                //AddImplicitPrint(last, lastExpr.Type);
+                // AddImplicitPrint(last, lastExpr.Type);
             }
 
             return last;
@@ -4310,11 +4318,15 @@ namespace MyCompiler
 
         private LLVMValueRef Visit(Node expr)
         {
-            if (_debug)
+            if (expr == null)
             {
-                var name = expr.GetType().Name;
-                //Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
+                Console.WriteLine("CRITICAL: Attempted to visit a NULL node!");
+                return default;
             }
+
+            var name = expr.GetType().Name;
+            Console.WriteLine("Visiting Node: " + name); // Force print this
+
             return expr.Accept(this);
         }
 
@@ -4439,6 +4451,13 @@ namespace MyCompiler
 
         private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
+            if (recordExpr == null)
+                throw new Exception($"FATAL: recordExpr is null while looking for field '{fieldName}'");
+
+            if (recordExpr.Type == null)
+                throw new Exception($"FATAL: Node of type {recordExpr.GetType().Name} (Field: {fieldName}) has no Type assigned!");
+
+
             var recordPtr = Visit(recordExpr);
             var recordType = recordExpr.Type as RecordType;
             if (recordType == null) throw new Exception("Expected record type");
@@ -4473,6 +4492,13 @@ namespace MyCompiler
 
         public LLVMValueRef VisitField(FieldNode expr)
         {
+            Console.WriteLine("Enter VisitField in CodeGen.");
+            var recordVal = Visit(expr.SourceExpression);
+            if (recordVal.Handle == IntPtr.Zero) // LLVM null check
+            {
+                throw new Exception($"CodeGen Error: Could not resolve source expression for field '{expr.IdField}'. " +
+                                    $"Source is {expr.SourceExpression.GetType().Name}");
+            }
             if (expr.SourceExpression.Type is RecordType)
             {
                 // Get the pointer to the specific slot (e.g., recordBase + 8)
@@ -5193,6 +5219,235 @@ namespace MyCompiler
 
             return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
         }
+
+        public LLVMValueRef VisitJoin(JoinNode expr)
+        {
+            // 1. Lower the JoinNode into a SequenceNode containing the nested loops
+            // This uses the logic we fortified earlier.
+            var loweredNode = JoinToLoop(expr);
+
+            // 2. Safety Check: Ensure the transformation actually returned a node
+            if (loweredNode == null)
+                throw new Exception("JoinToLoop returned null during CodeGen.");
+
+            // 3. Visit the lowered sequence
+            // This will start calling VisitAssign, VisitForLoop, etc.
+            return Visit(loweredNode);
+        }
+
+        public SequenceNode JoinToLoop(JoinNode expr)
+        {
+            var program = new SequenceNode();
+
+            // Variable names
+            var leftVar = "__join_left";
+            var rightVar = "__join_right";
+            var resultVar = "__join_result";
+            var iVar = "__join_i";
+            var jVar = "__join_j";
+            var leftRowVar = "__left_row";
+            var rightRowVar = "__right_row";
+
+            // Type information
+            var dfType = (DataframeType)expr.Type;
+            var resultRowType = (RecordType)dfType.RowType;
+            var leftDfType = (DataframeType)expr.Left.Type;
+            var rightDfType = (DataframeType)expr.Right.Type;
+            var leftRowType = (RecordType)leftDfType.RowType;
+            var rightRowType = (RecordType)rightDfType.RowType;
+            var intType = new IntType();
+            var boolType = new BoolType();
+
+            // 1. Assign inputs to temp variables
+            var leftAssign = new AssignNode(leftVar, expr.Left);
+            leftAssign.SetType(leftDfType);
+            program.Statements.Add(leftAssign);
+
+            var rightAssign = new AssignNode(rightVar, expr.Right);
+            rightAssign.SetType(rightDfType);
+            program.Statements.Add(rightAssign);
+
+            // 2. Initialize result dataframe
+            var columns = resultRowType.RecordFields.Select(f =>
+            {
+                var s = new StringNode(f.Label);
+                s.SetType(new StringType());
+                return (ExpressionNode)s;
+            }).ToList();
+
+            var types = resultRowType.RecordFields.Select(f =>
+            {
+                int typeId = 4; // Default String
+                if (f.Type is IntType) typeId = 1;
+                else if (f.Type is FloatType) typeId = 2;
+                else if (f.Type is BoolType) typeId = 3;
+
+                var n = new NumberNode(typeId);
+                n.SetType(intType);
+                return (ExpressionNode)n;
+            }).ToList();
+
+            var rowsArray = new ArrayNode(new List<ExpressionNode>());
+            rowsArray.SetType(new ArrayType(resultRowType));
+
+            var colArr = new ArrayNode(columns); colArr.SetType(new ArrayType(new StringType()));
+            var typeArr = new ArrayNode(types); typeArr.SetType(new ArrayType(intType));
+
+            var dfCtor = new DataframeNode(new List<NamedArgumentNode> {
+                new NamedArgumentNode("columns", colArr),
+                new NamedArgumentNode("rows", rowsArray),
+                new NamedArgumentNode("types", typeArr)
+            });
+            dfCtor.SetType(dfType);
+
+            var resAssign = new AssignNode(resultVar, dfCtor);
+            resAssign.SetType(dfType);
+            program.Statements.Add(resAssign);
+
+            var iInit = new AssignNode(iVar, new NumberNode(0));
+            iInit.Expression.SetType(intType);
+            iInit.SetType(intType);
+            program.Statements.Add(iInit);
+
+            // --- Outer Loop Setup ---
+            var outerBody = new SequenceNode();
+            var leftIdForIdx = new IdNode(leftVar); leftIdForIdx.SetType(leftDfType);
+            var iIdForIdx = new IdNode(iVar); iIdForIdx.SetType(intType);
+
+            var leftAccess = new IndexNode(leftIdForIdx, iIdForIdx) { SkipBoundsCheck = true };
+            leftAccess.SetType(leftRowType);
+
+            var leftRowAssign = new AssignNode(leftRowVar, leftAccess);
+            leftRowAssign.SetType(leftRowType);
+            outerBody.Statements.Add(leftRowAssign);
+
+            var jInit = new AssignNode(jVar, new NumberNode(0));
+            jInit.Expression.SetType(intType);
+            jInit.SetType(intType);
+            outerBody.Statements.Add(jInit);
+
+            // --- Inner Loop Setup ---
+            var innerBody = new SequenceNode();
+            var rightIdForIdx = new IdNode(rightVar); rightIdForIdx.SetType(rightDfType);
+            var jIdForIdx = new IdNode(jVar); jIdForIdx.SetType(intType);
+
+            var rightAccess = new IndexNode(rightIdForIdx, jIdForIdx) { SkipBoundsCheck = true };
+            rightAccess.SetType(rightRowType);
+
+            var rightRowAssign = new AssignNode(rightRowVar, rightAccess);
+            rightRowAssign.SetType(rightRowType);
+            innerBody.Statements.Add(rightRowAssign);
+
+            // --- Predicate Replacement ---
+            var leftIdReplacement = new IdNode(leftRowVar);
+            leftIdReplacement.SetType(leftRowType);
+
+            var rightIdReplacement = new IdNode(rightRowVar);
+            rightIdReplacement.SetType(rightRowType);
+
+            var rawPredicate = (ExpressionNode)ReplaceIteratorInNode(expr.Predicate.Body, expr.Predicate.Parameters[0].Name, leftIdReplacement);
+            rawPredicate = (ExpressionNode)ReplaceIteratorInNode(rawPredicate, expr.Predicate.Parameters[1].Name, rightIdReplacement);
+
+            ExpressionNode predicate = rawPredicate;
+
+            if (rawPredicate is ComparisonNode comp)
+            {
+                // ENSURE types are extracted from the replaced nodes
+                var leftT = comp.Left.Type;
+                var rightT = comp.Right.Type;
+
+                if (leftT == null || rightT == null)
+                    throw new Exception($"Type missing in Join predicate replacement. Left: {leftT}, Right: {rightT}");
+
+                var finalLeft = comp.Left;
+                var finalRight = comp.Right;
+
+                // Auto-Casting Logic for mixed Int/Float (like latitude)
+                if (leftT is IntType && rightT is FloatType)
+                {
+                    var cast = new CastNode(comp.Left, leftT, rightT);
+                    cast.SetType(rightT);
+                    finalLeft = cast;
+                }
+                else if (leftT is FloatType && rightT is IntType)
+                {
+                    var cast = new CastNode(comp.Right, rightT, leftT);
+                    cast.SetType(leftT);
+                    finalRight = cast;
+                }
+
+                var newComp = new ComparisonNode(finalLeft, comp.Operator, finalRight);
+                newComp.SetType(boolType);
+                predicate = newComp;
+            }
+            else
+            {
+                // If it's not a comparison, ensure it's still marked as a boolean
+                predicate.SetType(boolType);
+            }
+
+            // --- Merge Row Logic ---
+            var mergedArgs = new List<NamedArgumentNode>();
+            foreach (var f in leftRowType.RecordFields)
+            {
+                var rowId = new IdNode(leftRowVar); rowId.SetType(leftRowType);
+                var field = new FieldNode(rowId, f.Label);
+                field.SetType(f.Type); // Explicitly preserve field type
+                mergedArgs.Add(new NamedArgumentNode(f.Label, field));
+            }
+            foreach (var f in rightRowType.RecordFields)
+            {
+                var name = f.Label;
+                if (mergedArgs.Any(m => m.Name == name)) name = "right_" + name;
+                var rowId = new IdNode(rightRowVar); rowId.SetType(rightRowType);
+                var field = new FieldNode(rowId, f.Label);
+                field.SetType(f.Type); // Explicitly preserve field type
+                mergedArgs.Add(new NamedArgumentNode(name, field));
+            }
+
+            var mergedRecord = new RecordNode(mergedArgs);
+            mergedRecord.SetType(resultRowType);
+
+            // --- Add to Result ---
+            var resIdForAdd = new IdNode(resultVar); resIdForAdd.SetType(dfType);
+            var addNode = new AddNode(resIdForAdd, mergedRecord);
+            addNode.SetType(dfType);
+
+            var ifNode = new IfNode(predicate, new SequenceNode { Statements = { addNode } });
+            innerBody.Statements.Add(ifNode);
+
+            // --- Inner Loop Control ---
+            var rIdLen = new IdNode(rightVar); rIdLen.SetType(rightDfType);
+            var rightLength = new LengthNode(rIdLen); rightLength.SetType(intType);
+            var jIdCond = new IdNode(jVar); jIdCond.SetType(intType);
+            var innerCond = new ComparisonNode(jIdCond, "<", rightLength);
+            innerCond.SetType(boolType);
+            var jIdStep = new IdNode(jVar); jIdStep.SetType(intType);
+            var innerStep = new IncrementNode(jIdStep); innerStep.SetType(intType);
+
+            var innerLoop = new ForLoopNode(null, innerCond, innerStep, innerBody);
+            outerBody.Statements.Add(innerLoop);
+
+            // --- Outer Loop Control ---
+            var lIdLen = new IdNode(leftVar); lIdLen.SetType(leftDfType);
+            var leftLength = new LengthNode(lIdLen); leftLength.SetType(intType);
+            var iIdCond = new IdNode(iVar); iIdCond.SetType(intType);
+            var outerCond = new ComparisonNode(iIdCond, "<", leftLength);
+            outerCond.SetType(boolType);
+            var iIdStep = new IdNode(iVar); iIdStep.SetType(intType);
+            var outerStep = new IncrementNode(iIdStep); outerStep.SetType(intType);
+
+            var outerLoop = new ForLoopNode(null, outerCond, outerStep, outerBody);
+            program.Statements.Add(outerLoop);
+
+            // Final result
+            var finalResId = new IdNode(resultVar);
+            finalResId.SetType(dfType);
+            program.Statements.Add(finalResId);
+
+            return program;
+        }
+
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 

@@ -5,6 +5,8 @@ namespace MyCompiler
         private Context _context;
         public Context UpdatedContext => _context;
         private bool _debug;
+        // The stack stores previous versions of the immutable Context
+        private Stack<Context> _contextStack = new Stack<Context>();
 
         public TypeChecker(Context context, bool debug = true)
         {
@@ -80,6 +82,7 @@ namespace MyCompiler
                 PowNode pow => VisitPow(pow),
                 ExponentialMathFuncNode exp => VisitExponentialMathFunc(exp),
                 CastNode cast => VisitCast(cast),
+                JoinNode join => VisitJoin(join),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -279,7 +282,7 @@ namespace MyCompiler
 
             throw new Exception($"Cannot cast from {fromType} to {toType}");
         }
-        
+
         private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
         {
             if (from.GetType() == to.GetType())
@@ -713,47 +716,36 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-            Type iteratorType;
+            Type elementType = (sourceType is DataframeType df) ? df.RowType :
+                               (sourceType is ArrayType arr) ? arr.ElementType :
+                               throw new Exception("Map source must be a dataframe or an array");
 
-            if (sourceType is DataframeType df)
-                iteratorType = df.RowType;
-            else if (sourceType is ArrayType arr)
-                iteratorType = arr.ElementType;
-            else
-                throw new Exception($"Cannot map over type {sourceType}.");
+            var previousContext = this._context;
+            this._context = previousContext.Add(expr.IteratorId.Name, default, null!, elementType);
 
-            var previousContext = _context;
-            // Inject iterator 'x' into scope
-            _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
+            var resultType = Visit(expr.Body);
+            if (expr.Body is ExpressionNode bodyExpr) bodyExpr.SetType(resultType);
 
-            try
+            this._context = previousContext;
+
+            // --- THE LOGIC FIX ---
+            // If mapping over a Dataframe AND returning a Record, result is a Dataframe.
+            if (sourceType is DataframeType && resultType is RecordType resultRecord)
             {
-                Type currentType = iteratorType;
-                foreach (var node in expr.Assignments)
-                {
-                    currentType = Visit(node);
-                    if (node is ExpressionNode en2) en2.SetType(currentType);
-                }
-
-                var lastNode = expr.Assignments.Last();
-                Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
-
-                if (finalRowType is RecordType rec)
-                {
-                    var resultType = new DataframeType(
-                        rec.RecordFields.Select(f => f.Label).ToList(),
-                        rec.RecordFields.Select(f => f.Type).ToList(),
-                        rec
-                    );
-                    expr.SetType(resultType);
-                    return resultType;
-                }
-
-                var finalArrayType = new ArrayType(finalRowType);
-                expr.SetType(finalArrayType);
-                return finalArrayType;
+                var dfResult = new DataframeType(
+                    resultRecord.RecordFields.Select(f => f.Label).ToList(),
+                    resultRecord.RecordFields.Select(f => f.Type).ToList(),
+                    resultRecord
+                );
+                expr.SetType(dfResult);
+                return dfResult;
             }
-            finally { _context = previousContext; }
+
+            // Otherwise (Array source OR Dataframe source returning a single value), 
+            // the result is an Array.
+            var arrayResult = new ArrayType(resultType);
+            expr.SetType(arrayResult);
+            return arrayResult;
         }
 
 
@@ -1330,6 +1322,94 @@ namespace MyCompiler
         public Type VisitTypeLiteral(TypeLiteralNode expr)
         {
             return ResolveType(expr); // Just return the wrapped type
+        }
+        public Type VisitJoin(JoinNode expr)
+        {
+            // 1. Validate the inputs are dataframes
+            var leftType = Visit(expr.Left);
+            var rightType = Visit(expr.Right);
+
+            if (!(leftType is DataframeType leftDf))
+                throw new Exception("Type error: Left side of join must be a dataframe");
+
+            if (!(rightType is DataframeType rightDf))
+                throw new Exception("Type error: Right side of join must be a dataframe");
+
+            var leftRow = (RecordType)leftDf.RowType;
+            var rightRow = (RecordType)rightDf.RowType;
+
+            // 2. Validate Lambda Parameters
+            if (expr.Predicate.Parameters.Count != 2)
+                throw new Exception("Type error: Join lambda must take exactly 2 parameters (left, right)");
+
+            var leftParam = expr.Predicate.Parameters[0];
+            var rightParam = expr.Predicate.Parameters[1];
+
+            // 3. Enter Lambda Scope
+            PushScope();
+            try
+            {
+                // Bind 'x' and 'y' (or whatever names were used) to their respective RecordTypes
+                Bind(leftParam.Name, leftRow);
+                Bind(rightParam.Name, rightRow);
+
+                // Now when Visit(Body) is called, it will successfully find 'x' and 'y'
+                var condType = Visit(expr.Predicate.Body);
+
+                if (!(condType is BoolType))
+                    throw new Exception("Type error: Join predicate must return a boolean value");
+            }
+            finally
+            {
+                // CRITICAL: Restore the context even if an error occurred during Visit(Body)
+                PopScope();
+            }
+
+            // 4. Merge Schemas for the Resulting Dataframe
+            var mergedFields = new List<RecordField>();
+
+            // Copy fields from left
+            mergedFields.AddRange(leftRow.RecordFields.Select(f => new RecordField(f.Label, f.Type)));
+
+            // Copy fields from right with collision handling (prefixing with 'right_')
+            foreach (var f in rightRow.RecordFields)
+            {
+                var name = f.Label;
+                if (mergedFields.Any(m => m.Label == name))
+                    name = "right_" + name;
+
+                mergedFields.Add(new RecordField(name, f.Type));
+            }
+
+            var resultRowType = new RecordType(mergedFields);
+
+            // 5. Construct the final DataframeType
+            var names = mergedFields.Select(f => f.Label).ToList();
+            var types = mergedFields.Select(f => f.Type).ToList();
+
+            return new DataframeType(names, types, resultRowType);
+        }
+
+        private void PushScope()
+        {
+            // Snapshot the current context before we add locals
+            _contextStack.Push(_context);
+        }
+
+        private void PopScope()
+        {
+            if (_contextStack.Count > 0)
+            {
+                // Revert to the snapshot, effectively "deleting" the locals
+                _context = _contextStack.Pop();
+            }
+        }
+
+        private void Bind(string name, Type type)
+        {
+            // Update the main _context field with the new immutable version
+            // This ensures VisitId(expr) will see the new binding
+            _context = _context.Add(name, default, null!, type);
         }
     }
 }

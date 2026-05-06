@@ -258,9 +258,9 @@ namespace MyCompiler
 
     public class ComparisonNode : ExpressionNode
     {
-        public ExpressionNode Left { get; }
+        public ExpressionNode Left { get; set; }
         public string Operator { get; }
-        public ExpressionNode Right { get; }
+        public ExpressionNode Right { get; set; }
 
         public ComparisonNode(ExpressionNode left, string op, ExpressionNode right)
         {
@@ -372,36 +372,17 @@ namespace MyCompiler
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public List<Node> Assignments { get; }
+        public ExpressionNode Body { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode body)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
-
-            if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
-            {
-                List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
-                foreach (var arr in arrayNode.Elements)
-                {
-                    if (arr is IdNode strNode)
-                    {
-                        namedArguments.Add(new NamedArgumentNode(
-                            strNode.Name,
-                            new FieldNode(iteratorId, strNode.Name)
-                        ));
-                    }
-                    else
-                        throw new Exception("Map array elements must be identifiers");
-                }
-
-                Assignments = new List<Node> { new RecordNode(namedArguments) };
-            }
-            else
-                Assignments = assignments;
+            Body = body;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitMap(this);
     }
 
     public class ReadCsvNode : ExpressionNode
@@ -601,6 +582,16 @@ namespace MyCompiler
 
         // Filled during typechecking
         public Type Type { get; set; }
+
+        // Add this constructor
+        public RecordField(string label, Type type)
+        {
+            Label = label;
+            Type = type;
+        }
+
+        // Keep a parameterless constructor if other parts of your code use it
+        public RecordField() { }
     }
 
     public class RecordNode : ExpressionNode
@@ -652,7 +643,7 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpression;
             IdField = idField;
-            Type = new IntType();
+            Type = null;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitField(this);
@@ -877,6 +868,39 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
+    }
+
+    public class JoinNode : ExpressionNode
+    {
+        public ExpressionNode Left { get; }
+        public ExpressionNode Right { get; }
+        public LambdaNode Predicate { get; }
+
+        public JoinNode(ExpressionNode left, ExpressionNode right, LambdaNode predicate)
+        {
+            Left = left;
+            Right = right;
+            Predicate = predicate;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitJoin(this);
+    }
+
+    public class LambdaNode : ExpressionNode
+    {
+        public List<IdNode> Parameters { get; }
+        public ExpressionNode Body { get; }
+
+        public LambdaNode(List<IdNode> parameters, ExpressionNode body)
+        {
+            Parameters = parameters;
+            Body = body;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+        {
+            throw new NotImplementedException("Lambda not directly compiled");
+        }
     }
 
     // public class ResizeArrayNode : StatementNode

@@ -38,6 +38,7 @@
 "array"         { return (int)Tokens.ARRAY; }
 
 "copy"          { return (int)Tokens.COPY; }
+"join"          { return (int)Tokens.JOIN; }
 "where"         { return (int)Tokens.WHERE; }
 "map"           { return (int)Tokens.MAP; }
 "=>"            { return (int)Tokens.LAMBDA; }

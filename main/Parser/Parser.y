@@ -12,6 +12,8 @@
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list
     public List<MyCompiler.NamedArgumentNode> arglist; // for arg_list
     public List<MyCompiler.Node> nodeList; // for map_body
+    public List<MyCompiler.IdNode> idList;
+    public MyCompiler.LambdaNode lambda;
 }
 
 %token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
@@ -21,7 +23,7 @@
 %token PLUS_ASSIGN MINUS_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
-%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM CORR COPY RECORD WHERE MAP FUNC ADD ADDRANGE 
+%token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM CORR COPY RECORD WHERE MAP FUNC ADD ADDRANGE JOIN
 %token DATAFRAME SELECT SHOW
 
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
@@ -42,13 +44,15 @@
 %left LBRACKET /* Add this to give indexing high priority */
 
 %type <node> Prog Statement StatementList Assignment Block Separator OptNewlines
-%type <node> expr
+%type <expr> expr
 %type <expr> Type
 
 %type <expr> arg
 %type <exprList> expr_list
 %type <arglist> arg_list
 %type <nodeList> map_list
+%type <idList> id_list
+%type <lambda> lambda
 
 
 /* This tells the parser which C# variable stores the final tree */
@@ -111,6 +115,8 @@ Statement
         { $$ = new ForEachLoopNode(new IdNode((string)$3), $5 as ExpressionNode, $8 ); }
     | FOREACH LPAREN ID IN expr RPAREN StatementList
         { $$ = new ForEachLoopNode(new IdNode((string)$3), $5 as ExpressionNode, $7 ); }
+    | PRINT LPAREN expr RPAREN 
+        { $$ = new PrintNode($3 as ExpressionNode); }
     ;
 
 Type
@@ -196,8 +202,7 @@ expr
     | Type                { $$ = new TypeLiteralNode($1 as TypeNode); }
     
     | ID                  { $$ = new IdNode((string)$1); }
-    | PRINT LPAREN expr RPAREN 
-                          { $$ = new PrintNode($3 as ExpressionNode); }
+    
     | RANDOM LPAREN expr_list RPAREN
                           { $$ = new RandomNode($3 as List<ExpressionNode>); }
     | ROUND LPAREN expr_list RPAREN
@@ -206,7 +211,7 @@ expr
     | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
     | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
-
+    
     | SQRT LPAREN expr RPAREN 
     { 
         $$ = new SqrtNode($3 as ExpressionNode); 
@@ -256,35 +261,43 @@ expr
     | expr DOT MEAN                         { $$ = new MeanNode($1 as ExpressionNode); }
     | expr DOT SUM                          { $$ = new SumNode($1 as ExpressionNode); }
     | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1 as ExpressionNode, $5 as ExpressionNode); }
-
-    | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
+    | lambda { $$ = $1; }
+    | expr DOT JOIN LPAREN expr COMMA lambda RPAREN
     {
-        $$ = new WhereNode(
-            new IdNode((string)$5),
+        $$ = new JoinNode(
             $1 as ExpressionNode,
-            $7 as ExpressionNode
+            $5 as ExpressionNode,
+            $7 as LambdaNode
         );
     }
-    | expr DOT MAP LPAREN ID LAMBDA map_list RPAREN  
-    {   
-        $$ = new MapNode(
-            new IdNode((string)$5),
+    | expr DOT WHERE LPAREN lambda RPAREN
+    {
+        var lam = $5 as LambdaNode;
+
+        $$ = new WhereNode(
+            lam.Parameters[0],
             $1 as ExpressionNode,
-            $7 as List<Node> // map_list already returns List<Node>
+            lam.Body
+        );
+    }
+   | expr DOT MAP LPAREN lambda RPAREN
+    {
+        var lam = $5 as LambdaNode;
+
+        // Pass lam.Body directly, NOT as a list
+        $$ = new MapNode(
+            lam.Parameters[0],
+            $1 as ExpressionNode,
+            lam.Body as ExpressionNode 
         );
     }
     | expr DOT SELECT LPAREN map_list RPAREN
     {
-        // Convert List<Node> to List<ExpressionNode>
         var elements = ($5 as List<Node>).Cast<ExpressionNode>().ToList();
-        
-        // Create the ArrayNode
         var arrayNode = new ArrayNode(elements);
         
-        // Wrap it in a List<Node> for the MapNode constructor
-        var wrapperList = new List<Node> { arrayNode };
-        
-        $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, wrapperList);
+        // Pass the arrayNode directly as the body
+        $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, arrayNode);
     }
 
         
@@ -349,6 +362,35 @@ arg
     | COLUMNS COLON expr  { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
     | expr                { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
     ;
+lambda
+    : ID LAMBDA expr
+    {
+        $$ = new LambdaNode(
+            new List<IdNode> { new IdNode((string)$1) },
+            $3 as ExpressionNode
+        );
+    }
+    | LPAREN id_list RPAREN LAMBDA expr
+    {
+        $$ = new LambdaNode(
+            $2,
+            $5 as ExpressionNode
+        );
+    }
+    ;
+
+id_list
+    : ID
+    {
+        $$ = new List<IdNode> { new IdNode((string)$1) };
+    }
+    | id_list COMMA ID
+    {
+        ((List<IdNode>)$1).Add(new IdNode((string)$3));
+        $$ = $1;
+    }
+    ;
+
 %%
 
 internal Parser(Scanner s) : base(s) { }
