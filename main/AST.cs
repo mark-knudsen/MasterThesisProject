@@ -791,7 +791,8 @@ namespace MyCompiler
                 fields.Add(new RecordField
                 {
                     Label = columns[i],
-                    Type = types[i]
+                    Type = types[i],
+                    Value = default
                 });
             }
 
@@ -829,58 +830,6 @@ namespace MyCompiler
             return arr.Elements.All(e => e is TypeNode || e is TypeLiteralNode);
         }
 
-        private DataframeType BuildDataframeType3()
-        {
-            var columns = ExtractColumns();
-
-            var dataArr = Data as ArrayNode
-                ?? throw new Exception("data must be an array");
-
-            if (dataArr.Elements.Count == 0)
-                throw new Exception("data cannot be empty");
-
-            // NEW: detect columnar case
-            bool isColumnar = dataArr.Elements.All(e => e is IdNode);
-
-            if (isColumnar)
-            {
-                // data = [col1, col2, ...]
-                var types = ExtractTypes(); // already provided
-
-                var recordFields = new List<RecordField>();
-                for (int i = 0; i < columns.Count; i++)
-                {
-                    recordFields.Add(new RecordField
-                    {
-                        Label = columns[i],
-                        Type = types[i]
-                    });
-                }
-
-                return new DataframeType(columns, types, new RecordType(recordFields));
-            }
-
-            // existing row-based logic
-            var data = ExtractData();
-            var inferredTypes = InferTypes(data);
-
-            var recordField = new List<RecordField>();
-            for (int i = 0; i < columns.Count; i++)
-            {
-                recordField.Add(new RecordField
-                {
-                    Label = columns[i],
-                    Type = inferredTypes[i]
-                });
-            }
-
-            DataTypes = new ArrayNode(
-                inferredTypes.Select(t => TypeToNode(t)).ToList()
-            );
-
-            return new DataframeType(columns, inferredTypes, new RecordType(recordField));
-        }
-
         private ExpressionNode TypeToNode(Type type)
         {
             return type switch
@@ -891,54 +840,6 @@ namespace MyCompiler
                 StringType => new StringNode(""),
                 _ => throw new Exception("Unsupported type for inference")
             };
-        }
-        private DataframeType BuildDataframeType2()
-        {
-            var columns = ExtractColumns();
-
-            if ((Data as ArrayNode).Elements.Count != 0) // I mean, won't data always be an array node?
-            {
-                var data = ExtractData();
-                var inferredTypes = InferTypes(data);
-                var inferredNodes = InferNode(data);
-
-                var argumentNodes = new List<ExpressionNode>();
-                var recordField = new List<RecordField>();
-                foreach (var item in inferredTypes)
-                {
-                    // recordField.Add(new RecordField() {"name", });
-                    argumentNodes.Add(new NamedArgumentNode(item.ToString(), InferNodeFromString(item.ToString())));
-                }
-
-                for (int i = 0; i < data.Count; i++)
-                {
-                    recordField.Add(new RecordField() { Label = columns[i], Value = inferredNodes[i], Type = inferredTypes[i] });
-                }
-
-                DataTypes = new ArrayNode(argumentNodes); // 
-
-                var d = new RecordType(recordField);
-
-                return new DataframeType(columns, inferredTypes, d);
-            }
-            else
-                throw new Exception("data was not an arraynode");
-
-            // var types = ExtractTypes();
-
-            // var recordField2 = new List<RecordField>();
-            // for (int i = 0; i < columns.Count; i++)
-            // {
-            //     recordField2.Add(new RecordField() { Label = columns[i], Value = inferredNodes[i], Type = inferredTypes[i]});
-            // }
-
-            // var d2 = new RecordType(recordField2);
-
-            // return new DataframeType(
-            //     columns,
-            //     types,
-            //     new RecordType()
-            // );
         }
 
         private ExpressionNode InferNodeFromString(string val)
