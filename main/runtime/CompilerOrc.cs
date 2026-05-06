@@ -102,43 +102,30 @@ namespace MyCompiler
                     char typeCode = col < schema.Length ? schema[col] : 'S';
                     string rawValue = parts[col].Trim();
 
-                    // Allocate value box (8 bytes)
-                    IntPtr valuePtr = Native.malloc((IntPtr)8);
+                    // Calculate the exact offset in the record (8 bytes per slot)
+                    int offset = col * 8;
 
                     if (typeCode == 'I')
                     {
                         long.TryParse(rawValue, out long val);
-                        Marshal.WriteInt64(valuePtr, val);
+                        Marshal.WriteInt64(recordBuffer, offset, val);
                     }
                     else if (typeCode == 'F')
                     {
-                        // Add System.Globalization.CultureInfo.InvariantCulture here
-                        if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out double val))
-                        {
-                            long bits = BitConverter.DoubleToInt64Bits(val);
-                            Marshal.WriteInt64(valuePtr, bits);
-                        }
-                        else
-                        {
-                            // Fallback for safety
-                            Marshal.WriteInt64(valuePtr, 0);
-                        }
+                        double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out double val);
+                        long bits = BitConverter.DoubleToInt64Bits(val);
+                        Marshal.WriteInt64(recordBuffer, offset, bits);
                     }
                     else if (typeCode == 'B')
                     {
                         bool val = rawValue.ToLower() == "true" || rawValue == "1";
-                        Marshal.WriteInt64(valuePtr, val ? 1 : 0);
+                        Marshal.WriteInt64(recordBuffer, offset, val ? 1 : 0);
                     }
                     else if (typeCode == 'S')
                     {
-                        // Strings are tricky; StringToHGlobalAnsi uses Marshal's heap.
-                        // For a 100% "Real" IR way, you'd malloc + strcpy here too.
                         IntPtr strPtr = Marshal.StringToHGlobalAnsi(rawValue);
-                        valuePtr = strPtr;
+                        Marshal.WriteIntPtr(recordBuffer, offset, strPtr);
                     }
-                    else
-                        throw new Exception("Invalid data type: " + typeCode);
-                    Marshal.WriteIntPtr(recordBuffer, col * 8, valuePtr);
                 }
                 Marshal.WriteIntPtr(rowsDataBuffer, i * 8, recordBuffer);
             }
@@ -158,69 +145,120 @@ namespace MyCompiler
 
         public static void ToCsvInternal(IntPtr dfPtr, IntPtr pathPtr)
         {
-            string path = Marshal.PtrToStringAnsi(pathPtr);
-
-            // 1. Unpack Dataframe { ptr columns, ptr rows, ptr types }
-            IntPtr columnsArrayPtr = Marshal.ReadIntPtr(dfPtr, 0);
-            IntPtr rowsArrayPtr = Marshal.ReadIntPtr(dfPtr, 8);
-            IntPtr typesArrayPtr = Marshal.ReadIntPtr(dfPtr, 16);
-
-            // 2. Get Metadata (Lengths) from Array Headers
-            long colCount = Marshal.ReadInt64(columnsArrayPtr, 0);
-            long rowCount = Marshal.ReadInt64(rowsArrayPtr, 0);
-
-            // Get raw buffers
-            IntPtr colDataBuf = Marshal.ReadIntPtr(columnsArrayPtr, 16);
-            IntPtr rowDataBuf = Marshal.ReadIntPtr(rowsArrayPtr, 16);
-            IntPtr typeDataBuf = Marshal.ReadIntPtr(typesArrayPtr, 16);
-
-            using (StreamWriter writer = new StreamWriter(path))
+            if (dfPtr == IntPtr.Zero || pathPtr == IntPtr.Zero)
             {
-                // 3. Write Header Row
-                List<string> colNames = new List<string>();
-                for (int i = 0; i < colCount; i++)
-                {
-                    IntPtr namePtr = Marshal.ReadIntPtr(colDataBuf, i * 8);
-                    colNames.Add(Marshal.PtrToStringAnsi(namePtr));
-                }
-                writer.WriteLine(string.Join(",", colNames));
-
-                // 4. Write Data Rows
-                for (int i = 0; i < rowCount; i++)
-                {
-                    IntPtr recordPtr = Marshal.ReadIntPtr(rowDataBuf, i * 8);
-                    List<string> rowValues = new List<string>();
-
-                    for (int j = 0; j < colCount; j++)
-                    {
-                        IntPtr valBoxPtr = Marshal.ReadIntPtr(recordPtr, j * 8);
-                        int typeCode = (int)Marshal.ReadInt64(typeDataBuf, j * 8); // 1=Int, 2=Float, 3=Bool, 4=String
-
-                        string cellValue = "";
-                        if (typeCode == 1) // Int
-                        {
-                            cellValue = Marshal.ReadInt64(valBoxPtr).ToString();
-                        }
-                        else if (typeCode == 2) // Float (Double)
-                        {
-                            long bits = Marshal.ReadInt64(valBoxPtr);
-                            cellValue = BitConverter.Int64BitsToDouble(bits).ToString();
-                        }
-                        else if (typeCode == 3) // Bool
-                        {
-                            cellValue = Marshal.ReadInt64(valBoxPtr) == 1 ? "true" : "false";
-                        }
-                        else if (typeCode == 4) // String
-                        {
-                            // Remember: for strings, valBoxPtr IS the pointer to the string
-                            cellValue = Marshal.PtrToStringAnsi(valBoxPtr);
-                        }
-                        rowValues.Add(cellValue);
-                    }
-                    writer.WriteLine(string.Join(",", rowValues));
-                }
+                Console.WriteLine("CRITICAL: Received Null Pointer in ToCsvInternal!");
+                return;
             }
-            Console.WriteLine($"--- C# Runtime: CSV saved to {path} ---");
+
+            try
+            {
+                // Get the export path
+                string path = Marshal.PtrToStringAnsi(pathPtr);
+                Console.WriteLine($"Exporting to: {path}");
+
+                // 1. Unpack Dataframe { ptr columns_array, ptr rows_array, ptr types_array }
+                // Each of these is a pointer (8 bytes on x64)
+                IntPtr columnsArrayPtr = Marshal.ReadIntPtr(dfPtr, 0);
+                IntPtr rowsArrayPtr = Marshal.ReadIntPtr(dfPtr, 8);
+                IntPtr typesArrayPtr = Marshal.ReadIntPtr(dfPtr, 16);
+
+                // 2. Get Metadata (Lengths) from our custom Array Headers
+                // Assuming your Array Layout is: [ i64 length | i64 capacity | i64 data_ptr ]
+                long colCount = Marshal.ReadInt64(columnsArrayPtr, 0);
+                long rowCount = Marshal.ReadInt64(rowsArrayPtr, 0);
+
+                // Get raw data buffers (offset 16 is the 3rd field in the array struct)
+                IntPtr colDataBuf = Marshal.ReadIntPtr(columnsArrayPtr, 16);
+                IntPtr rowDataBuf = Marshal.ReadIntPtr(rowsArrayPtr, 16);
+                IntPtr typeDataBuf = Marshal.ReadIntPtr(typesArrayPtr, 16);
+
+                using (StreamWriter writer = new StreamWriter(path))
+                {
+                    // 3. Write Header Row
+                    List<string> colNames = new List<string>();
+                    for (int i = 0; i < colCount; i++)
+                    {
+                        IntPtr namePtr = Marshal.ReadIntPtr(colDataBuf, i * 8);
+                        colNames.Add(Marshal.PtrToStringAnsi(namePtr) ?? "Unknown");
+                    }
+                    writer.WriteLine(string.Join(",", colNames));
+
+                    // 4. Write Data Rows
+                    for (int i = 0; i < rowCount; i++)
+                    {
+                        // recordPtr is the address of the specific Malloc'd struct for this row
+                        IntPtr recordPtr = Marshal.ReadIntPtr(rowDataBuf, i * 8);
+                        if (recordPtr == IntPtr.Zero) continue;
+
+                        List<string> rowValues = new List<string>();
+
+                        for (int j = 0; j < colCount; j++)
+                        {
+                            int offset = j * 8; // Because we forced LLVM to use 8-byte alignment
+
+                            // CRITICAL: Ensure typesArray was also built with i64 in LLVM
+                            int typeCode = (int)Marshal.ReadInt64(typeDataBuf, offset);
+                            string cellValue = "";
+
+                            switch (typeCode)
+                            {
+                                case 1: // Int
+                                    cellValue = Marshal.ReadInt64(recordPtr, offset).ToString();
+                                    break;
+
+                                case 2: // Float
+                                    long floatBits = Marshal.ReadInt64(recordPtr, offset);
+                                    cellValue = BitConverter.Int64BitsToDouble(floatBits)
+                                                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+                                    break;
+
+                                case 3: // Bool
+                                    cellValue = Marshal.ReadInt64(recordPtr, offset) == 1 ? "true" : "false";
+                                    break;
+
+                                case 4: // String
+                                    IntPtr strPtr = Marshal.ReadIntPtr(recordPtr, offset);
+
+                                    // ADD THIS DEBUG LINE HERE:
+                                    Console.WriteLine($"DEBUG: Row {i}, Col {j} is STRING. TypeCode={typeCode}, PointerValue={strPtr.ToInt64():X}");
+
+                                    // Safety check: PtrToStringAnsi crashes if strPtr is garbage
+                                    if (strPtr != IntPtr.Zero)
+                                    {
+                                        try
+                                        {
+                                            cellValue = Marshal.PtrToStringAnsi(strPtr);
+                                        }
+                                        catch
+                                        {
+                                            cellValue = "INVALID_STR_PTR";
+                                            Console.WriteLine($"CRASH PREVENTED: Pointer {strPtr} was not a valid string!");
+                                        }
+                                    }
+                                    else
+                                    {
+                                        cellValue = "";
+                                    }
+                                    break;
+
+
+                                default:
+                                    cellValue = "NULL";
+                                    break;
+                            }
+                            rowValues.Add(cellValue);
+                        }
+                        writer.WriteLine(string.Join(",", rowValues));
+                    }
+                }
+                Console.WriteLine($"--- Success: {rowCount} rows written ---");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"CRITICAL ERROR during CSV Export: {ex.Message}");
+                throw;
+            }
         }
     }
 
@@ -687,16 +725,20 @@ namespace MyCompiler
             var result = new Dictionary<string, object>();
             int fieldSize = 8;
 
+            if (_debug) Console.WriteLine("Record type: " + record);
+            //if (_debug) Console.WriteLine("Record type count: " + record.RecordFields?.Count);
+
             for (int i = 0; i < record.RecordFields?.Count; i++)
             {
                 var rec = record.RecordFields[i];
                 string label = rec.Label;
 
                 Type recType = rec.Type;
-                // if(_debug) Console.WriteLine($"{label}: {recType}");
+                if (_debug) Console.WriteLine($"Label: {label}, type: {recType}");
 
                 IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
-                IntPtr ptr = Marshal.ReadIntPtr(fieldLocation);
+                IntPtr ptr = fieldLocation;
+                //IntPtr ptr = Marshal.ReadIntPtr(fieldLocation); // the old and bad
 
                 switch (recType)
                 {
@@ -710,7 +752,9 @@ namespace MyCompiler
                         result[label] = Marshal.ReadByte(ptr) != 0;
                         break;
                     case StringType:
-                        result[label] = ptr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(ptr);
+                        //result[label] = ptr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(ptr);
+                        IntPtr strPtr = Marshal.ReadIntPtr(fieldLocation);
+                        result[label] = strPtr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(strPtr);
                         break;
                     case RecordType recT:
                         result[label] = HandleRecord(ptr, recT);
@@ -882,27 +926,9 @@ namespace MyCompiler
                 if (colIndex == 0) return rowIndex.ToString();
                 if (v == null) return "null";
 
-                IntPtr ptr = (v is IntPtr p) ? p : IntPtr.Zero;
-                if (ptr == IntPtr.Zero) return v.ToString();
-
-                int tag = tags[colIndex];
-                try
-                {
-                    switch (tag)
-                    {
-                        case 0: case 1: return Marshal.ReadInt64(ptr).ToString();
-                        case 2:
-                            byte[] bytes = new byte[8];
-                            Marshal.Copy(ptr, bytes, 0, 8);
-                            return BitConverter.ToDouble(bytes, 0).ToString();
-                        case 3: return Marshal.ReadByte(ptr) != 0 ? "True" : "False";
-                        case 4:
-                            IntPtr sAddr = Marshal.ReadIntPtr(ptr);
-                            return sAddr == IntPtr.Zero ? "" : Marshal.PtrToStringAnsi(sAddr);
-                        default: return "???";
-                    }
-                }
-                catch { return "ERR"; }
+                // If it's a string, double, long, or bool, ToString() just works!
+                // No more Marshal.Read inside the formatter.
+                return v.ToString();
             }
 
             // --- 3. Calculate Widths using only extracted rows ---
@@ -1021,33 +1047,34 @@ namespace MyCompiler
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var field = recordType.RecordFields[i];
-                // Handle both Field objects and direct Types
                 var fieldType = field.Value?.Type ?? field.Type;
+                int offset = i * 8; // Every field is exactly 8 bytes wide
 
-                // 1. Get the pointer stored at this record offset (index i * 8 bytes)
-                IntPtr valuePtr = Marshal.ReadIntPtr(IntPtr.Add(recordPtr, i * 8));
-
-                if (valuePtr == IntPtr.Zero)
-                {
-                    result.Add("null");
-                    continue;
-                }
-
-                // 2. Dereference based on the known type
                 if (fieldType is IntType)
-                    result.Add(Marshal.ReadInt64(valuePtr));
+                {
+                    result.Add(Marshal.ReadInt64(recordPtr, offset));
+                }
                 else if (fieldType is FloatType)
                 {
-                    byte[] bytes = new byte[8];
-                    Marshal.Copy(valuePtr, bytes, 0, 8);
-                    result.Add(BitConverter.ToDouble(bytes, 0));
+                    long bits = Marshal.ReadInt64(recordPtr, offset);
+                    result.Add(BitConverter.Int64BitsToDouble(bits));
                 }
                 else if (fieldType is BoolType)
-                    result.Add(Marshal.ReadByte(valuePtr) != 0);
+                {
+                    // We store bools as 64-bit 0 or 1 in ReadCsvInternal
+                    result.Add(Marshal.ReadInt64(recordPtr, offset) != 0);
+                }
                 else if (fieldType is StringType)
-                    result.Add(Marshal.PtrToStringAnsi(valuePtr)); // Direct pointer to C-String
+                {
+                    // For strings, the 8 bytes IS the pointer to the char array
+                    IntPtr sPtr = Marshal.ReadIntPtr(recordPtr, offset);
+                    result.Add(sPtr == IntPtr.Zero ? "" : Marshal.PtrToStringAnsi(sPtr));
+                }
                 else
-                    result.Add(valuePtr); // Return raw pointer for complex types
+                {
+                    // For nested records/arrays, we still store the pointer
+                    result.Add(Marshal.ReadIntPtr(recordPtr, offset));
+                }
             }
             return result;
         }
@@ -1666,14 +1693,34 @@ namespace MyCompiler
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
         }
 
+
+
         public LLVMValueRef VisitCast(CastNode node)
         {
             var value = Visit(node.Expression);
+            var i64Type = _module.Context.Int64Type;
 
+            // 1. Existing: Int -> Float (Actual value conversion)
             if (node.Expression.Type is IntType && node.ToType is FloatType)
             {
-                if (_debug) Console.WriteLine($"Converting {node.Expression.Type} to {node.ToType} in cast node");
+                if (_debug) Console.WriteLine($"Converting {node.Expression.Type} to {node.ToType} (SIToFP)");
                 return _builder.BuildSIToFP(value, _module.Context.DoubleType, "int2double");
+            }
+
+            // 2. NEW: Float -> Int (Bitwise preservation for CSV storage)
+            if (node.Expression.Type is FloatType && node.ToType is IntType)
+            {
+                if (_debug) Console.WriteLine($"Bitcasting {node.Expression.Type} to {node.ToType} for storage");
+                // This keeps the 64 bits of the double exactly as they are
+                return _builder.BuildBitCast(value, i64Type, "double_to_i64_bits");
+            }
+
+            // 3. NEW: Bool -> Int (Zero-extension for storage)
+            if (node.Expression.Type is BoolType && node.ToType is IntType)
+            {
+                if (_debug) Console.WriteLine($"Extending {node.Expression.Type} to {node.ToType}");
+                // Turns i1 (0/1) into i64 (0/1)
+                return _builder.BuildZExt(value, i64Type, "bool_to_i64");
             }
 
             throw new NotImplementedException($"Unsupported cast {node.FromType} -> {node.ToType}");
@@ -2536,28 +2583,47 @@ namespace MyCompiler
             var resVar = "__map_result";
             var iVar = "__map_i";
             var currentRowVar = "__current_row";
-            var dfType = (DataframeType)expr.Type;
 
-            // 1. Assign Source
+            var dfType = (DataframeType)expr.Type;
+            var rowType = (RecordType)dfType.RowType;
+
+            // 1. Assign Source: __map_src = <sourceExpr>
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
             // 2. Capture length
             var srcLength = new LengthNode(new IdNode(srcVar));
             srcLength.SetType(new IntType());
 
-            // 3. Initialize Result Dataframe with Capacity
-            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
+            // 3. Initialize Result Dataframe
+            var columns = dfType.ColumnNames
+                .Select(c => (ExpressionNode)new StringNode(c)).ToList();
 
-            // Passing srcLength to ArrayNode is the key to stopping reallocs
+            // FIXED: Map types to integer IDs instead of string keywords
+            // This matches the mapping in your C# ToCsvInternal and GetTypeByTag
+            var actualTypes = rowType.RecordFields.Select(f =>
+            {
+                int typeId = 4; // Default: String
+                if (f.Type is IntType) typeId = 1;
+                else if (f.Type is FloatType) typeId = 2;
+                else if (f.Type is BoolType) typeId = 3;
+                else if (f.Type is StringType) typeId = 4;
+
+                var numNode = new NumberNode(typeId);
+                numNode.SetType(new IntType()); // Ensure LLVM treats this as an i64
+                return (ExpressionNode)numNode;
+            }).ToList();
+
+            // Pre-allocate the rows array
             var rowsArray = new ArrayNode(new List<ExpressionNode>(), srcLength);
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
+            // Create the constructor with the explicit "types" argument
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
         new NamedArgumentNode("columns", new ArrayNode(columns)),
         new NamedArgumentNode("rows", rowsArray),
-        new NamedArgumentNode("type", new ArrayNode(dummyTypes))
+        new NamedArgumentNode("types", new ArrayNode(actualTypes))
     });
+
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2566,41 +2632,70 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // 4. Fetch row: currentRow = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-            rowAccess.SkipBoundsCheck = true;
+            // 4. Fetch current row: __current_row = __map_src[__map_i]
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
             // 5. Transformation Logic
-            ExpressionNode finalRowExpr;
-            // Check if assignments are complex or a single expression
-            bool isStatementStyle = expr.Assignments.Any(a => a.GetType().Name.Contains("Assign"));
-
-            if (expr.Assignments.Count == 1 && !isStatementStyle)
+            var updates = new Dictionary<string, ExpressionNode>();
+            foreach (var action in expr.Assignments)
             {
-                finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
-            }
-            else
-            {
-                // Record Cloning (Necessary if updating existing rows)
-                var cloneNode = new BinaryOpNode(new IdNode(currentRowVar), "+", new RecordNode(new List<NamedArgumentNode>()));
-                cloneNode.SetType(dfType.RowType);
-                loopBody.Statements.Add(new AssignNode(currentRowVar, cloneNode));
+                string fieldName = null;
+                ExpressionNode valueNode = null;
 
-                foreach (var action in expr.Assignments)
+                if (action is RecordFieldAssignNode rfa)
                 {
-                    var replacedAction = ReplaceIteratorInNode(action, expr.IteratorId.Name, replacementNode);
-                    loopBody.Statements.Add((StatementNode)replacedAction);
+                    fieldName = rfa.IdField;
+                    valueNode = rfa.AssignExpression;
                 }
-                finalRowExpr = new IdNode(currentRowVar);
+                else if (action is AssignNode asn && asn.Expression is IdNode id)
+                {
+                    fieldName = id.Name;
+                    valueNode = asn.Expression;
+                }
+
+                if (fieldName != null)
+                {
+                    updates[fieldName] = (ExpressionNode)ReplaceIteratorInNode(valueNode, expr.IteratorId.Name, replacementNode);
+                }
             }
 
-            // 6. Use AddNode (since AssignNode won't take targetIndex)
-            // Because we initialized 'rowsArray' with 'srcLength', 
-            // the 'grow' block in the IR will exist but will NEVER be executed.
+            // 6. Reconstruct the record field-by-field
+            var recordArgs = new List<NamedArgumentNode>();
+
+            foreach (var fieldSchema in rowType.RecordFields)
+            {
+                ExpressionNode fieldValue;
+
+                if (updates.ContainsKey(fieldSchema.Label))
+                {
+                    fieldValue = updates[fieldSchema.Label];
+                }
+                else
+                {
+                    // Default: copy from source row
+                    var access = new FieldNode(new IdNode(currentRowVar), fieldSchema.Label);
+                    access.SetType(fieldSchema.Type);
+                    fieldValue = access;
+                }
+
+                // FORCE 8-byte alignment for Bool and Float via Cast
+                if (fieldSchema.Type is BoolType || fieldSchema.Type is FloatType)
+                {
+                    var cast = new CastNode(fieldValue, fieldSchema.Type, new IntType());
+                    fieldValue = cast;
+                }
+
+                recordArgs.Add(new NamedArgumentNode(fieldSchema.Label, fieldValue));
+            }
+
+            // 7. Create the new Record and add to result Dataframe
+            var finalRowExpr = new RecordNode(recordArgs);
+            finalRowExpr.SetType(rowType);
+
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
-            // 7. Loop Setup
+            // 8. Loop Setup: for (__map_i = 0; __map_i < srcLength; __map_i++)
             var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
@@ -2608,6 +2703,8 @@ namespace MyCompiler
             program.Statements.Add(new IdNode(resVar));
             return program;
         }
+
+
 
         // Helper to check if a node tree uses a specific variable
         private bool IsPure(Node node)
@@ -2724,62 +2821,52 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
 
-            // i8*  (field type)
-            var slotType = LLVMTypeRef.CreatePointer(i8, 0);
-
-            // i8** (array of fields)
-            var slotArrayType = LLVMTypeRef.CreatePointer(slotType, 0);
-
+            // 1. Get the actual LLVM Struct Type for this record
+            var recordStructType = GetLLVMType(recordType);
             var mallocFunc = GetOrDeclareMalloc();
 
-            var numFields = (ulong)recordType.RecordFields.Count;
+            // 2. Calculate size using LLVM's offsetof logic to ensure alignment/padding is correct
+            var sizeOfRecord = LLVMValueRef.CreateConstInt(i64, GetStructSize(recordType));
 
-            // 1. Allocate raw buffer for new record (numFields * 8 bytes)
+            // 3. Allocate the new record
             var newRecordBuffer = _builder.BuildCall2(
                 _mallocType,
                 mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, numFields * (ulong)IntPtr.Size) },
-                "record_copy_buffer"
+                new[] { sizeOfRecord },
+                "record_copy_mem"
             );
 
-            // 2. Cast BOTH source and destination to i8**
-            var srcBuffer = _builder.BuildBitCast(recordPtr, slotArrayType, "src_slots");
-            var dstBuffer = _builder.BuildBitCast(newRecordBuffer, slotArrayType, "dst_slots");
-
+            // No need for generic i8** casts; we work with the struct pointers directly
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
-                var fieldType = recordType.RecordFields[i].Type;
-                var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+                var fieldInfo = recordType.RecordFields[i];
+                var fieldLLVMType = GetLLVMType(fieldInfo.Type);
 
-                // 3. Get pointer to field slot in source
-                var srcSlotPtr = _builder.BuildGEP2(
-                    slotType,   // element type = i8*
-                    srcBuffer,  // i8**
-                    new[] { index },
-                    "src_slot"
-                );
+                // 4. Use BuildStructGEP2 to get the exact field address
+                var srcFieldPtr = _builder.BuildStructGEP2(recordStructType, recordPtr, (uint)i, $"src_f{i}_ptr");
+                var dstFieldPtr = _builder.BuildStructGEP2(recordStructType, newRecordBuffer, (uint)i, $"dst_f{i}_ptr");
 
-                // 4. Load stored pointer (i8*)
-                var storedPtr = _builder.BuildLoad2(slotType, srcSlotPtr, "stored_ptr");
+                // 5. Load the actual value (could be a double, i64, or ptr)
+                var val = _builder.BuildLoad2(fieldLLVMType, srcFieldPtr, $"f{i}_val");
+                val.SetAlignment(8);
 
-                // 5. Deep copy the value
-                var copiedValuePtr = EmitDeepCopy(storedPtr, fieldType);
+                // 6. Deep copy if it's a reference type; otherwise store the primitive
+                LLVMValueRef copiedValue;
+                if (fieldInfo.Type is ArrayType || fieldInfo.Type is RecordType || fieldInfo.Type is DataframeType)
+                {
+                    copiedValue = EmitDeepCopy(val, fieldInfo.Type);
+                }
+                else
+                {
+                    // For primitives (Double, Int), we just store the loaded value
+                    copiedValue = val;
+                }
 
-                // 6. Get pointer to destination slot
-                var dstSlotPtr = _builder.BuildGEP2(
-                    slotType,
-                    dstBuffer,
-                    new[] { index },
-                    "dst_slot"
-                );
-
-                // 7. Store copied pointer
-                _builder.BuildStore(copiedValuePtr, dstSlotPtr);
+                var storeInstr = _builder.BuildStore(copiedValue, dstFieldPtr);
+                storeInstr.SetAlignment(8);
             }
 
-            // 8. Return raw buffer (external representation = i8*)
             return newRecordBuffer;
         }
 
@@ -3518,14 +3605,11 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. Resolve types and Primitivity
             LLVMTypeRef llvmElementType = GetLLVMType(elementType);
-            bool isReferenceType = IsReferenceType(elementType);
+            var elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
             bool isPrimitive = elementType is IntType || elementType is FloatType || elementType is BoolType;
 
-            var elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
-
-            // 2. Load array metadata
+            // 1. Load array metadata
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_ptr");
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 1, "cap_ptr");
             var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_ptr_ptr");
@@ -3535,8 +3619,9 @@ namespace MyCompiler
             var capacity = _builder.BuildLoad2(i64, capPtr, "cap");
             capacity.SetAlignment(8);
             var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
+            rawDataPtr.SetAlignment(8);
 
-            // 3. Capacity Management (Existing grow logic)
+            // 2. Grow logic
             var isFull = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGE, length, capacity, "is_full");
             var function = _builder.InsertBlock.Parent;
             var growBlock = ctx.AppendBasicBlock(function, "grow");
@@ -3545,68 +3630,51 @@ namespace MyCompiler
 
             _builder.BuildCondBr(isFull, growBlock, contBlock);
 
+            // --- Grow Block ---
             _builder.PositionAtEnd(growBlock);
-
-
             var zero = LLVMValueRef.CreateConstInt(i64, 0);
             var four = LLVMValueRef.CreateConstInt(i64, 4);
             var two = LLVMValueRef.CreateConstInt(i64, 2);
 
             var newCap = _builder.BuildSelect(
                 _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, zero),
-                four,
-                _builder.BuildMul(capacity, two),
-                "new_cap"
+                four, _builder.BuildMul(capacity, two), "new_cap"
             );
 
-            uint elementSize = isPrimitive ? GetTypeSize(elementType) : (uint)IntPtr.Size;
-
-            var newByteSize = _builder.BuildMul(
-                newCap,
-                LLVMValueRef.CreateConstInt(i64, elementSize),
-                "bytes"
-            );
+            uint elementSize = isPrimitive ? GetTypeSize(elementType) : 8; // Use 8 for pointers
+            var newByteSize = _builder.BuildMul(newCap, LLVMValueRef.CreateConstInt(i64, elementSize), "bytes");
 
             var reallocFunc = GetOrDeclareRealloc();
-
-            var newRawDataPtr = _builder.BuildCall2(
-                _reallocType,
-                reallocFunc,
-                new[] { rawDataPtr, newByteSize },
-                "realloc"
-            );
+            var newRawDataPtr = _builder.BuildCall2(_reallocType, reallocFunc, new[] { rawDataPtr, newByteSize }, "realloc");
 
             _builder.BuildStore(newCap, capPtr).SetAlignment(8);
-            _builder.BuildStore(newRawDataPtr, dataPtrPtr);
-
+            _builder.BuildStore(newRawDataPtr, dataPtrPtr).SetAlignment(8);
             _builder.BuildBr(contBlock);
 
+            // --- Continue Block ---
             _builder.PositionAtEnd(contBlock);
-            var phi = _builder.BuildPhi(i8Ptr, "final_data_ptr");
-            phi.AddIncoming(new[] { rawDataPtr, newRawDataPtr }, new[] { entryBlock, growBlock }, 2);
+            var phiRawData = _builder.BuildPhi(i8Ptr, "final_data_ptr");
+            phiRawData.AddIncoming(new[] { rawDataPtr, newRawDataPtr }, new[] { entryBlock, growBlock }, 2);
 
-            // 4. Compute target slot
-            var finalTypedPtr = _builder.BuildBitCast(phi, elementPtrType);
-            var targetPtr = _builder.BuildGEP2(llvmElementType, finalTypedPtr, new[] { length }, "target");
+            // 3. Compute target slot with correct typing
+            var typedDataPtr = _builder.BuildBitCast(phiRawData, elementPtrType, "typed_data_ptr");
+            var targetPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { length }, "target_slot_ptr");
 
-            // 5. Store value (The Vectorization Pivot)
-            if (isPrimitive)
+            // 4. Store value
+            LLVMValueRef valToStore = valueToAdd;
+            if (!isPrimitive)
             {
-                // Store the raw value (i64, double, i1) directly
-                var store = _builder.BuildStore(valueToAdd, targetPtr);
-                store.SetAlignment(8); // Crucial for LLVM's LoopVectorize
-            }
-            else
-            {
-                // Store the pointer (Reference types)
-                var castedValue = _builder.BuildBitCast(valueToAdd, llvmElementType);
-                _builder.BuildStore(castedValue, targetPtr).SetAlignment(8);
+                valToStore = _builder.BuildBitCast(valueToAdd, llvmElementType, "ref_cast");
             }
 
-            // 6. Increment length
+            var store = _builder.BuildStore(valToStore, targetPtr);
+            store.SetAlignment(8);
+
+            // 5. Increment length
             var newLen = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(i64, 1), "new_len");
             _builder.BuildStore(newLen, lenPtr).SetAlignment(8);
         }
+
 
         public LLVMValueRef VisitAddRange(AddRangeNode expr)
         {
@@ -4268,142 +4336,79 @@ namespace MyCompiler
             else
                 return _builder.BuildNeg(value, "neg");
         }
-
         public LLVMValueRef VisitIndexAssign(IndexAssignNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // Use opaque ptr if LLVM 15+
             var func = _builder.InsertBlock.Parent;
 
-            // 1. Get Header and Index
             var headerPtr = Visit(expr.ArrayExpression);
             var indexVal = Visit(expr.IndexExpression);
-
             if (indexVal.TypeOf == ctx.DoubleType)
                 indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-            // 2. Load Metadata for Bounds Check and Access
-            var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_ptr");
+            // Load Data Pointer
             var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_ptr_ptr");
+            var dataPtr = _builder.BuildLoad2(ptrType, dataFieldPtr, "data_ptr");
+            dataPtr.SetAlignment(8);
 
-            var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
-            var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
-
-            // 3. --- BOUNDS CHECK ---
-            var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
-            var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
-            var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
-
-            var failBlock = ctx.AppendBasicBlock(func, "assign_bounds.fail");
-            var safeBlock = ctx.AppendBasicBlock(func, "assign_bounds.ok");
-            _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
-
-            // --- FAIL ---
-            _builder.PositionAtEnd(failBlock);
-            var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
-            _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-            _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
-
-            // --- SAFE ---
-            _builder.PositionAtEnd(safeBlock);
-
-            // 4. Stride-Aware Value Preparation
+            // Value to store
             var valueToAssign = Visit(expr.AssignExpression);
 
-            // Check if it's a bool array to determine stride and storage type
-            bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
-            var gepType = isBool ? i8 : i8Ptr;
+            // Bounds Check logic (as before)...
 
-            LLVMValueRef finalValueToStore;
-            if (isBool) // Convert i1 to i8 (1 byte)
-                finalValueToStore = _builder.BuildZExt(valueToAssign, i8, "bool_to_i8");
-            else
-                finalValueToStore = _builder.BuildBitCast(valueToAssign, i8Ptr, "val_to_ptr");
+            // --- SAFE BLOCK ---
+            var arrayType = (ArrayType)expr.ArrayExpression.Type;
+            var llvmElemType = GetLLVMType(arrayType.ElementType);
 
-            // 5. GEP into the separate Data Buffer (No +2 offset)
-            var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
+            // Use the actual element type for the GEP to ensure correct stride
+            var elementPtr = _builder.BuildGEP2(llvmElemType, dataPtr, new[] { indexVal }, "elem_ptr");
 
-            // 6. Store
-            _builder.BuildStore(finalValueToStore, elementPtr);
+            var store = _builder.BuildStore(valueToAssign, elementPtr);
+            store.SetAlignment(8);
 
             return valueToAssign;
         }
-
         public LLVMValueRef VisitRecord(RecordNode expr)
         {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            // 1. Fix: Use GetStructType instead of CreateStructType
+            var fields = new LLVMTypeRef[expr.Fields.Count];
+            for (int i = 0; i < expr.Fields.Count; i++)
+            {
+                fields[i] = _module.Context.Int64Type;
+            }
+            var structType = _module.Context.GetStructType(fields, false);
 
-            var slotType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0); // i8*
-            var slotArrayType = LLVMTypeRef.CreatePointer(slotType, 0); // i8**
+            // 2. Fix: Use structType.SizeOf (it's a property, not a method)
+            var sizeValue = structType.SizeOf;
 
-            var mallocFunc = GetOrDeclareMalloc();
+            // 3. Fix: Ensure malloc arguments are an explicit LLVMValueRef array
+            var mallocArgs = new LLVMValueRef[] { sizeValue };
+            var instancePtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), mallocArgs, "record_ptr");
 
-            var numFields = (ulong)expr.Fields.Count;
-
-            // Allocate raw memory
-            var rawBuffer = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, numFields * 8) },
-                "record_buffer"
-            );
-
-            // CRITICAL: cast to i8**
-            var buffer = _builder.BuildBitCast(rawBuffer, slotArrayType, "record_slots");
+            var structPtrType = LLVMTypeRef.CreatePointer(structType, 0);
+            var typedInstance = _builder.BuildBitCast(instancePtr, structPtrType, "typed_record");
 
             for (int i = 0; i < expr.Fields.Count; i++)
             {
-                var val = Visit(expr.Fields[i].Value);
-                LLVMValueRef fieldPtr;
+                var fieldValue = Visit(expr.Fields[i].Value);
 
-                bool isPrimitive =
-                    val.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
-                    val.TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind;
-
-                if (isPrimitive)
+                // Convert pointers (like strings) to i64 for our uniform 8-byte grid
+                if (fieldValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
                 {
-                    var mem = _builder.BuildCall2(
-                        _mallocType,
-                        mallocFunc,
-                        new[] { LLVMValueRef.CreateConstInt(i64, 8) },
-                        "field_mem"
-                    );
-
-                    var castPtr = _builder.BuildBitCast(
-                        mem,
-                        LLVMTypeRef.CreatePointer(val.TypeOf, 0),
-                        "cast"
-                    );
-
-                    _builder.BuildStore(val, castPtr).SetAlignment(8);
-
-                    fieldPtr = mem;
-                }
-                else
-                {
-                    fieldPtr = _builder.BuildBitCast(val, i8Ptr, "to_i8ptr");
+                    fieldValue = _builder.BuildPtrToInt(fieldValue, _module.Context.Int64Type, "ptr_to_i64");
                 }
 
-                // NOW GEP IS CORRECT (step = 8 bytes)
-                var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-
-                var slotPtr = _builder.BuildGEP2(
-                    slotType,   // NOT i8Ptr variable reused — must match exactly
-                    buffer,
-                    new[] { index },
-                    "field_ptr"
-                );
-
-                _builder.BuildStore(fieldPtr, slotPtr);
+                // Navigate and store
+                var fieldPtr = _builder.BuildStructGEP2(structType, typedInstance, (uint)i, $"field_{i}");
+                var store = _builder.BuildStore(fieldValue, fieldPtr);
+                store.Alignment = 8;
             }
 
-            return rawBuffer; // keep external representation as i8*
+            return instancePtr;
         }
+
 
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
@@ -4470,29 +4475,32 @@ namespace MyCompiler
         {
             if (expr.SourceExpression.Type is RecordType)
             {
+                // Get the pointer to the specific slot (e.g., recordBase + 8)
                 var (fieldSlotPtr, _) = GetFieldPointer(expr.SourceExpression, expr.IdField);
                 var ctx = _module.Context;
-                var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-                // Load the pointer stored in the record slot
-                var storedPtr = _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"load_{expr.IdField}_ptr");
-                storedPtr.SetAlignment(8);
+                // Perform a SINGLE load based on the type
                 if (expr.Type is IntType)
-                    return _builder.BuildLoad2(ctx.Int64Type, storedPtr, $"val_{expr.IdField}");
+                    return _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_{expr.IdField}");
 
                 if (expr.Type is FloatType)
-                    return _builder.BuildLoad2(ctx.DoubleType, storedPtr, $"val_{expr.IdField}");
+                    return _builder.BuildLoad2(ctx.DoubleType, fieldSlotPtr, $"val_{expr.IdField}");
 
                 if (expr.Type is BoolType)
-                    return _builder.BuildLoad2(ctx.Int1Type, storedPtr, $"val_{expr.IdField}");
+                {
+                    // If you store bools as i64 in C#, load i64 and truncate to i1
+                    var i64Val = _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_bool_raw");
+                    return _builder.BuildIntCast(i64Val, ctx.Int1Type, $"val_{expr.IdField}");
+                }
 
                 if (expr.Type is StringType)
                 {
-                    // NO GEP HERE. The storedPtr is already the char* (or the pointer to the string)
-                    return storedPtr;
+                    // For strings, the value IN the slot IS the pointer to the characters
+                    var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+                    return _builder.BuildLoad2(i8Ptr, fieldSlotPtr, $"val_{expr.IdField}");
                 }
 
-                return storedPtr;
+                return _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), fieldSlotPtr, "val_ptr");
             }
             else if (expr.SourceExpression.Type is DataframeType)
             {
@@ -4508,13 +4516,14 @@ namespace MyCompiler
 
         public LLVMValueRef VisitToCsv(ToCsvNode expr)
         {
-            // 1. Visit the Dataframe expression (e.g., the variable 'df2')
+            // 1. Visit the Dataframe expression (the struct containing {cols, rows, types})
             var dfValue = Visit(expr.Expression);
 
-            // 2. Visit the Path expression (the StringNode)
+            // 2. Visit the Path expression (the string/filename)
             var pathValue = Visit(expr.FileNameExpr);
 
-            // 3. Setup the Function Type: void ToCsvInternal(ptr, ptr)
+            // 3. Setup Function Type: void ToCsvInternal(ptr, ptr)
+            // Note: Modern LLVM uses opaque pointers (ptr). i8Ptr is the standard way to represent this.
             var voidType = _module.Context.VoidType;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             var toCsvFnType = LLVMTypeRef.CreateFunction(voidType, new[] { i8Ptr, i8Ptr }, false);
@@ -4527,12 +4536,13 @@ namespace MyCompiler
             }
 
             // 5. Build the Call
-            // Ensure dfValue is cast to i8Ptr if it isn't already (standard for 'ptr' in modern LLVM)
+            // dfValue is likely already a pointer to the DF struct. 
+            // We cast to i8Ptr to satisfy the C# signature.
             var dfCast = _builder.BuildBitCast(dfValue, i8Ptr, "df_cast");
 
+            // pathValue is already a pointer to the string characters from Visit(StringNode)
             _builder.BuildCall2(toCsvFnType, toCsvFn, new[] { dfCast, pathValue }, "");
 
-            // 6. Return 
             return default;
         }
 
@@ -4629,7 +4639,6 @@ namespace MyCompiler
         private LLVMValueRef GenerateDataTypesArray(RecordNode schema)
         {
             var i64 = _module.Context.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             int count = schema.Fields.Count;
 
             var header = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "types_header");
@@ -4637,22 +4646,24 @@ namespace MyCompiler
 
             for (int i = 0; i < count; i++)
             {
-                // Map your types to numbers (match your original IR output: 1, 4, 1, 3, 2)
-                int typeId = GetTypeByTag(schema.Fields[i].Type);
+                var fieldType = schema.Fields[i].Type;
+                int typeId = GetTypeByTag(fieldType);
 
-                var target = _builder.BuildGEP2(i8Ptr, data, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, "ptr");
-                // bitcast integer to ptr for storage in the pointer array
-                var valAsPtr = _builder.BuildIntToPtr(LLVMValueRef.CreateConstInt(i64, (ulong)typeId), i8Ptr);
-                _builder.BuildStore(valAsPtr, target);
+                // DEBUG: This will tell you what the compiler THINKS the type is
+                Console.WriteLine($"Compiling Metadata: Column {i} ({schema.Fields[i].Label}) is Type {fieldType} -> ID {typeId}");
+
+                var target = _builder.BuildGEP2(i64, data, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, "ptr");
+                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)typeId), target);
             }
 
-            // Set len=count, cap=count, data=data
+            // Set len, cap, data
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 0, ""));
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 1, ""));
             _builder.BuildStore(data, _builder.BuildStructGEP2(_arrayStruct, header, 2, ""));
 
             return header;
         }
+
 
         private string GetSchemaString(RecordNode schema)
         {
@@ -4769,44 +4780,53 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
 
+            // 1. Visit Columns (Array of strings)
             var colsPtr = Visit(expr.Columns);
 
-            // --- OPTIMIZATION START ---
-            LLVMValueRef rowsPtr;
+            // 2. Visit Rows (Array of records)
+            // Pass capacity to the rows ArrayNode if pre-allocation is possible
             if (expr.CapacityExpression != null)
             {
-                // 1. Evaluate the capacity (e.g., the length of the source dataframe)
-                var capVal = Visit(expr.CapacityExpression);
-
-                // 2. Pass this capacity to the rows ArrayNode before visiting it
                 expr.Rows.CapacityExpression = expr.CapacityExpression;
+            }
+            var rowsPtr = Visit(expr.Rows);
 
-                // 3. Now visiting expr.Rows will use the pre-allocated capacity
-                rowsPtr = Visit(expr.Rows);
+            // 3. Resolve Data Types Metadata
+            LLVMValueRef dataTypesPtr;
+
+            // Use the DataTypes property defined in your DataframeNode class
+            if (expr.DataTypes != null)
+            {
+                // This visits the ArrayNode you built in MapForDataframe.
+                // It contains the type tags for each column.
+                dataTypesPtr = Visit(expr.DataTypes);
             }
             else
             {
-                rowsPtr = Visit(expr.Rows);
+                // Fallback: Generate metadata from the semantic Type object
+                var dfType = expr.Type as DataframeType ?? throw new Exception("Expected dataframe type.");
+
+                var datatypeNodes = dfType.DataTypes
+                    .Select(t => (ExpressionNode)new NumberNode(GetTypeByTag(t)))
+                    .ToList();
+
+                var datatypeArray = new ArrayNode(datatypeNodes);
+                datatypeArray.SetType(new ArrayType(new IntType()));
+                dataTypesPtr = Visit(datatypeArray);
             }
-            // --- OPTIMIZATION END ---
 
-            var dfType = expr.Type as DataframeType ?? throw new Exception("Expected dataframe type.");
-
-            // ... rest of your code for dataTypes ...
-            var datatypeNodes = dfType.DataTypes
-                .Select(t => new NumberNode(GetTypeByTag(t)))
-                .Cast<ExpressionNode>()
-                .ToList();
-
-            var datatypeArray = new ArrayNode(datatypeNodes, (uint)datatypeNodes.Count);
-            var dataTypesPtr = Visit(datatypeArray);
-
+            // 4. Construct the Dataframe Struct { ptr cols, ptr rows, ptr types }
             var dfStructType = GetOrCreateDataframeType();
             var dfPtr = _builder.BuildMalloc(dfStructType, "df_header");
 
-            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
-            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
-            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+            // Store Columns pointer
+            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0, "col_ptr"));
+
+            // Store Rows pointer
+            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "row_ptr"));
+
+            // Store Type Metadata pointer
+            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2, "type_ptr"));
 
             return dfPtr;
         }

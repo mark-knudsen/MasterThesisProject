@@ -261,7 +261,17 @@ namespace MyCompiler
                 return toType;
             }
 
-            if (fromType is IntType && toType is FloatType) // currently only support int -> float casts
+            // 1. Existing: Numeric conversion
+            if (fromType is IntType && toType is FloatType)
+            {
+                expr.SetType(toType);
+                return toType;
+            }
+
+            // 2. NEW: Storage Alignment casts
+            // Allow Float -> Int (for bitcasting) and Bool -> Int (for zero-extending)
+            if ((fromType is FloatType && toType is IntType) ||
+                (fromType is BoolType && toType is IntType))
             {
                 expr.SetType(toType);
                 return toType;
@@ -269,13 +279,21 @@ namespace MyCompiler
 
             throw new Exception($"Cannot cast from {fromType} to {toType}");
         }
-
+        
         private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
         {
             if (from.GetType() == to.GetType())
                 return node;
 
+            // Allow Int -> Float
             if (from is IntType && to is FloatType)
+                return new CastNode(node, from, to);
+
+            // NEW: Allow the storage alignment casts
+            if (from is FloatType && to is IntType)
+                return new CastNode(node, from, to);
+
+            if (from is BoolType && to is IntType)
                 return new CastNode(node, from, to);
 
             throw new Exception($"Cannot cast {from} to {to}");
@@ -562,20 +580,35 @@ namespace MyCompiler
             expr.SetType(inferred);
             return expr.Type;
         }
-
         public Type VisitIndexAssign(IndexAssignNode expr)
         {
-            Visit(expr.ArrayExpression);
+            // 1. Visit children to ensure their .Type properties are populated
+            Type arrayOrDfType = Visit(expr.ArrayExpression);
             Visit(expr.IndexExpression);
-            Visit(expr.AssignExpression);
+            Type valueType = Visit(expr.AssignExpression);
 
-            if (expr.ArrayExpression is IdNode idNode)
+            // 2. Determine the expected element type
+            Type expectedType = null;
+
+            if (arrayOrDfType is ArrayType arr)
             {
-                var entry = _context.Get(idNode.Name);
-                var assignType = expr.AssignExpression.Type.GetType();
-                var arrayType = entry?.Type is ArrayType arrType ? arrType.ElementType?.GetType() : null;
-                if (arrayType != assignType)
-                    throw new Exception($"Can't assign {arrayType.Name} to {assignType.Name} array");
+                expectedType = arr.ElementType;
+            }
+            else if (arrayOrDfType is DataframeType df)
+            {
+                // When assigning to a dataframe directly by index, we expect a Row (Record)
+                expectedType = df.RowType;
+            }
+            else
+            {
+                throw new Exception($"Cannot perform index assignment on non-indexable type: {arrayOrDfType}");
+            }
+
+            // 3. Validate types (using your compiler's type equality, not C# GetType)
+            // Assuming you have a way to check if types match
+            if (expectedType.ToString() != valueType.ToString())
+            {
+                throw new Exception($"Type mismatch: Cannot assign {valueType} to {expectedType} element.");
             }
 
             expr.SetType(new VoidType());
@@ -1117,37 +1150,49 @@ namespace MyCompiler
 
         public Type VisitDataframe(DataframeNode expr)
         {
+            // 1. Handle Capacity if present
             if (expr.CapacityExpression != null)
             {
                 Visit(expr.CapacityExpression);
             }
 
-            // List<Type> columnTypes;
-            RecordType rowType = new RecordType(new List<RecordField>());
-            // 1. Extract and Normalize Columns
-            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToArray();
+            // 2. Resolve Columns (They are required by your constructor)
+            Visit(expr.Columns);
+            var columnNames = expr.Columns.Elements
+                .OfType<StringNode>()
+                .Select(c => c.Value)
+                .ToArray();
 
-            // 3. Now determine types based on the ALREADY MODIFIED columns
+            RecordType rowType = null;
             List<Type> columnTypes = new List<Type>();
+
+            // 3. Determine types from Rows or DataTypes
+            // MapForDataframe sends an empty Rows array (Elements.Count == 0) 
+            // so it will skip the inference and check DataTypes.
             if (expr.Rows != null && expr.Rows.Elements.Count > 0)
             {
-                var inferredRowType = Visit(expr.Rows.Elements[0]) as RecordType;
+                var firstRowType = Visit(expr.Rows.Elements[0]) as RecordType;
+                if (firstRowType == null)
+                    throw new Exception("Dataframe rows must be of Record type.");
+
                 foreach (var name in columnNames)
                 {
-                    var field = inferredRowType.RecordFields.FirstOrDefault(f => f.Label == name);
-                    columnTypes.Add(field?.Type ?? new IntType()); // Default index to Int
+                    var field = firstRowType.RecordFields.FirstOrDefault(f => f.Label == name);
+                    columnTypes.Add(field?.Type ?? new FloatType()); // Default to float if missing
                 }
-                rowType = inferredRowType;
+                rowType = firstRowType;
             }
             else
             {
-                // Explicit types for empty dataframe
-                if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
+                // 4. Fallback to explicit DataTypes (Crucial for MapForDataframe)
+                if (expr.DataTypes == null)
+                    throw new Exception("Empty or pre-allocated dataframe requires 'types' or 'type' argument.");
 
+                // Resolve the type names (e.g., "float") into actual compiler types
                 Visit(expr.DataTypes);
-
                 columnTypes = expr.DataTypes.Elements.Select(e => ResolveType(e)).ToList();
 
+                // Construct the row record type manually based on the schema
                 rowType = new RecordType(columnNames.Select((name, i) => new RecordField
                 {
                     Label = name,
@@ -1155,10 +1200,12 @@ namespace MyCompiler
                 }).ToList());
             }
 
+            // 5. Finalize Node Type
             var dfType = new DataframeType(columnNames, columnTypes, rowType);
             expr.SetType(dfType);
             return dfType;
         }
+
 
         private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
         {
