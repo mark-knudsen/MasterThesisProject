@@ -672,13 +672,12 @@ namespace MyCompiler
 
     public class DataframeNode : ExpressionNode
     {
-        public ExpressionNode Columns { get; }
-        public ExpressionNode Data { get; private set;}
+        public ExpressionNode Columns { get; private set; }
+        public ExpressionNode Data { get; private set; }
         public ExpressionNode DataTypes { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            //Data = new ArrayNode(new List<ExpressionNode>());
             var positional = new List<ExpressionNode>();
 
             foreach (var arg in args)
@@ -689,44 +688,29 @@ namespace MyCompiler
                     continue;
                 }
 
-                switch (arg.Name)
+                switch (arg.Name.ToLower())
                 {
-                    case "columns":
-                        Columns = arg.Value;
-                        break;
-
-                    case "data":
-                        Data = arg.Value;
-                        break;
-
+                    case "columns": Columns = arg.Value; break;
+                    case "data": Data = arg.Value; break;
                     case "type":
-                    case "types":
-                        DataTypes = arg.Value;
-                        break;
-
+                    case "types": DataTypes = arg.Value; break;
                     default:
                         throw new Exception($"Unknown dataframe argument '{arg.Name}'");
                 }
             }
 
-            if (positional.Count > 2)
+            // FIX: Allow up to 3 positional arguments
+            if (positional.Count > 3)
                 throw new Exception("Too many positional arguments for dataframe");
 
-            if (Columns == null && positional.Count > 0)
-                Columns = positional[0];
+            // Assign positional arguments if they weren't provided as named arguments
+            if (Columns == null && positional.Count >= 1) Columns = positional[0];
+            if (Data == null && positional.Count >= 2) Data = positional[1];
+            if (DataTypes == null && positional.Count >= 3) DataTypes = positional[2];
 
-            if (positional.Count == 2)
-            {
-                Columns = positional[0];
-                Data = positional[1];
-            }
-
-            if (positional.Count == 3)
-            {
-                Columns = positional[0];
-                Data = positional[1];
-                DataTypes = positional[2];
-            }
+            // Fallback: If Data is still null (like in a 'where' result), initialize it as empty list
+            if (Data == null)
+                Data = new ArrayNode(new List<ExpressionNode>());
 
             Type = BuildDataframeType();
 
@@ -734,77 +718,59 @@ namespace MyCompiler
                 throw new Exception("Dataframe must contain types.");
         }
 
+
         private DataframeType BuildDataframeType()
         {
-            System.Console.WriteLine("we building dataframe type");
             var columns = ExtractColumns();
 
-            Type inferredType;
+            // 1. Check for no data or empty data array
+            bool isEmptyArray = Data is ArrayNode dn && dn.Elements.Count == 0;
+            bool hasNoData = Data == null || isEmptyArray;
 
-            // CASE 1: no data → schema-only dataframe
-            if (Data == null)
+            if (hasNoData)
             {
-                System.Console.WriteLine("and we don't have data");
+                // If we are empty, we MUST have explicit types (provided by the 'where' logic)
                 if (DataTypes == null)
                     throw new Exception("Empty dataframe requires explicit types");
 
                 var types = ExtractTypes();
 
-                var dataArr2 = Data as ArrayNode;
+                // IMPORTANT: We transform the empty row-array [] 
+                // into an empty columnar-array [[], [], []] 
+                // so the LLVM Visitor doesn't crash later.
+                Data = new ArrayNode(
+                    types.Select(t =>
+                        (ExpressionNode)new ArrayNode(new List<ExpressionNode>())
+                        {
+                            ElementType = t
+                        }
+                    ).ToList()
+                );
 
-                bool isEmpty = dataArr2 == null || dataArr2.Elements.Count == 0;
-
-                if (isEmpty)
-                {
-                    System.Console.WriteLine("yo we in here and setting the array element type");
-                    // Build columnar empty data
-                    Data = new ArrayNode(
-                        types.Select(t =>
-                            (ExpressionNode)new ArrayNode(new List<ExpressionNode>())
-                            {
-                                ElementType = t
-                            }
-                        ).ToList()
-                    );
-
-                    return new DataframeType(
-                        columns,
-                        types,
-                        BuildRecordType(columns, types)
-                    );
-                }
-
-                inferredType = BuildRecordType(columns, types);
-
-                return new DataframeType(columns, types, inferredType as RecordType);
+                return new DataframeType(columns, types, BuildRecordType(columns, types));
             }
 
-            var dataArr = Data as ArrayNode
-                ?? throw new Exception("data must be an array");
+            var dataArr = Data as ArrayNode ?? throw new Exception("data must be an array");
 
-            // CASE 2: columnar dataframe
-            bool isColumnar = dataArr.Elements.All(e => e is IdNode);
-
+            // 2. Columnar Case
+            bool isColumnar = dataArr.Elements.Count > 0 && dataArr.Elements.All(e => e is IdNode);
             if (isColumnar)
             {
                 var types = ExtractTypes();
-                inferredType = BuildRecordType(columns, types);
-
-                return new DataframeType(columns, types, inferredType as RecordType);
+                return new DataframeType(columns, types, BuildRecordType(columns, types));
             }
 
-            // CASE 3: row dataframe
-            var data = ExtractData();
-            var inferredTypes = InferTypes(data);
+            // 3. Row-based Inference (Only for data that actually exists)
+            var dataRows = ExtractData();
+            if (dataRows.Count == 0)
+                throw new Exception("Cannot infer types from an empty dataset without explicit types.");
 
-            inferredType = BuildRecordType(columns, inferredTypes);
+            var inferredTypes = InferTypes(dataRows);
+            DataTypes = new ArrayNode(inferredTypes.Select(TypeToNode).ToList());
 
-            DataTypes = new ArrayNode(
-                inferredTypes.Select(TypeToNode).ToList()
-            );
-
-            return new DataframeType(columns, inferredTypes, inferredType as RecordType);
+            return new DataframeType(columns, inferredTypes, BuildRecordType(columns, inferredTypes));
         }
+
         private RecordType BuildRecordType(List<string> columns, List<Type> types)
         {
             var fields = new List<RecordField>();

@@ -7,11 +7,12 @@ source_filename = "repl_module"
 
 @str = private unnamed_addr constant [5 x i8] c"name\00", align 1
 @str.1 = private unnamed_addr constant [4 x i8] c"age\00", align 1
-@__result = external global ptr
-@__i = external global i64
-@x = external global ptr
+@__result_2 = global ptr null
+@__i_2 = global i64 0
+@df = external global ptr
+@str.2 = private unnamed_addr constant [6 x i8] c"harry\00", align 1
 
-define ptr @main_9() {
+define ptr @main_7() {
 entry:
   %arr_header = call ptr @malloc(i64 24)
   %arr_data = call ptr @malloc(i64 800)
@@ -65,123 +66,178 @@ entry:
   store ptr null, ptr %elem_ptr9, align 8
   %elem_ptr10 = getelementptr ptr, ptr %arr_data8, i64 1
   store ptr null, ptr %elem_ptr10, align 8
-  %df = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
-  %15 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 0
+  %df_instance = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
+  %15 = getelementptr inbounds nuw %dataframe, ptr %df_instance, i32 0, i32 0
   store ptr %arr_header4, ptr %15, align 8
-  %16 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 1
+  %16 = getelementptr inbounds nuw %dataframe, ptr %df_instance, i32 0, i32 1
   store ptr %data_ptrs_header, ptr %16, align 8
-  %17 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 2
+  %17 = getelementptr inbounds nuw %dataframe, ptr %df_instance, i32 0, i32 2
   store ptr %arr_header7, ptr %17, align 8
-  store ptr %df, ptr @__result, align 8
-  store i64 0, ptr @__i, align 8
-  store i64 0, ptr @__i, align 8
+  store ptr %df_instance, ptr @__result_2, align 8
+  store i64 0, ptr @__i_2, align 8
   br label %for.cond
 
 for.cond:                                         ; preds = %for.step, %entry
-  %__i_load = load i64, ptr @__i, align 4
-  %x_load = load ptr, ptr @x, align 8
-  %rows_ptr_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %x_load, i32 0, i32 1
-  %rows_ptr = load ptr, ptr %rows_ptr_field, align 8
-  %rows_array_ptr = bitcast ptr %rows_ptr to ptr
-  %rows_length_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array_ptr, i32 0, i32 0
-  %rows_length = load i64, ptr %rows_length_ptr, align 8
-  %icmp_tmp = icmp slt i64 %__i_load, %rows_length
+  %__i_2_load = load i64, ptr @__i_2, align 4
+  %df_load = load ptr, ptr @df, align 8
+  %data_ptrs_ptr = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_load, i32 0, i32 1
+  %data_ptrs_array = load ptr, ptr %data_ptrs_ptr, align 8
+  %data_ptrs_cast = bitcast ptr %data_ptrs_array to ptr
+  %data_ptrs_data_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %data_ptrs_cast, i32 0, i32 2
+  %data_ptrs = load ptr, ptr %data_ptrs_data_ptr, align 8
+  %first_col_ptr_ptr = getelementptr ptr, ptr %data_ptrs, i64 0
+  %first_col_ptr = load ptr, ptr %first_col_ptr_ptr, align 8
+  %first_col_array = bitcast ptr %first_col_ptr to ptr
+  %first_col_length_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %first_col_array, i32 0, i32 0
+  %dataframe_length = load i64, ptr %first_col_length_ptr, align 8
+  %icmp_tmp = icmp slt i64 %__i_2_load, %dataframe_length
   br i1 %icmp_tmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-  %__i_load11 = load i64, ptr @__i, align 4
-  %x_load12 = load ptr, ptr @x, align 8
-  %data_ptrs_ptr = getelementptr inbounds nuw %dataframe, ptr %x_load12, i32 0, i32 1
-  %data_ptrs_array = load ptr, ptr %data_ptrs_ptr, align 8
-  %data_ptrs_data = getelementptr inbounds nuw %array, ptr %data_ptrs_array, i32 0, i32 2
-  %data_ptrs = load ptr, ptr %data_ptrs_data, align 8
+  %__i_2_load11 = load i64, ptr @__i_2, align 4
+  %df_load12 = load ptr, ptr @df, align 8
+  %data_ptrs_ptr13 = getelementptr inbounds nuw %dataframe, ptr %df_load12, i32 0, i32 1
+  %data_ptrs_array14 = load ptr, ptr %data_ptrs_ptr13, align 8
+  %data_ptrs_data = getelementptr inbounds nuw %array, ptr %data_ptrs_array14, i32 0, i32 2
+  %data_ptrs15 = load ptr, ptr %data_ptrs_data, align 8
   %row = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
-  %col_ptr_ptr = getelementptr ptr, ptr %data_ptrs, i64 0
+  %col_ptr_ptr = getelementptr ptr, ptr %data_ptrs15, i64 0
   %col_array = load ptr, ptr %col_ptr_ptr, align 8
   %col_data_ptr_ptr = getelementptr inbounds nuw %array, ptr %col_array, i32 0, i32 2
   %col_data_raw = load ptr, ptr %col_data_ptr_ptr, align 8
-  %elem_ptr13 = getelementptr ptr, ptr %col_data_raw, i64 %__i_load11
-  %val = load ptr, ptr %elem_ptr13, align 8
+  %elem_ptr16 = getelementptr ptr, ptr %col_data_raw, i64 %__i_2_load11
+  %val = load ptr, ptr %elem_ptr16, align 8
   %field_ptr = getelementptr inbounds nuw %struct_name_age, ptr %row, i32 0, i32 0
   store ptr %val, ptr %field_ptr, align 8
-  %col_ptr_ptr14 = getelementptr ptr, ptr %data_ptrs, i64 1
-  %col_array15 = load ptr, ptr %col_ptr_ptr14, align 8
-  %col_data_ptr_ptr16 = getelementptr inbounds nuw %array, ptr %col_array15, i32 0, i32 2
-  %col_data_raw17 = load ptr, ptr %col_data_ptr_ptr16, align 8
-  %elem_ptr18 = getelementptr i64, ptr %col_data_raw17, i64 %__i_load11
-  %val19 = load i64, ptr %elem_ptr18, align 4
-  %field_ptr20 = getelementptr inbounds nuw %struct_name_age, ptr %row, i32 0, i32 1
-  store i64 %val19, ptr %field_ptr20, align 4
-  %__i_load21 = load i64, ptr @__i, align 4
-  %x_load22 = load ptr, ptr @x, align 8
-  %data_ptrs_ptr23 = getelementptr inbounds nuw %dataframe, ptr %x_load22, i32 0, i32 1
-  %data_ptrs_array24 = load ptr, ptr %data_ptrs_ptr23, align 8
-  %data_ptrs_data25 = getelementptr inbounds nuw %array, ptr %data_ptrs_array24, i32 0, i32 2
-  %data_ptrs26 = load ptr, ptr %data_ptrs_data25, align 8
-  %row27 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
-  %col_ptr_ptr28 = getelementptr ptr, ptr %data_ptrs26, i64 0
-  %col_array29 = load ptr, ptr %col_ptr_ptr28, align 8
-  %col_data_ptr_ptr30 = getelementptr inbounds nuw %array, ptr %col_array29, i32 0, i32 2
-  %col_data_raw31 = load ptr, ptr %col_data_ptr_ptr30, align 8
-  %elem_ptr32 = getelementptr ptr, ptr %col_data_raw31, i64 %__i_load21
-  %val33 = load ptr, ptr %elem_ptr32, align 8
-  %field_ptr34 = getelementptr inbounds nuw %struct_name_age, ptr %row27, i32 0, i32 0
-  store ptr %val33, ptr %field_ptr34, align 8
-  %col_ptr_ptr35 = getelementptr ptr, ptr %data_ptrs26, i64 1
-  %col_array36 = load ptr, ptr %col_ptr_ptr35, align 8
-  %col_data_ptr_ptr37 = getelementptr inbounds nuw %array, ptr %col_array36, i32 0, i32 2
-  %col_data_raw38 = load ptr, ptr %col_data_ptr_ptr37, align 8
-  %elem_ptr39 = getelementptr i64, ptr %col_data_raw38, i64 %__i_load21
-  %val40 = load i64, ptr %elem_ptr39, align 4
-  %field_ptr41 = getelementptr inbounds nuw %struct_name_age, ptr %row27, i32 0, i32 1
-  store i64 %val40, ptr %field_ptr41, align 4
-  %ptr_age = getelementptr inbounds nuw %struct_name_age, ptr %row27, i32 0, i32 1
+  %col_ptr_ptr17 = getelementptr ptr, ptr %data_ptrs15, i64 1
+  %col_array18 = load ptr, ptr %col_ptr_ptr17, align 8
+  %col_data_ptr_ptr19 = getelementptr inbounds nuw %array, ptr %col_array18, i32 0, i32 2
+  %col_data_raw20 = load ptr, ptr %col_data_ptr_ptr19, align 8
+  %elem_ptr21 = getelementptr i64, ptr %col_data_raw20, i64 %__i_2_load11
+  %val22 = load i64, ptr %elem_ptr21, align 4
+  %field_ptr23 = getelementptr inbounds nuw %struct_name_age, ptr %row, i32 0, i32 1
+  store i64 %val22, ptr %field_ptr23, align 4
+  %__i_2_load24 = load i64, ptr @__i_2, align 4
+  %df_load25 = load ptr, ptr @df, align 8
+  %data_ptrs_ptr26 = getelementptr inbounds nuw %dataframe, ptr %df_load25, i32 0, i32 1
+  %data_ptrs_array27 = load ptr, ptr %data_ptrs_ptr26, align 8
+  %data_ptrs_data28 = getelementptr inbounds nuw %array, ptr %data_ptrs_array27, i32 0, i32 2
+  %data_ptrs29 = load ptr, ptr %data_ptrs_data28, align 8
+  %row30 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
+  %col_ptr_ptr31 = getelementptr ptr, ptr %data_ptrs29, i64 0
+  %col_array32 = load ptr, ptr %col_ptr_ptr31, align 8
+  %col_data_ptr_ptr33 = getelementptr inbounds nuw %array, ptr %col_array32, i32 0, i32 2
+  %col_data_raw34 = load ptr, ptr %col_data_ptr_ptr33, align 8
+  %elem_ptr35 = getelementptr ptr, ptr %col_data_raw34, i64 %__i_2_load24
+  %val36 = load ptr, ptr %elem_ptr35, align 8
+  %field_ptr37 = getelementptr inbounds nuw %struct_name_age, ptr %row30, i32 0, i32 0
+  store ptr %val36, ptr %field_ptr37, align 8
+  %col_ptr_ptr38 = getelementptr ptr, ptr %data_ptrs29, i64 1
+  %col_array39 = load ptr, ptr %col_ptr_ptr38, align 8
+  %col_data_ptr_ptr40 = getelementptr inbounds nuw %array, ptr %col_array39, i32 0, i32 2
+  %col_data_raw41 = load ptr, ptr %col_data_ptr_ptr40, align 8
+  %elem_ptr42 = getelementptr i64, ptr %col_data_raw41, i64 %__i_2_load24
+  %val43 = load i64, ptr %elem_ptr42, align 4
+  %field_ptr44 = getelementptr inbounds nuw %struct_name_age, ptr %row30, i32 0, i32 1
+  store i64 %val43, ptr %field_ptr44, align 4
+  %ptr_name = getelementptr inbounds nuw %struct_name_age, ptr %row30, i32 0, i32 0
+  %val_name = load ptr, ptr %ptr_name, align 8
+  %strcmp_res = call i32 @strcmp(ptr %val_name, ptr @str.2)
+  %str_eq = icmp eq i32 %strcmp_res, 0
+  %__i_2_load45 = load i64, ptr @__i_2, align 4
+  %df_load46 = load ptr, ptr @df, align 8
+  %data_ptrs_ptr47 = getelementptr inbounds nuw %dataframe, ptr %df_load46, i32 0, i32 1
+  %data_ptrs_array48 = load ptr, ptr %data_ptrs_ptr47, align 8
+  %data_ptrs_data49 = getelementptr inbounds nuw %array, ptr %data_ptrs_array48, i32 0, i32 2
+  %data_ptrs50 = load ptr, ptr %data_ptrs_data49, align 8
+  %row51 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
+  %col_ptr_ptr52 = getelementptr ptr, ptr %data_ptrs50, i64 0
+  %col_array53 = load ptr, ptr %col_ptr_ptr52, align 8
+  %col_data_ptr_ptr54 = getelementptr inbounds nuw %array, ptr %col_array53, i32 0, i32 2
+  %col_data_raw55 = load ptr, ptr %col_data_ptr_ptr54, align 8
+  %elem_ptr56 = getelementptr ptr, ptr %col_data_raw55, i64 %__i_2_load45
+  %val57 = load ptr, ptr %elem_ptr56, align 8
+  %field_ptr58 = getelementptr inbounds nuw %struct_name_age, ptr %row51, i32 0, i32 0
+  store ptr %val57, ptr %field_ptr58, align 8
+  %col_ptr_ptr59 = getelementptr ptr, ptr %data_ptrs50, i64 1
+  %col_array60 = load ptr, ptr %col_ptr_ptr59, align 8
+  %col_data_ptr_ptr61 = getelementptr inbounds nuw %array, ptr %col_array60, i32 0, i32 2
+  %col_data_raw62 = load ptr, ptr %col_data_ptr_ptr61, align 8
+  %elem_ptr63 = getelementptr i64, ptr %col_data_raw62, i64 %__i_2_load45
+  %val64 = load i64, ptr %elem_ptr63, align 4
+  %field_ptr65 = getelementptr inbounds nuw %struct_name_age, ptr %row51, i32 0, i32 1
+  store i64 %val64, ptr %field_ptr65, align 4
+  %__i_2_load66 = load i64, ptr @__i_2, align 4
+  %df_load67 = load ptr, ptr @df, align 8
+  %data_ptrs_ptr68 = getelementptr inbounds nuw %dataframe, ptr %df_load67, i32 0, i32 1
+  %data_ptrs_array69 = load ptr, ptr %data_ptrs_ptr68, align 8
+  %data_ptrs_data70 = getelementptr inbounds nuw %array, ptr %data_ptrs_array69, i32 0, i32 2
+  %data_ptrs71 = load ptr, ptr %data_ptrs_data70, align 8
+  %row72 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
+  %col_ptr_ptr73 = getelementptr ptr, ptr %data_ptrs71, i64 0
+  %col_array74 = load ptr, ptr %col_ptr_ptr73, align 8
+  %col_data_ptr_ptr75 = getelementptr inbounds nuw %array, ptr %col_array74, i32 0, i32 2
+  %col_data_raw76 = load ptr, ptr %col_data_ptr_ptr75, align 8
+  %elem_ptr77 = getelementptr ptr, ptr %col_data_raw76, i64 %__i_2_load66
+  %val78 = load ptr, ptr %elem_ptr77, align 8
+  %field_ptr79 = getelementptr inbounds nuw %struct_name_age, ptr %row72, i32 0, i32 0
+  store ptr %val78, ptr %field_ptr79, align 8
+  %col_ptr_ptr80 = getelementptr ptr, ptr %data_ptrs71, i64 1
+  %col_array81 = load ptr, ptr %col_ptr_ptr80, align 8
+  %col_data_ptr_ptr82 = getelementptr inbounds nuw %array, ptr %col_array81, i32 0, i32 2
+  %col_data_raw83 = load ptr, ptr %col_data_ptr_ptr82, align 8
+  %elem_ptr84 = getelementptr i64, ptr %col_data_raw83, i64 %__i_2_load66
+  %val85 = load i64, ptr %elem_ptr84, align 4
+  %field_ptr86 = getelementptr inbounds nuw %struct_name_age, ptr %row72, i32 0, i32 1
+  store i64 %val85, ptr %field_ptr86, align 4
+  %ptr_age = getelementptr inbounds nuw %struct_name_age, ptr %row72, i32 0, i32 1
   %val_age = load i64, ptr %ptr_age, align 4
-  %icmp_tmp42 = icmp eq i64 %val_age, 30
-  br i1 %icmp_tmp42, label %then, label %else
+  %icmp_tmp87 = icmp slt i64 %val_age, 20
+  %andtmp = and i1 %str_eq, %icmp_tmp87
+  br i1 %andtmp, label %then, label %else
 
 for.step:                                         ; preds = %ifcont
-  %x_load95 = load i64, ptr @__i, align 8
-  %inc_add = add i64 %x_load95, 1
-  store i64 %inc_add, ptr @__i, align 8
+  %x_load = load i64, ptr @__i_2, align 8
+  %inc_add = add i64 %x_load, 1
+  store i64 %inc_add, ptr @__i_2, align 8
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-  %__result_load96 = load ptr, ptr @__result, align 8
+  %__result_2_load140 = load ptr, ptr @__result_2, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
   store i16 7, ptr %tag_ptr, align 2
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %__result_load96, ptr %data_ptr, align 8
+  store ptr %__result_2_load140, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 
 then:                                             ; preds = %for.body
-  %__i_load43 = load i64, ptr @__i, align 4
-  %x_load44 = load ptr, ptr @x, align 8
-  %data_ptrs_ptr45 = getelementptr inbounds nuw %dataframe, ptr %x_load44, i32 0, i32 1
-  %data_ptrs_array46 = load ptr, ptr %data_ptrs_ptr45, align 8
-  %data_ptrs_data47 = getelementptr inbounds nuw %array, ptr %data_ptrs_array46, i32 0, i32 2
-  %data_ptrs48 = load ptr, ptr %data_ptrs_data47, align 8
-  %row49 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
-  %col_ptr_ptr50 = getelementptr ptr, ptr %data_ptrs48, i64 0
-  %col_array51 = load ptr, ptr %col_ptr_ptr50, align 8
-  %col_data_ptr_ptr52 = getelementptr inbounds nuw %array, ptr %col_array51, i32 0, i32 2
-  %col_data_raw53 = load ptr, ptr %col_data_ptr_ptr52, align 8
-  %elem_ptr54 = getelementptr ptr, ptr %col_data_raw53, i64 %__i_load43
-  %val55 = load ptr, ptr %elem_ptr54, align 8
-  %field_ptr56 = getelementptr inbounds nuw %struct_name_age, ptr %row49, i32 0, i32 0
-  store ptr %val55, ptr %field_ptr56, align 8
-  %col_ptr_ptr57 = getelementptr ptr, ptr %data_ptrs48, i64 1
-  %col_array58 = load ptr, ptr %col_ptr_ptr57, align 8
-  %col_data_ptr_ptr59 = getelementptr inbounds nuw %array, ptr %col_array58, i32 0, i32 2
-  %col_data_raw60 = load ptr, ptr %col_data_ptr_ptr59, align 8
-  %elem_ptr61 = getelementptr i64, ptr %col_data_raw60, i64 %__i_load43
-  %val62 = load i64, ptr %elem_ptr61, align 4
-  %field_ptr63 = getelementptr inbounds nuw %struct_name_age, ptr %row49, i32 0, i32 1
-  store i64 %val62, ptr %field_ptr63, align 4
-  %__result_load = load ptr, ptr @__result, align 8
-  %18 = bitcast ptr %__result_load to ptr
+  %__i_2_load88 = load i64, ptr @__i_2, align 4
+  %df_load89 = load ptr, ptr @df, align 8
+  %data_ptrs_ptr90 = getelementptr inbounds nuw %dataframe, ptr %df_load89, i32 0, i32 1
+  %data_ptrs_array91 = load ptr, ptr %data_ptrs_ptr90, align 8
+  %data_ptrs_data92 = getelementptr inbounds nuw %array, ptr %data_ptrs_array91, i32 0, i32 2
+  %data_ptrs93 = load ptr, ptr %data_ptrs_data92, align 8
+  %row94 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
+  %col_ptr_ptr95 = getelementptr ptr, ptr %data_ptrs93, i64 0
+  %col_array96 = load ptr, ptr %col_ptr_ptr95, align 8
+  %col_data_ptr_ptr97 = getelementptr inbounds nuw %array, ptr %col_array96, i32 0, i32 2
+  %col_data_raw98 = load ptr, ptr %col_data_ptr_ptr97, align 8
+  %elem_ptr99 = getelementptr ptr, ptr %col_data_raw98, i64 %__i_2_load88
+  %val100 = load ptr, ptr %elem_ptr99, align 8
+  %field_ptr101 = getelementptr inbounds nuw %struct_name_age, ptr %row94, i32 0, i32 0
+  store ptr %val100, ptr %field_ptr101, align 8
+  %col_ptr_ptr102 = getelementptr ptr, ptr %data_ptrs93, i64 1
+  %col_array103 = load ptr, ptr %col_ptr_ptr102, align 8
+  %col_data_ptr_ptr104 = getelementptr inbounds nuw %array, ptr %col_array103, i32 0, i32 2
+  %col_data_raw105 = load ptr, ptr %col_data_ptr_ptr104, align 8
+  %elem_ptr106 = getelementptr i64, ptr %col_data_raw105, i64 %__i_2_load88
+  %val107 = load i64, ptr %elem_ptr106, align 4
+  %field_ptr108 = getelementptr inbounds nuw %struct_name_age, ptr %row94, i32 0, i32 1
+  store i64 %val107, ptr %field_ptr108, align 4
+  %__result_2_load = load ptr, ptr @__result_2, align 8
+  %18 = bitcast ptr %__result_2_load to ptr
   %19 = getelementptr inbounds nuw %dataframe, ptr %18, i32 0, i32 1
   %20 = load ptr, ptr %19, align 8
   %21 = bitcast ptr %20 to ptr
@@ -189,30 +245,30 @@ then:                                             ; preds = %for.body
   %23 = load i64, ptr %22, align 4
   %24 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %21, i32 0, i32 2
   %25 = load ptr, ptr %24, align 8
-  %__i_load64 = load i64, ptr @__i, align 4
-  %x_load65 = load ptr, ptr @x, align 8
-  %data_ptrs_ptr66 = getelementptr inbounds nuw %dataframe, ptr %x_load65, i32 0, i32 1
-  %data_ptrs_array67 = load ptr, ptr %data_ptrs_ptr66, align 8
-  %data_ptrs_data68 = getelementptr inbounds nuw %array, ptr %data_ptrs_array67, i32 0, i32 2
-  %data_ptrs69 = load ptr, ptr %data_ptrs_data68, align 8
-  %row70 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
-  %col_ptr_ptr71 = getelementptr ptr, ptr %data_ptrs69, i64 0
-  %col_array72 = load ptr, ptr %col_ptr_ptr71, align 8
-  %col_data_ptr_ptr73 = getelementptr inbounds nuw %array, ptr %col_array72, i32 0, i32 2
-  %col_data_raw74 = load ptr, ptr %col_data_ptr_ptr73, align 8
-  %elem_ptr75 = getelementptr ptr, ptr %col_data_raw74, i64 %__i_load64
-  %val76 = load ptr, ptr %elem_ptr75, align 8
-  %field_ptr77 = getelementptr inbounds nuw %struct_name_age, ptr %row70, i32 0, i32 0
-  store ptr %val76, ptr %field_ptr77, align 8
-  %col_ptr_ptr78 = getelementptr ptr, ptr %data_ptrs69, i64 1
-  %col_array79 = load ptr, ptr %col_ptr_ptr78, align 8
-  %col_data_ptr_ptr80 = getelementptr inbounds nuw %array, ptr %col_array79, i32 0, i32 2
-  %col_data_raw81 = load ptr, ptr %col_data_ptr_ptr80, align 8
-  %elem_ptr82 = getelementptr i64, ptr %col_data_raw81, i64 %__i_load64
-  %val83 = load i64, ptr %elem_ptr82, align 4
-  %field_ptr84 = getelementptr inbounds nuw %struct_name_age, ptr %row70, i32 0, i32 1
-  store i64 %val83, ptr %field_ptr84, align 4
-  %26 = getelementptr inbounds nuw %struct_name_age, ptr %row70, i32 0, i32 0
+  %__i_2_load109 = load i64, ptr @__i_2, align 4
+  %df_load110 = load ptr, ptr @df, align 8
+  %data_ptrs_ptr111 = getelementptr inbounds nuw %dataframe, ptr %df_load110, i32 0, i32 1
+  %data_ptrs_array112 = load ptr, ptr %data_ptrs_ptr111, align 8
+  %data_ptrs_data113 = getelementptr inbounds nuw %array, ptr %data_ptrs_array112, i32 0, i32 2
+  %data_ptrs114 = load ptr, ptr %data_ptrs_data113, align 8
+  %row115 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%struct_name_age, ptr null, i32 1) to i32))
+  %col_ptr_ptr116 = getelementptr ptr, ptr %data_ptrs114, i64 0
+  %col_array117 = load ptr, ptr %col_ptr_ptr116, align 8
+  %col_data_ptr_ptr118 = getelementptr inbounds nuw %array, ptr %col_array117, i32 0, i32 2
+  %col_data_raw119 = load ptr, ptr %col_data_ptr_ptr118, align 8
+  %elem_ptr120 = getelementptr ptr, ptr %col_data_raw119, i64 %__i_2_load109
+  %val121 = load ptr, ptr %elem_ptr120, align 8
+  %field_ptr122 = getelementptr inbounds nuw %struct_name_age, ptr %row115, i32 0, i32 0
+  store ptr %val121, ptr %field_ptr122, align 8
+  %col_ptr_ptr123 = getelementptr ptr, ptr %data_ptrs114, i64 1
+  %col_array124 = load ptr, ptr %col_ptr_ptr123, align 8
+  %col_data_ptr_ptr125 = getelementptr inbounds nuw %array, ptr %col_array124, i32 0, i32 2
+  %col_data_raw126 = load ptr, ptr %col_data_ptr_ptr125, align 8
+  %elem_ptr127 = getelementptr i64, ptr %col_data_raw126, i64 %__i_2_load109
+  %val128 = load i64, ptr %elem_ptr127, align 4
+  %field_ptr129 = getelementptr inbounds nuw %struct_name_age, ptr %row115, i32 0, i32 1
+  store i64 %val128, ptr %field_ptr129, align 4
+  %26 = getelementptr inbounds nuw %struct_name_age, ptr %row115, i32 0, i32 0
   %27 = load ptr, ptr %26, align 8
   %28 = getelementptr ptr, ptr %25, i64 0
   %29 = load ptr, ptr %28, align 8
@@ -228,8 +284,8 @@ then:                                             ; preds = %for.body
 else:                                             ; preds = %for.body
   br label %ifcont
 
-ifcont:                                           ; preds = %else, %store_element90
-  %iftmp = phi ptr [ %18, %store_element90 ], [ 0.000000e+00, %else ]
+ifcont:                                           ; preds = %else, %store_element135
+  %iftmp = phi ptr [ %18, %store_element135 ], [ 0.000000e+00, %else ]
   br label %for.step
 
 grow:                                             ; preds = %then
@@ -248,42 +304,42 @@ store_element:                                    ; preds = %grow, %then
   store ptr %27, ptr %elem_dest, align 8
   %36 = add i64 %curr_len, 1
   store i64 %36, ptr %30, align 4
-  %37 = getelementptr inbounds nuw %struct_name_age, ptr %row70, i32 0, i32 1
+  %37 = getelementptr inbounds nuw %struct_name_age, ptr %row115, i32 0, i32 1
   %38 = load i64, ptr %37, align 4
   %39 = getelementptr ptr, ptr %25, i64 1
   %40 = load ptr, ptr %39, align 8
   %41 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %40, i32 0, i32 0
   %42 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %40, i32 0, i32 1
   %43 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %40, i32 0, i32 2
-  %curr_len85 = load i64, ptr %41, align 4
-  %curr_cap86 = load i64, ptr %42, align 4
-  %curr_data87 = load ptr, ptr %43, align 8
-  %needs_grow88 = icmp sge i64 %curr_len85, %curr_cap86
-  br i1 %needs_grow88, label %grow89, label %store_element90
+  %curr_len130 = load i64, ptr %41, align 4
+  %curr_cap131 = load i64, ptr %42, align 4
+  %curr_data132 = load ptr, ptr %43, align 8
+  %needs_grow133 = icmp sge i64 %curr_len130, %curr_cap131
+  br i1 %needs_grow133, label %grow134, label %store_element135
 
-grow89:                                           ; preds = %store_element
-  %44 = icmp eq i64 %curr_cap86, 0
-  %45 = mul i64 %curr_cap86, 2
-  %new_cap91 = select i1 %44, i64 4, i64 %45
-  %46 = mul i64 %new_cap91, 8
-  %reallocated_data92 = call ptr @realloc(ptr %curr_data87, i64 %46)
-  store i64 %new_cap91, ptr %42, align 4
-  store ptr %reallocated_data92, ptr %43, align 8
-  br label %store_element90
+grow134:                                          ; preds = %store_element
+  %44 = icmp eq i64 %curr_cap131, 0
+  %45 = mul i64 %curr_cap131, 2
+  %new_cap136 = select i1 %44, i64 4, i64 %45
+  %46 = mul i64 %new_cap136, 8
+  %reallocated_data137 = call ptr @realloc(ptr %curr_data132, i64 %46)
+  store i64 %new_cap136, ptr %42, align 4
+  store ptr %reallocated_data137, ptr %43, align 8
+  br label %store_element135
 
-store_element90:                                  ; preds = %grow89, %store_element
-  %final_data93 = load ptr, ptr %43, align 8
-  %elem_dest94 = getelementptr i64, ptr %final_data93, i64 %curr_len85
-  store i64 %38, ptr %elem_dest94, align 4
-  %47 = add i64 %curr_len85, 1
+store_element135:                                 ; preds = %grow134, %store_element
+  %final_data138 = load ptr, ptr %43, align 8
+  %elem_dest139 = getelementptr i64, ptr %final_data138, i64 %curr_len130
+  store i64 %38, ptr %elem_dest139, align 4
+  %47 = add i64 %curr_len130, 1
   store i64 %47, ptr %41, align 4
-  %48 = add i64 %23, 1
-  store i64 %48, ptr %22, align 4
   br label %ifcont
 }
 
 declare i32 @printf(ptr, ...)
 
 declare noalias ptr @malloc(i64)
+
+declare i32 @strcmp(ptr, ptr)
 
 declare ptr @realloc(ptr, i64)

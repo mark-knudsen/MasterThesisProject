@@ -134,7 +134,7 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
-            Console.WriteLine("we set " + expr.Name + " to type: " + entry.Type);
+            //Console.WriteLine("we set " + expr.Name + " to type: " + entry.Type);
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -495,7 +495,7 @@ namespace MyCompiler
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
-            if(expr.Elements.Count == 0 ) System.Console.WriteLine("DANGER DANGER, we have a empty array, but that is ok for a dataframe");
+            //if (expr.Elements.Count == 0) System.Console.WriteLine("DANGER DANGER, we have a empty array, but that is ok for a dataframe");
 
             for (int i = 1; i < expr.Elements.Count; i++)
             {
@@ -622,19 +622,31 @@ namespace MyCompiler
             }
             else if (sourceType is DataframeType dfType)
             {
-                // Create a RecordNode matching the row type including 'index'
                 var rowFields = new List<NamedArgumentNode>();
 
                 for (int i = 0; i < dfType.ColumnNames.Count; i++)
                 {
                     var colName = dfType.ColumnNames[i];
-                    var colType = dfType.DataTypes[i];
+
+                    // SAFE ACCESS: Check if DataTypes actually has an entry for this index
+                    Type colType;
+                    if (dfType.DataTypes != null && i < dfType.DataTypes.Count)
+                    {
+                        colType = dfType.DataTypes[i];
+                    }
+                    else
+                    {
+                        // If we don't know the type yet, we have to assume or look it up.
+                        // For now, default to Int to prevent the crash.
+                        colType = new IntType();
+                    }
 
                     ExpressionNode defaultVal = ResolveDataType(colType);
                     rowFields.Add(new NamedArgumentNode(colName, defaultVal));
                 }
 
                 var rowRecord = new RecordNode(rowFields);
+                // This tells the rest of the expression that 'x' has these fields
                 Visit(new AssignNode(expr.IteratorId.Name, rowRecord));
 
                 if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
@@ -1033,12 +1045,27 @@ namespace MyCompiler
             }
             else if (SourceType is DataframeType dfType)
             {
-                // 4. Look up the field label in the dataframe definition
                 int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
                 if (idx >= 0)
-                    resolvedFieldType = new ArrayType(dfType.DataTypes[idx]);
+                {
+                    // DEFENSIVE CHECK:
+                    Type innerType;
+                    if (dfType.DataTypes != null && idx < dfType.DataTypes.Count)
+                    {
+                        innerType = dfType.DataTypes[idx];
+                    }
+                    else
+                    {
+                        // If we are in a second pass and types aren't fully propagated,
+                        // default to Int or attempt to infer. 
+                        innerType = new IntType();
+                    }
+                    resolvedFieldType = new ArrayType(innerType);
+                }
                 else
+                {
                     throw new Exception($"Column '{expr.IdField}' not found in dataframe.");
+                }
             }
             else
                 throw new Exception($"Cannot access field '{expr.IdField}' on non-record or dataframe type: {SourceType}");
@@ -1060,9 +1087,39 @@ namespace MyCompiler
 
         public Type VisitDataframe(DataframeNode expr)
         {
+            // Ensure the Type object exists
+            if (expr.Type == null)
+            {
+                var names = (expr.Columns as ArrayNode).Elements.Select(e => (e as StringNode).Value).ToList();
+                List<Type> types;
+                if (expr.DataTypes != null)
+                {
+                    types = (expr.DataTypes as ArrayNode).Elements.Select(e => ResolveType(e)).ToList();
+                }
+                else
+                {
+                    // infer from data
+                    var data = expr.Data as ArrayNode;
+                    if (data.Elements.Count > 0)
+                    {
+                        var firstRow = data.Elements[0] as ArrayNode;
+                        types = firstRow.Elements.Select(e => e.Type).ToList();
+                    }
+                    else
+                    {
+                        types = new List<Type>();
+                    }
+                }
+                var recordFields = names.Zip(types, (n, t) => new RecordField { Label = n, Type = t }).ToList();
+                var rowType = new RecordType(recordFields);
+                var dfType = new DataframeType(names, types, rowType);
+                expr.SetType(dfType);
+            }
+
             Visit(expr.Columns);
-            Visit(expr.Data); // the data is empty
+            Visit(expr.Data);
             Visit(expr.DataTypes);
+
             return expr.Type;
         }
 
