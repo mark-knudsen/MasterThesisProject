@@ -13,11 +13,10 @@ using System.Runtime.CompilerServices;
 
 namespace MyCompiler
 {
-    [StructLayout(LayoutKind.Sequential, Pack = 8)] // Pack 8 is standard for 64-bit pointers
+    [StructLayout(LayoutKind.Sequential)]
     public struct RuntimeValue
     {
-        public Int16 tag;
-        // The compiler adds 6 bytes of padding here automatically to align the pointer to 8
+        public long tag;   // Changed from short to long
         public IntPtr data;
     }
 
@@ -55,29 +54,89 @@ namespace MyCompiler
         {
             if (pathPtr == IntPtr.Zero) return IntPtr.Zero;
             string path = Marshal.PtrToStringAnsi(pathPtr);
+
+            // DEBUG: See if the file is actually where you think it is
+            Console.WriteLine($"[Runtime] Attempting to open: {path}");
+            Console.WriteLine($"[Runtime] Absolute path: {System.IO.Path.GetFullPath(path)}");
+
             if (!System.IO.File.Exists(path)) return IntPtr.Zero;
 
             var lines = System.IO.File.ReadAllLines(path)
                 .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-            int count = lines.Length;
 
-            IntPtr header = Marshal.AllocHGlobal(24);
-            IntPtr dataBuffer = Marshal.AllocHGlobal(count * 8);
+            if (lines.Length < 2) return IntPtr.Zero; // Need header + at least one row
 
-            Marshal.WriteInt64(header, 0, count);
-            Marshal.WriteInt64(header, 8, count);
-            Marshal.WriteIntPtr(header, 16, dataBuffer);
+            string[] headers = lines[0].Split(',').Select(h => h.Trim()).ToArray();
+            int rowCount = lines.Length - 1;
+            int colCount = headers.Length;
 
-            for (int i = 0; i < count; i++)
+            // 1. Allocate the Dataframe struct (3 pointers: names_arr, data_ptrs_arr, types_arr)
+            // Size: 3 * 8 bytes = 24 bytes
+            IntPtr dfPtr = Marshal.AllocHGlobal(24);
+
+            // 2. Create the Column Data Arrays (The "Data Pointers" buffer)
+            // This holds 'colCount' pointers to the actual data
+            IntPtr dataPtrsHeader = CreateArrayHeader(colCount);
+            IntPtr dataPtrsBuffer = Marshal.ReadIntPtr(dataPtrsHeader, 16);
+
+            // 3. Create the Column Names Array
+            IntPtr namesHeader = CreateArrayHeader(colCount);
+            IntPtr namesBuffer = Marshal.ReadIntPtr(namesHeader, 16);
+
+            // 4. Parse columns
+            for (int col = 0; col < colCount; col++)
             {
-                string val = lines[i].Trim();
-                long bitPattern = 0;
-                if (long.TryParse(val, out long iVal)) bitPattern = iVal;
-                else if (double.TryParse(val, out double dVal)) bitPattern = BitConverter.DoubleToInt64Bits(dVal);
-                else bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
+                // Allocate aligned buffer for the column data (rowCount * 8 bytes)
+                // We'll use 64-bit slots for everything to keep it simple for your current IR
+                IntPtr colDataBuffer = Marshal.AllocHGlobal((rowCount * 8) + 32);
+                IntPtr alignedColBuffer = (IntPtr)(((long)colDataBuffer + 31) & ~31);
 
-                Marshal.WriteInt64(dataBuffer, i * 8, bitPattern);
+                // Store the column header
+                IntPtr colHeader = CreateArrayHeaderFromBuffer(rowCount, alignedColBuffer);
+                Marshal.WriteIntPtr(dataPtrsBuffer, col * 8, colHeader);
+
+                // Store the name
+                IntPtr nameStr = Marshal.StringToHGlobalAnsi(headers[col]);
+                Marshal.WriteIntPtr(namesBuffer, col * 8, nameStr);
+
+                // Fill column data
+                for (int row = 0; row < rowCount; row++)
+                {
+                    string[] cells = lines[row + 1].Split(',');
+                    string val = cells.Length > col ? cells[col].Trim() : "0";
+
+                    long bitPattern = 0;
+                    if (long.TryParse(val, out long iVal)) bitPattern = iVal;
+                    else if (double.TryParse(val, out double dVal)) bitPattern = BitConverter.DoubleToInt64Bits(dVal);
+                    else bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
+
+                    Marshal.WriteInt64(alignedColBuffer, row * 8, bitPattern);
+                }
             }
+
+            // Assembly the Dataframe struct
+            Marshal.WriteIntPtr(dfPtr, 0, namesHeader);     // Field 0: names
+            Marshal.WriteIntPtr(dfPtr, 8, dataPtrsHeader);  // Field 1: columns
+            Marshal.WriteIntPtr(dfPtr, 16, IntPtr.Zero);    // Field 2: types (can be null for now)
+
+            // Inside ReadCsvInternal, just before 'return dfPtr;'
+            Console.WriteLine($"[Runtime] Success! Dataframe allocated at: 0x{dfPtr.ToInt64():X}");
+            return dfPtr;
+        }
+
+        // Helper to create the {i64, i64, ptr} array header
+        private static IntPtr CreateArrayHeader(int count)
+        {
+            IntPtr buffer = Marshal.AllocHGlobal(count * 8);
+            return CreateArrayHeaderFromBuffer(count, buffer);
+        }
+
+        private static IntPtr CreateArrayHeaderFromBuffer(int count, IntPtr buffer)
+        {
+            IntPtr header = Marshal.AllocHGlobal(24);
+            Marshal.WriteInt64(header, 0, count);  // Length
+            Marshal.WriteInt64(header, 8, count);  // Capacity
+            Marshal.WriteIntPtr(header, 16, buffer); // Data pointer
             return header;
         }
 
@@ -152,6 +211,9 @@ namespace MyCompiler
         private ToCsvDelegate _toCsvDelegate;
         public delegate IntPtr ReadCsvDelegate(IntPtr path);
         public delegate void ToCsvDelegate(IntPtr data, IntPtr path);
+
+        Stopwatch sw;
+        void StartStopWatch() => sw = Stopwatch.StartNew();
 
         public CompilerOrc()
         {
@@ -368,9 +430,31 @@ namespace MyCompiler
             _builder = builder;
         }
 
+        double StopStopWatch(string testName = null)
+        {
+            sw.Stop();
+            if (testName is not null)
+                Console.WriteLine("\n--- Execution Stats - " + testName + " ---");
+            else
+                Console.WriteLine("\n--- Execution Stats ---");
+
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
+
+            return sw.Elapsed.TotalMilliseconds;
+        }
+
+        public List<double> compilerTestList = new List<double>();
+        public List<double> IRTestList = new List<double>();
+        public List<double> RuntimeTestList = new List<double>();
+        bool _stopwatch;
+
+
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
             _debug = debug;
+            _stopwatch = useStopWatch;
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
@@ -378,6 +462,13 @@ namespace MyCompiler
             DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
+            if (!_stopwatch)
+            {
+                compilerTestList = new List<double>();
+                IRTestList = new List<double>();
+                RuntimeTestList = new List<double>();
+
+            }
             LLVMValueRef resultValue = Visit(expr);
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
@@ -406,8 +497,20 @@ namespace MyCompiler
             // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
             // Stopwatch sw = Stopwatch.StartNew();
 
+            if (_stopwatch) StartStopWatch();
             var tempResult = delegateResult();
+            if (_stopwatch) RuntimeTestList.Add(StopStopWatch("Ran program"));
+
+            if (_stopwatch)
+            {
+                //Console.WriteLine($"\ncompiler list: \n{string.Join(", ", compilerTestList)}");
+                //Console.WriteLine($"\nIR list: \n{string.Join(", ", IRTestList)}");
+                Console.WriteLine($"\nRuntime list: \n{string.Join(", ", RuntimeTestList)}");
+            }
+
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
+
+
 
             // Print execution stats - uncomment if you want to see the stats for each command, but it can be a bit much
             // sw.Stop();
@@ -450,11 +553,15 @@ namespace MyCompiler
 
                 case ValueTag.Dataframe:
                     if (_debug) Console.WriteLine("return Dataframe");
+
+                    // If the prediction failed, try to cast or use a generic DataframeType
                     if (prediction is DataframeType dfType)
                     {
                         return HandleDataframe(result.data, dfType);
                     }
-                    return "Dataframe Failure";
+
+                    // Fallback: If we know it's a dataframe tag, but don't have the schema
+                    return $"Dataframe detected at 0x{result.data.ToInt64():X} (Schema missing)";
 
                 case ValueTag.None:
                     if (_debug) Console.WriteLine("return none");
@@ -741,43 +848,37 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i16 = ctx.Int16Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var mallocFunc = GetOrDeclareMalloc();
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
 
             // --- THE SHIELD ---
-            // If the type is already a pointer to our RuntimeValue struct, DO NOT BOX AGAIN.    
+            // If the value is already a pointer to our RuntimeValue struct, return it directly.
             var boxTypePtr = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
             if (value.TypeOf == boxTypePtr)
             {
                 return value;
             }
 
-            int tag = type switch
+            // Determine the Tag (Cast to ulong for LLVM ConstInt)
+            ulong tag = type switch
             {
-                IntType => (Int16)ValueTag.Int,
-                FloatType => (Int16)ValueTag.Float,
-                BoolType => (Int16)ValueTag.Bool,
-                StringType => (Int16)ValueTag.String,
-                ArrayType => (Int16)ValueTag.Array,
-                RecordType => (Int16)ValueTag.Record,
-                DataframeType => (Int16)ValueTag.Dataframe,
-                _ => (Int16)ValueTag.None
+                IntType => (ulong)ValueTag.Int,
+                FloatType => (ulong)ValueTag.Float,
+                BoolType => (ulong)ValueTag.Bool,
+                StringType => (ulong)ValueTag.String,
+                ArrayType => (ulong)ValueTag.Array,
+                RecordType => (ulong)ValueTag.Record,
+                DataframeType => (ulong)ValueTag.Dataframe,
+                _ => (ulong)ValueTag.None
             };
 
             LLVMValueRef dataPtr;
 
+            // Handle primitive types by allocating space on the heap
             if (type is IntType || type is FloatType || type is BoolType)
             {
-                // allocate raw memory and store value
-                int size = type switch
-                {
-                    IntType => 8,
-                    FloatType => 8,
-                    BoolType => 1,
-                    _ => 8
-                };
+                int size = type is BoolType ? 1 : 8;
 
                 var mem = _builder.BuildCall2(mallocType, mallocFunc,
                     new[] { LLVMValueRef.CreateConstInt(i64, (ulong)size) }, "value_mem");
@@ -795,30 +896,31 @@ namespace MyCompiler
 
                 dataPtr = mem;
             }
+            // Handle reference types (pointers)
             else if (type is StringType || type is RecordType || type is ArrayType || type is DataframeType)
             {
                 dataPtr = _builder.BuildBitCast(value, i8Ptr, "boxed_ptr_cast");
             }
-            else if (type is VoidType)
+            else // Void or Unknown
             {
                 dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
             }
-            else
-            {
-                throw new Exception($"Unsupported type in BoxValue: {type}");
-            }
 
-            // Allocate RuntimeValue
+            // 1. Allocate the RuntimeValue Box (16 bytes = 8 for i64 tag + 8 for pointer)
             var objRaw = _builder.BuildCall2(mallocType, mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
 
-            var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeValueType, 0), "runtime_cast");
+            // 2. Cast the raw memory to our RuntimeValue pointer type
+            var obj = _builder.BuildBitCast(objRaw, boxTypePtr, "runtime_cast");
 
-            // Store tag
+            // 3. Store the Tag (Now using i64 to match our updated C# struct)
+            // Inside BoxValue (Compiler.cs)
             var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr);
 
-            // Store data
+            // FORCE i64 here to match the C# 'long tag'
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(ctx.Int64Type, (ulong)tag), tagPtr);
+
+            // 4. Store the Data Pointer
             var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 1, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr);
 
@@ -2053,7 +2155,7 @@ namespace MyCompiler
 
             return program;
         }
-      
+
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
             var ctx = _module.Context;
@@ -2612,91 +2714,124 @@ namespace MyCompiler
             return 8;
         }
 
+        private LLVMValueRef GetOrDeclareAlignedAlloc()
+        {
+            var name = "aligned_alloc";
+            // Look for the function WITHOUT the .number suffix
+            var func = _module.GetNamedFunction(name);
+            if (func.Handle != IntPtr.Zero)
+            {
+                return func;
+            }
+
+            var i64 = _module.Context.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var type = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64, i64 });
+
+            return _module.AddFunction(name, type);
+        }
+
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             uint count = (uint)expr.Elements.Count;
-
-            var elemType = expr.ElementType;
-            //Console.WriteLine("in array and the array size is: " + count);
-            var llvmElemType = GetLLVMType(elemType);
-
+            var llvmElemType = GetLLVMType(expr.ElementType);
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 1. Header (24 bytes)
-            var headerRaw = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 24) },
-                "arr_header"
-            );
-
-            // 2. Compute element size
-            var elementSize = llvmElemType.Handle == ctx.Int1Type.Handle
-                ? 1UL
-                : GetSize(llvmElemType);
-
+            // 1. Calculate Space
+            var elementSize = GetSize(llvmElemType);
             var capacity = count > 0 ? count : 100;
+            var requestedSize = capacity * elementSize;
 
-            var dataSize = LLVMValueRef.CreateConstInt(
-                i64,
-                capacity * elementSize
-            );
+            // Allocate (Size + 32) to ensure we have room to shift the pointer
+            var totalToMalloc = LLVMValueRef.CreateConstInt(i64, (ulong)(requestedSize + 32));
 
-            var dataRaw = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { dataSize },
-                "arr_data"
-            );
+            // 2. Malloc Raw
+            var rawPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalToMalloc }, "raw_ptr");
 
-            // 3. Store metadata
-            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0);
-            var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1);
-            var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2);
+            // 3. Align the Pointer manually in IR
+            // formula: aligned = (rawPtr + 31) & ~31
+            var ptrAsInt = _builder.BuildPtrToInt(rawPtr, i64, "ptr_int");
+            var offsetPtr = _builder.BuildAdd(ptrAsInt, LLVMValueRef.CreateConstInt(i64, 31), "ptr_offset");
+            var maskedPtr = _builder.BuildAnd(offsetPtr, LLVMValueRef.CreateConstInt(i64, unchecked((ulong)~31)), "ptr_aligned_int");
+            var dataRaw = _builder.BuildIntToPtr(maskedPtr, LLVMTypeRef.CreatePointer(llvmElemType, 0), "arr_data_aligned");
 
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr);
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr);
+            // 4. Header (Standard 24 bytes)
+            var headerRaw = _builder.BuildCall2(_mallocType, mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "arr_header");
 
-            // IMPORTANT: store raw pointer (NOT i8*)
-            _builder.BuildStore(dataRaw, dataPtrPtr);
+            // 5. Store Metadata
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count),
+                _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0));
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity),
+                _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1));
+            _builder.BuildStore(_builder.BuildBitCast(dataRaw, i8Ptr, ""),
+                _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2));
 
-            // 4. Populate
+            // 6. Populate
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+                var elementPtr = _builder.BuildGEP2(llvmElemType, dataRaw, new[] { idx }, "elem_ptr");
 
-                var elementPtr = _builder.BuildGEP2(
-                    llvmElemType,
-                    dataRaw,
-                    new[] { idx },
-                    "elem_ptr"
-                );
-
-                LLVMValueRef storedValue;
-
-                if (elemType is BoolType)
-                {
-                    storedValue = _builder.BuildZExt(val, llvmElemType, "bool_ext");
-                }
-                else if (elemType is IntType || elemType is FloatType)
-                {
-                    storedValue = val; // already correct scalar
-                }
-                else
-                {
-                    // string / record / dataframe etc → pointer types
-                    storedValue = _builder.BuildBitCast(val, llvmElemType, "ptr_cast");
-                }
-
-                _builder.BuildStore(storedValue, elementPtr);
+                var store = _builder.BuildStore(val, elementPtr);
+                store.SetAlignment(32); // Safe now because of the math above!
             }
 
             return headerRaw;
         }
+
+
+        public LLVMValueRef BuildVectorizedMultiply(LLVMValueRef arrayDataPtr, int count, float multiplier)
+        {
+            var ctx = _module.Context;
+            var f32 = ctx.FloatType;
+            var i64 = ctx.Int64Type;
+
+            // 1. Setup Vector Constants
+            var vectorWidth = 8; // AVX width for float
+            var vectorType = LLVMTypeRef.CreateVector(f32, (uint)vectorWidth);
+            var scalarMultiplier = LLVMValueRef.CreateConstReal(f32, multiplier);
+            var vectorMultiplier = LLVMValueRef.CreateConstVector(Enumerable.Repeat(scalarMultiplier, vectorWidth).ToArray());
+
+            // 2. The Vector Loop (Processes in chunks of 8)
+            int iterations = count / vectorWidth;
+            for (int i = 0; i < iterations; i++)
+            {
+                var offset = LLVMValueRef.CreateConstInt(i64, (ulong)(i * vectorWidth));
+                var ptr = _builder.BuildGEP2(f32, arrayDataPtr, new[] { offset }, "vec_gep");
+
+                // Cast scalar pointer to vector pointer
+                var vecPtr = _builder.BuildBitCast(ptr, LLVMTypeRef.CreatePointer(vectorType, 0), "vec_cast");
+
+                var load = _builder.BuildLoad2(vectorType, vecPtr, "vec_load");
+                load.SetAlignment(32);
+
+                var result = _builder.BuildFMul(load, vectorMultiplier, "vec_mul");
+
+                var store = _builder.BuildStore(result, vecPtr);
+                store.SetAlignment(32);
+            }
+
+            // 3. The Tail Loop (Processes the remaining 1-7 elements)
+            int processedCount = iterations * vectorWidth;
+            for (int i = processedCount; i < count; i++)
+            {
+                var offset = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+                var ptr = _builder.BuildGEP2(f32, arrayDataPtr, new[] { offset }, "tail_gep");
+
+                var val = _builder.BuildLoad2(f32, ptr, "tail_load");
+                var res = _builder.BuildFMul(val, scalarMultiplier, "tail_mul");
+                _builder.BuildStore(res, ptr);
+            }
+
+            // Fixes CS0161: Return the pointer to the modified data
+            return arrayDataPtr;
+        }
+
 
         public LLVMValueRef VisitIndex(IndexNode expr)
         {
@@ -3363,7 +3498,7 @@ namespace MyCompiler
                 );
 
                 LLVMTypeRef fieldLLVMType;
-                bool isBool = false;
+
 
                 switch (field.Type)
                 {
@@ -3377,7 +3512,7 @@ namespace MyCompiler
 
                     case BoolType:
                         fieldLLVMType = ctx.Int1Type;
-                        isBool = true;
+
                         break;
 
                     case StringType:
@@ -3400,7 +3535,7 @@ namespace MyCompiler
 
                 var colRaw = _builder.BuildLoad2(i8Ptr, colPtrPtr);
 
-                // 🔥 SINGLE SOURCE OF TRUTH
+                // SINGLE SOURCE OF TRUTH
                 AppendToArrayWithGrow(colRaw, fieldValue, fieldLLVMType);
             }
 
@@ -4584,33 +4719,36 @@ namespace MyCompiler
 
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {
-            var path = Visit(expr.FileNameExpression);
+            var ctx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. CALL: Your internal function that reads the file
-            // Assuming it returns a raw pointer to an ArrayBuffer or RecordBuffer
-            var readCsvFunc = GetOrDeclareReadCsv();
-            var rawResultPtr = _builder.BuildCall2(readCsvFunc.TypeOf.ElementType, readCsvFunc, new[] { path }, "csv_raw_data");
+            // 1. Visit the filename (This returns a raw i8* because of your VisitString)
+            var rawPathPtr = Visit(expr.FileNameExpression);
 
-            // 2. BOX: Wrap that raw pointer into a RuntimeValue box
-            // Since you are planning for DataFrames (Records), we use the Record tag (6)
-            // or the Array tag (5) depending on your strategy.
+            // 2. Call the C# Runtime
+            var readCsvType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr }, false);
+            var readCsvFunc = GetOrDeclareReadCsv(readCsvType);
 
-            short tag = (short)ValueTag.Array; // Default to Array for now
-            if (expr.Type is RecordType) tag = (short)ValueTag.Record;
+            // Pass the rawPathPtr directly - do NOT use BuildStructGEP2 here
+            var dfRawPtr = _builder.BuildCall2(readCsvType, readCsvFunc, new[] { rawPathPtr }, "df_raw_ptr");
 
-            return CreateRuntimeObject(tag, rawResultPtr);
+            // 3. Return the Dataframe
+            // If your language expects the result of read_csv to be a box, use your helper:
+            return CreateRuntimeObject(7, dfRawPtr);
         }
 
-        private LLVMValueRef GetOrDeclareReadCsv()
+        private LLVMValueRef GetOrDeclareReadCsv(LLVMTypeRef funcType)
         {
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
             var func = _module.GetNamedFunction("ReadCsvInternal");
-            if (func.Handle != IntPtr.Zero) return func;
+            if (func.Handle != IntPtr.Zero)
+            {
+                return func;
+            }
 
-            // Returns a raw pointer (i8*) to an array/record buffer
-            var type = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr });
-            return _module.AddFunction("ReadCsvInternal", type);
+            return _module.AddFunction("ReadCsvInternal", funcType);
         }
+
+
 
         private LLVMValueRef GetOrDeclareToCsv()
         {
@@ -4628,25 +4766,29 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i16 = ctx.Int16Type;
             var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 2. GET MALLOC (Safety Check)
-            // We must look for malloc in the CURRENT module
-            var mallocFunc = _module.GetNamedFunction("malloc");
+            // 1. Get/Declare Malloc
             var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 });
-
+            var mallocFunc = _module.GetNamedFunction("malloc");
             if (mallocFunc.Handle == IntPtr.Zero)
             {
-                // If not found in this module, declare it
                 mallocFunc = _module.AddFunction("malloc", mallocType);
             }
 
-            // 3. ALLOCATE 16 bytes
-            // This is where your crash was happening because mallocFunc was likely null
-            var runtimeObj = _builder.BuildCall2(
+            // 2. Allocate 16 bytes (enough for i16 tag + padding + i64 pointer)
+            var runtimeObjRaw = _builder.BuildCall2(
                 mallocType,
                 mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, 16) },
+                "runtime_obj_raw"
+            );
+
+            // 3. CRITICAL: Bitcast the i8* from malloc to a pointer to our struct
+            // This ensures BuildStructGEP2 doesn't see a type mismatch.
+            var runtimeObj = _builder.BuildBitCast(
+                runtimeObjRaw,
+                LLVMTypeRef.CreatePointer(_runtimeValueType, 0),
                 "runtime_obj"
             );
 
@@ -4656,11 +4798,13 @@ namespace MyCompiler
 
             // 5. Store the Data Pointer
             var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
-            _builder.BuildStore(dataPtr, dataFieldPtr);
+
+            // Ensure the dataPtr is a raw i8* before storing it in the box
+            var castedDataPtr = _builder.BuildBitCast(dataPtr, i8Ptr, "casted_data_ptr");
+            _builder.BuildStore(castedDataPtr, dataFieldPtr);
 
             return runtimeObj;
         }
-
 
         public LLVMValueRef VisitNamedArgument(NamedArgumentNode expr) // this is never called?
         {

@@ -1,4 +1,4 @@
-﻿﻿using System;
+﻿using System;
 using System.IO;
 using System.Text;
 using LLVMSharp;
@@ -241,6 +241,18 @@ namespace MyCompiler
                             Console.WriteLine("\n show all columns on");
                         else
                             Console.WriteLine("\n show all columns off");
+
+                        userInput.Clear();
+                        continue;
+                    }
+                    
+                    if (userInput.ToString() == "stopwatch")
+                    {
+                        useStopWatch = !useStopWatch;
+                        if (useStopWatch)
+                            Console.WriteLine("\n stopwatch on");
+                        else
+                            Console.WriteLine("\n stopwatch off");
 
                         userInput.Clear();
                         continue;
