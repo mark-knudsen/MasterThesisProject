@@ -28,20 +28,14 @@ namespace MyCompiler
         public long capacity;  // i64
         public IntPtr data;    // pointer
     }
+
     [StructLayout(LayoutKind.Sequential)]
     public struct DataframeObject
-    {
-        // Array header for column names
-        public IntPtr columnData;
-
-        // Array header containing column array pointers
-        public IntPtr dataPointersData;
-
-        // Array header for datatype names/types
-        public IntPtr datatypesData;
-
-        // Total rows
-        public long rowCount;
+    {       
+        public IntPtr columnData;         // Array header for column names       
+        public IntPtr dataPointersData;   // Array header containing column array pointers        
+        public IntPtr datatypesData;      // Array header for datatype names/types       
+        public long rowCount;             // Total rows
     }
 
     public enum ValueTag
@@ -3477,7 +3471,6 @@ namespace MyCompiler
                 );
 
                 LLVMTypeRef fieldLLVMType;
-                bool isBool = false;
 
                 switch (field.Type)
                 {
@@ -3491,7 +3484,6 @@ namespace MyCompiler
 
                     case BoolType:
                         fieldLLVMType = ctx.Int1Type;
-                        isBool = true;
                         break;
 
                     case StringType:
@@ -5988,7 +5980,7 @@ namespace MyCompiler
 
     df.add({name: "Barry", age: 45, isCool: true, savings: 1980.0})
     df.add({name: "Harry", age: 39, isCool: true, savings: 10.001})
-    
+
     */
 }
 
