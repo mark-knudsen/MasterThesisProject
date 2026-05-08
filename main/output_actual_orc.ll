@@ -3,24 +3,22 @@ source_filename = "repl_module"
 
 %RuntimeValue = type { i64, ptr }
 
-@str = private unnamed_addr constant [49 x i8] c"CSV/Fire_Prediction_2023_Bolivia_encoded_10K.csv\00", align 1
-@df = global ptr null
+@x = external global i64
 
-define ptr @main_0() {
+define ptr @main_1() {
 entry:
-  %df_raw_ptr = call ptr @ReadCsvInternal(ptr @str)
-  %runtime_obj_raw = call ptr @malloc(i64 16)
-  %runtime_obj_ptr = bitcast ptr %runtime_obj_raw to ptr
-  %tag_ptr = getelementptr inbounds nuw %RuntimeValue, ptr %runtime_obj_ptr, i32 0, i32 0
-  store i64 7, ptr %tag_ptr, align 4
-  %data_ptr = getelementptr inbounds nuw %RuntimeValue, ptr %runtime_obj_ptr, i32 0, i32 1
-  store ptr %df_raw_ptr, ptr %data_ptr, align 8
-  store ptr %runtime_obj_ptr, ptr @df, align 8
-  ret ptr %runtime_obj_ptr
+  %x_load = load i64, ptr @x, align 4
+  %value_mem = call ptr @malloc(i64 8)
+  store i64 %x_load, ptr %value_mem, align 4
+  %runtime_obj = call ptr @malloc(i64 16)
+  %runtime_cast = bitcast ptr %runtime_obj to ptr
+  %tag_ptr = getelementptr inbounds nuw %RuntimeValue, ptr %runtime_cast, i32 0, i32 0
+  store i64 1, ptr %tag_ptr, align 4
+  %data_ptr = getelementptr inbounds nuw %RuntimeValue, ptr %runtime_cast, i32 0, i32 1
+  store ptr %value_mem, ptr %data_ptr, align 8
+  ret ptr %runtime_obj
 }
 
 declare i32 @printf(ptr, ...)
-
-declare ptr @ReadCsvInternal(ptr)
 
 declare ptr @malloc(i64)
