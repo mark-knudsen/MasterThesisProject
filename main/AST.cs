@@ -66,7 +66,6 @@ namespace MyCompiler
         {
             Value = value;
             Decimals = decimals;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRound(this);
@@ -78,7 +77,6 @@ namespace MyCompiler
         public FloatNode(double value)
         {
             Value = value;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloat(this);
@@ -91,7 +89,6 @@ namespace MyCompiler
         public NumberNode(int value)
         {
             Value = value;
-            Type = new IntType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNumber(this);
     }
@@ -103,7 +100,6 @@ namespace MyCompiler
         public StringNode(string value)
         {
             Value = value;
-            Type = new StringType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitString(this);
@@ -117,18 +113,12 @@ namespace MyCompiler
         public BooleanNode(bool value)
         {
             Value = value;
-            Type = new BoolType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBoolean(this);
     }
 
     public class NullNode : ExpressionNode
     {
-        public NullNode()
-        {
-            Type = new NullType();
-        }
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNull(this);
     }
 
@@ -220,7 +210,6 @@ namespace MyCompiler
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
-            Type = new VoidType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIf(this);
     }
@@ -268,7 +257,6 @@ namespace MyCompiler
             Left = left;
             Operator = op;
             Right = right;
-            Type = new BoolType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparison(this);
@@ -278,18 +266,10 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public uint? Capacity { get; }
 
         public ArrayNode(List<ExpressionNode> elements)
         {
             Elements = elements;
-
-            if (elements.Count > 0)
-                ElementType = elements[0].Type; // infer type from first element
-            else
-                ElementType = new IntType();
-
-            Type = new ArrayType(ElementType);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
@@ -311,7 +291,6 @@ namespace MyCompiler
         {
             SourceExpression = source;
             IndexExpression = index;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndex(this);
@@ -328,7 +307,6 @@ namespace MyCompiler
             ArrayExpression = array;
             IndexExpression = index;
             AssignExpression = assignExpression;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexAssign(this);
@@ -468,7 +446,6 @@ namespace MyCompiler
         public LengthNode(ExpressionNode array)
         {
             ArrayExpression = array;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLength(this);
@@ -481,7 +458,6 @@ namespace MyCompiler
         public MinNode(ExpressionNode array)
         {
             ArrayExpression = array;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMin(this);
@@ -494,7 +470,6 @@ namespace MyCompiler
         public MaxNode(ExpressionNode array)
         {
             ArrayExpression = array;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMax(this);
@@ -507,7 +482,6 @@ namespace MyCompiler
         public MeanNode(ExpressionNode array)
         {
             ArrayExpression = array;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMean(this);
@@ -520,7 +494,6 @@ namespace MyCompiler
         public SumNode(ExpressionNode array)
         {
             ArrayExpression = array;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSum(this);
@@ -535,7 +508,6 @@ namespace MyCompiler
         {
             SourceExpression = source;
             TargetExpression = target;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCorrelation(this);
@@ -601,7 +573,6 @@ namespace MyCompiler
                     throw new Exception("Record labels must be string literals.");
                 }
             }
-            Type = new RecordType(Fields);
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecord(this);
     }
@@ -615,7 +586,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpression;
             IdField = idField;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitField(this);
@@ -632,7 +602,6 @@ namespace MyCompiler
             IdRecord = idRecord;
             IdField = idField;
             AssignExpression = assignExpression;
-            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldAssign(this);
@@ -645,7 +614,6 @@ namespace MyCompiler
         public CopyNode(ExpressionNode source)
         {
             SourceExpression = source;
-            Type = source.Type;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
     }
@@ -673,7 +641,7 @@ namespace MyCompiler
     public class DataframeNode : ExpressionNode
     {
         public ExpressionNode Columns { get; }
-        public ExpressionNode Data { get; private set;}
+        public ExpressionNode Data { get; set;}
         public ExpressionNode DataTypes { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
@@ -727,208 +695,8 @@ namespace MyCompiler
                 Data = positional[1];
                 DataTypes = positional[2];
             }
-
-            Type = BuildDataframeType();
-
-            if (DataTypes == null)
-                throw new Exception("Dataframe must contain types.");
         }
 
-        private DataframeType BuildDataframeType()
-        {
-            System.Console.WriteLine("we building dataframe type");
-            var columns = ExtractColumns();
-
-            Type inferredType;
-
-            // CASE 1: no data → schema-only dataframe
-            if (Data == null)
-            {
-                System.Console.WriteLine("and we don't have data");
-                if (DataTypes == null)
-                    throw new Exception("Empty dataframe requires explicit types");
-
-                var types = ExtractTypes();
-
-                var dataArr2 = Data as ArrayNode;
-
-                bool isEmpty = dataArr2 == null || dataArr2.Elements.Count == 0;
-
-                if (isEmpty)
-                {
-                    System.Console.WriteLine("yo we in here and setting the array element type");
-                    // Build columnar empty data
-                    Data = new ArrayNode(
-                        types.Select(t =>
-                            (ExpressionNode)new ArrayNode(new List<ExpressionNode>())
-                            {
-                                ElementType = t
-                            }
-                        ).ToList()
-                    );
-
-                    return new DataframeType(
-                        columns,
-                        types,
-                        BuildRecordType(columns, types)
-                    );
-                }
-
-                inferredType = BuildRecordType(columns, types);
-
-                return new DataframeType(columns, types, inferredType as RecordType);
-            }
-
-            var dataArr = Data as ArrayNode
-                ?? throw new Exception("data must be an array");
-
-            // CASE 2: columnar dataframe
-            bool isColumnar = dataArr.Elements.All(e => e is IdNode);
-
-            if (isColumnar)
-            {
-                var types = ExtractTypes();
-                inferredType = BuildRecordType(columns, types);
-
-                return new DataframeType(columns, types, inferredType as RecordType);
-            }
-
-            // CASE 3: row dataframe
-            var data = ExtractData();
-            var inferredTypes = InferTypes(data);
-
-            inferredType = BuildRecordType(columns, inferredTypes);
-
-            DataTypes = new ArrayNode(
-                inferredTypes.Select(TypeToNode).ToList()
-            );
-
-            return new DataframeType(columns, inferredTypes, inferredType as RecordType);
-        }
-        private RecordType BuildRecordType(List<string> columns, List<Type> types)
-        {
-            var fields = new List<RecordField>();
-
-            for (int i = 0; i < columns.Count; i++)
-            {
-                fields.Add(new RecordField
-                {
-                    Label = columns[i],
-                    Type = types[i],
-                    Value = default
-                });
-            }
-
-            return new RecordType(fields);
-        }
-
-        private Type Infer(object value)
-        {
-            return value switch
-            {
-                int => new IntType(),
-                double => new FloatType(),
-                string => new StringType(),
-                bool => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
-
-        private ExpressionNode TypeToNode(Type type)
-        {
-            return type switch
-            {
-                IntType => new NumberNode(0),
-                FloatType => new FloatNode(0),
-                BoolType => new BooleanNode(false),
-                StringType => new StringNode(""),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
-
-        private List<string> ExtractColumns()
-        {
-            var arr = Columns as ArrayNode
-                ?? throw new Exception("columns must be an array");
-
-            return arr.Elements.Select(e =>
-            {
-                if (e is StringNode s)
-                    return s.Value;
-
-                throw new Exception("column names must be strings");
-            }).ToList();
-        }
-        private List<List<object>> ExtractData()
-        {
-            var arr = Data as ArrayNode
-                ?? throw new Exception("data must be an array");
-
-            return arr.Elements.Select(row =>
-            {
-                if (row is not ArrayNode rowArr)
-                    throw new Exception("each row must be an array");
-
-                return rowArr.Elements.Select(ValueOf).ToList();
-            }).ToList();
-        }
-        private object ValueOf(ExpressionNode node)
-        {
-            return node switch
-            {
-                NumberNode n => n.Value,
-                FloatNode f => f.Value,
-                StringNode s => s.Value,
-                BooleanNode b => b.Value,
-                _ => throw new Exception($"Unsupported value type: {node.GetType().Name}")
-            };
-        }
-        private List<Type> ExtractTypes()
-        {
-            var arr = DataTypes as ArrayNode
-                ?? throw new Exception("type must be an array");
-
-            return arr.Elements.Select(node =>
-            {
-                if (node is TypeLiteralNode t)
-                    return InferFromString(t.TypeNode.Name); // or t.Type
-
-                return InferTypeFromNode(node);
-
-                throw new Exception("types must be type literals");
-            }).ToList();
-        }
-        private List<Type> InferTypes(List<List<object>> data)
-        {
-            if (data.Count == 0)
-                throw new Exception("Cannot infer types from empty data");
-
-            return data[0].Select(Infer).ToList();
-        }
-
-        private Type InferFromString(string value)
-        {
-            return value switch
-            {
-                "int" => new IntType(),
-                "double" => new FloatType(),
-                "string" => new StringType(),
-                "bool" => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference: " + value)
-            };
-        }
-
-        private Type InferTypeFromNode(Node value)
-        {
-            return value switch
-            {
-                NumberNode => new IntType(),
-                FloatNode => new FloatType(),
-                StringNode => new StringType(),
-                BooleanNode => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitDataframe(this);
     }
@@ -1000,7 +768,6 @@ namespace MyCompiler
             Expression = expr;
             ToType = toType;
             FromType = fromType;
-            SetType(toType);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCast(this);
@@ -1071,5 +838,4 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveField(this);
     }
-
 }

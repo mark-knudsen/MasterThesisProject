@@ -1,9 +1,9 @@
 
 // ==========================================================================
-//  GPPG error listing for yacc source file <Parser/Parser.y - 04/05/2026 15:56:29>
+//  GPPG error listing for yacc source file <Parser/Parser.y - 08/05/2026 11:28:15>
 // ==========================================================================
 //  Version:  1.5.3
-//  DateTime: 08/05/2026 10:34:01
+//  DateTime: 08/05/2026 17:19:08
 // ==========================================================================
 
 
@@ -261,10 +261,9 @@ expr
         $$ = new FieldNode($1 as ExpressionNode, (string)$3);
     }
 
-    //| expr DOT COPY                           { $$ = new CopyRecordNode($1 as ExpressionNode); }
     | expr DOT COPY                           { $$ = new CopyNode($1 as ExpressionNode); }
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
-                                              { $$ = new AddFieldNode($1 as ExpressionNode, (string)$5, $7 as ExpressionNode); }
+                                             { $$ = new AddFieldNode($1 as ExpressionNode, (string)$5, $7 as ExpressionNode); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNode($1 as ExpressionNode, (string)$5); }
     
     // DO DATAFRAMES!

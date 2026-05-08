@@ -80,6 +80,6 @@ namespace MyCompiler
 
         public override string ToString() =>
            $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})" +
-           $"     the rowtype({string.Join(", ", RowType.RecordFields.Select((n, i) => $"{n.Type}: {i}"))})";
+           $"     the rowtype({string.Join(", ", RowType.RecordFields.Select((n, i) => $"{n.Type}: {n.Label}"))})";
     }
 }

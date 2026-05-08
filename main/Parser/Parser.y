@@ -250,10 +250,9 @@ expr
         $$ = new FieldNode($1 as ExpressionNode, (string)$3);
     }
 
-    //| expr DOT COPY                           { $$ = new CopyRecordNode($1 as ExpressionNode); }
     | expr DOT COPY                           { $$ = new CopyNode($1 as ExpressionNode); }
     | expr DOT ADDFIELD LPAREN ID COMMA expr RPAREN
-                                              { $$ = new AddFieldNode($1 as ExpressionNode, (string)$5, $7 as ExpressionNode); }
+                                             { $$ = new AddFieldNode($1 as ExpressionNode, (string)$5, $7 as ExpressionNode); }
     | expr DOT REMOVEFIELD LPAREN ID RPAREN  { $$ = new RemoveFieldNode($1 as ExpressionNode, (string)$5); }
     
     // DO DATAFRAMES!
