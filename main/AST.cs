@@ -669,7 +669,6 @@ namespace MyCompiler
         SchemaOnly,   // columns + types
         DataDriven    // columns + data (types inferred)
     }
-
     public class DataframeNode : ExpressionNode
     {
         public ExpressionNode Columns { get; private set; }
@@ -690,215 +689,47 @@ namespace MyCompiler
 
                 switch (arg.Name.ToLower())
                 {
-                    case "columns": Columns = arg.Value; break;
-                    case "data": Data = arg.Value; break;
-                    case "type":
-                    case "types": DataTypes = arg.Value; break;
+                    case "columns":
+                        Columns = arg.Value;
+                        break;
+
+                    case "data":
+                        Data = arg.Value;
+                        break;
+
+                    case "types":
+                        DataTypes = arg.Value;
+                        break;
+
                     default:
                         throw new Exception($"Unknown dataframe argument '{arg.Name}'");
                 }
             }
 
-            // FIX: Allow up to 3 positional arguments
-            if (positional.Count > 3)
-                throw new Exception("Too many positional arguments for dataframe");
+            // SUPPORT POSITIONAL ARGUMENTS
+            if (Columns == null && positional.Count >= 1)
+                Columns = positional[0];
 
-            // Assign positional arguments if they weren't provided as named arguments
-            if (Columns == null && positional.Count >= 1) Columns = positional[0];
-            if (Data == null && positional.Count >= 2) Data = positional[1];
-            if (DataTypes == null && positional.Count >= 3) DataTypes = positional[2];
+            if (Data == null && positional.Count >= 2)
+                Data = positional[1];
 
-            // Fallback: If Data is still null (like in a 'where' result), initialize it as empty list
+            if (DataTypes == null && positional.Count >= 3)
+                DataTypes = positional[2];
+
+            if (Columns == null)
+                throw new Exception("Dataframe missing 'columns'");
+
             if (Data == null)
                 Data = new ArrayNode(new List<ExpressionNode>());
 
-            Type = BuildDataframeType();
-
-            if (DataTypes == null)
-                throw new Exception("Dataframe must contain types.");
+            Type = null; // typechecker fills this
         }
 
-
-        private DataframeType BuildDataframeType()
-        {
-            var columns = ExtractColumns();
-
-            // 1. Check for no data or empty data array
-            bool isEmptyArray = Data is ArrayNode dn && dn.Elements.Count == 0;
-            bool hasNoData = Data == null || isEmptyArray;
-
-            if (hasNoData)
-            {
-                // If we are empty, we MUST have explicit types (provided by the 'where' logic)
-                if (DataTypes == null)
-                    throw new Exception("Empty dataframe requires explicit types");
-
-                var types = ExtractTypes();
-
-                // IMPORTANT: We transform the empty row-array [] 
-                // into an empty columnar-array [[], [], []] 
-                // so the LLVM Visitor doesn't crash later.
-                Data = new ArrayNode(
-                    types.Select(t =>
-                        (ExpressionNode)new ArrayNode(new List<ExpressionNode>())
-                        {
-                            ElementType = t
-                        }
-                    ).ToList()
-                );
-
-                return new DataframeType(columns, types, BuildRecordType(columns, types));
-            }
-
-            var dataArr = Data as ArrayNode ?? throw new Exception("data must be an array");
-
-            // 2. Columnar Case
-            bool isColumnar = dataArr.Elements.Count > 0 && dataArr.Elements.All(e => e is IdNode);
-            if (isColumnar)
-            {
-                var types = ExtractTypes();
-                return new DataframeType(columns, types, BuildRecordType(columns, types));
-            }
-
-            // 3. Row-based Inference (Only for data that actually exists)
-            var dataRows = ExtractData();
-            if (dataRows.Count == 0)
-                throw new Exception("Cannot infer types from an empty dataset without explicit types.");
-
-            var inferredTypes = InferTypes(dataRows);
-            DataTypes = new ArrayNode(inferredTypes.Select(TypeToNode).ToList());
-
-            return new DataframeType(columns, inferredTypes, BuildRecordType(columns, inferredTypes));
-        }
-
-        private RecordType BuildRecordType(List<string> columns, List<Type> types)
-        {
-            var fields = new List<RecordField>();
-
-            for (int i = 0; i < columns.Count; i++)
-            {
-                fields.Add(new RecordField
-                {
-                    Label = columns[i],
-                    Type = types[i],
-                    Value = default
-                });
-            }
-
-            return new RecordType(fields);
-        }
-
-        private Type Infer(object value)
-        {
-            return value switch
-            {
-                int => new IntType(),
-                double => new FloatType(),
-                float => new FloatType(),
-                string => new StringType(),
-                bool => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
-
-        private ExpressionNode TypeToNode(Type type)
-        {
-            return type switch
-            {
-                IntType => new NumberNode(0),
-                FloatType => new FloatNode(0),
-                BoolType => new BooleanNode(false),
-                StringType => new StringNode(""),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
-
-        private List<string> ExtractColumns()
-        {
-            var arr = Columns as ArrayNode
-                ?? throw new Exception("columns must be an array");
-
-            return arr.Elements.Select(e =>
-            {
-                if (e is StringNode s)
-                    return s.Value;
-
-                throw new Exception("column names must be strings");
-            }).ToList();
-        }
-        private List<List<object>> ExtractData()
-        {
-            var arr = Data as ArrayNode
-                ?? throw new Exception("data must be an array");
-
-            return arr.Elements.Select(row =>
-            {
-                if (row is not ArrayNode rowArr)
-                    throw new Exception("each row must be an array");
-
-                return rowArr.Elements.Select(ValueOf).ToList();
-            }).ToList();
-        }
-        private object ValueOf(ExpressionNode node)
-        {
-            return node switch
-            {
-                NumberNode n => n.Value,
-                FloatNode f => f.Value,
-                StringNode s => s.Value,
-                BooleanNode b => b.Value,
-                _ => throw new Exception($"Unsupported value type: {node.GetType().Name}")
-            };
-        }
-        private List<Type> ExtractTypes()
-        {
-            var arr = DataTypes as ArrayNode
-                ?? throw new Exception("type must be an array");
-
-            return arr.Elements.Select(node =>
-            {
-                if (node is TypeLiteralNode t)
-                    return InferFromString(t.TypeNode.Name); // or t.Type
-
-                return InferTypeFromNode(node);
-
-                throw new Exception("types must be type literals");
-            }).ToList();
-        }
-        private List<Type> InferTypes(List<List<object>> data)
-        {
-            if (data.Count == 0)
-                throw new Exception("Cannot infer types from empty data");
-
-            return data[0].Select(Infer).ToList();
-        }
-
-        private Type InferFromString(string value)
-        {
-            return value switch
-            {
-                "int" => new IntType(),
-                "double" => new FloatType(),
-                "string" => new StringType(),
-                "bool" => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference: " + value)
-            };
-        }
-
-        private Type InferTypeFromNode(Node value)
-        {
-            return value switch
-            {
-                NumberNode => new IntType(),
-                FloatNode => new FloatType(),
-                StringNode => new StringType(),
-                BooleanNode => new BoolType(),
-                _ => throw new Exception("Unsupported type for inference")
-            };
-        }
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitDataframe(this);
     }
+
+
 
     public class ColumnsNode : ExpressionNode
     {
@@ -910,6 +741,7 @@ namespace MyCompiler
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitColumns(this);
     }
+
 
     public class ShowDataframeNode : ExpressionNode
     {

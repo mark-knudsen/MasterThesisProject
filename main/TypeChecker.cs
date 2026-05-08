@@ -1084,43 +1084,148 @@ namespace MyCompiler
             expr.SetType(new VoidType());
             return expr.Type;
         }
-
         public Type VisitDataframe(DataframeNode expr)
         {
-            // Ensure the Type object exists
-            if (expr.Type == null)
+            var columns = ExtractColumns(expr);
+            var data = ExtractRows(expr);
+
+            List<Type> types;
+
+            // =========================
+            // CASE 1: Explicit types provided
+            // =========================
+            if (expr.DataTypes != null)
             {
-                var names = (expr.Columns as ArrayNode).Elements.Select(e => (e as StringNode).Value).ToList();
-                List<Type> types;
-                if (expr.DataTypes != null)
-                {
-                    types = (expr.DataTypes as ArrayNode).Elements.Select(e => ResolveType(e)).ToList();
-                }
-                else
-                {
-                    // infer from data
-                    var data = expr.Data as ArrayNode;
-                    if (data.Elements.Count > 0)
-                    {
-                        var firstRow = data.Elements[0] as ArrayNode;
-                        types = firstRow.Elements.Select(e => e.Type).ToList();
-                    }
-                    else
-                    {
-                        types = new List<Type>();
-                    }
-                }
-                var recordFields = names.Zip(types, (n, t) => new RecordField { Label = n, Type = t }).ToList();
-                var rowType = new RecordType(recordFields);
-                var dfType = new DataframeType(names, types, rowType);
-                expr.SetType(dfType);
+                types = ExtractTypes(expr);
+            }
+            // =========================
+            // CASE 2: Empty dataframe → require schema
+            // =========================
+            else if (data.Count == 0)
+            {
+                throw new Exception("Empty dataframe requires explicit types.");
+            }
+            // =========================
+            // CASE 3: Infer from data
+            // =========================
+            else
+            {
+                types = InferTypes(data);
             }
 
-            Visit(expr.Columns);
-            Visit(expr.Data);
-            Visit(expr.DataTypes);
+            // Validate schema consistency
+            if (columns.Count != types.Count)
+                throw new Exception("Column count does not match type count");
 
-            return expr.Type;
+            // Validate duplicates
+            if (columns.Count != columns.Distinct().Count())
+                throw new Exception("Dataframe has duplicate column names");
+
+            // Build record type
+            var recordType = BuildRecordType(columns, types);
+
+            var dfType = new DataframeType(columns, types, recordType);
+
+            expr.SetType(dfType);
+            return dfType;
+        }
+
+        private List<string> ExtractColumns(DataframeNode expr)
+        {
+            var arr = expr.Columns as ArrayNode
+                ?? throw new Exception("columns must be an array");
+
+            return arr.Elements.Select(e =>
+            {
+                if (e is StringNode s)
+                    return s.Value;
+
+                throw new Exception("column names must be strings");
+            }).ToList();
+        }
+        private List<List<object>> ExtractRows(DataframeNode expr)
+        {
+            var arr = expr.Data as ArrayNode
+                ?? throw new Exception("data must be an array");
+
+            return arr.Elements.Select(row =>
+            {
+                if (row is not ArrayNode rowArr)
+                    throw new Exception("each row must be an array");
+
+                return rowArr.Elements.Select(ValueOf).ToList();
+            }).ToList();
+        }
+        private object ValueOf(ExpressionNode node)
+        {
+            return node switch
+            {
+                NumberNode n => n.Value,
+                FloatNode f => f.Value,
+                StringNode s => s.Value,
+                BooleanNode b => b.Value,
+                _ => throw new Exception($"Unsupported value type: {node.GetType().Name}")
+            };
+        }
+        private List<Type> ExtractTypes(DataframeNode expr)
+        {
+            var arr = expr.DataTypes as ArrayNode
+                ?? throw new Exception("types must be an array");
+
+            return arr.Elements.Select(node =>
+            {
+                if (node is TypeLiteralNode t)
+                    return InferFromString(t.TypeNode.Name);
+
+                throw new Exception("types must be type literals");
+            }).ToList();
+        }
+        private List<Type> InferTypes(List<List<object>> data)
+        {
+            if (data.Count == 0)
+                throw new Exception("Cannot infer types from empty data");
+
+            return data[0].Select(Infer).ToList();
+        }
+        private RecordType BuildRecordType(List<string> columns, List<Type> types)
+        {
+            var fields = new List<RecordField>();
+
+            for (int i = 0; i < columns.Count; i++)
+            {
+                fields.Add(new RecordField
+                {
+                    Label = columns[i],
+                    Type = types[i],
+                    Value = default
+                });
+            }
+
+            return new RecordType(fields);
+        }
+        private Type InferFromString(string value)
+        {
+            return value switch
+            {
+                "int" => new IntType(),
+                "float" => new FloatType(),
+                "double" => new FloatType(),
+                "string" => new StringType(),
+                "bool" => new BoolType(),
+                _ => throw new Exception("Unsupported type: " + value)
+            };
+        }
+        private Type Infer(object value)
+        {
+            return value switch
+            {
+                int => new IntType(),
+                double => new FloatType(),
+                float => new FloatType(),
+                string => new StringType(),
+                bool => new BoolType(),
+                _ => throw new Exception("Unsupported type for inference")
+            };
         }
 
         private Type ResolveType(ExpressionNode expr) // FIX, might be redundant

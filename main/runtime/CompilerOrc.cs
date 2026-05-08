@@ -36,6 +36,7 @@ namespace MyCompiler
         public IntPtr datatypesData;
     }
 
+
     public enum ValueTag
     {
         Int = 1,
@@ -2095,7 +2096,6 @@ namespace MyCompiler
         private int _whereCounter = 0; // Class-level field to generate unique IDs
 
 
-
         private SequenceNode BuildWhereDataframe(WhereNode expr, DataframeType dfType)
         {
             var id = _whereCounter++;
@@ -2103,65 +2103,92 @@ namespace MyCompiler
             var resultVar = $"__result_{id}";
             var program = new SequenceNode();
 
-            // 1. Column Names
+            // -----------------------------
+            // metadata (unchanged)
+            // -----------------------------
             var columnNamesNodes = dfType.ColumnNames
                 .Select(name => (ExpressionNode)new StringNode(name))
                 .ToList();
-            var columnsArray = new ArrayNode(columnNamesNodes) { ElementType = new StringType() };
 
-            // 2. Types Metadata
-            var typeNodes = new List<ExpressionNode>();
-            for (int i = 0; i < dfType.ColumnNames.Count; i++)
+            var columnsArray = new ArrayNode(columnNamesNodes)
             {
-                Type actualType = dfType.RowType.RecordFields[i].Type;
+                ElementType = new StringType()
+            };
 
-                string typeStr = actualType switch
+            var typeNodes = new List<ExpressionNode>();
+
+            var count = Math.Min(dfType.ColumnNames.Count, dfType.RowType.RecordFields.Count);
+
+            for (int i = 0; i < count; i++)
+            {
+                Type t = dfType.RowType.RecordFields[i].Type;
+
+                string typeStr = t switch
                 {
                     StringType => "string",
                     FloatType => "float",
                     BoolType => "bool",
                     _ => "int"
                 };
-                typeNodes.Add(new TypeLiteralNode(new TypeNode(typeStr)));
+
+                typeNodes.Add(new StringNode(typeStr));
             }
-            var typesArray = new ArrayNode(typeNodes) { ElementType = new IntType() };
 
-            // 3. Data Rows: start with an empty set of rows.
-            // The AST dataframe builder will convert an empty row-based dataframe
-            // into the internal columnar form when explicit types are provided.
-            var dataNode = new ArrayNode(new List<ExpressionNode>());
+            var typesArray = new ArrayNode(typeNodes)
+            {
+                ElementType = new StringType()
+            };
 
+            // -----------------------------
+            // EMPTY DF
+            // -----------------------------
+            var emptyData = new ArrayNode(new List<ExpressionNode>())
+            {
+                ElementType = dfType.RowType
+            };
 
-            // 4. Result DF Setup
-            var resultDf = new DataframeNode(new List<NamedArgumentNode> {
+            var resultDf = new DataframeNode(new List<NamedArgumentNode>
+    {
         new NamedArgumentNode("columns", columnsArray),
-        new NamedArgumentNode("data", dataNode),
+        new NamedArgumentNode("data", emptyData),
         new NamedArgumentNode("types", typesArray)
     });
+
             program.Statements.Add(new AssignNode(resultVar, resultDf));
 
-            // 5. Loop through source
+            // -----------------------------
+            // LOOP
+            // -----------------------------
             var currentRow = new IndexNode(expr.SourceExpression, new IdNode(iVar));
             var predicate = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentRow);
 
-            var ifBody = new SequenceNode();
-            // This assumes your 'AddNode' or compiler handles appending a record to a dataframe
-            ifBody.Statements.Add(new AddNode(new IdNode(resultVar), currentRow));
+            var ifBody = new SequenceNode
+            {
+                Statements =
+        {
+            new AddNode(new IdNode(resultVar), currentRow)
+        }
+            };
 
-            var loop = new ForLoopNode(
+            program.Statements.Add(new ForLoopNode(
                 new AssignNode(iVar, new NumberNode(0)),
                 new ComparisonNode(new IdNode(iVar), "<", new LengthNode(expr.SourceExpression)),
                 new IncrementNode(new IdNode(iVar)),
-                new SequenceNode { Statements = { new IfNode(predicate, ifBody) } }
-            );
+                new SequenceNode
+                {
+                    Statements = { new IfNode(predicate, ifBody) }
+                }
+            ));
 
-            program.Statements.Add(loop);
             program.Statements.Add(new IdNode(resultVar));
 
             return program;
         }
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
+            if (expr.Type is not DataframeType dfType)
+                throw new Exception("Missing or lost dataframe type (AST mutated after typecheck)");
+
             var ctx = _module.Context;
 
             var i64 = ctx.Int64Type;
@@ -2169,23 +2196,24 @@ namespace MyCompiler
 
             var mallocFunc = GetOrDeclareMalloc();
 
-            var columns = (ArrayNode)expr.Columns;
-            var dataNode = (ArrayNode)expr.Data;
-            var types = (ArrayNode)expr.DataTypes;
+            // IMPORTANT: DO NOT Visit() these — they are AST structures
+            var columnsNode = expr.Columns as ArrayNode
+                ?? throw new Exception("columns must be array");
 
-            int colCount = columns.Elements.Count;
+            var dataNode = expr.Data as ArrayNode
+                ?? throw new Exception("data must be array");
+
+            int colCount = dfType.ColumnNames.Count;
 
             var columnArrayHeaders = new List<LLVMValueRef>();
 
-            // =====================================================
-            // TRANSPOSE ROWS -> COLUMNS
-            // =====================================================
-
+            // -------------------------
+            // TRANSPOSE ROWS → COLUMNS
+            // -------------------------
             var columnData = new List<List<ExpressionNode>>();
-            for (int c = 0; c < colCount; c++)
+            for (int i = 0; i < colCount; i++)
                 columnData.Add(new List<ExpressionNode>());
 
-            // FIX 1: build columns FIRST
             foreach (var rowNode in dataNode.Elements)
             {
                 if (rowNode is not ArrayNode row)
@@ -2193,130 +2221,178 @@ namespace MyCompiler
 
                 for (int c = 0; c < colCount; c++)
                 {
-                    ExpressionNode value =
-                        (c < row.Elements.Count)
+                    columnData[c].Add(
+                        c < row.Elements.Count
                             ? row.Elements[c]
-                            : new NullNode();
-
-                    columnData[c].Add(value);
+                            : new NullNode()
+                    );
                 }
             }
 
-            // FIX 2: infer types AFTER data exists
-            Type[] inferredTypes = new Type[colCount];
-
-            for (int c = 0; c < colCount; c++)
-                inferredTypes[c] = InferColumnType(columnData[c]);
-
-            // =====================================================
-            // BUILD COLUMN ARRAYS
-            // =====================================================
-
+            // -------------------------
+            // BUILD COLUMNS
+            // -------------------------
             for (int c = 0; c < colCount; c++)
             {
                 var colArray = new ArrayNode(columnData[c])
                 {
-                    ElementType = inferredTypes[c]
+                    ElementType = dfType.DataTypes[c]
                 };
 
                 columnArrayHeaders.Add(VisitArray(colArray));
             }
 
-            // =====================================================
-            // DATA PTR ARRAY
-            // =====================================================
-
-            var dataHeader = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 24) },
-                "data_ptrs_header"
-            );
-
+            // -------------------------
+            // DATA HEADER
+            // -------------------------
+            // -------------------------
+            // DATA BUFFER (THIS IS THE REAL DATA)
+            // -------------------------
             var dataBuffer = _builder.BuildCall2(
                 _mallocType,
                 mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, (ulong)(colCount * IntPtr.Size)) },
-                "data_ptrs_buffer"
+                "data_buffer"
             );
 
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
-                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 0));
-
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
-                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 1));
-
-            _builder.BuildStore(
-                dataBuffer,
-                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 2));
-
+            // store column arrays into buffer
             for (int i = 0; i < colCount; i++)
             {
                 var gep = _builder.BuildGEP2(
                     i8Ptr,
                     dataBuffer,
                     new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
-                    "data_gep"
+                    "gep"
                 );
 
                 _builder.BuildStore(
-                    _builder.BuildBitCast(columnArrayHeaders[i], i8Ptr, "col_cast"),
+                    _builder.BuildBitCast(columnArrayHeaders[i], i8Ptr, "cast"),
                     gep
                 );
             }
 
-            // =====================================================
+
+            // -------------------------
             // FINAL DATAFRAME
-            // =====================================================
+            // -------------------------
+            var dfLLVMType = GetOrCreateDataframeType();
+            var dfPtr = _builder.BuildMalloc(dfLLVMType, "df");
 
-            var columnsPtr = VisitArray(columns);
-            var typesPtr = VisitArray(types);
+            _builder.BuildStore(
+                VisitArray(columnsNode),
+                _builder.BuildStructGEP2(dfLLVMType, dfPtr, 0)
+            );
 
-            var dfType = GetOrCreateDataframeType();
+            _builder.BuildStore(
+                dataBuffer,
+                _builder.BuildStructGEP2(dfLLVMType, dfPtr, 1)
+            );
 
-            var dfPtr = _builder.BuildMalloc(dfType, "df_instance");
+            // FIX: ALWAYS trust typechecker result, never rebuild types here
+            var typesArray = new ArrayNode(
+                dfType.DataTypes
+                    .Select(t => new StringNode(t.ToString()))
+                    .Cast<ExpressionNode>()
+                    .ToList()
+            );
 
-            _builder.BuildStore(columnsPtr,
-                _builder.BuildStructGEP2(dfType, dfPtr, 0));
-
-            _builder.BuildStore(dataHeader,
-                _builder.BuildStructGEP2(dfType, dfPtr, 1));
-
-            _builder.BuildStore(typesPtr,
-                _builder.BuildStructGEP2(dfType, dfPtr, 2));
+            _builder.BuildStore(
+                VisitArray(typesArray),
+                _builder.BuildStructGEP2(dfLLVMType, dfPtr, 2)
+            );
 
             return dfPtr;
         }
 
 
-        private Type InferColumnType(List<ExpressionNode> values)
+        private List<Type> InferDataframeTypes(ArrayType data)
         {
-            foreach (var v in values)
+            if (data.ElementType is not ArrayType rowType)
+                throw new Exception("rows must be arrays");
+
+            // rowType.ElementType = type of a single row element
+            var rowArrayType = rowType.ElementType as ArrayType;
+
+            if (rowArrayType == null)
+                throw new Exception("row must be array of values");
+
+            int colCount = rowArrayType.ElementType is null
+                ? throw new Exception("invalid row type")
+                : GetArrayWidth(rowArrayType);
+
+            var types = new List<Type>();
+
+            for (int i = 0; i < colCount; i++)
             {
-                if (v is NumberNode)
-                    return new IntType();
-
-                if (v is FloatNode)
-                    return new FloatType();
-
-                if (v is BooleanNode)
-                    return new BoolType();
-
-                if (v is StringNode)
-                    return new StringType();
-                if (v is TypeLiteralNode tp)
-                    return InferTypeFromString(tp.TypeNode.Name);
+                types.Add(InferColumnTypeFromRow(rowArrayType));
             }
 
-            return new StringType(); // fallback
+            return types;
         }
+
+        private int GetArrayWidth(ArrayType rowType)
+        {
+            // safest fallback: assume fixed schema stored elsewhere
+            // or introspect from compiler metadata
+            return 1; // fallback (adjust if you store row length)
+        }
+
+        private Type InferColumnTypeFromRow(ArrayType rowType)
+        {
+            return rowType.ElementType switch
+            {
+                IntType => new IntType(),
+                FloatType => new FloatType(),
+                StringType => new StringType(),
+                BoolType => new BoolType(),
+                _ => throw new Exception("unsupported type")
+            };
+        }
+        private Type InferColumnType(List<ExpressionNode> values)
+        {
+            Type? result = null;
+
+            foreach (var v in values)
+            {
+                Type current = v switch
+                {
+                    NumberNode => new IntType(),
+                    FloatNode => new FloatType(),
+                    BooleanNode => new BoolType(),
+                    StringNode => new StringType(),
+                    NullNode => null, // ignore nulls
+                    _ => null
+                };
+
+                if (current == null)
+                    continue;
+
+                if (result == null)
+                {
+                    result = current;
+                    continue;
+                }
+
+                // unify types (important fix)
+                if (result.GetType() != current.GetType())
+                {
+                    // fallback rule (you can improve later)
+                    if (result is FloatType || current is FloatType)
+                        result = new FloatType();
+                    else
+                        result = new StringType();
+                }
+            }
+
+            return result ?? new StringType();
+        }
+
         private Type InferTypeFromString(string value)
         {
             return value switch
             {
                 "int" => new IntType(),
+                "float" => new FloatType(),
                 "double" => new FloatType(),
                 "string" => new StringType(),
                 "bool" => new BoolType(),
@@ -3280,22 +3356,17 @@ namespace MyCompiler
             // Default to None to avoid throwing for pointer/complex types we don't handle.
             return new VoidType();
         }
-
         public LLVMValueRef VisitAdd(AddNode expr)
         {
-            // Evaluate RHS once (important)
             var valueToAdd = Visit(expr.AddExpression);
-
-            // IMPORTANT: do NOT pre-cast here — let backend decide
             var isBool = expr.AddExpression.Type is BoolType;
 
             if (expr.SourceExpression.Type is DataframeType)
-            {
                 return VisitDataframeAdd(expr);
-            }
 
             return VisitArrayAdd(expr.SourceExpression, valueToAdd, isBool);
         }
+
 
         private LLVMValueRef VisitArrayAdd(ExpressionNode sourceExpr, LLVMValueRef valueToAdd, bool isBool)
         {
@@ -3414,7 +3485,6 @@ namespace MyCompiler
 
             return arrayRaw;
         }
-
         public LLVMValueRef VisitDataframeAdd(AddNode expr)
         {
             var ctx = _module.Context;
@@ -3427,49 +3497,50 @@ namespace MyCompiler
             var dfPtrType = LLVMTypeRef.CreatePointer(dfType, 0);
             var arrayPtrType = LLVMTypeRef.CreatePointer(_arrayStruct, 0);
 
-            // LOAD DF
+            // -----------------------------
+            // LOAD DF (ONCE ONLY)
+            // -----------------------------
             var dfRaw = Visit(expr.SourceExpression);
             var df = _builder.BuildBitCast(dfRaw, dfPtrType);
 
-            var dataArrayPtrPtr = _builder.BuildStructGEP2(dfType, df, 1);
-            var dataArrayRaw = _builder.BuildLoad2(i8Ptr, dataArrayPtrPtr);
-            var dataArray = _builder.BuildBitCast(dataArrayRaw, arrayPtrType);
-
-            var rowCountPtr = _builder.BuildStructGEP2(_arrayStruct, dataArray, 0);
-            var rowIndex = _builder.BuildLoad2(i64, rowCountPtr);
+            var dataPtrPtr = _builder.BuildStructGEP2(dfType, df, 1);
+            var dataRaw = _builder.BuildLoad2(i8Ptr, dataPtrPtr);
+            var dataArray = _builder.BuildBitCast(dataRaw, arrayPtrType);
 
             var columnPtrsPtr = _builder.BuildStructGEP2(_arrayStruct, dataArray, 2);
             var columnPtrsRaw = _builder.BuildLoad2(i8Ptr, columnPtrsPtr);
 
-            // SINGLE evaluation of row
-            var row = Visit(expr.AddExpression);
-            var rowType = (RecordType)expr.AddExpression.Type;
+            // -----------------------------
+            // ROW (ONLY ONCE)
+            // -----------------------------
+            var rowExpr = expr.AddExpression;
+            var row = Visit(rowExpr);
+            var rowType = (RecordType)rowExpr.Type;
             var llvmRowStruct = GetOrCreateStructType(rowType);
 
-            // SINGLE pass over fields
+            // -----------------------------
+            // APPEND FIELDS
+            // -----------------------------
             for (int i = 0; i < rowType.RecordFields.Count; i++)
             {
                 var field = rowType.RecordFields[i];
+
                 var fieldPtr = _builder.BuildStructGEP2(llvmRowStruct, row, (uint)i);
-
-                LLVMTypeRef llvmFieldType = GetLLVMType(field.Type);
-
+                var llvmFieldType = GetLLVMType(field.Type);
                 var fieldValue = _builder.BuildLoad2(llvmFieldType, fieldPtr);
+
                 var colIdx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
 
-                // FIX: Use i8Ptr (pointer size) as the stride for the column pointers array
                 var colPtrPtr = _builder.BuildGEP2(i8Ptr, columnPtrsRaw, new[] { colIdx });
                 var colRaw = _builder.BuildLoad2(i8Ptr, colPtrPtr);
 
-                // Pass the actual LLVM type to Append so it knows how to GEP inside the column
                 AppendToArrayWithGrow(colRaw, fieldValue, llvmFieldType);
             }
 
-            // The row count is represented by the length of the individual column arrays.
-            // AppendToArrayWithGrow already updates each column's length, so we must not
-            // mutate the column pointer array header length here.
             return df;
         }
+
+
 
         public LLVMValueRef VisitDataframeAdd1(AddNode expr)
         {
