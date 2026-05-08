@@ -272,27 +272,28 @@ namespace MyCompiler
 
         private LLVMValueRef GetOrDeclareMalloc()
         {
-            var mallocFunc = _module.GetNamedFunction("malloc");
-            if (mallocFunc.Handle != IntPtr.Zero) return mallocFunc;
+            var mallocName = "malloc";
+            var existing = _module.GetNamedFunction(mallocName);
+            if (existing.Handle != IntPtr.Zero) return existing;
 
-            // Define: ptr malloc(i64)
-            _mallocType = LLVMTypeRef.CreateFunction(
-                LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
-                new[] { _module.Context.Int64Type }
-            );
+            // Use i64 for size_t (on 64-bit systems)
+            var i64 = _module.Context.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            return _module.AddFunction("malloc", _mallocType);
+            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
+            return _module.AddFunction(mallocName, mallocType);
         }
 
         LLVMTypeRef DeclareRunTimeValueType()
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            // Using a Named Struct for better IR readability and type safety
+            _runtimeValueType = ctx.CreateNamedStruct("RuntimeValue");
+            _runtimeValueType.StructSetBody(new[] { i64, i8Ptr }, false);
 
-            _runtimeValueType = LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
             return _runtimeValueType;
         }
 
@@ -364,20 +365,24 @@ namespace MyCompiler
             File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
 
+
+
+
         private Type PerformSemanticAnalysis(Node expr)
         {
             var checker = new TypeChecker(_context, _debug);
-            _lastType = checker.Check(expr);
+            var rootType = checker.Check(expr); // This checks the whole sequence
             _context = checker.UpdatedContext;
 
-            //_lastNode = GetLastExpression(expr);
+            // If the top-level node is an assignment, we want the type of the RHS
+            if (expr is SequenceNode seq && seq.Statements.LastOrDefault() is AssignNode assign)
+            {
+                return checker.Check(assign.Expression);
+            }
 
-            var programedResult = GetLastExpression(expr);
-
-            // Console.WriteLine("the last expression node is: " + programedResult as ExpressionNode);
-
-            if (programedResult is ExpressionNode exp) return exp.Type;
-            return new VoidType();
+            // Otherwise, return the type of the last expression
+            var lastExpr = GetLastExpression(expr);
+            return (lastExpr as ExpressionNode)?.Type ?? rootType;
         }
 
         // TODO: add functionality
@@ -4676,66 +4681,70 @@ namespace MyCompiler
             return newPtr;
         }
 
+        private LLVMValueRef UnboxStringIfNeeded(LLVMValueRef value)
+        {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+
+            // Check if the value is a pointer to an array of characters (a string literal)
+            // or a direct global string. 
+            bool isRawString = value.IsConstant && value.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind;
+
+            if (isRawString)
+            {
+                // It's already a raw pointer to data, just ensure it's cast to i8*
+                return _builder.BuildBitCast(value, i8Ptr, "raw_str_literal");
+            }
+
+            // Otherwise, we treat it as a boxed RuntimeValue* 
+            // We navigate to the 'data' field (index 1) and load the pointer stored there
+            var dataAddr = _builder.BuildStructGEP2(_runtimeValueType, value, 1, "str_unbox_gep");
+            return _builder.BuildLoad2(i8Ptr, dataAddr, "raw_str_ptr");
+        }
+
+
         public LLVMValueRef VisitToCsv(ToCsvNode expr)
         {
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 1. Visit the Array (This is a variable 'arr', so it IS boxed)
-            var boxedArray = Visit(expr.SourceExpression);
+            // 1. Visit the Dataframe (SourceExpression)
+            var boxedDf = Visit(expr.SourceExpression);
 
-            // Extract the raw ArrayObject* from the box
-            var arrayDataAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedArray, 1, "array_unbox_gep");
-            var rawArrayPtr = _builder.BuildLoad2(i8Ptr, arrayDataAddr, "raw_array_ptr");
+            // Unbox: Get the DataframeObject* from the RuntimeValue box
+            var dfDataAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedDf, 1, "df_unbox_gep");
+            var rawDfPtr = _builder.BuildLoad2(i8Ptr, dfDataAddr, "raw_df_ptr");
 
-            // 2. Visit the Path ("test.csv")
+            // 2. Visit the Path (FileNameExpression)
             var pathValue = Visit(expr.FileNameExpression);
-            LLVMValueRef rawPathPtr;
+            LLVMValueRef rawPathPtr = UnboxStringIfNeeded(pathValue);
 
-            // Check: If pathValue is a literal string, it's already a ptr to i8.
-            // If it's a variable, it's a ptr to RuntimeValue.
-            if (pathValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
-                pathValue.TypeOf.ElementType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-            {
-                // It's a raw string literal i8*
-                rawPathPtr = pathValue;
-            }
-            else
-            {
-                // It's a boxed variable (e.g. if you did 'p = "test.csv"' then 'to_csv(arr, p)')
-                var pathDataAddr = _builder.BuildStructGEP2(_runtimeValueType, pathValue, 1, "path_unbox_gep");
-                rawPathPtr = _builder.BuildLoad2(i8Ptr, pathDataAddr, "raw_path_ptr");
-            }
-
-            // 3. Setup the Function
+            // 3. Call C# ToCsvInternal(rawDfPtr, rawPathPtr)
             var toCsvFunc = GetOrDeclareToCsv();
             var toCsvType = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { i8Ptr, i8Ptr }, false);
+            _builder.BuildCall2(toCsvType, toCsvFunc, new[] { rawDfPtr, rawPathPtr }, "");
 
-            // 4. Call with raw pointers
-            _builder.BuildCall2(toCsvType, toCsvFunc, new[] { rawArrayPtr, rawPathPtr }, "");
-
-            // 5. Return None box
-            return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
+            // 4. Return None
+            return CreateRuntimeObject((long)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
         }
-
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {
-            var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 1. Visit the filename (This returns a raw i8* because of your VisitString)
-            var rawPathPtr = Visit(expr.FileNameExpression);
+            // 1. Visit the filename. Use the helper to ensure we have a raw C-string pointer.
+            var pathValue = Visit(expr.FileNameExpression);
+            var rawPathPtr = UnboxStringIfNeeded(pathValue);
 
-            // 2. Call the C# Runtime
+            // 2. Setup and call ReadCsvInternal(i8*) -> i8*
             var readCsvType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr }, false);
             var readCsvFunc = GetOrDeclareReadCsv(readCsvType);
 
-            // Pass the rawPathPtr directly - do NOT use BuildStructGEP2 here
+            // dfRawPtr is the address of the DataframeObject (the 3 pointers)
             var dfRawPtr = _builder.BuildCall2(readCsvType, readCsvFunc, new[] { rawPathPtr }, "df_raw_ptr");
 
-            // 3. Return the Dataframe
-            // If your language expects the result of read_csv to be a box, use your helper:
-            return CreateRuntimeObject(7, dfRawPtr);
+            // 3. Box it with Tag 7 (Dataframe)
+            // CreateRuntimeObject now accepts 'long' for the tag to match your struct
+            return CreateRuntimeObject((long)ValueTag.Dataframe, dfRawPtr);
         }
+
 
         private LLVMValueRef GetOrDeclareReadCsv(LLVMTypeRef funcType)
         {
@@ -4761,22 +4770,15 @@ namespace MyCompiler
             return _module.AddFunction("ToCsvInternal", type);
         }
 
-        private LLVMValueRef CreateRuntimeObject(short tag, LLVMValueRef dataPtr)
+        private LLVMValueRef CreateRuntimeObject(long tag, LLVMValueRef dataPtr)
         {
-            var ctx = _module.Context;
-            var i16 = ctx.Int16Type;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i64 = _module.Context.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 1. Get/Declare Malloc
-            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 });
-            var mallocFunc = _module.GetNamedFunction("malloc");
-            if (mallocFunc.Handle == IntPtr.Zero)
-            {
-                mallocFunc = _module.AddFunction("malloc", mallocType);
-            }
+            // 1. Malloc 16 bytes
+            var mallocFunc = GetOrDeclareMalloc();
+            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
 
-            // 2. Allocate 16 bytes (enough for i16 tag + padding + i64 pointer)
             var runtimeObjRaw = _builder.BuildCall2(
                 mallocType,
                 mallocFunc,
@@ -4784,26 +4786,25 @@ namespace MyCompiler
                 "runtime_obj_raw"
             );
 
-            // 3. CRITICAL: Bitcast the i8* from malloc to a pointer to our struct
-            // This ensures BuildStructGEP2 doesn't see a type mismatch.
-            var runtimeObj = _builder.BuildBitCast(
+            // 2. CRITICAL: BitCast the i8* from malloc to RuntimeValue*
+            // Without this, the GEP below is operating on the wrong pointer type!
+            var runtimeObjPtr = _builder.BuildBitCast(
                 runtimeObjRaw,
                 LLVMTypeRef.CreatePointer(_runtimeValueType, 0),
-                "runtime_obj"
+                "runtime_obj_ptr"
             );
 
-            // 4. Store the Tag
-            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 0, "tag_ptr");
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i16, (ulong)tag), tagPtr);
+            // 3. Store Tag (Offset 0, 8 bytes)
+            // Use 'runtimeObjPtr' (the casted one) instead of 'runtimeObjRaw'
+            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObjPtr, 0, "tag_ptr");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr);
 
-            // 5. Store the Data Pointer
-            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObj, 1, "data_ptr");
-
-            // Ensure the dataPtr is a raw i8* before storing it in the box
-            var castedDataPtr = _builder.BuildBitCast(dataPtr, i8Ptr, "casted_data_ptr");
+            // 4. Store Data Pointer (Offset 8, 8 bytes)
+            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, runtimeObjPtr, 1, "data_ptr");
+            var castedDataPtr = _builder.BuildBitCast(dataPtr, i8Ptr, "casted_data");
             _builder.BuildStore(castedDataPtr, dataFieldPtr);
 
-            return runtimeObj;
+            return runtimeObjPtr;
         }
 
         public LLVMValueRef VisitNamedArgument(NamedArgumentNode expr) // this is never called?
@@ -5231,3 +5232,144 @@ namespace MyCompiler
         }
     }
 }
+
+
+
+
+/*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
+
+df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
+df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
+
+
+to_csv(df, "CSV/mytest.csv")
+
+df2 = dataframe(columns=["name", "age"],type=[string, int])         
+
+df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
+df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
+
+df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
+df2.map(x => { age: x.age - 10, name: "Harry" })
+df2.map(x => { age: 10, name: x.name + "_2" })
+df2.map(x => x.age - 10)
+
+record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+
+foreach(item in df3) { item.age = item.age + 10 }
+
+x = dataframe(columns=["name", "age"],type=[string, int])   
+for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+
+
+for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
+
+x.where(d=> d.age > 50)
+
+arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
+ for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
+
+df.select(["latitude", "longitude"])
+
+# TEST: WHERE
+df.where(x => x.latitude > -18.0)
+df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
+df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
+
+# TEST: MAP
+df.map(x => x.latitude - 100.0)
+df.map(x => x + {latitude: x.latitude - 100.0})
+df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
+df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
+
+
+# TEST: MIN, MAX, MEAN & SUM
+df_lat = df.map(x => x.latitude);
+df_min = df_lat.min; df_max = df_lat.max; df_mean = df_lat.mean; df_sum = df_lat.sum;
+
+
+# TEST: WHERE on array (VECTOR TEST)
+df_lat = df.map(x => x.latitude)
+df_lat.where(x => x > -18.0)
+df_lat.where(x => x > -18.0).where(x => x <  -16.0)
+
+
+# TEST: MAP on array (VECTOR TEST)
+df_lat = df.map(x => x.latitude)
+df_lat.map(x => x + 100.0)
+df_lat.map(x => x + 100.0).map(x => x - 0.05)
+
+
+# TEST: corr        
+df.latitude.corr(df.wind-speed-max)
+
+
+compiler list: 
+16.6333, 0.9592, 0.5678, 0.5073, 4.9772, 6.3993, 0.5997, 1.033, 0.5602
+
+IR list: 
+12.6831, 11.2088, 6.7141, 7.0108, 10.1785, 14.9467, 19.4002, 13.9254, 9.777
+
+Runtime list: 
+107.503, 108.0411, 60.8264, 59.0818, 64.1876, 1033.8113, 880.304, 1015.3324, 916.654
+
+*/
+
+
+/*
+        Performance test for our Language:
+        1) load in csv: around 11 seconds
+        2) For loop add 5,000,000 rows total around 7 million rows: 
+            a) CodeGen time: 2.4462 ms
+            b) Compiler time: 0.0032 ms
+            c) Full stack: 7865 ms
+        3) where filtering:
+            a) One where with one condition: around 0.128 seconds - [0.128, 0.166, 0.136, 0.129, 0.126, 0.133, 0.122, 0.131, 0.114, 0.137] avg 0.128 seconds
+            b) Two where's with one condition each: around 0.185 seconds -  [0.212, 0.170, 0.199, 0.181, 0.186, 0.196, 0.145, 0.165, 0.192, 0.215] avg 0.185 seconds
+            C) One where with two conditions: around 0.107 seconds - [0.120, 0.121, 0.108, 0.106, 0.107, 0.112, 0.092, 0.089, 0.109, 0.112] avg 0.107 seconds
+
+
+        Performance test for Python:
+        1) load in csv: around 11 seconds
+        2) For loop add 5,000,000 rows total around 7 million rows: 23.5 seconds
+        3) Direct filter test: 0.033 seconds - "df_direct = df[(df["latitude"] > -18.0) & (df["longitude"] < -69.0)]"
+        4) Query filter test:
+            a) One where with one condition: around 0.228 seconds - [0.240, 0.218, 0.312, 0.225, 0.201, 0.213, 0.217, 0.250, 0.234, 0.200] avg 0.228 seconds
+            b) Two where's with one condition each: around 0.254 seconds -  [0.236, 0.264, 0.223, 0.257, 0.303, 0.223, 0.242, 0.247, 0.254, 0.299] avg 0.254 seconds
+            C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
+
+
+        Performance test for R:
+        1) load in csv: around 21.859 seconds
+        2) For loop add 100,000 rows total around 2 million rows (not much added!): 32 seconds - [36, 28, 27, 36, 30, 33, 32, 33, 34, 30] avg 32 seconds 
+        3) Query filter test:
+            a) One where with one condition: around 0.228 seconds - [0.74 , 0.93, 0.70, 0.68, 0.57, 0.65, 0.67, 0.57, 0.71, 0.67 ] avg 0.74 seconds
+            b) Two where's with one condition each: around 0.254 seconds -  [0.234 , 0.170, 0.130, 0.188, 0.121, 0.202, 0.160, 0.187, 0.177, 0.301 ] avg 0.187 seconds
+            C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
+
+
+
+mx = df["latitude"].mean
+my = df["elevation"].mean
+
+
+components = df.map(r => {
+dx: r.latitude - mx,
+dy: r.elevation - my,
+dx2: (r.latitude - mx) * (r.latitude - mx),
+dy2: (r.elevation - my) * (r.elevation - my),
+prod: (r.latitude - mx) * (r.elevation - my)
+})
+
+numerator = components.map(x => x.prod).sum
+sum_dx2 = components.map(x => x.dx2).sum
+sum_dy2 = components.map(x => x.dy2).sum
+
+
+correlation = numerator / sqrt(sum_dx2 * sum_dy2)
+
+print(correlation)
+
+
+
+*/
