@@ -794,6 +794,7 @@ namespace MyCompiler
             {
                 int => new IntType(),
                 double => new FloatType(),
+                float => new FloatType(),
                 string => new StringType(),
                 bool => new BoolType(),
                 _ => throw new Exception("Unsupported type for inference")

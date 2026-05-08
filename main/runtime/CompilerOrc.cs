@@ -280,8 +280,8 @@ namespace MyCompiler
             var i64 = _module.Context.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            var mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
-            return _module.AddFunction(mallocName, mallocType);
+            _mallocType = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i64 }, false);
+            return _module.AddFunction(mallocName, _mallocType);
         }
 
         LLVMTypeRef DeclareRunTimeValueType()
@@ -2160,134 +2160,158 @@ namespace MyCompiler
 
             return program;
         }
-
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
             var ctx = _module.Context;
+
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
             var mallocFunc = GetOrDeclareMalloc();
 
-            // Cast nodes for access
             var columns = (ArrayNode)expr.Columns;
             var dataNode = (ArrayNode)expr.Data;
             var types = (ArrayNode)expr.DataTypes;
 
             int colCount = columns.Elements.Count;
+
             var columnArrayHeaders = new List<LLVMValueRef>();
 
-            // =========================================================
-            // 1. DATA ORGANIZATION (Row-Major vs Column-Major)
-            // =========================================================
+            // =====================================================
+            // TRANSPOSE ROWS -> COLUMNS
+            // =====================================================
 
-            // Check if data is already column-organized (e.g., from BuildWhereDataframe)
-            // We assume it's columnar if it contains ArrayNodes and count matches colCount
-            bool isAlreadyColumnar = dataNode.Elements.Count == colCount &&
-                                     dataNode.Elements.All(e => e is ArrayNode);
+            var columnData = new List<List<ExpressionNode>>();
+            for (int c = 0; c < colCount; c++)
+                columnData.Add(new List<ExpressionNode>());
 
-            if (isAlreadyColumnar)
+            // FIX 1: build columns FIRST
+            foreach (var rowNode in dataNode.Elements)
             {
-                // Data is already columns, just visit each array
-                foreach (ArrayNode colArrayNode in dataNode.Elements)
-                {
-                    columnArrayHeaders.Add(VisitArray(colArrayNode));
-                }
-            }
-            else
-            {
-                // Data is in rows (Literal format), we must Transpose
-                var columnData = new List<List<ExpressionNode>>();
-                for (int c = 0; c < colCount; c++)
-                    columnData.Add(new List<ExpressionNode>());
+                if (rowNode is not ArrayNode row)
+                    continue;
 
-                foreach (var rowNode in dataNode.Elements)
-                {
-                    if (rowNode is ArrayNode row)
-                    {
-                        for (int c = 0; c < colCount; c++)
-                        {
-                            if (c < row.Elements.Count)
-                                columnData[c].Add(row.Elements[c]);
-                            else
-                                // Safety fallback for mismatched row lengths
-                                columnData[c].Add(new NumberNode(0));
-                        }
-                    }
-                }
-
-                // Build the Column Arrays from the transposed data
                 for (int c = 0; c < colCount; c++)
                 {
-                    Type elementType;
-                    if (c < types.Elements.Count && types.Elements[c] is TypeLiteralNode tln)
-                    {
-                        elementType = InferTypeFromString(tln.TypeNode.Name);
-                    }
-                    else if (c < types.Elements.Count)
-                    {
-                        elementType = types.Elements[c].Type;
-                    }
-                    else
-                    {
-                        elementType = new IntType(); // Default fallback
-                    }
+                    ExpressionNode value =
+                        (c < row.Elements.Count)
+                            ? row.Elements[c]
+                            : new NullNode();
 
-                    var colArray = new ArrayNode(columnData[c]) { ElementType = elementType };
-                    columnArrayHeaders.Add(VisitArray(colArray));
+                    columnData[c].Add(value);
                 }
             }
 
-            // =========================================================
-            // 2. Build dataPointersData (ArrayObject of Column Pointers)
-            // =========================================================
+            // FIX 2: infer types AFTER data exists
+            Type[] inferredTypes = new Type[colCount];
 
-            // Allocate the ArrayObject header (length, capacity, data_ptr) -> 24 bytes
-            var dataHeader = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "data_ptrs_header");
+            for (int c = 0; c < colCount; c++)
+                inferredTypes[c] = InferColumnType(columnData[c]);
 
-            // Allocate the actual buffer for the pointers (colCount * 8 bytes)
-            var dataBuffer = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)(colCount * 8)) }, "data_ptrs_buffer");
+            // =====================================================
+            // BUILD COLUMN ARRAYS
+            // =====================================================
 
-            // Store Metadata in Header
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
-                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 0)); // length
+            for (int c = 0; c < colCount; c++)
+            {
+                var colArray = new ArrayNode(columnData[c])
+                {
+                    ElementType = inferredTypes[c]
+                };
 
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
-                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 1)); // capacity
+                columnArrayHeaders.Add(VisitArray(colArray));
+            }
 
-            _builder.BuildStore(dataBuffer,
-                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 2)); // data pointer
+            // =====================================================
+            // DATA PTR ARRAY
+            // =====================================================
 
-            // Fill the buffer with the pointers to each column's ArrayObject
+            var dataHeader = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, 24) },
+                "data_ptrs_header"
+            );
+
+            var dataBuffer = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)(colCount * IntPtr.Size)) },
+                "data_ptrs_buffer"
+            );
+
+            _builder.BuildStore(
+                LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
+                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 0));
+
+            _builder.BuildStore(
+                LLVMValueRef.CreateConstInt(i64, (ulong)colCount),
+                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 1));
+
+            _builder.BuildStore(
+                dataBuffer,
+                _builder.BuildStructGEP2(_arrayStruct, dataHeader, 2));
+
             for (int i = 0; i < colCount; i++)
             {
-                var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-                var cast = _builder.BuildBitCast(columnArrayHeaders[i], i8Ptr, "col_ptr_cast");
-                var gep = _builder.BuildGEP2(i8Ptr, dataBuffer, new[] { idx }, "data_gep");
+                var gep = _builder.BuildGEP2(
+                    i8Ptr,
+                    dataBuffer,
+                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
+                    "data_gep"
+                );
 
-                _builder.BuildStore(cast, gep);
+                _builder.BuildStore(
+                    _builder.BuildBitCast(columnArrayHeaders[i], i8Ptr, "col_cast"),
+                    gep
+                );
             }
 
-            // =========================================================
-            // 3. Final Dataframe Assembly
-            // =========================================================
+            // =====================================================
+            // FINAL DATAFRAME
+            // =====================================================
 
-            var columnsPtr = VisitArray(columns); // Visit column names array
-            var typesPtr = VisitArray(types);     // Visit types metadata array
+            var columnsPtr = VisitArray(columns);
+            var typesPtr = VisitArray(types);
 
             var dfType = GetOrCreateDataframeType();
+
             var dfPtr = _builder.BuildMalloc(dfType, "df_instance");
 
-            // Store the three internal ArrayObject pointers into the dataframe struct
-            _builder.BuildStore(columnsPtr, _builder.BuildStructGEP2(dfType, dfPtr, 0));
-            _builder.BuildStore(dataHeader, _builder.BuildStructGEP2(dfType, dfPtr, 1));
-            _builder.BuildStore(typesPtr, _builder.BuildStructGEP2(dfType, dfPtr, 2));
+            _builder.BuildStore(columnsPtr,
+                _builder.BuildStructGEP2(dfType, dfPtr, 0));
+
+            _builder.BuildStore(dataHeader,
+                _builder.BuildStructGEP2(dfType, dfPtr, 1));
+
+            _builder.BuildStore(typesPtr,
+                _builder.BuildStructGEP2(dfType, dfPtr, 2));
 
             return dfPtr;
         }
 
+
+        private Type InferColumnType(List<ExpressionNode> values)
+        {
+            foreach (var v in values)
+            {
+                if (v is NumberNode)
+                    return new IntType();
+
+                if (v is FloatNode)
+                    return new FloatType();
+
+                if (v is BooleanNode)
+                    return new BoolType();
+
+                if (v is StringNode)
+                    return new StringType();
+                if (v is TypeLiteralNode tp)
+                    return InferTypeFromString(tp.TypeNode.Name);
+            }
+
+            return new StringType(); // fallback
+        }
         private Type InferTypeFromString(string value)
         {
             return value switch
