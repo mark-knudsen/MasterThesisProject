@@ -596,12 +596,43 @@ namespace MyCompiler
             return result;
         }
 
+        public void DebugDataframe(DataframeObject df)
+        {
+            var columnsArray = Marshal.PtrToStructure<ArrayObject>(df.columnData);
+            var dataArray = Marshal.PtrToStructure<ArrayObject>(df.dataPointersData);
+            var dataTypesArray = Marshal.PtrToStructure<ArrayObject>(df.datatypesData);
+
+            DebugArray(columnsArray, "columns");
+            DebugArray(dataArray, "data");
+            DebugArray(dataTypesArray, "dataTypes");
+        }
+
+        private void DebugArray(ArrayObject arrayObject, string arrayName)
+        {
+            Console.WriteLine(arrayName + " capacity: " + arrayObject.capacity);
+            Console.WriteLine(arrayName + " length: " + arrayObject.length);
+
+            IntPtr firstColPtr = Marshal.ReadIntPtr(arrayObject.data);
+            try
+            {
+                var firstColArray = Marshal.PtrToStructure<ArrayObject>(firstColPtr);
+
+                Console.WriteLine(arrayName + " actual array capacity: " + firstColArray.capacity);
+                Console.WriteLine(arrayName + " actual array length: " + firstColArray.length);
+            }
+            catch
+            {
+                Console.WriteLine("no an array of arrays");
+            }
+        }
+
         private string HandleDataframe(IntPtr dfPtr, DataframeType type)
         {
             if (dfPtr == IntPtr.Zero)
                 return "dataframe(null)";
 
             var df = Marshal.PtrToStructure<DataframeObject>(dfPtr);
+            DebugDataframe(df);
 
             int colCount = type.ColumnNames.Count;
 
@@ -609,7 +640,6 @@ namespace MyCompiler
             var dataArray = Marshal.PtrToStructure<ArrayObject>(df.dataPointersData);
 
             //int rowCount = (int)dataArray.length; // how we originally did it,         they should have the same length, but it's length is +2
-
 
             // 2. Read the first column's pointer (at index 0)
             IntPtr firstColPtr = Marshal.ReadIntPtr(dataArray.data);
@@ -1966,7 +1996,7 @@ namespace MyCompiler
 
         // x=read_csv("CSV/test.csv")
 
-        public LLVMValueRef VisitWhere(WhereNode expr) 
+        public LLVMValueRef VisitWhere(WhereNode expr)
         {
             var sourceType = expr.SourceExpression.Type;
 

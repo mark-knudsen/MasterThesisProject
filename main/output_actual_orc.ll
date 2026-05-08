@@ -11,7 +11,7 @@ source_filename = "repl_module"
 @__i = external global i64
 @x = external global ptr
 
-define ptr @main_9() {
+define ptr @main_5() {
 entry:
   %arr_header = call ptr @malloc(i64 24)
   %arr_data = call ptr @malloc(i64 800)
