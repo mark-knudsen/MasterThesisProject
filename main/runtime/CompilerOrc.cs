@@ -2499,6 +2499,7 @@ namespace MyCompiler
                 new NamedArgumentNode("columns", columnsArray),
                 new NamedArgumentNode("type", typesArray),
                 new NamedArgumentNode("data", new ArrayNode(new List<ExpressionNode>()))
+                //new NamedArgumentNode("data", dataArray)  // HELLO
             });
 
             program.Statements.Add(new AssignNode(resultVar, resultDf));
@@ -4494,18 +4495,11 @@ namespace MyCompiler
             }
             else if (expr.ArrayExpression.Type is DataframeType)
             {
-                // Step 1: get pointer to the 'rows' field
-                var rowsFieldPtr = _builder.BuildStructGEP2(_dataframeStruct, sourcePtr, 1, "rows_ptr_field");
+                // Directly access index 3: the i64 rowCount field
+                var rowCountPtr = _builder.BuildStructGEP2(_dataframeStruct, sourcePtr, 3, "rowCount_ptr");
 
-                // Step 2: load the pointer to the ArrayObject
-                var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_ptr");
-
-                // Step 3: cast to ArrayObject*
-                var rowsArrayPtr = _builder.BuildBitCast(rowsPtr, LLVMTypeRef.CreatePointer(_arrayStruct, 0), "rows_array_ptr");
-
-                // Step 4: get the 'length' field
-                var lenPtr = _builder.BuildStructGEP2(_arrayStruct, rowsArrayPtr, 0, "rows_length_ptr");
-                var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "rows_length");
+                // Load it as an i64
+                var length = _builder.BuildLoad2(ctx.Int64Type, rowCountPtr, "rowCount");
                 length.SetAlignment(8);
 
                 return length;
@@ -6292,10 +6286,11 @@ namespace MyCompiler
     df.where(x => x.latitude > -18.0)
 
     df2 = dataframe(["name", "age", "isCool","savings"],[["Harry", 12, true,100.08],["Bob", 23, false, 1.0],["Harry", 34, false, 0.0]])
+    df2 = dataframe(["name", "age", "isCool","savings"],[["Harry", 12, true,100.08],["Bob", 23, false, 1.0],["Harry", 34, false, 0.0],["Harry", 74, false, 0.0],["Harry", 24, true, 0.0],["Harry", 31, false, 0.0]])
 
     df.where(x=> x.name == "Harry")
 
-    df2.add({name: "Barry", age: 45, isCool: true});
+    df2.add({name: "Barry", age: 45, isCool: true, savings: 100.00})
     df2.add({name: "Harry", age: 39, isCool: true})
 
     */
