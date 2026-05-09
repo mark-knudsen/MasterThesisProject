@@ -10,6 +10,8 @@ using System.Runtime.InteropServices;
 using System.ComponentModel.DataAnnotations;
 using Microsoft.VisualBasic;
 using System.Runtime.CompilerServices;
+using System.Text;
+using System.Data;
 
 namespace MyCompiler
 {
@@ -31,7 +33,7 @@ namespace MyCompiler
 
     [StructLayout(LayoutKind.Sequential)]
     public struct DataframeObject
-    {       
+    {
         public IntPtr columnData;         // Array header for column names       
         public IntPtr dataPointersData;   // Array header containing column array pointers        
         public IntPtr datatypesData;      // Array header for datatype names/types       
@@ -52,70 +54,130 @@ namespace MyCompiler
 
     public static class LanguageRuntime
     {
-        public static IntPtr ReadCsvInternal(IntPtr pathPtr)
+
+        public static IntPtr ReadCsvInternal(IntPtr pathPtr, IntPtr schemaPtr)
         {
-            if (pathPtr == IntPtr.Zero) return IntPtr.Zero;
             string path = Marshal.PtrToStringAnsi(pathPtr);
-            if (!System.IO.File.Exists(path)) return IntPtr.Zero;
+            if (!File.Exists(path))
+                return IntPtr.Zero;
 
-            var lines = System.IO.File.ReadAllLines(path)
-                .Where(l => !string.IsNullOrWhiteSpace(l)).ToArray();
-            int count = lines.Length;
+            string schema = Marshal.PtrToStringAnsi(schemaPtr);
 
-            IntPtr header = Marshal.AllocHGlobal(24);
-            IntPtr dataBuffer = Marshal.AllocHGlobal(count * 8);
+            var lines = File.ReadAllLines(path).Skip(1).ToArray();
+            int rowCount = lines.Length;
+            int colCount = schema.Length;
 
-            Marshal.WriteInt64(header, 0, count);
-            Marshal.WriteInt64(header, 8, count);
-            Marshal.WriteIntPtr(header, 16, dataBuffer);
+            // ============================
+            // COLUMN BUFFERS
+            // ============================
 
-            for (int i = 0; i < count; i++)
+            IntPtr[] columnBuffers = new IntPtr[colCount];
+
+            for (int c = 0; c < colCount; c++)
+                columnBuffers[c] = Marshal.AllocHGlobal(rowCount * 8);
+
+            for (int i = 0; i < rowCount; i++)
             {
-                string val = lines[i].Trim();
-                long bitPattern = 0;
-                if (long.TryParse(val, out long iVal)) bitPattern = iVal;
-                else if (double.TryParse(val, out double dVal)) bitPattern = BitConverter.DoubleToInt64Bits(dVal);
-                else bitPattern = (long)Marshal.StringToHGlobalAnsi(val);
+                string[] parts = lines[i].Split(',');
 
-                Marshal.WriteInt64(dataBuffer, i * 8, bitPattern);
+                for (int c = 0; c < colCount; c++)
+                {
+                    string raw = parts[c].Trim();
+                    int offset = i * 8;
+                    char typeCode = schema[c];
+
+                    if (typeCode == 'I')
+                    {
+                        long.TryParse(raw, out long v);
+                        Marshal.WriteInt64(columnBuffers[c], offset, v);
+                    }
+                    else if (typeCode == 'F')
+                    {
+                        double.TryParse(raw,
+                            System.Globalization.CultureInfo.InvariantCulture,
+                            out double v);
+
+                        Marshal.WriteInt64(columnBuffers[c], offset,
+                            BitConverter.DoubleToInt64Bits(v));
+                    }
+                    else if (typeCode == 'B')
+                    {
+                        bool v = raw == "true" || raw == "1";
+                        Marshal.WriteInt64(columnBuffers[c], offset, v ? 1 : 0);
+                    }
+                    else if (typeCode == 'S')
+                    {
+                        IntPtr strPtr = Marshal.StringToHGlobalAnsi(raw);
+                        Marshal.WriteIntPtr(columnBuffers[c], offset, strPtr);
+                    }
+                }
             }
-            return header;
+
+            // ============================
+            // DATA ARRAY (columns of columns)
+            // ============================
+
+            IntPtr dataArray = Marshal.AllocHGlobal(colCount * IntPtr.Size);
+
+            for (int i = 0; i < colCount; i++)
+                Marshal.WriteIntPtr(dataArray, i * IntPtr.Size, columnBuffers[i]);
+
+            // ============================
+            // DATAFRAME OBJECT (32 bytes FIXED)
+            // ============================
+
+            IntPtr df = Marshal.AllocHGlobal(32);
+
+            Marshal.WriteIntPtr(df, 0, IntPtr.Zero);        // column names (unused for now)
+            Marshal.WriteIntPtr(df, IntPtr.Size, dataArray);
+            Marshal.WriteIntPtr(df, IntPtr.Size * 2, IntPtr.Zero);
+            Marshal.WriteInt64(df, IntPtr.Size * 3, rowCount);
+
+            // ============================
+            // WRAP RUNTIME VALUE (16 bytes)
+            // ============================
+
+            IntPtr runtime = Marshal.AllocHGlobal(16);
+            Marshal.WriteInt64(runtime, 0, 7);
+            Marshal.WriteIntPtr(runtime, 8, df);
+
+            return runtime;
         }
 
-        public static void ToCsvInternal(IntPtr arrayHeaderPtr, IntPtr pathPtr)
+        public static void ToCsvInternal(IntPtr dfPtr, IntPtr pathPtr)
         {
-            if (arrayHeaderPtr == IntPtr.Zero || pathPtr == IntPtr.Zero) return;
             string path = Marshal.PtrToStringAnsi(pathPtr);
 
-            // Ensure ArrayObject is defined in your namespace
-            var array = Marshal.PtrToStructure<ArrayObject>(arrayHeaderPtr);
+            IntPtr df = Marshal.ReadIntPtr(dfPtr, 8);
 
-            using var writer = new System.IO.StreamWriter(path);
-            for (int i = 0; i < array.length; i++)
+            IntPtr dataPtr = Marshal.ReadIntPtr(df, IntPtr.Size);
+            long rowCount = Marshal.ReadInt64(df, IntPtr.Size * 3);
+
+            int colCount = 0;
+
+            // infer colCount safely
+            while (Marshal.ReadIntPtr(dataPtr, colCount * IntPtr.Size) != IntPtr.Zero)
+                colCount++;
+
+            using var writer = new StreamWriter(path);
+
+            // header
+            writer.WriteLine(string.Join(",", Enumerable.Range(0, colCount).Select(i => $"col{i}")));
+
+            for (int r = 0; r < rowCount; r++)
             {
-                IntPtr elemPtr = IntPtr.Add(array.data, i * 8);
-                long rawBits = Marshal.ReadInt64(elemPtr);
+                List<string> row = new();
 
-                if ((ulong)rawBits > 0x1000000)
+                for (int c = 0; c < colCount; c++)
                 {
-                    try
-                    {
-                        string s = Marshal.PtrToStringAnsi((IntPtr)rawBits);
-                        writer.WriteLine(s);
-                    }
-                    catch
-                    {
-                        writer.WriteLine(rawBits);
-                    }
+                    IntPtr col = Marshal.ReadIntPtr(dataPtr, c * IntPtr.Size);
+                    int offset = r * 8;
+
+                    long value = Marshal.ReadInt64(col, offset);
+                    row.Add(value.ToString());
                 }
-                else if (rawBits > 1000000)
-                {
-                    writer.WriteLine(BitConverter.Int64BitsToDouble(rawBits));
-                }
-                else
-                {
-                    writer.WriteLine(rawBits);
-                }
+
+                writer.WriteLine(string.Join(",", row));
             }
         }
     }
@@ -151,8 +213,10 @@ namespace MyCompiler
 
         private ReadCsvDelegate _readCsvDelegate;
         private ToCsvDelegate _toCsvDelegate;
-        public delegate IntPtr ReadCsvDelegate(IntPtr path);
+
+        public delegate IntPtr ReadCsvDelegate(IntPtr pathPtr, IntPtr schemaPtr);
         public delegate void ToCsvDelegate(IntPtr data, IntPtr path);
+        private LLVMTypeRef _readCsvInternalType;
 
         public CompilerOrc()
         {
@@ -249,10 +313,22 @@ namespace MyCompiler
         LLVMTypeRef DeclareDataframeStruct()
         {
             var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
 
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-            _dataframeStruct = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
+
+            _dataframeStruct = LLVMTypeRef.CreateStruct(
+                new LLVMTypeRef[]
+                {
+            i8Ptr,  // columnData
+            i8Ptr,  // dataPointersData
+            i8Ptr,  // datatypesData
+            i64     // rowCount   ⭐ REQUIRED FIX
+                },
+                false
+            );
+
             return _dataframeStruct;
         }
 
@@ -565,31 +641,78 @@ namespace MyCompiler
 
         private Dictionary<int, object> ExtractArrayIndexed(IntPtr arrayObjPtr, ArrayType type, List<int> indices)
         {
-            var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
-
             var elementType = type.ElementType;
             var result = new Dictionary<int, object>();
 
-            var stride = (elementType is BoolType) ? 1 : 8;
+            if (arrayObjPtr == IntPtr.Zero)
+                return result;
 
+            // =====================================================
+            // 🔥 MANUAL UNPACK (NO PtrToStructure)
+            // =====================================================
+            long length = Marshal.ReadInt64(arrayObjPtr, 0);
+            long capacity = Marshal.ReadInt64(arrayObjPtr, 8);
+            IntPtr data = Marshal.ReadIntPtr(arrayObjPtr, 16);
+
+            if (data == IntPtr.Zero)
+                return result;
+
+            const int stride = 8;
+
+            // =====================================================
+            // ELEMENT ACCESS
+            // =====================================================
             foreach (var i in indices)
             {
-                if (i < 0) continue;
+                if (i < 0 || i >= length)
+                    continue;
 
-                IntPtr elemPtr = IntPtr.Add(array.data, (int)(i * stride));
+                IntPtr elemPtr = IntPtr.Add(data, i * stride);
 
                 object value;
 
-                if (elementType is IntType)
-                    value = Marshal.ReadInt64(elemPtr);
-                else if (elementType is FloatType)
-                    value = Marshal.PtrToStructure<double>(elemPtr);
-                else if (elementType is BoolType)
-                    value = Marshal.ReadByte(elemPtr) != 0;
-                else if (elementType is StringType)
-                    value = Marshal.PtrToStringAnsi(Marshal.ReadIntPtr(elemPtr));
-                else
-                    value = "?";
+                try
+                {
+                    if (elementType is IntType)
+                    {
+                        value = Marshal.ReadInt64(elemPtr);
+                    }
+                    else if (elementType is FloatType)
+                    {
+                        long raw = Marshal.ReadInt64(elemPtr);
+                        value = BitConverter.Int64BitsToDouble(raw);
+                    }
+                    else if (elementType is BoolType)
+                    {
+                        value = Marshal.ReadInt64(elemPtr) != 0;
+                    }
+                    else if (elementType is StringType)
+                    {
+                        IntPtr strPtr = Marshal.ReadIntPtr(elemPtr);
+
+                        if (strPtr == IntPtr.Zero)
+                            value = "null";
+                        else
+                        {
+                            try
+                            {
+                                value = Marshal.PtrToStringAnsi(strPtr) ?? "null";
+                            }
+                            catch
+                            {
+                                value = "<invalid string>";
+                            }
+                        }
+                    }
+                    else
+                    {
+                        value = "<unknown type>";
+                    }
+                }
+                catch
+                {
+                    value = "<memory error>";
+                }
 
                 result[i] = value;
             }
@@ -597,16 +720,82 @@ namespace MyCompiler
             return result;
         }
 
-        public void DebugDataframe(DataframeObject df)
-        {
-            var columnsArray = Marshal.PtrToStructure<ArrayObject>(df.columnData);
-            var dataArray = Marshal.PtrToStructure<ArrayObject>(df.dataPointersData);
-            var dataTypesArray = Marshal.PtrToStructure<ArrayObject>(df.datatypesData);
+        // public void DebugDataframe(IntPtr dfPtr)
+        // {
+        //     if (dfPtr == IntPtr.Zero)
+        //         return;
 
-            DebugArray(columnsArray, "columns");
-            DebugArray(dataArray, "data", true);
-            DebugArray(dataTypesArray, "dataTypes");
+        //     IntPtr columnsPtr = Marshal.ReadIntPtr(dfPtr, 0);
+        //     IntPtr dataPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size);
+        //     IntPtr typesPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size * 2);
+
+        //     var columns = Marshal.PtrToStructure<ArrayObject>(columnsPtr);
+        //     var data = Marshal.PtrToStructure<ArrayObject>(dataPtr);
+        //     var types = Marshal.PtrToStructure<ArrayObject>(typesPtr);
+
+        //     DebugArray(columns, "columns");
+        //     DebugArray(data, "data", true);
+        //     DebugArray(types, "dataTypes");
+        // }
+        public void DebugDataframe(IntPtr dfPtr)
+        {
+            if (dfPtr == IntPtr.Zero)
+                return;
+
+            long tag = Marshal.ReadInt64(dfPtr, 0);
+            IntPtr dataPtr = Marshal.ReadIntPtr(dfPtr, 8);
+
+            Console.WriteLine("=== Dataframe DEBUG ===");
+            Console.WriteLine($"tag: {tag}");
+            Console.WriteLine($"dataPtr: {dataPtr}");
+
+            if (dataPtr == IntPtr.Zero)
+                return;
+
+            IntPtr columns = Marshal.ReadIntPtr(dataPtr, 0);
+            IntPtr data = Marshal.ReadIntPtr(dataPtr, IntPtr.Size);
+            IntPtr types = Marshal.ReadIntPtr(dataPtr, IntPtr.Size * 2);
+
+            long rowCount = Marshal.ReadInt64(dataPtr, IntPtr.Size * 3);
+
+            Console.WriteLine($"rows: {rowCount}");
+            Console.WriteLine($"columns: {columns}");
+            Console.WriteLine($"data: {data}");
+
+            if (columns != IntPtr.Zero)
+                DebugArrayRaw(columns, "columns");
+
+            if (data != IntPtr.Zero)
+                DebugArrayRaw(data, "data", true);
+
+            if (types != IntPtr.Zero)
+                DebugArrayRaw(types, "types");
         }
+
+
+
+        private void DebugArrayRaw(IntPtr arrayPtr, string name, bool nested = false)
+        {
+            if (arrayPtr == IntPtr.Zero)
+            {
+                Console.WriteLine($"{name}: NULL");
+                return;
+            }
+
+            long length = Marshal.ReadInt64(arrayPtr, 0);
+            long capacity = Marshal.ReadInt64(arrayPtr, 8);
+            IntPtr data = Marshal.ReadIntPtr(arrayPtr, 16);
+
+            Console.WriteLine($"{name}: len={length}, cap={capacity}");
+
+            if (!nested || length == 0)
+                return;
+
+            IntPtr first = Marshal.ReadIntPtr(data);
+
+            Console.WriteLine($"{name}[0] = {first}");
+        }
+
 
         private void DebugArray(ArrayObject arrayObject, string arrayName, bool isArrayOfArrays = false)
         {
@@ -616,11 +805,12 @@ namespace MyCompiler
             if (isArrayOfArrays && arrayObject.length > 0)
             {
                 IntPtr firstColPtr = Marshal.ReadIntPtr(arrayObject.data);
+                if (firstColPtr == IntPtr.Zero) return;
                 try
                 {
-                    var firstColArray = Marshal.PtrToStructure<ArrayObject>(firstColPtr);
-                    Console.WriteLine(arrayName + " actual array capacity: " + firstColArray.capacity);
-                    Console.WriteLine(arrayName + " actual array length: " + firstColArray.length);
+                    long firstLen = Marshal.ReadInt64(firstColPtr, 0);
+                    int rowCount = (int)firstLen;
+
                 }
                 catch
                 {
@@ -633,142 +823,320 @@ namespace MyCompiler
             }
         }
 
+        // private string HandleDataframe(IntPtr dfPtr, DataframeType type)
+        // {
+        //     // If dfPtr comes from result.data in Run(), it is already the pointer to the DataframeObject.
+        //     if (dfPtr == IntPtr.Zero) return "dataframe(null)";
+
+        //     // =====================================================
+        //     // 1. Direct Field Access (No Tag Reading)
+        //     // =====================================================
+        //     // Layout: { IntPtr columns, IntPtr dataArrays, IntPtr types, long rowCount }
+        //     IntPtr columnsArrayPtr = Marshal.ReadIntPtr(dfPtr, 0);
+        //     IntPtr dataPointers = Marshal.ReadIntPtr(dfPtr, IntPtr.Size);
+        //     IntPtr typesArrayPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size * 2);
+        //     long rowCount = Marshal.ReadInt64(dfPtr, IntPtr.Size * 3);
+
+        //     int colCount = type.ColumnNames.Count;
+        //     int rowCountInt = (int)rowCount;
+
+        //     // =====================================================
+        //     // 2. Row selection
+        //     // =====================================================
+        //     int maxRows = 50;
+        //     var rowIndices = new List<int>();
+
+        //     if (rowCountInt <= maxRows)
+        //     {
+        //         for (int i = 0; i < rowCountInt; i++) rowIndices.Add(i);
+        //     }
+        //     else
+        //     {
+        //         for (int i = 0; i < 5; i++) rowIndices.Add(i);
+        //         rowIndices.Add(-1); // Indicator for "..."
+        //         for (int i = rowCountInt - 5; i < rowCountInt; i++) rowIndices.Add(i);
+        //     }
+
+        //     // =====================================================
+        //     // 3. Extract data (Reading from the dataPointers buffer)
+        //     // =====================================================
+        //     var columns = new List<Dictionary<int, object>>();
+
+        //     for (int c = 0; c < colCount; c++)
+        //     {
+        //         // Read the c-th column pointer from the dataPointers buffer
+        //         IntPtr colPtr = Marshal.ReadIntPtr(dataPointers, c * IntPtr.Size);
+
+        //         // Use a modified version of ExtractArrayIndexed that takes the raw buffer and rowCount
+        //         var sparse = ExtractRawColumnData(
+        //             colPtr,
+        //             type.DataTypes[c],
+        //             rowCountInt,
+        //             rowIndices
+        //         );
+
+        //         columns.Add(sparse);
+        //     }
+
+        //     // 6. Formatting Logic
+        //     var colWidths = new int[colCount];
+        //     for (int c = 0; c < colCount; c++)
+        //     {
+        //         colWidths[c] = type.ColumnNames[c].Length;
+        //         foreach (var r in rowIndices)
+        //         {
+        //             if (r < 0) continue;
+        //             if (columns[c].TryGetValue(r, out var valObj))
+        //             {
+        //                 var s = valObj?.ToString() ?? "null";
+        //                 if (s.Length > colWidths[c]) colWidths[c] = s.Length;
+        //             }
+        //         }
+        //     }
+
+        //     int indexWidth = Math.Max("index".Length, rowCountInt > 0 ? (rowCountInt - 1).ToString().Length : 1);
+
+        //     string FormatRow(string index, List<string> row)
+        //     {
+        //         var paddedIndex = index.PadRight(indexWidth);
+        //         var paddedCols = row.Select((val, i) => val.PadRight(colWidths[i]));
+        //         return paddedIndex + " | " + string.Join(" | ", paddedCols);
+        //     }
+
+        //     string separator = new string('-', indexWidth) + "-+-" +
+        //                        string.Join("-+-", colWidths.Select(w => new string('-', w)));
+
+        //     var lines = new List<string>();
+        //     lines.Add(FormatRow("index", type.ColumnNames.ToList()));
+        //     lines.Add(separator);
+
+        //     foreach (var r in rowIndices)
+        //     {
+        //         if (r == -1)
+        //         {
+        //             lines.Add("...".PadRight(indexWidth) + " | " +
+        //                       string.Join(" | ", colWidths.Select(w => "...".PadRight(w))));
+        //             continue;
+        //         }
+
+        //         var rowStrings = new List<string>();
+        //         for (int c = 0; c < colCount; c++)
+        //         {
+        //             if (columns[c].TryGetValue(r, out var valObj))
+        //                 rowStrings.Add(valObj?.ToString() ?? "null");
+        //             else
+        //                 rowStrings.Add("null");
+        //         }
+        //         lines.Add(FormatRow(r.ToString(), rowStrings));
+        //     }
+
+        //     return "Dataframe (" + rowCountInt + " rows):\n" + string.Join("\n", lines.Select(l => "  " + l));
+        // }
+
+
         private string HandleDataframe(IntPtr dfPtr, DataframeType type)
         {
-            if (dfPtr == IntPtr.Zero)
-                return "dataframe(null)";
+            if (dfPtr == IntPtr.Zero) return "dataframe(null)";
 
-            var df = Marshal.PtrToStructure<DataframeObject>(dfPtr);
-            DebugDataframe(df);
+            // 1. Direct Field Access
+            // Layout: { ptr colNames, ptr dataArrays, ptr types, i64 rowCount }
+            IntPtr dataArraysField = Marshal.ReadIntPtr(dfPtr, IntPtr.Size);
+            long rowCountRaw = Marshal.ReadInt64(dfPtr, IntPtr.Size * 3);
+            int rowCount = (int)rowCountRaw;
 
-            int colCount = type.ColumnNames.Count;
+            // 2. SMART UNBOXING
+            // We need to determine if dataArraysField is an ArrayObject header OR a direct pointer array.
+            IntPtr actualDataBuffer;
 
-            // --- Load dataframe "data" array (this holds column pointers) ---
-            var dataArray = Marshal.PtrToStructure<ArrayObject>(df.dataPointersData);
+            // Read potential header values
+            long maybeLen = Marshal.ReadInt64(dataArraysField, 0);
+            IntPtr maybePtr = Marshal.ReadIntPtr(dataArraysField, 16);
 
-            // 2. Read the first column's pointer (at index 0)
-            IntPtr firstColPtr = Marshal.ReadIntPtr(dataArray.data);
-
-            // 3. The REAL row count is the length of that first column
-            var firstColArray = Marshal.PtrToStructure<ArrayObject>(firstColPtr);
-            int rowCount = (int)firstColArray.length; // the new method
-
-            // --- Row selection (HEAD / TAIL) ---
-            int maxRows = 50;
-            var rowIndices = new List<int>();
-
-            if (rowCount <= maxRows)
+            // Heuristic: If the 3rd field is a valid pointer and the 1st field matches our colCount
+            if (maybeLen == type.ColumnNames.Count && maybePtr != IntPtr.Zero && (long)maybePtr > 0x1000)
             {
-                for (int i = 0; i < rowCount; i++)
-                    rowIndices.Add(i);
+                actualDataBuffer = maybePtr; // It's an ArrayObject header
             }
             else
             {
-                for (int i = 0; i < 5; i++)
-                    rowIndices.Add(i);
-
-                rowIndices.Add(-1); // separator
-
-                for (int i = rowCount - 5; i < rowCount; i++)
-                    rowIndices.Add(i);
+                actualDataBuffer = dataArraysField; // It's a direct pointer buffer (common in read_csv)
             }
 
-            // --- Extract ONLY needed values per column ---
-            var columns = new List<Dictionary<int, object>>();
-            int stride = IntPtr.Size;
-
-            for (int c = 0; c < colCount; c++)
+            // 3. Row Selection
+            var rowIndices = new List<int>();
+            if (rowCount <= 20)
             {
-                IntPtr elemPtr = IntPtr.Add(dataArray.data, c * stride);
-                IntPtr colArrayPtr = Marshal.ReadIntPtr(elemPtr);
-
-                var colType = type.DataTypes[c];
-
-                var sparse = ExtractArrayIndexed(colArrayPtr, new ArrayType(colType), rowIndices);
-                columns.Add(sparse);
+                for (int i = 0; i < rowCount; i++) rowIndices.Add(i);
+            }
+            else
+            {
+                for (int i = 0; i < 5; i++) rowIndices.Add(i);
+                for (int i = rowCount - 5; i < rowCount; i++) rowIndices.Add(i);
             }
 
-            // --- Column widths ---
-            var colWidths = new int[colCount];
+            // 4. Extraction Logic
+            var sparseRows = new Dictionary<int, List<object>>();
+            foreach (int r in rowIndices) sparseRows[r] = new List<object>();
 
-            for (int c = 0; c < colCount; c++)
+            for (int c = 0; c < type.ColumnNames.Count; c++)
             {
-                colWidths[c] = type.ColumnNames[c].Length;
+                IntPtr colPtr = Marshal.ReadIntPtr(actualDataBuffer, c * IntPtr.Size);
+                if (colPtr == IntPtr.Zero) continue;
 
-                foreach (var r in rowIndices)
+                // Columns can ALSO be wrapped in ArrayObjects
+                IntPtr colDataBuf;
+                long cLen = Marshal.ReadInt64(colPtr, 0);
+                IntPtr cPtr = Marshal.ReadIntPtr(colPtr, 16);
+
+                if (cLen == rowCount && cPtr != IntPtr.Zero && (long)cPtr > 0x1000)
+                    colDataBuf = cPtr;
+                else
+                    colDataBuf = colPtr;
+
+                var colValues = ExtractFromBuffer(colDataBuf, type.DataTypes[c], rowCount, rowIndices);
+                foreach (int r in rowIndices)
                 {
-                    if (r < 0) continue;
-
-                    if (columns[c].TryGetValue(r, out var valObj))
-                    {
-                        var str = valObj?.ToString() ?? "null";
-                        if (str.Length > colWidths[c])
-                            colWidths[c] = str.Length;
-                    }
+                    sparseRows[r].Add(colValues.ContainsKey(r) ? colValues[r] : "null");
                 }
             }
 
-            // --- Index width (dynamic) ---
-            int indexWidth = Math.Max(
-                "index".Length,
-                rowCount > 0 ? (rowCount - 1).ToString().Length : 1
-            );
+            return FormatTable(type.ColumnNames.ToList(), sparseRows, rowCount);
+        }
 
-            // --- Formatting helpers ---
-            string FormatRow(string index, List<string> row)
+        private Dictionary<int, object> ExtractFromBuffer(IntPtr dataBuf, Type elemType, int len, List<int> indices)
+        {
+            var result = new Dictionary<int, object>();
+            if (dataBuf == IntPtr.Zero) return result;
+
+            foreach (var i in indices)
             {
-                var paddedIndex = index.PadRight(indexWidth);
+                if (i < 0 || i >= len) continue;
+                IntPtr ptr = IntPtr.Add(dataBuf, i * 8);
 
-                var paddedCols = row.Select((val, i) =>
-                    val.PadRight(colWidths[i])
-                );
+                if (elemType is IntType) result[i] = Marshal.ReadInt64(ptr);
+                else if (elemType is FloatType)
+                {
+                    byte[] b = new byte[8];
+                    Marshal.Copy(ptr, b, 0, 8);
+                    result[i] = BitConverter.ToDouble(b, 0);
+                }
+                else if (elemType is BoolType)
+                {
+                    // In LLVM i1 is stored in a byte, but your store uses align 1
+                    // Read 1 byte for bool
+                    result[i] = Marshal.ReadByte(ptr) != 0;
+                }
+                else if (elemType is StringType)
+                {
+                    IntPtr s = Marshal.ReadIntPtr(ptr);
+                    result[i] = (s == IntPtr.Zero) ? "null" : Marshal.PtrToStringAnsi(s);
+                }
+            }
+            return result;
+        }
 
-                return paddedIndex + " | " + string.Join(" | ", paddedCols);
+        private Dictionary<int, object> ExtractRawColumnData(IntPtr data, Type elementType, int length, List<int> indices)
+        {
+            var result = new Dictionary<int, object>();
+            if (data == IntPtr.Zero) return result;
+
+            foreach (var i in indices)
+            {
+                if (i < 0 || i >= length) continue;
+
+                // Every element in your ReadCsv logic is 8-byte aligned (i64, double, or ptr)
+                IntPtr elemPtr = IntPtr.Add(data, i * 8);
+
+                if (elementType is IntType) result[i] = Marshal.ReadInt64(elemPtr);
+                else if (elementType is FloatType)
+                {
+                    byte[] bytes = new byte[8];
+                    Marshal.Copy(elemPtr, bytes, 0, 8);
+                    result[i] = BitConverter.ToDouble(bytes, 0);
+                }
+                else if (elementType is BoolType) result[i] = Marshal.ReadInt64(elemPtr) != 0;
+                else if (elementType is StringType)
+                {
+                    IntPtr sPtr = Marshal.ReadIntPtr(elemPtr);
+                    // CRITICAL: Check for null pointer before converting to string
+                    result[i] = (sPtr == IntPtr.Zero) ? "null" : Marshal.PtrToStringAnsi(sPtr);
+                }
+            }
+            return result;
+        }
+
+        private string FormatTable(List<string> columnNames, Dictionary<int, List<object>> rows, int rowCount)
+        {
+            var allHeaders = new List<string> { "index" };
+            allHeaders.AddRange(columnNames);
+            int totalCols = allHeaders.Count;
+
+            // --- Horizontal Truncation (Columns) ---
+            var colIndices = new List<int>();
+            if (totalCols <= 10)
+            {
+                for (int i = 0; i < totalCols; i++) colIndices.Add(i);
+            }
+            else
+            {
+                for (int i = 0; i < 4; i++) colIndices.Add(i);
+                colIndices.Add(-1); // Horizontal separator
+                for (int i = totalCols - 3; i < totalCols; i++) colIndices.Add(i);
             }
 
-            string separator =
-                new string('-', indexWidth) +
-                "-+-" +
-                string.Join("-+-", colWidths.Select(w => new string('-', w)));
+            // --- Calculate Widths ---
+            var colWidths = new Dictionary<int, int>();
+            foreach (var c in colIndices)
+            {
+                if (c == -1) { colWidths[c] = 3; continue; }
+                int maxWidth = allHeaders[c].Length;
+                if (c == 0) maxWidth = Math.Max(maxWidth, rowCount.ToString().Length);
 
-            // --- Build output ---
+                foreach (var kvp in rows)
+                {
+                    string s = (c == 0) ? kvp.Key.ToString() : (kvp.Value[c - 1]?.ToString() ?? "null");
+                    if (s.Length > maxWidth) maxWidth = s.Length;
+                    if (maxWidth >= 30) { maxWidth = 30; break; }
+                }
+                colWidths[c] = maxWidth;
+            }
+
+            // --- Vertical Truncation (Rows) ---
+            var rowDisplayIndices = new List<int>();
+            if (rowCount <= 20)
+            {
+                for (int i = 0; i < rowCount; i++) rowDisplayIndices.Add(i);
+            }
+            else
+            {
+                for (int i = 0; i < 5; i++) rowDisplayIndices.Add(i);
+                rowDisplayIndices.Add(-1);
+                for (int i = rowCount - 5; i < rowCount; i++) rowDisplayIndices.Add(i);
+            }
+
+            // --- Build Lines ---
+            string BuildLine(Func<int, string> provider)
+            {
+                var parts = colIndices.Select(c => (c == -1 ? "..." : provider(c)).PadRight(colWidths[c]));
+                return string.Join(" | ", parts);
+            }
+
             var lines = new List<string>();
+            lines.Add(BuildLine(c => allHeaders[c]));
+            lines.Add(string.Join("-+-", colIndices.Select(c => new string('-', colWidths[c]))));
 
-            // Header
-            lines.Add(FormatRow("index", type.ColumnNames.ToList()));
-
-            // Separator
-            lines.Add(separator);
-
-            // Rows
-            foreach (var r in rowIndices)
+            foreach (var r in rowDisplayIndices)
             {
                 if (r == -1)
                 {
-                    var dots = "...".PadRight(indexWidth) + " | " +
-                               string.Join(" | ", colWidths.Select(w => "...".PadRight(w)));
-
-                    lines.Add(dots);
+                    lines.Add(BuildLine(c => "..."));
                     continue;
                 }
-
-                var row = new List<string>();
-
-                for (int c = 0; c < colCount; c++)
-                {
-                    if (columns[c].TryGetValue(r, out var valObj))
-                        row.Add(valObj?.ToString() ?? "null");
-                    else
-                        row.Add("null");
-                }
-
-                lines.Add(FormatRow(r.ToString(), row));
+                lines.Add(BuildLine(c => (c == 0) ? r.ToString() : rows[r][c - 1]?.ToString() ?? "null"));
             }
 
-            // --- Final formatting ---
-            var indented = string.Join("\n", lines.Select(l => "  " + l));
-
-            return "Dataframe:\n" + indented;
+            return $"\nDataframe ({rowCount} rows, {columnNames.Count} columns):\n" +
+                   string.Join("\n", lines.Select(l => "   " + l));
         }
 
         private int GetTypeByTag(Type type)
@@ -793,6 +1161,10 @@ namespace MyCompiler
                 _ => (Int16)ValueTag.None
             };
         }
+
+        // Helper to handle the raw column buffers created by ReadCsvInternal
+
+
         private bool IsReferenceType(Type t)
         {
             return t is StringType || t is ArrayType || t is RecordType || t is DataframeType;
@@ -4904,73 +5276,118 @@ namespace MyCompiler
 
         public LLVMValueRef VisitToCsv(ToCsvNode expr)
         {
+            var dfValue = Visit(expr.SourceExpression);
+            var pathValue = Visit(expr.FileNameExpression);
+
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
 
-            // 1. Visit the Array (This is a variable 'arr', so it IS boxed)
-            var boxedArray = Visit(expr.SourceExpression);
+            var fn = GetOrDeclareToCsv();
 
-            // Extract the raw ArrayObject* from the box
-            var arrayDataAddr = _builder.BuildStructGEP2(_runtimeValueType, boxedArray, 1, "array_unbox_gep");
-            var rawArrayPtr = _builder.BuildLoad2(i8Ptr, arrayDataAddr, "raw_array_ptr");
+            var fnType = LLVMTypeRef.CreateFunction(
+                _module.Context.VoidType,
+                new[] { i8Ptr, i8Ptr },
+                false
+            );
 
-            // 2. Visit the Path ("test.csv")
-            var pathValue = Visit(expr.FileNameExpression);
-            LLVMValueRef rawPathPtr;
+            var dfCast = _builder.BuildBitCast(dfValue, i8Ptr, "df_cast");
 
-            // Check: If pathValue is a literal string, it's already a ptr to i8.
-            // If it's a variable, it's a ptr to RuntimeValue.
-            if (pathValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind &&
-                pathValue.TypeOf.ElementType.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-            {
-                // It's a raw string literal i8*
-                rawPathPtr = pathValue;
-            }
-            else
-            {
-                // It's a boxed variable (e.g. if you did 'p = "test.csv"' then 'to_csv(arr, p)')
-                var pathDataAddr = _builder.BuildStructGEP2(_runtimeValueType, pathValue, 1, "path_unbox_gep");
-                rawPathPtr = _builder.BuildLoad2(i8Ptr, pathDataAddr, "raw_path_ptr");
-            }
+            _builder.BuildCall2(fnType, fn, new[] { dfCast, pathValue }, "");
 
-            // 3. Setup the Function
-            var toCsvFunc = GetOrDeclareToCsv();
-            var toCsvType = LLVMTypeRef.CreateFunction(_module.Context.VoidType, new[] { i8Ptr, i8Ptr }, false);
-
-            // 4. Call with raw pointers
-            _builder.BuildCall2(toCsvType, toCsvFunc, new[] { rawArrayPtr, rawPathPtr }, "");
-
-            // 5. Return None box
-            return CreateRuntimeObject((short)ValueTag.None, LLVMValueRef.CreateConstPointerNull(i8Ptr));
+            return default;
         }
 
         public LLVMValueRef VisitReadCsv(ReadCsvNode expr)
         {
-            var path = Visit(expr.FileNameExpression);
+            var ctx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. CALL: Your internal function that reads the file
-            // Assuming it returns a raw pointer to an ArrayBuffer or RecordBuffer
-            var readCsvFunc = GetOrDeclareReadCsv();
-            var rawResultPtr = _builder.BuildCall2(readCsvFunc.TypeOf.ElementType, readCsvFunc, new[] { path }, "csv_raw_data");
+            var pathValue = Visit(expr.FileNameExpression);
 
-            // 2. BOX: Wrap that raw pointer into a RuntimeValue box
-            // Since you are planning for DataFrames (Records), we use the Record tag (6)
-            // or the Array tag (5) depending on your strategy.
+            var recordSchema = (RecordNode)expr.SchemaExpression;
 
-            short tag = (short)ValueTag.Array; // Default to Array for now
-            if (expr.Type is RecordType) tag = (short)ValueTag.Record;
+            string schemaString = GetSchemaString(recordSchema);
+            var schemaValue = _builder.BuildGlobalStringPtr(schemaString, "csv_schema");
 
-            return CreateRuntimeObject(tag, rawResultPtr);
+            var fn = GetOrDeclareReadCsv();
+
+            // CRITICAL FIX: bitcast both args
+            var pathCast = _builder.BuildBitCast(pathValue, i8Ptr, "path_cast");
+            var schemaCast = _builder.BuildBitCast(schemaValue, i8Ptr, "schema_cast");
+
+            var boxed = _builder.BuildCall2(
+                LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr, i8Ptr }, false),
+                fn,
+                new[] { pathCast, schemaCast },
+                "csv_boxed"
+            );
+
+            // unbox
+            var unboxPtr = _builder.BuildStructGEP2(_runtimeValueType, boxed, 1, "");
+            var dfPtr = _builder.BuildLoad2(i8Ptr, unboxPtr, "df_ptr");
+
+            return dfPtr;
         }
+
+
+
+        private string GetSchemaString(RecordNode schema)
+        {
+            var sb = new StringBuilder();
+            // Assuming 'Fields' is a list of NamedArgumentNode or similar
+            foreach (var field in schema.Fields)
+            {
+                // Adjust the logic below to match how your AST stores the types
+                // Example based on your log: Field index resolved to int
+                var type = field.Type;
+
+                switch (type)
+                {
+                    case IntType:
+                        sb.Append('I');
+                        break;
+
+                    case FloatType:
+                        sb.Append('F');
+                        break;
+
+                    case BoolType:
+                        sb.Append('B');
+                        break;
+
+                    case StringType:
+                        sb.Append('S');
+                        break;
+
+                    default:
+                        throw new Exception("Invalid type in schema: " + type);
+                }
+            }
+            return sb.ToString();
+        }
+
+
+
+
+
+
+
+
 
         private LLVMValueRef GetOrDeclareReadCsv()
         {
             var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            var func = _module.GetNamedFunction("ReadCsvInternal");
-            if (func.Handle != IntPtr.Zero) return func;
 
-            // Returns a raw pointer (i8*) to an array/record buffer
-            var type = LLVMTypeRef.CreateFunction(i8Ptr, new[] { i8Ptr });
-            return _module.AddFunction("ReadCsvInternal", type);
+            var fnType = LLVMTypeRef.CreateFunction(
+                i8Ptr,              // returns ptr (boxed runtime value)
+                new[] { i8Ptr, i8Ptr },
+                false
+            );
+
+            var fn = _module.GetNamedFunction("ReadCsvInternal");
+            if (fn.Handle != IntPtr.Zero)
+                return fn;
+
+            return _module.AddFunction("ReadCsvInternal", fnType);
         }
 
         private LLVMValueRef GetOrDeclareToCsv()
@@ -5977,9 +6394,11 @@ namespace MyCompiler
     /*
     df = dataframe(["name", "age", "isCool"],[["Harry", 12, true],["Bob", 23, false],["Harry", 34, false]])
     df = read_csv("CSV/test.csv")
+    df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_10K.csv")
 
-    df.add({name: "Barry", age: 45, isCool: true, savings: 1980.0})
-    df.add({name: "Harry", age: 39, isCool: true, savings: 10.001})
+    df.where(x => x.latitude > -18.0)
+    df2.add({name: "Barry", age: 45, isCool: true});
+    df2.add({name: "Harry", age: 39, isCool: true})
 
     */
 }

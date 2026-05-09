@@ -809,44 +809,39 @@ namespace MyCompiler
 
             Type schemaType = Visit(expr.SchemaExpression);
 
-            if (schemaType is RecordType recType)
+            if (schemaType is not RecordType recType)
+                throw new Exception($"read_csv requires a record template, got {schemaType?.GetType().Name}");
+
+            // ----------------------------
+            // COLUMNAR SCHEMA EXTRACTION
+            // ----------------------------
+
+            var names = new List<string>(recType.RecordFields.Count);
+            var types = new List<Type>(recType.RecordFields.Count);
+
+            foreach (var field in recType.RecordFields)
             {
-                var names = recType.RecordFields.Select(f => f.Label).ToList();
-                var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
-
-                for (int i = 0; i < recType.RecordFields.Count; i++)
-                {
-                    recType.RecordFields[i].Type = types[i];
-                }
-
-                var dfType = new DataframeType(names, types, recType);
-                expr.SetType(dfType);
-                return expr.Type;
+                names.Add(field.Label);
+                types.Add(field.Type); // ONLY declared type (IMPORTANT)
             }
 
-            throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
+            var dfType = new DataframeType(names, types, recType);
+
+            expr.SetType(dfType);
+            return dfType;
         }
 
         public Type VisitToCsv(ToCsvNode expr)
         {
-            // 1. Get the types of the arguments
-            Type exprType = Visit(expr.SourceExpression);
+            Type sourceType = Visit(expr.SourceExpression);
             Type pathType = Visit(expr.FileNameExpression);
 
-            // 2. Semantic Check: Is the first argument actually a Dataframe?
-            if (exprType is not DataframeType)
-            {
-                throw new Exception($"to_csv() error: First argument must be a Dataframe, but got {exprType?.GetType().Name}");
-            }
+            if (sourceType is not DataframeType dfType)
+                throw new Exception($"to_csv() error: expected Dataframe, got {sourceType?.GetType().Name}");
 
-            // 3. Semantic Check: Is the second argument a String?
             if (pathType is not StringType)
-            {
-                throw new Exception($"to_csv() error: Second argument must be a String (file path), but got {pathType?.GetType().Name}");
-            }
+                throw new Exception($"to_csv() error: expected String path, got {pathType?.GetType().Name}");
 
-            // 4. Set the return type to Void/None 
-            // (Ensure this matches whatever type your REPL uses for 'null' results)
             expr.SetType(new VoidType());
             return expr.Type;
         }
@@ -1074,7 +1069,7 @@ namespace MyCompiler
             // System.Console.WriteLine("hi" + dataframe);
             // System.Console.WriteLine("YOOOOOOO we have this many rows: " + ((dataframe.DataTypes as ArrayNode).Elements[0] as ArrayNode).Elements.Count);
 
-            
+
 
             expr.SetType(dataframe);
 
@@ -1207,7 +1202,7 @@ namespace MyCompiler
                 throw new Exception("column names must be strings");
             }).ToList();
         }
-        
+
         private List<List<object>> ExtractData(DataframeNode df)
         {
             var arr = df.Data as ArrayNode

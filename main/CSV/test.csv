@@ -1,1 +1,3 @@
-
+name, age, isCool, savings,
+Harry, 12 true, 100.0,
+Bob, 10, false, 10000.01
