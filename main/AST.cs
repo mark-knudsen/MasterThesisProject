@@ -166,7 +166,8 @@ namespace MyCompiler
         public ExpressionNode Expression { get; }
         public AssignNode(string id, ExpressionNode expr)
         {
-            Id = id; Expression = expr;
+            Id = id;
+            Expression = expr;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAssign(this);
     }
@@ -703,9 +704,7 @@ namespace MyCompiler
                     }
                 }
                 else
-                {
                     throw new Exception("Unexpected argument type in dataframe");
-                }
             }
 
             Columns = columns ?? throw new Exception("Dataframe requires 'columns'");

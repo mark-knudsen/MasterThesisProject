@@ -371,7 +371,7 @@ namespace MyCompiler
 
             // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(expr.Id, default, null, valType);
-            expr.SetType(valType); 
+            expr.SetType(valType);
             return valType;
         }
 
@@ -1102,7 +1102,9 @@ namespace MyCompiler
 
         public Type VisitDataframe(DataframeNode expr)
         {
-            // List<Type> columnTypes;
+            Visit(expr.Columns);
+            Visit(expr.Rows);
+
             RecordType rowType = new RecordType(new List<RecordField>());
             // 1. Extract and Normalize Columns
             var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToArray();
@@ -1121,7 +1123,6 @@ namespace MyCompiler
             }
             else
             {
-                // Explicit types for empty dataframe
                 if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
 
                 Visit(expr.DataTypes);
@@ -1133,6 +1134,8 @@ namespace MyCompiler
                     Label = name,
                     Type = columnTypes[i]
                 }).ToList());
+
+                expr.Rows.ElementType = rowType;
             }
 
             var dfType = new DataframeType(columnNames, columnTypes, rowType);

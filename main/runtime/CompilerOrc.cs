@@ -2265,8 +2265,8 @@ namespace MyCompiler
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
-        // x.map(d => d.age + 10) // this should return the dataframe not the column
-        // x.where(d=> d.age > 90)  
+        // x.map(d => d.age + 100) // this should return the dataframe not the column
+        // x.where(d=> d.age > 50)  
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
@@ -4294,7 +4294,7 @@ namespace MyCompiler
             if (_debug)
             {
                 var name = expr.GetType().Name;
-                //Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
+                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
             }
             return expr.Accept(this);
         }
@@ -4833,6 +4833,7 @@ namespace MyCompiler
                 .ToList();
 
             var datatypeArray = new ArrayNode(datatypeNodes);
+            PerformSemanticAnalysis(datatypeArray);
             var dataTypesPtr = Visit(datatypeArray);
 
             // 3. Struct: { cols, rows, types }
