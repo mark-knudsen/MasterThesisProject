@@ -43,15 +43,16 @@ namespace MyCompiler
     public class RandomNode : ExpressionNode
     {
         public List<ExpressionNode> Arguments { get; }
-
+        public ExpressionNode MinValue { get; }
+        public ExpressionNode MaxValue { get; }
+        public ExpressionNode Decimals { get; }
         public RandomNode(List<ExpressionNode> args)
         {
             Arguments = args;
+            MinValue = Arguments[0];
+            MaxValue = Arguments[1];
+            Decimals = Arguments.Count > 2 ? Arguments[2] : null;
         }
-
-        public ExpressionNode MinValue => Arguments[0];
-        public ExpressionNode MaxValue => Arguments[1];
-        public ExpressionNode Decimals => Arguments.Count > 2 ? Arguments[2] : null;
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRandom(this);
     }
@@ -65,7 +66,6 @@ namespace MyCompiler
         {
             Value = value;
             Decimals = decimals;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRound(this);
@@ -77,7 +77,6 @@ namespace MyCompiler
         public FloatNode(double value)
         {
             Value = value;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitFloat(this);
@@ -90,7 +89,6 @@ namespace MyCompiler
         public NumberNode(int value)
         {
             Value = value;
-            Type = new IntType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNumber(this);
     }
@@ -102,7 +100,6 @@ namespace MyCompiler
         public StringNode(string value)
         {
             Value = value;
-            Type = new StringType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitString(this);
@@ -116,18 +113,12 @@ namespace MyCompiler
         public BooleanNode(bool value)
         {
             Value = value;
-            Type = new BoolType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitBoolean(this);
     }
 
     public class NullNode : ExpressionNode
     {
-        public NullNode()
-        {
-            Type = new NullType();
-        }
-
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNull(this);
     }
 
@@ -219,7 +210,6 @@ namespace MyCompiler
             Condition = cond;
             ThenPart = thenP;
             ElsePart = elseP;
-            Type = new VoidType();
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIf(this);
     }
@@ -267,7 +257,6 @@ namespace MyCompiler
             Left = left;
             Operator = op;
             Right = right;
-            Type = new BoolType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitComparison(this);
@@ -277,33 +266,11 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public ExpressionNode CapacityExpression { get; set; }
-
-        // Update constructor to handle both fixed uint and dynamic ExpressionNodes
-        public ArrayNode(List<ExpressionNode> elements, object capacity = null)
+        public ulong? Capacity;
+        public ArrayNode(List<ExpressionNode> elements)
         {
             Elements = elements;
-
-            // FIXES CS1503: Handle cases where uint is passed instead of ExpressionNode
-            // Inside ArrayNode constructor
-            if (capacity is uint u)
-                CapacityExpression = new NumberNode((int)u); // Explicit cast fixes CS1503
-            else if (capacity is ExpressionNode exp)
-                CapacityExpression = exp;
-            else
-                CapacityExpression = null;
-
-            if (elements.Count > 0)
-                ElementType = elements[0].Type;
-            else
-                ElementType = new IntType();
-
-            Type = new ArrayType(ElementType);
         }
-
-        // ADD THIS PROPERTY: To fix CS1061 
-        // Some of your code is looking for '.Capacity'. We redirect it to the expression if it's a number.
-        public uint Capacity => (CapacityExpression is NumberNode n) ? (uint)n.Value : (uint)Elements.Count;
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
     }
@@ -314,7 +281,6 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
     }
-
 
     public class IndexNode : ExpressionNode
     {
@@ -327,7 +293,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             IndexExpression = indexExpr;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndex(this);
@@ -344,7 +309,6 @@ namespace MyCompiler
             ArrayExpression = arrayExpr;
             IndexExpression = indexExpr;
             AssignExpression = assignExpression;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndexAssign(this);
@@ -505,7 +469,6 @@ namespace MyCompiler
         public LengthNode(ExpressionNode arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLength(this);
@@ -518,7 +481,6 @@ namespace MyCompiler
         public MinNode(ExpressionNode arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMin(this);
@@ -531,7 +493,6 @@ namespace MyCompiler
         public MaxNode(ExpressionNode arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMax(this);
@@ -544,7 +505,6 @@ namespace MyCompiler
         public MeanNode(ExpressionNode arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMean(this);
@@ -557,7 +517,6 @@ namespace MyCompiler
         public SumNode(ExpressionNode arrayExpr)
         {
             ArrayExpression = arrayExpr;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSum(this);
@@ -572,7 +531,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpr;
             TargetExpression = targetExpr;
-            Type = new FloatType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCorrelation(this);
@@ -638,7 +596,6 @@ namespace MyCompiler
                     throw new Exception("Record labels must be string literals.");
                 }
             }
-            Type = new RecordType(Fields);
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecord(this);
     }
@@ -652,7 +609,6 @@ namespace MyCompiler
         {
             SourceExpression = sourceExpression;
             IdField = idField;
-            Type = new IntType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitField(this);
@@ -669,7 +625,6 @@ namespace MyCompiler
             IdRecord = idRecord;
             IdField = idField;
             AssignExpression = assignExpression;
-            Type = new VoidType();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecordFieldAssign(this);
@@ -682,7 +637,6 @@ namespace MyCompiler
         public CopyNode(ExpressionNode source)
         {
             SourceExpression = source;
-            Type = source.Type;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
     }
@@ -706,9 +660,7 @@ namespace MyCompiler
         public ArrayNode Columns { get; }
         public ArrayNode Rows { get; }
         public ArrayNode DataTypes { get; }
-
-        // ADD THIS: To fix CS0117
-        public ExpressionNode CapacityExpression { get; set; }
+        public ulong Capacity { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
@@ -878,7 +830,4 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
     }
-
 }
-
-

@@ -308,7 +308,6 @@ namespace MyCompiler
             if (leftType is not BoolType || rightType is not BoolType)
                 throw new Exception($"Invalid operands type {leftType} and {rightType}");
 
-
             if (expr.Operator is "&&" or "||")
             {
                 expr.SetType(new BoolType());
@@ -508,17 +507,6 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNode expr)
         {
-            // NEW: Typecheck the capacity hint if it exists
-            if (expr.CapacityExpression != null)
-            {
-                Type capType = Visit(expr.CapacityExpression);
-                if (capType is not IntType)
-                {
-                    // Optional: Force it to int if your JIT expects i64
-                    // throw new Exception("Capacity must be an integer");
-                }
-            }
-
             if (expr.Elements.Count > 0)
                 expr.ElementType = Visit(expr.Elements[0]);
 
@@ -756,7 +744,6 @@ namespace MyCompiler
             finally { _context = previousContext; }
         }
 
-
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
         private string InferFieldName(Node node)
         {
@@ -980,7 +967,6 @@ namespace MyCompiler
         {
             Visit(expr.SourceExpression);
             Visit(expr.AddRangeExpression);
-
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
@@ -1148,64 +1134,48 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitDataframe(DataframeNode expr)
+            public Type VisitDataframe(DataframeNode expr)
         {
-            // 1. Handle Capacity if present
-            if (expr.CapacityExpression != null)
-            {
-                Visit(expr.CapacityExpression);
-            }
-
-            // 2. Resolve Columns (They are required by your constructor)
             Visit(expr.Columns);
-            var columnNames = expr.Columns.Elements
-                .OfType<StringNode>()
-                .Select(c => c.Value)
-                .ToArray();
+            Visit(expr.Rows);
 
-            RecordType rowType = null;
+            RecordType rowType = new RecordType(new List<RecordField>());
+            // 1. Extract and Normalize Columns
+            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToArray();
+
+            // 3. Now determine types based on the ALREADY MODIFIED columns
             List<Type> columnTypes = new List<Type>();
-
-            // 3. Determine types from Rows or DataTypes
-            // MapForDataframe sends an empty Rows array (Elements.Count == 0) 
-            // so it will skip the inference and check DataTypes.
             if (expr.Rows != null && expr.Rows.Elements.Count > 0)
             {
-                var firstRowType = Visit(expr.Rows.Elements[0]) as RecordType;
-                if (firstRowType == null)
-                    throw new Exception("Dataframe rows must be of Record type.");
-
+                var inferredRowType = Visit(expr.Rows.Elements[0]) as RecordType;
                 foreach (var name in columnNames)
                 {
-                    var field = firstRowType.RecordFields.FirstOrDefault(f => f.Label == name);
-                    columnTypes.Add(field?.Type ?? new FloatType()); // Default to float if missing
+                    var field = inferredRowType.RecordFields.FirstOrDefault(f => f.Label == name);
+                    columnTypes.Add(field?.Type ?? new IntType()); // Default index to Int
                 }
-                rowType = firstRowType;
+                rowType = inferredRowType;
             }
             else
             {
-                // 4. Fallback to explicit DataTypes (Crucial for MapForDataframe)
-                if (expr.DataTypes == null)
-                    throw new Exception("Empty or pre-allocated dataframe requires 'types' or 'type' argument.");
+                if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
 
-                // Resolve the type names (e.g., "float") into actual compiler types
                 Visit(expr.DataTypes);
+
                 columnTypes = expr.DataTypes.Elements.Select(e => ResolveType(e)).ToList();
 
-                // Construct the row record type manually based on the schema
                 rowType = new RecordType(columnNames.Select((name, i) => new RecordField
                 {
                     Label = name,
                     Type = columnTypes[i]
                 }).ToList());
+
+                expr.Rows.ElementType = rowType;
             }
 
-            // 5. Finalize Node Type
             var dfType = new DataframeType(columnNames, columnTypes, rowType);
             expr.SetType(dfType);
-            return dfType;
+            return expr.Type;
         }
-
 
         private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
         {
@@ -1248,8 +1218,7 @@ namespace MyCompiler
 
             // Save the type on the NamedArgument node itself
             expr.SetType(valType);
-
-            return valType;
+            return expr.Type;
         }
 
         int IndexOf(IReadOnlyList<string> list, string value)
@@ -1318,7 +1287,7 @@ namespace MyCompiler
             var resultType = new DataframeType(columnNames, columnTypes, rowType);
 
             expr.SetType(resultType);
-            return resultType;
+            return expr.Type;
         }
 
         public Type VisitColumns(ColumnsNode expr)

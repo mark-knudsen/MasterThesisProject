@@ -242,7 +242,6 @@ namespace MyCompiler
                                     }
                                     break;
 
-
                                 default:
                                     cellValue = "NULL";
                                     break;
@@ -340,7 +339,6 @@ namespace MyCompiler
             return sw.Elapsed.TotalMilliseconds;
         }
 
-
         private unsafe void RegisterNativeFunc(LLVMOrcOpaqueJITDylib* dylib, string name, IntPtr fnAddr)
         {
             var jitHandle = (LLVMOrcOpaqueLLJIT*)_jit;
@@ -382,6 +380,7 @@ namespace MyCompiler
                 return LLVM.GetEnumAttributeKindForName(marshaledName, (UIntPtr)name.Length);
             }
         }
+
         private LLVMValueRef GetOrDeclareMalloc()
         {
             var ctx = _module.Context; // Use the context of the CURRENT module
@@ -576,8 +575,8 @@ namespace MyCompiler
             LLVMValueRef resultValue = Visit(expr);
             if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
 
-
             if (_stopwatch) StartStopWatch();
+
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
 
@@ -602,7 +601,6 @@ namespace MyCompiler
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
             if (_stopwatch) IRTestList.Add(StopStopWatch("Ran IR codegen"));
 
-
             if (_stopwatch) StartStopWatch();
             var tempResult = delegateResult();
             if (_stopwatch) RuntimeTestList.Add(StopStopWatch("Ran program"));
@@ -613,8 +611,6 @@ namespace MyCompiler
                 Console.WriteLine($"\nIR list: \n{string.Join(", ", IRTestList)}");
                 Console.WriteLine($"\nRuntime list: \n{string.Join(", ", RuntimeTestList)}");
             }
-
-
 
             if (tempResult == IntPtr.Zero) throw new Exception("JIT execution returned null pointer");
 
@@ -668,8 +664,6 @@ namespace MyCompiler
             return result;
 
         }
-
-
 
         private string HandleArray(IntPtr arrayObjPtr, Type type)
         {
@@ -1095,7 +1089,7 @@ namespace MyCompiler
             int tag = GetTypeByTag(type);
             LLVMValueRef dataPtr;
 
-            if (type is IntType || type is FloatType || type is BoolType)
+            if (IsValueType(type))
             {
                 int size = type switch
                 {
@@ -1262,7 +1256,6 @@ namespace MyCompiler
 
             return default;
         }
-
 
         public LLVMValueRef VisitForEachLoop(ForEachLoopNode expr)
         {
@@ -1692,8 +1685,6 @@ namespace MyCompiler
 
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
         }
-
-
 
         public LLVMValueRef VisitCast(CastNode node)
         {
@@ -2419,10 +2410,7 @@ namespace MyCompiler
             var resultDf = new DataframeNode(new List<NamedArgumentNode> {
                 new NamedArgumentNode("columns", columnsArray),
                 new NamedArgumentNode("type", typeArray)
-            })
-            {
-                CapacityExpression = new LengthNode(new IdNode(srcVar))
-            };
+            });
 
             var resultAssign = new AssignNode(resultVar, resultDf);
 
@@ -2459,9 +2447,7 @@ namespace MyCompiler
 
             var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
 
-            // PRE-ALLOCATION: Use LengthNode as the capacity hint for the array
-            var capacityHint = new LengthNode(new IdNode(srcVarName));
-            var resultArray = new ArrayNode(new List<ExpressionNode>(), capacityHint)
+            var resultArray = new ArrayNode(new List<ExpressionNode>())
             {
                 ElementType = elementType
             };
@@ -2511,7 +2497,7 @@ namespace MyCompiler
             var iVar = "__map_i";
 
             // 1. Get the correct element type from the MapNode's result type
-            MyCompiler.Type resultElementType = null;
+            Type resultElementType = null;
             if (expr.Type is ArrayType at) resultElementType = at.ElementType;
             else if (expr.Type is DataframeType df) resultElementType = df.RowType;
 
@@ -2550,8 +2536,6 @@ namespace MyCompiler
             return program;
         }
 
-
-
         private string InferFieldName(Node node)
         {
             if (node == null) return null;
@@ -2585,14 +2569,10 @@ namespace MyCompiler
             var currentRowVar = "__current_row";
 
             var dfType = (DataframeType)expr.Type;
-            var rowType = (RecordType)dfType.RowType;
+            var rowType = dfType.RowType;
 
             // 1. Assign Source: __map_src = <sourceExpr>
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
-
-            // 2. Capture length
-            var srcLength = new LengthNode(new IdNode(srcVar));
-            srcLength.SetType(new IntType());
 
             // 3. Initialize Result Dataframe
             var columns = dfType.ColumnNames
@@ -2603,10 +2583,7 @@ namespace MyCompiler
             var actualTypes = rowType.RecordFields.Select(f =>
             {
                 int typeId = 4; // Default: String
-                if (f.Type is IntType) typeId = 1;
-                else if (f.Type is FloatType) typeId = 2;
-                else if (f.Type is BoolType) typeId = 3;
-                else if (f.Type is StringType) typeId = 4;
+                typeId = GetTypeByTag(f.Type);
 
                 var numNode = new NumberNode(typeId);
                 numNode.SetType(new IntType()); // Ensure LLVM treats this as an i64
@@ -2614,15 +2591,15 @@ namespace MyCompiler
             }).ToList();
 
             // Pre-allocate the rows array
-            var rowsArray = new ArrayNode(new List<ExpressionNode>(), srcLength);
+            var rowsArray = new ArrayNode(new List<ExpressionNode>());
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
             // Create the constructor with the explicit "types" argument
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-        new NamedArgumentNode("columns", new ArrayNode(columns)),
-        new NamedArgumentNode("rows", rowsArray),
-        new NamedArgumentNode("types", new ArrayNode(actualTypes))
-    });
+                new NamedArgumentNode("columns", new ArrayNode(columns)),
+                new NamedArgumentNode("rows", rowsArray),
+                new NamedArgumentNode("types", new ArrayNode(actualTypes))
+            });
 
             dfConstructor.SetType(dfType);
 
@@ -2696,15 +2673,13 @@ namespace MyCompiler
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
             // 8. Loop Setup: for (__map_i = 0; __map_i < srcLength; __map_i++)
-            var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
+            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
             program.Statements.Add(new IdNode(resVar));
             return program;
         }
-
-
 
         // Helper to check if a node tree uses a specific variable
         private bool IsPure(Node node)
@@ -2723,7 +2698,6 @@ namespace MyCompiler
 
             return true;
         }
-
 
         private bool NodeContainsId(Node node, string idName)
         {
@@ -3186,6 +3160,10 @@ namespace MyCompiler
         {
             return t is StringType || t is ArrayType || t is RecordType || t is DataframeType;
         }
+        private bool IsValueType(Type t)
+        {
+            return t is IntType || t is FloatType || t is BoolType;
+        }
 
         private uint GetTypeSize(Type type)
         {
@@ -3205,28 +3183,21 @@ namespace MyCompiler
                 return 24; // len, cap, data*
             throw new Exception("Unknown type for struct size calculation: " + type);
         }
+
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
+            uint count = (uint)expr.Elements.Count;
 
-            bool isPrimitive = expr.ElementType is IntType ||
-                              expr.ElementType is FloatType ||
-                              expr.ElementType is BoolType;
+            bool isPrimitive = IsValueType(expr.ElementType);
 
             // --- NEW: Handle Dynamic vs Static Capacity ---
-            LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Elements.Count);
-            LLVMValueRef capacityVal;
-
-            if (expr.CapacityExpression != null)
-            {
-                // Visit the expression (e.g., LengthNode) to get the runtime i64
-                capacityVal = Visit(expr.CapacityExpression);
-            }
-            else
-            {
-                capacityVal = LLVMValueRef.CreateConstInt(i64, (ulong)expr.Capacity);
-            }
+            LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i64, count);
+            uint capacity = count > 0 ? Math.Min(count, 100) : 100;
+            if (expr.Capacity != null)
+                capacity = Math.Min(count, 100);
+            LLVMValueRef capacityVal = LLVMValueRef.CreateConstInt(i64, capacity);
 
             var elementType = GetLLVMType(expr.ElementType);
             uint elementSize = isPrimitive ? GetTypeSize(expr.ElementType) : 8;
@@ -3235,12 +3206,12 @@ namespace MyCompiler
             // Instead of C# math: (elementSize * capacity)
             // We do LLVM IR math: BuildMul(elementSize, capacityVal)
             var llvmElementSize = LLVMValueRef.CreateConstInt(i64, (ulong)elementSize);
-            var totalSizeVal = _builder.BuildMul(llvmElementSize, capacityVal, "total_size");
+            var totalCapacity = _builder.BuildMul(llvmElementSize, capacityVal, "total_size");
 
             // Align to 32 bytes (totalSize + 31) & ~31
             var thirtyOne = LLVMValueRef.CreateConstInt(i64, 31);
             var mask = LLVMValueRef.CreateConstInt(i64, unchecked((ulong)~31));
-            var padded = _builder.BuildAdd(totalSizeVal, thirtyOne, "padded_size");
+            var padded = _builder.BuildAdd(totalCapacity, thirtyOne, "padded_size");
             var alignedSizeVal = _builder.BuildAnd(padded, mask, "aligned_size");
 
             // Ensure at least 8 bytes to avoid malloc(0)
@@ -3399,9 +3370,7 @@ namespace MyCompiler
             // We pass lenVar as the explicit capacity to avoid reallocations
             var resultConstructor = new ArrayNode(new List<ExpressionNode>())
             {
-                ElementType = fieldType,
-                // Assuming you add a CapacityExpression or similar, 
-                // otherwise ensure VisitArray handles the metadata appropriately.
+                ElementType = fieldType
             };
             resultConstructor.SetType(new ArrayType(fieldType));
 
@@ -3674,7 +3643,6 @@ namespace MyCompiler
             var newLen = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(i64, 1), "new_len");
             _builder.BuildStore(newLen, lenPtr).SetAlignment(8);
         }
-
 
         public LLVMValueRef VisitAddRange(AddRangeNode expr)
         {
@@ -4313,7 +4281,7 @@ namespace MyCompiler
             if (_debug)
             {
                 var name = expr.GetType().Name;
-                //Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
+                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
             }
             return expr.Accept(this);
         }
@@ -4408,7 +4376,6 @@ namespace MyCompiler
 
             return instancePtr;
         }
-
 
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
@@ -4664,7 +4631,6 @@ namespace MyCompiler
             return header;
         }
 
-
         private string GetSchemaString(RecordNode schema)
         {
             var sb = new StringBuilder();
@@ -4779,54 +4745,32 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. Visit Columns (Array of strings)
+            // 1. Get pointers
             var colsPtr = Visit(expr.Columns);
-
-            // 2. Visit Rows (Array of records)
-            // Pass capacity to the rows ArrayNode if pre-allocation is possible
-            if (expr.CapacityExpression != null)
-            {
-                expr.Rows.CapacityExpression = expr.CapacityExpression;
-            }
             var rowsPtr = Visit(expr.Rows);
 
-            // 3. Resolve Data Types Metadata
-            LLVMValueRef dataTypesPtr;
+            // 2. Build datatype array from TYPE (not AST)
+            var dfType = expr.Type as DataframeType
+                ?? throw new Exception("Expected dataframe type.");
 
-            // Use the DataTypes property defined in your DataframeNode class
-            if (expr.DataTypes != null)
-            {
-                // This visits the ArrayNode you built in MapForDataframe.
-                // It contains the type tags for each column.
-                dataTypesPtr = Visit(expr.DataTypes);
-            }
-            else
-            {
-                // Fallback: Generate metadata from the semantic Type object
-                var dfType = expr.Type as DataframeType ?? throw new Exception("Expected dataframe type.");
+            var datatypeNodes = dfType.DataTypes
+                .Select(t => new NumberNode(GetTypeByTag(t)))
+                .Cast<ExpressionNode>()
+                .ToList();
 
-                var datatypeNodes = dfType.DataTypes
-                    .Select(t => (ExpressionNode)new NumberNode(GetTypeByTag(t)))
-                    .ToList();
+            var datatypeArray = new ArrayNode(datatypeNodes);
+            PerformSemanticAnalysis(datatypeArray);
+            var dataTypesPtr = Visit(datatypeArray);
 
-                var datatypeArray = new ArrayNode(datatypeNodes);
-                datatypeArray.SetType(new ArrayType(new IntType()));
-                dataTypesPtr = Visit(datatypeArray);
-            }
-
-            // 4. Construct the Dataframe Struct { ptr cols, ptr rows, ptr types }
+            // 3. Struct: { cols, rows, types }
             var dfStructType = GetOrCreateDataframeType();
-            var dfPtr = _builder.BuildMalloc(dfStructType, "df_header");
+            var dfPtr = _builder.BuildMalloc(dfStructType, "df");
 
-            // Store Columns pointer
-            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0, "col_ptr"));
-
-            // Store Rows pointer
-            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "row_ptr"));
-
-            // Store Type Metadata pointer
-            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2, "type_ptr"));
+            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
+            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
+            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
 
             return dfPtr;
         }
@@ -5327,7 +5271,6 @@ sum_dy2 = components.map(x => x.dy2).sum
 correlation = numerator / sqrt(sum_dx2 * sum_dy2)
 
 print(correlation)
-
 
 
         */
