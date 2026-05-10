@@ -371,7 +371,7 @@ namespace MyCompiler
 
             // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(expr.Id, default, null, valType);
-            expr.SetType(valType); // <--- ADD THIS LINE
+            expr.SetType(valType); 
             return valType;
         }
 
@@ -748,9 +748,8 @@ namespace MyCompiler
             }
 
             // Result is always a float
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         public Type VisitLog(LogNode expr)
@@ -761,9 +760,8 @@ namespace MyCompiler
                 throw new Exception($"log() expected numeric type, got {argType}");
             }
 
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         public Type VisitPow(PowNode expr)
@@ -776,9 +774,8 @@ namespace MyCompiler
                 throw new Exception($"pow() expected numeric types, got {baseType} and {exponentType}");
             }
 
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         public Type VisitExponentialMathFunc(ExponentialMathFuncNode expr)
@@ -791,9 +788,8 @@ namespace MyCompiler
             }
 
             // Result is always a float
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         // Helper: Build a RecordNode from CSV (first line + type inference)
@@ -874,7 +870,7 @@ namespace MyCompiler
 
                 var dfType = new DataframeType(names, types, recType);
                 expr.SetType(dfType);
-                return dfType;
+                return expr.Type;
             }
 
             throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
@@ -888,21 +884,16 @@ namespace MyCompiler
 
             // 2. Semantic Check: Is the first argument actually a Dataframe?
             if (exprType is not DataframeType)
-            {
                 throw new Exception($"to_csv() error: First argument must be a Dataframe, but got {exprType?.GetType().Name}");
-            }
 
             // 3. Semantic Check: Is the second argument a String?
             if (pathType is not StringType)
-            {
                 throw new Exception($"to_csv() error: Second argument must be a String (file path), but got {pathType?.GetType().Name}");
-            }
 
             // 4. Set the return type to Void/None 
             // (Ensure this matches whatever type your REPL uses for 'null' results)
-            var voidType = new VoidType();
-            expr.SetType(voidType);
-            return voidType;
+            expr.SetType(new VoidType());
+            return expr.Type;
         }
 
         public Type VisitAdd(AddNode expr)
@@ -943,7 +934,6 @@ namespace MyCompiler
         {
             Visit(expr.SourceExpression);
             Visit(expr.AddRangeExpression);
-
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
         }
@@ -1060,8 +1050,7 @@ namespace MyCompiler
             var recordType = new RecordType(expr.Fields);
 
             expr.SetType(recordType);
-
-            return recordType;
+            return expr.Type;
         }
 
         public Type VisitField(FieldNode expr)
@@ -1084,7 +1073,7 @@ namespace MyCompiler
                 else
                     throw new Exception($"Field '{expr.IdField}' not found in record.");
             }
-            else if(SourceType is DataframeType dfType)
+            else if (SourceType is DataframeType dfType)
             {
                 // 4. Look up the field label in the dataframe definition
                 int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
@@ -1099,8 +1088,8 @@ namespace MyCompiler
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 
             expr.SetType(resolvedFieldType);
-            return resolvedFieldType;
-        }  
+            return expr.Type;
+        }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
@@ -1148,7 +1137,7 @@ namespace MyCompiler
 
             var dfType = new DataframeType(columnNames, columnTypes, rowType);
             expr.SetType(dfType);
-            return dfType;
+            return expr.Type;
         }
 
         private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
@@ -1191,8 +1180,7 @@ namespace MyCompiler
 
             // Save the type on the NamedArgument node itself
             expr.SetType(valType);
-
-            return valType;
+            return expr.Type;
         }
 
         int IndexOf(IReadOnlyList<string> list, string value)
@@ -1261,7 +1249,7 @@ namespace MyCompiler
             var resultType = new DataframeType(columnNames, columnTypes, rowType);
 
             expr.SetType(resultType);
-            return resultType;
+            return expr.Type;
         }
 
         public Type VisitColumns(ColumnsNode expr)
