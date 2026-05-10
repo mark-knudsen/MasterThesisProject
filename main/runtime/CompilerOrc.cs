@@ -2417,9 +2417,9 @@ namespace MyCompiler
 
             // PRE-ALLOCATION: Pass the source length as the capacity hint
             var resultDf = new DataframeNode(new List<NamedArgumentNode> {
-        new NamedArgumentNode("columns", columnsArray),
-        new NamedArgumentNode("type", typeArray)
-    })
+                new NamedArgumentNode("columns", columnsArray),
+                new NamedArgumentNode("type", typeArray)
+            })
             {
                 CapacityExpression = new LengthNode(new IdNode(srcVar))
             };
