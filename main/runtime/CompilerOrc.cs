@@ -2358,8 +2358,8 @@ namespace MyCompiler
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
-        // x.map(d => d.age + 10) // this should return the dataframe not the column
-        // x.where(d=> d.age > 90)  
+        // x.map(d => d.age + 100) 
+        // x.where(d=> d.age > 50)  
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
@@ -2473,15 +2473,9 @@ namespace MyCompiler
 
             // Check what the TYPE CHECKER said the result would be
             if (expr.Type is DataframeType)
-            {
                 program = MapForDataframe(expr);
-            }
             else if (expr.Type is ArrayType)
-            {
-                // MapForArray works perfectly even if the source is a Dataframe,
-                // because it just loops and performs the 'add' to a new array.
                 program = MapForArray(expr);
-            }
             else
                 throw new Exception($"Unsupported map result type: {expr.Type}");
 
@@ -2519,9 +2513,10 @@ namespace MyCompiler
 
             // 3. Transform the lambda body
             ExpressionNode lastExpr = null;
-       
-                lastExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignment, expr.IteratorId.Name, rowAccess);
-            
+            foreach (var e in expr.Assignments)
+            {
+                lastExpr = (ExpressionNode)ReplaceIteratorInNode(e, expr.IteratorId.Name, rowAccess);
+            }
 
             // 4. Add to the result list
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
@@ -2566,40 +2561,28 @@ namespace MyCompiler
             var resVar = "__map_result";
             var iVar = "__map_i";
             var currentRowVar = "__current_row";
-
             var dfType = (DataframeType)expr.Type;
-            var rowType = dfType.RowType;
 
-            // 1. Assign Source: __map_src = <sourceExpr>
+            // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 3. Initialize Result Dataframe
-            var columns = dfType.ColumnNames
-                .Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            // 2. Capture length
+            var srcLength = new LengthNode(new IdNode(srcVar));
+            srcLength.SetType(new IntType());
 
-            // FIXED: Map types to integer IDs instead of string keywords
-            // This matches the mapping in your C# ToCsvInternal and GetTypeByTag
-            var actualTypes = rowType.RecordFields.Select(f =>
-            {
-                int typeId = 4; // Default: String
-                typeId = GetTypeByTag(f.Type);
+            // 3. Initialize Result Dataframe with Capacity
+            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
 
-                var numNode = new NumberNode(typeId);
-                numNode.SetType(new IntType()); // Ensure LLVM treats this as an i64
-                return (ExpressionNode)numNode;
-            }).ToList();
-
-            // Pre-allocate the rows array
+            // Passing srcLength to ArrayNode is the key to stopping reallocs
             var rowsArray = new ArrayNode(new List<ExpressionNode>());
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
-            // Create the constructor with the explicit "types" argument
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
                 new NamedArgumentNode("columns", new ArrayNode(columns)),
                 new NamedArgumentNode("rows", rowsArray),
-                new NamedArgumentNode("types", new ArrayNode(actualTypes))
+                new NamedArgumentNode("type", new ArrayNode(dummyTypes))
             });
-
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2608,71 +2591,19 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // 4. Fetch current row: __current_row = __map_src[__map_i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
+            // 4. Fetch row: currentRow = src[i]
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) {SkipBoundsCheck = true};
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
             // 5. Transformation Logic
-            var updates = new Dictionary<string, ExpressionNode>();
-            foreach (var action in (expr.Assignment.Value as RecordNode).Fields)
-            {
-                string fieldName = null;
-                ExpressionNode valueNode = null;
+            ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
 
-                // if (action is RecordFieldAssignNode rfa)
-                // {
-                //     fieldName = rfa.IdField;
-                //     valueNode = rfa.AssignExpression;
-                // }
-                // else if (action is AssignNode asn && asn.Expression is IdNode id)
-                // {
-                //     fieldName = id.Name;
-                //     valueNode = asn.Expression;
-                // }
-
-                if (fieldName != null)
-                {
-                    updates[fieldName] = (ExpressionNode)ReplaceIteratorInNode(valueNode, expr.IteratorId.Name, replacementNode);
-                }
-            }
-
-            // 6. Reconstruct the record field-by-field
-            var recordArgs = new List<NamedArgumentNode>();
-
-            foreach (var fieldSchema in rowType.RecordFields)
-            {
-                ExpressionNode fieldValue;
-
-                if (updates.ContainsKey(fieldSchema.Label))
-                {
-                    fieldValue = updates[fieldSchema.Label];
-                }
-                else
-                {
-                    // Default: copy from source row
-                    var access = new FieldNode(new IdNode(currentRowVar), fieldSchema.Label);
-                    access.SetType(fieldSchema.Type);
-                    fieldValue = access;
-                }
-
-                // FORCE 8-byte alignment for Bool and Float via Cast
-                if (fieldSchema.Type is BoolType || fieldSchema.Type is FloatType)
-                {
-                    var cast = new CastNode(fieldValue, fieldSchema.Type, new IntType());
-                    fieldValue = cast;
-                }
-
-                recordArgs.Add(new NamedArgumentNode(fieldSchema.Label, fieldValue));
-            }
-
-            // 7. Create the new Record and add to result Dataframe
-            var finalRowExpr = new RecordNode(recordArgs);
-            finalRowExpr.SetType(rowType);
-
+            // Because we initialized 'rowsArray' with 'srcLength', 
+            // the 'grow' block in the IR will exist but will NEVER be executed.
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
-            // 8. Loop Setup: for (__map_i = 0; __map_i < srcLength; __map_i++)
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            // 7. Loop Setup
+            var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 
@@ -2942,7 +2873,72 @@ namespace MyCompiler
         }
 
         // Not used!
-      
+        public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
+        {
+            // Temp variable names
+            var srcVarName = "__map_src";
+            var indexVarName = "__map_i";
+
+            // 1. Store source array
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+
+            // 2. i = 0
+            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
+
+            // 3. Loop condition: i < src.length
+            var loopCond = new ComparisonNode(
+                new IdNode(indexVarName),
+                "<",
+                new LengthNode(new IdNode(srcVarName))
+            );
+
+            // 4. i++
+            var loopStep = new IncrementNode(new IdNode(indexVarName));
+
+            // 5. src[i]
+            var currentElement = new IndexNode(
+                new IdNode(srcVarName),
+                new IdNode(indexVarName)
+            );
+
+            // 6. Replace iterator (d => ...) with actual element
+            var mappedExpr = ReplaceIterator(
+                expr.Assignments[0] as ExpressionNode,
+                expr.IteratorId.Name,
+                currentElement
+            );
+
+            // 7. src[i] = mappedExpr
+            var indexAssignNode = new IndexAssignNode(
+                new IdNode(srcVarName),
+                new IdNode(indexVarName),
+                mappedExpr
+            );
+
+            // 8. Loop body
+            var loopBody = new SequenceNode();
+            loopBody.Statements.Add(indexAssignNode);
+
+            var forLoop = new ForLoopNode(
+                indexAssign,
+                loopCond,
+                loopStep,
+                loopBody
+            );
+
+            // 9. Full sequence
+            var program = new SequenceNode();
+            program.Statements.Add(srcAssign);
+            program.Statements.Add(forLoop);
+
+            // Return the modified array
+            program.Statements.Add(new IdNode(srcVarName));
+
+            // Optional semantic check
+            PerformSemanticAnalysis(program);
+
+            return VisitSequence(program);
+        }
 
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
@@ -5098,7 +5094,7 @@ namespace MyCompiler
         for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
 
 
-        for(i=0; i <5000000; i++) df.add({ date: "2023-01-01", latitude: random(-15.0, -19.0,1), longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
+        for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
         
         x.where(d=> d.age > 50)
 

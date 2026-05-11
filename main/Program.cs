@@ -1,4 +1,4 @@
-﻿using System;
+﻿﻿using System;
 using System.IO;
 using System.Text;
 using LLVMSharp;
@@ -456,9 +456,10 @@ namespace MyCompiler
                     Console.WriteLine($"{space}  Source:");
                     PrintNode(map.SourceExpr, indent + 2);
                     Console.WriteLine($"{space}  Transformation:");
-
-                    PrintNode(map.Assignment.Value, indent + 2);
-
+                    foreach (var assignment in map.Assignments)
+                    {
+                        PrintNode(assignment, indent + 2);
+                    }
 
                     break;
 

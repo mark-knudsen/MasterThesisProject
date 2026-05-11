@@ -279,7 +279,7 @@ namespace MyCompiler
 
             throw new Exception($"Cannot cast from {fromType} to {toType}");
         }
-
+        
         private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
         {
             if (from.GetType() == to.GetType())
@@ -388,7 +388,7 @@ namespace MyCompiler
 
             // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(expr.Id, default, null, valType);
-            expr.SetType(valType); // <--- ADD THIS LINE
+            expr.SetType(valType);
             return valType;
         }
 
@@ -701,7 +701,6 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-            System.Console.WriteLine("Sourctype: ", sourceType);
             Type iteratorType;
 
             if (sourceType is DataframeType df)
@@ -718,15 +717,13 @@ namespace MyCompiler
             try
             {
                 Type currentType = iteratorType;
-                foreach (var node in (expr.Assignment.Value as RecordNode).Fields)
+                foreach (var node in expr.Assignments)
                 {
-                    System.Console.WriteLine("Before");
-                    currentType = Visit(node.Value);
-                    System.Console.WriteLine("After, currentype: ", currentType);
-                    node.Value.SetType(currentType);
+                    currentType = Visit(node);
+                    if (node is ExpressionNode en2) en2.SetType(currentType);
                 }
 
-                var lastNode = expr.Assignment.Value;
+                var lastNode = expr.Assignments.Last();
                 Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
 
                 if (finalRowType is RecordType rec)
@@ -775,9 +772,8 @@ namespace MyCompiler
             }
 
             // Result is always a float
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         public Type VisitLog(LogNode expr)
@@ -788,9 +784,8 @@ namespace MyCompiler
                 throw new Exception($"log() expected numeric type, got {argType}");
             }
 
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         public Type VisitPow(PowNode expr)
@@ -803,9 +798,8 @@ namespace MyCompiler
                 throw new Exception($"pow() expected numeric types, got {baseType} and {exponentType}");
             }
 
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         public Type VisitExponentialMathFunc(ExponentialMathFuncNode expr)
@@ -818,9 +812,8 @@ namespace MyCompiler
             }
 
             // Result is always a float
-            var resultType = new FloatType();
-            expr.SetType(resultType);
-            return resultType;
+            expr.SetType(new FloatType());
+            return expr.Type;
         }
 
         // Helper: Build a RecordNode from CSV (first line + type inference)
@@ -901,7 +894,7 @@ namespace MyCompiler
 
                 var dfType = new DataframeType(names, types, recType);
                 expr.SetType(dfType);
-                return dfType;
+                return expr.Type;
             }
 
             throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
@@ -915,21 +908,16 @@ namespace MyCompiler
 
             // 2. Semantic Check: Is the first argument actually a Dataframe?
             if (exprType is not DataframeType)
-            {
                 throw new Exception($"to_csv() error: First argument must be a Dataframe, but got {exprType?.GetType().Name}");
-            }
 
             // 3. Semantic Check: Is the second argument a String?
             if (pathType is not StringType)
-            {
                 throw new Exception($"to_csv() error: Second argument must be a String (file path), but got {pathType?.GetType().Name}");
-            }
 
             // 4. Set the return type to Void/None 
             // (Ensure this matches whatever type your REPL uses for 'null' results)
-            var voidType = new VoidType();
-            expr.SetType(voidType);
-            return voidType;
+            expr.SetType(new VoidType());
+            return expr.Type;
         }
 
         public Type VisitAdd(AddNode expr)
@@ -1086,8 +1074,7 @@ namespace MyCompiler
             var recordType = new RecordType(expr.Fields);
 
             expr.SetType(recordType);
-
-            return recordType;
+            return expr.Type;
         }
 
         public Type VisitField(FieldNode expr)
@@ -1137,7 +1124,7 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitDataframe(DataframeNode expr)
+            public Type VisitDataframe(DataframeNode expr)
         {
             Visit(expr.Columns);
             Visit(expr.Rows);

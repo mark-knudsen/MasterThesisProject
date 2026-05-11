@@ -47,7 +47,6 @@
 %type <expr> arg
 %type <exprList> expr_list
 %type <arglist> arg_list
-%type <nodeList> map_list
 
 
 /* This tells the parser which C# variable stores the final tree */
@@ -264,17 +263,29 @@ expr
             $7 as ExpressionNode
         );
     }
-    | expr DOT MAP LPAREN ID LAMBDA arg_list RPAREN  
+    | expr DOT MAP LPAREN ID LAMBDA expr_list RPAREN  
     {   
         $$ = new MapNode(
             new IdNode((string)$5),
             $1 as ExpressionNode,
-            $7 as List<NamedArgumentNode> // map_list already returns List<Node>
+            $7 as List<ExpressionNode>
         );
     }
 
-
+    | expr DOT SELECT LPAREN expr_list RPAREN
+    {
+        // Convert List<Node> to List<ExpressionNode>
+        var elements = ($5 as List<ExpressionNode>).Cast<ExpressionNode>().ToList();
         
+        // Create the ArrayNode
+        var arrayNode = new ArrayNode(elements);
+        
+        // Wrap it in a List<Node> for the MapNode constructor
+        var wrapperList = new List<ExpressionNode> { arrayNode };
+        
+        $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, wrapperList);
+    }
+
     /* | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); } */
  
     
@@ -317,11 +328,6 @@ expr
     }
 
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
-    ;
-
-map_list
-    : Statement { $$ = new List<Node> { $1 }; }
-    | map_list COMMA Statement { ((List<Node>)$1).Add($3); $$ = $1; }
     ;
 
 arg_list

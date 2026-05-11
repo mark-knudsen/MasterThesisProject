@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LLVMSharp.Interop;
 using LLVMSharp;
+using System.Linq.Expressions;
 
 namespace MyCompiler
 {
@@ -166,7 +167,8 @@ namespace MyCompiler
         public ExpressionNode Expression { get; }
         public AssignNode(string id, ExpressionNode expr)
         {
-            Id = id; Expression = expr;
+            Id = id;
+            Expression = expr;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAssign(this);
     }
@@ -336,14 +338,14 @@ namespace MyCompiler
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public NamedArgumentNode Assignment { get; }
+        public List<ExpressionNode> Assignments { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<NamedArgumentNode> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<ExpressionNode> assignments)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
 
-            if (assignments != null && assignments.Count > 0 && assignments[0].Value is ArrayNode arrayNode)
+            if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
             {
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
@@ -359,9 +361,10 @@ namespace MyCompiler
                         throw new Exception("Map array elements must be identifiers");
                 }
 
-                Assignment = new NamedArgumentNode("", new RecordNode(namedArguments));
+                Assignments = new List<ExpressionNode> { new RecordNode(namedArguments) };
             }
-
+            else
+                Assignments = assignments;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
@@ -706,9 +709,7 @@ namespace MyCompiler
                     }
                 }
                 else
-                {
                     throw new Exception("Unexpected argument type in dataframe");
-                }
             }
 
             Columns = columns ?? throw new Exception("Dataframe requires 'columns'");
@@ -786,7 +787,6 @@ namespace MyCompiler
             Expression = expr;
             ToType = toType;
             FromType = fromType;
-            SetType(toType);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCast(this);
