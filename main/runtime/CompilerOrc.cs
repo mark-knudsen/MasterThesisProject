@@ -2560,47 +2560,35 @@ namespace MyCompiler
             return null;
         }
 
-        public SequenceNode MapForDataframe(MapNode expr)
+          public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
             var srcVar = "__map_src";
             var resVar = "__map_result";
             var iVar = "__map_i";
             var currentRowVar = "__current_row";
-
             var dfType = (DataframeType)expr.Type;
-            var rowType = dfType.RowType;
 
-            // 1. Assign Source: __map_src = <sourceExpr>
+            // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 3. Initialize Result Dataframe
-            var columns = dfType.ColumnNames
-                .Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            // 2. Capture length
+            var srcLength = new LengthNode(new IdNode(srcVar));
+            srcLength.SetType(new IntType());
 
-            // FIXED: Map types to integer IDs instead of string keywords
-            // This matches the mapping in your C# ToCsvInternal and GetTypeByTag
-            var actualTypes = rowType.RecordFields.Select(f =>
-            {
-                int typeId = 4; // Default: String
-                typeId = GetTypeByTag(f.Type);
+            // 3. Initialize Result Dataframe with Capacity
+            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
 
-                var numNode = new NumberNode(typeId);
-                numNode.SetType(new IntType()); // Ensure LLVM treats this as an i64
-                return (ExpressionNode)numNode;
-            }).ToList();
-
-            // Pre-allocate the rows array
+            // Passing srcLength to ArrayNode is the key to stopping reallocs
             var rowsArray = new ArrayNode(new List<ExpressionNode>());
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
-            // Create the constructor with the explicit "types" argument
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
                 new NamedArgumentNode("columns", new ArrayNode(columns)),
                 new NamedArgumentNode("rows", rowsArray),
-                new NamedArgumentNode("types", new ArrayNode(actualTypes))
+                new NamedArgumentNode("type", new ArrayNode(dummyTypes))
             });
-
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2609,71 +2597,42 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // 4. Fetch current row: __current_row = __map_src[__map_i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
+            // 4. Fetch row: currentRow = src[i]
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
+            rowAccess.SkipBoundsCheck = true;
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
             // 5. Transformation Logic
-            var updates = new Dictionary<string, ExpressionNode>();
-            foreach (var action in expr.Assignments)
+            ExpressionNode finalRowExpr;
+            // Check if assignments are complex or a single expression
+            bool isStatementStyle = expr.Assignments.Any(a => a.GetType().Name.Contains("Assign"));
+
+            if (expr.Assignments.Count == 1 && !isStatementStyle)
             {
-                string fieldName = null;
-                ExpressionNode valueNode = null;
+                finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
+            }
+            else
+            {
+                // Record Cloning (Necessary if updating existing rows)
+                var cloneNode = new BinaryOpNode(new IdNode(currentRowVar), "+", new RecordNode(new List<NamedArgumentNode>()));
+                cloneNode.SetType(dfType.RowType);
+                loopBody.Statements.Add(new AssignNode(currentRowVar, cloneNode));
 
-                if (action is RecordFieldAssignNode rfa)
+                foreach (var action in expr.Assignments)
                 {
-                    fieldName = rfa.IdField;
-                    valueNode = rfa.AssignExpression;
+                    var replacedAction = ReplaceIteratorInNode(action, expr.IteratorId.Name, replacementNode);
+                    loopBody.Statements.Add((StatementNode)replacedAction);
                 }
-                else if (action is AssignNode asn && asn.Expression is IdNode id)
-                {
-                    fieldName = id.Name;
-                    valueNode = asn.Expression;
-                }
-
-                if (fieldName != null)
-                {
-                    updates[fieldName] = (ExpressionNode)ReplaceIteratorInNode(valueNode, expr.IteratorId.Name, replacementNode);
-                }
+                finalRowExpr = new IdNode(currentRowVar);
             }
 
-            // 6. Reconstruct the record field-by-field
-            var recordArgs = new List<NamedArgumentNode>();
-
-            foreach (var fieldSchema in rowType.RecordFields)
-            {
-                ExpressionNode fieldValue;
-
-                if (updates.ContainsKey(fieldSchema.Label))
-                {
-                    fieldValue = updates[fieldSchema.Label];
-                }
-                else
-                {
-                    // Default: copy from source row
-                    var access = new FieldNode(new IdNode(currentRowVar), fieldSchema.Label);
-                    access.SetType(fieldSchema.Type);
-                    fieldValue = access;
-                }
-
-                // FORCE 8-byte alignment for Bool and Float via Cast
-                if (fieldSchema.Type is BoolType || fieldSchema.Type is FloatType)
-                {
-                    var cast = new CastNode(fieldValue, fieldSchema.Type, new IntType());
-                    fieldValue = cast;
-                }
-
-                recordArgs.Add(new NamedArgumentNode(fieldSchema.Label, fieldValue));
-            }
-
-            // 7. Create the new Record and add to result Dataframe
-            var finalRowExpr = new RecordNode(recordArgs);
-            finalRowExpr.SetType(rowType);
-
+            // 6. Use AddNode (since AssignNode won't take targetIndex)
+            // Because we initialized 'rowsArray' with 'srcLength', 
+            // the 'grow' block in the IR will exist but will NEVER be executed.
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
-            // 8. Loop Setup: for (__map_i = 0; __map_i < srcLength; __map_i++)
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
+            // 7. Loop Setup
+            var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
 

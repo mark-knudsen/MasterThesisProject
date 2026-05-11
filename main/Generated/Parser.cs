@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 10/05/2026 14:39:11
-// Input file <Parser/Parser.y - 10/05/2026 11:28:58>
+// DateTime: 11-05-2026 14:11:21
+// Input file <Parser/Parser.y - 11-05-2026 14:07:57>
 
 // options: lines gplex
 
@@ -68,11 +68,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 10/05/2026 11:28:58
+  // Verbatim content from Parser/Parser.y - 11-05-2026 14:07:57
 #line 56 "Parser/Parser.y"
     public MyCompiler.Node RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 10/05/2026 11:28:58
+  // End verbatim content from Parser/Parser.y - 11-05-2026 14:07:57
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -1041,7 +1041,8 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         return CharToString((char)terminal);
   }
 
-#line 354 "Parser/Parser.y"
+#line 353 "Parser/Parser.y"
+
 internal Parser(Scanner s) : base(s) { }
 #line default
 }
