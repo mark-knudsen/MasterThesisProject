@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LLVMSharp.Interop;
 using LLVMSharp;
+using System.Linq.Expressions;
 
 namespace MyCompiler
 {
@@ -337,9 +338,9 @@ namespace MyCompiler
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public List<Node> Assignments { get; }
+        public List<ExpressionNode> Assignments { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<ExpressionNode> assignments)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
@@ -360,7 +361,7 @@ namespace MyCompiler
                         throw new Exception("Map array elements must be identifiers");
                 }
 
-                Assignments = new List<Node> { new RecordNode(namedArguments) };
+                Assignments = new List<ExpressionNode> { new RecordNode(namedArguments) };
             }
             else
                 Assignments = assignments;

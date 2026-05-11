@@ -1,3 +1,12 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 11/05/2026 14:43:30>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 11/05/2026 14:43:32
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
@@ -47,6 +56,7 @@
 %type <expr> arg
 %type <exprList> expr_list
 %type <arglist> arg_list
+%type <nodeList> map_list
 
 
 /* This tells the parser which C# variable stores the final tree */
@@ -55,6 +65,8 @@
 %}
 
 %%
+// Warning: NonTerminal symbol "map_list" is unreachable
+// -----------------------------------------------------
 
 Prog
     : StatementList { $$ = $1; RootNode = $$; }
@@ -268,7 +280,7 @@ expr
         $$ = new MapNode(
             new IdNode((string)$5),
             $1 as ExpressionNode,
-            $7 as List<ExpressionNode>
+            $7 as List<ExpressionNode> // map_list already returns List<Node>
         );
     }
 
@@ -330,6 +342,11 @@ expr
     | expr DOT COLUMNS              { $$ = new ColumnsNode($1 as ExpressionNode); }
     ;
 
+map_list
+    : Statement { $$ = new List<Node> { $1 }; }
+    | map_list COMMA Statement { ((List<Node>)$1).Add($3); $$ = $1; }
+    ;
+
 arg_list
     : arg                  { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
     | arg_list COMMA arg   { ((List<NamedArgumentNode>)$1).Add($3 as NamedArgumentNode); $$ = $1; }
@@ -344,4 +361,5 @@ arg
     ;
 %%
 
-internal Parser(Scanner s) : base(s) { }
+internal Parser(Scanner s) : base(s) { }// ==========================================================================
+

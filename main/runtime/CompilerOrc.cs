@@ -2473,15 +2473,9 @@ namespace MyCompiler
 
             // Check what the TYPE CHECKER said the result would be
             if (expr.Type is DataframeType)
-            {
                 program = MapForDataframe(expr);
-            }
             else if (expr.Type is ArrayType)
-            {
-                // MapForArray works perfectly even if the source is a Dataframe,
-                // because it just loops and performs the 'add' to a new array.
                 program = MapForArray(expr);
-            }
             else
                 throw new Exception($"Unsupported map result type: {expr.Type}");
 
@@ -2560,7 +2554,7 @@ namespace MyCompiler
             return null;
         }
 
-          public SequenceNode MapForDataframe(MapNode expr)
+        public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
             var srcVar = "__map_src";
@@ -2598,35 +2592,12 @@ namespace MyCompiler
             var replacementNode = new IdNode(currentRowVar);
 
             // 4. Fetch row: currentRow = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-            rowAccess.SkipBoundsCheck = true;
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) {SkipBoundsCheck = true};
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
             // 5. Transformation Logic
-            ExpressionNode finalRowExpr;
-            // Check if assignments are complex or a single expression
-            bool isStatementStyle = expr.Assignments.Any(a => a.GetType().Name.Contains("Assign"));
+            ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
 
-            if (expr.Assignments.Count == 1 && !isStatementStyle)
-            {
-                finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
-            }
-            else
-            {
-                // Record Cloning (Necessary if updating existing rows)
-                var cloneNode = new BinaryOpNode(new IdNode(currentRowVar), "+", new RecordNode(new List<NamedArgumentNode>()));
-                cloneNode.SetType(dfType.RowType);
-                loopBody.Statements.Add(new AssignNode(currentRowVar, cloneNode));
-
-                foreach (var action in expr.Assignments)
-                {
-                    var replacedAction = ReplaceIteratorInNode(action, expr.IteratorId.Name, replacementNode);
-                    loopBody.Statements.Add((StatementNode)replacedAction);
-                }
-                finalRowExpr = new IdNode(currentRowVar);
-            }
-
-            // 6. Use AddNode (since AssignNode won't take targetIndex)
             // Because we initialized 'rowsArray' with 'srcLength', 
             // the 'grow' block in the IR will exist but will NEVER be executed.
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
