@@ -279,7 +279,7 @@ namespace MyCompiler
 
             throw new Exception($"Cannot cast from {fromType} to {toType}");
         }
-        
+
         private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
         {
             if (from.GetType() == to.GetType())
@@ -701,6 +701,7 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
+            System.Console.WriteLine("Sourctype: ", sourceType);
             Type iteratorType;
 
             if (sourceType is DataframeType df)
@@ -717,13 +718,15 @@ namespace MyCompiler
             try
             {
                 Type currentType = iteratorType;
-                foreach (var node in expr.Assignments)
+                foreach (var node in (expr.Assignment.Value as RecordNode).Fields)
                 {
-                    currentType = Visit(node);
-                    if (node is ExpressionNode en2) en2.SetType(currentType);
+                    System.Console.WriteLine("Before");
+                    currentType = Visit(node.Value);
+                    System.Console.WriteLine("After, currentype: ", currentType);
+                    node.Value.SetType(currentType);
                 }
 
-                var lastNode = expr.Assignments.Last();
+                var lastNode = expr.Assignment.Value;
                 Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
 
                 if (finalRowType is RecordType rec)
@@ -1122,7 +1125,7 @@ namespace MyCompiler
             if (_debug) Console.WriteLine($"Resolved field {expr.IdField} to type: {resolvedFieldType}");
 
             expr.SetType(resolvedFieldType);
-            return resolvedFieldType;
+            return expr.Type;
         }
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
@@ -1134,7 +1137,7 @@ namespace MyCompiler
             return expr.Type;
         }
 
-            public Type VisitDataframe(DataframeNode expr)
+        public Type VisitDataframe(DataframeNode expr)
         {
             Visit(expr.Columns);
             Visit(expr.Rows);

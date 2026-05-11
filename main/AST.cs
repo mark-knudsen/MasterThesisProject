@@ -336,14 +336,14 @@ namespace MyCompiler
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public List<Node> Assignments { get; }
+        public NamedArgumentNode Assignment { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<Node> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<NamedArgumentNode> assignments)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
 
-            if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
+            if (assignments != null && assignments.Count > 0 && assignments[0].Value is ArrayNode arrayNode)
             {
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
@@ -359,10 +359,9 @@ namespace MyCompiler
                         throw new Exception("Map array elements must be identifiers");
                 }
 
-                Assignments = new List<Node> { new RecordNode(namedArguments) };
+                Assignment = new NamedArgumentNode("", new RecordNode(namedArguments));
             }
-            else
-                Assignments = assignments;
+
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);

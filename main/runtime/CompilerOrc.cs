@@ -2519,10 +2519,9 @@ namespace MyCompiler
 
             // 3. Transform the lambda body
             ExpressionNode lastExpr = null;
-            foreach (var e in expr.Assignments)
-            {
-                lastExpr = (ExpressionNode)ReplaceIteratorInNode(e, expr.IteratorId.Name, rowAccess);
-            }
+       
+                lastExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignment, expr.IteratorId.Name, rowAccess);
+            
 
             // 4. Add to the result list
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
@@ -2615,21 +2614,21 @@ namespace MyCompiler
 
             // 5. Transformation Logic
             var updates = new Dictionary<string, ExpressionNode>();
-            foreach (var action in expr.Assignments)
+            foreach (var action in (expr.Assignment.Value as RecordNode).Fields)
             {
                 string fieldName = null;
                 ExpressionNode valueNode = null;
 
-                if (action is RecordFieldAssignNode rfa)
-                {
-                    fieldName = rfa.IdField;
-                    valueNode = rfa.AssignExpression;
-                }
-                else if (action is AssignNode asn && asn.Expression is IdNode id)
-                {
-                    fieldName = id.Name;
-                    valueNode = asn.Expression;
-                }
+                // if (action is RecordFieldAssignNode rfa)
+                // {
+                //     fieldName = rfa.IdField;
+                //     valueNode = rfa.AssignExpression;
+                // }
+                // else if (action is AssignNode asn && asn.Expression is IdNode id)
+                // {
+                //     fieldName = id.Name;
+                //     valueNode = asn.Expression;
+                // }
 
                 if (fieldName != null)
                 {
@@ -2943,72 +2942,7 @@ namespace MyCompiler
         }
 
         // Not used!
-        public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
-        {
-            // Temp variable names
-            var srcVarName = "__map_src";
-            var indexVarName = "__map_i";
-
-            // 1. Store source array
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-
-            // 2. i = 0
-            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
-
-            // 3. Loop condition: i < src.length
-            var loopCond = new ComparisonNode(
-                new IdNode(indexVarName),
-                "<",
-                new LengthNode(new IdNode(srcVarName))
-            );
-
-            // 4. i++
-            var loopStep = new IncrementNode(new IdNode(indexVarName));
-
-            // 5. src[i]
-            var currentElement = new IndexNode(
-                new IdNode(srcVarName),
-                new IdNode(indexVarName)
-            );
-
-            // 6. Replace iterator (d => ...) with actual element
-            var mappedExpr = ReplaceIterator(
-                expr.Assignments[0] as ExpressionNode,
-                expr.IteratorId.Name,
-                currentElement
-            );
-
-            // 7. src[i] = mappedExpr
-            var indexAssignNode = new IndexAssignNode(
-                new IdNode(srcVarName),
-                new IdNode(indexVarName),
-                mappedExpr
-            );
-
-            // 8. Loop body
-            var loopBody = new SequenceNode();
-            loopBody.Statements.Add(indexAssignNode);
-
-            var forLoop = new ForLoopNode(
-                indexAssign,
-                loopCond,
-                loopStep,
-                loopBody
-            );
-
-            // 9. Full sequence
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(forLoop);
-
-            // Return the modified array
-            program.Statements.Add(new IdNode(srcVarName));
-
-            // Optional semantic check
-            PerformSemanticAnalysis(program);
-
-            return VisitSequence(program);
-        }
+      
 
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
@@ -5164,7 +5098,7 @@ namespace MyCompiler
         for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
 
 
-        for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
+        for(i=0; i <5000000; i++) df.add({ date: "2023-01-01", latitude: random(-15.0, -19.0,1), longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: random(0,1), land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
         
         x.where(d=> d.age > 50)
 
