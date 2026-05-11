@@ -261,7 +261,17 @@ namespace MyCompiler
                 return toType;
             }
 
-            if (fromType is IntType && toType is FloatType) // currently only support int -> float casts
+            // 1. Existing: Numeric conversion
+            if (fromType is IntType && toType is FloatType)
+            {
+                expr.SetType(toType);
+                return toType;
+            }
+
+            // 2. NEW: Storage Alignment casts
+            // Allow Float -> Int (for bitcasting) and Bool -> Int (for zero-extending)
+            if ((fromType is FloatType && toType is IntType) ||
+                (fromType is BoolType && toType is IntType))
             {
                 expr.SetType(toType);
                 return toType;
@@ -269,13 +279,21 @@ namespace MyCompiler
 
             throw new Exception($"Cannot cast from {fromType} to {toType}");
         }
-
+        
         private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
         {
             if (from.GetType() == to.GetType())
                 return node;
 
+            // Allow Int -> Float
             if (from is IntType && to is FloatType)
+                return new CastNode(node, from, to);
+
+            // NEW: Allow the storage alignment casts
+            if (from is FloatType && to is IntType)
+                return new CastNode(node, from, to);
+
+            if (from is BoolType && to is IntType)
                 return new CastNode(node, from, to);
 
             throw new Exception($"Cannot cast {from} to {to}");
@@ -289,7 +307,6 @@ namespace MyCompiler
             // Helper to check if a type is numeric (Int or Float)
             if (leftType is not BoolType || rightType is not BoolType)
                 throw new Exception($"Invalid operands type {leftType} and {rightType}");
-
 
             if (expr.Operator is "&&" or "||")
             {
@@ -551,20 +568,35 @@ namespace MyCompiler
             expr.SetType(inferred);
             return expr.Type;
         }
-
         public Type VisitIndexAssign(IndexAssignNode expr)
         {
-            Visit(expr.ArrayExpression);
+            // 1. Visit children to ensure their .Type properties are populated
+            Type arrayOrDfType = Visit(expr.ArrayExpression);
             Visit(expr.IndexExpression);
-            Visit(expr.AssignExpression);
+            Type valueType = Visit(expr.AssignExpression);
 
-            if (expr.ArrayExpression is IdNode idNode)
+            // 2. Determine the expected element type
+            Type expectedType = null;
+
+            if (arrayOrDfType is ArrayType arr)
             {
-                var entry = _context.Get(idNode.Name);
-                var assignType = expr.AssignExpression.Type.GetType();
-                var arrayType = entry?.Type is ArrayType arrType ? arrType.ElementType?.GetType() : null;
-                if (arrayType != assignType)
-                    throw new Exception($"Can't assign {arrayType.Name} to {assignType.Name} array");
+                expectedType = arr.ElementType;
+            }
+            else if (arrayOrDfType is DataframeType df)
+            {
+                // When assigning to a dataframe directly by index, we expect a Row (Record)
+                expectedType = df.RowType;
+            }
+            else
+            {
+                throw new Exception($"Cannot perform index assignment on non-indexable type: {arrayOrDfType}");
+            }
+
+            // 3. Validate types (using your compiler's type equality, not C# GetType)
+            // Assuming you have a way to check if types match
+            if (expectedType.ToString() != valueType.ToString())
+            {
+                throw new Exception($"Type mismatch: Cannot assign {valueType} to {expectedType} element.");
             }
 
             expr.SetType(new VoidType());
@@ -669,36 +701,32 @@ namespace MyCompiler
         public Type VisitMap(MapNode expr)
         {
             var sourceType = Visit(expr.SourceExpr);
-
-            // Get the type of 'x'
             Type iteratorType;
+
             if (sourceType is DataframeType df)
                 iteratorType = df.RowType;
             else if (sourceType is ArrayType arr)
                 iteratorType = arr.ElementType;
             else
-                throw new Exception($"Cannot map over type {sourceType}. Source must be a Dataframe or Array.");
+                throw new Exception($"Cannot map over type {sourceType}.");
 
             var previousContext = _context;
-            // Inject 'x' into scope
+            // Inject iterator 'x' into scope
             _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
 
             try
             {
-                foreach (var node in expr.Assignments) // IMPORTANT: Capture the type returned by the visitor
+                Type currentType = iteratorType;
+                foreach (var node in expr.Assignments)
                 {
-                    Type t = Visit(node);
-                    if (node is ExpressionNode en2) en2.SetType(t);
+                    currentType = Visit(node);
+                    if (node is ExpressionNode en2) en2.SetType(currentType);
                 }
 
-                // Determine result type based on the LAST node
                 var lastNode = expr.Assignments.Last();
+                Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
 
-                // If last node is a statement (Assignment), type is the modified iteratorType.
-                // If last node is an expression (Record + Record), type is that expression's type.
-                Type lastType = (lastNode is ExpressionNode en) ? en.Type : iteratorType;
-
-                if (lastType is RecordType rec)
+                if (finalRowType is RecordType rec)
                 {
                     var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
@@ -709,15 +737,11 @@ namespace MyCompiler
                     return resultType;
                 }
 
-                // Fallback for primitive arrays
-                var finalArrayType = new ArrayType(lastType);
+                var finalArrayType = new ArrayType(finalRowType);
                 expr.SetType(finalArrayType);
                 return finalArrayType;
             }
-            finally
-            {
-                _context = previousContext;
-            }
+            finally { _context = previousContext; }
         }
 
         // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
@@ -1100,7 +1124,7 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitDataframe(DataframeNode expr)
+            public Type VisitDataframe(DataframeNode expr)
         {
             Visit(expr.Columns);
             Visit(expr.Rows);
@@ -1145,6 +1169,7 @@ namespace MyCompiler
 
         private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
         {
+
             if (expr.Type is Type type)
                 return type;
 

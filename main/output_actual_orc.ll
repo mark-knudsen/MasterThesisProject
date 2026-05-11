@@ -3,7 +3,7 @@ source_filename = "repl_module"
 
 @x = external global ptr
 
-define ptr @main_20() {
+define ptr @main_3() {
 entry:
   %x_load = load ptr, ptr @x, align 8
   %runtime_obj = call ptr @malloc(i64 16)
@@ -17,4 +17,4 @@ entry:
 
 declare i32 @printf(ptr, ...)
 
-declare ptr @malloc(i64)
+declare noalias ptr @malloc(i64)

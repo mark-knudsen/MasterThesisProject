@@ -267,8 +267,7 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public uint? Capacity { get; }
-
+        public ulong? Capacity;
         public ArrayNode(List<ExpressionNode> elements)
         {
             Elements = elements;
@@ -288,6 +287,8 @@ namespace MyCompiler
     {
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode IndexExpression { get; }
+        // NEW FLAG
+        public bool SkipBoundsCheck { get; set; } = false;
 
         public IndexNode(ExpressionNode sourceExpr, ExpressionNode indexExpr)
         {
@@ -319,6 +320,8 @@ namespace MyCompiler
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
         public ExpressionNode Condition { get; }
+        // ADD THIS LINE
+        public ExpressionNode CapacityExpression { get; set; }
 
         public WhereNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode condition)
         {
@@ -658,6 +661,7 @@ namespace MyCompiler
         public ArrayNode Columns { get; }
         public ArrayNode Rows { get; }
         public ArrayNode DataTypes { get; }
+        public ulong Capacity { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {

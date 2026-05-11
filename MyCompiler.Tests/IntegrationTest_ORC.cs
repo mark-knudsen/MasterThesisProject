@@ -68,7 +68,6 @@ public class CompilerIntegrationTestORC
         // RuntimeObject obj = Marshal.PtrToStructure<RuntimeObject>(result);
         // Assert.Equal(4, obj.AsInt());
 
-
         Console.SetIn(new StringReader(input)); // Simulate user input
         var outputWriter = new StringWriter();
         Console.SetOut(outputWriter);  // Capture any console output
