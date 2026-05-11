@@ -134,6 +134,8 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
+            System.Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type    );
+
             expr.SetType(entry.Type);
             return entry.Type;
         }

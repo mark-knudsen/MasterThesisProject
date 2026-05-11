@@ -2358,7 +2358,7 @@ namespace MyCompiler
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
-        // x.map(d => d.age + 100) // this should return the dataframe not the column
+        // x.map(d => d.age + 100) 
         // x.where(d=> d.age > 50)  
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
@@ -2592,7 +2592,7 @@ namespace MyCompiler
             var replacementNode = new IdNode(currentRowVar);
 
             // 4. Fetch row: currentRow = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) {SkipBoundsCheck = true};
+            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
             // 5. Transformation Logic
@@ -4268,94 +4268,89 @@ namespace MyCompiler
 
             return valueToAssign;
         }
+
         public LLVMValueRef VisitRecord(RecordNode expr)
         {
-            // 1. Fix: Use GetStructType instead of CreateStructType
-            var fields = new LLVMTypeRef[expr.Fields.Count];
-            for (int i = 0; i < expr.Fields.Count; i++)
-            {
-                fields[i] = _module.Context.Int64Type;
-            }
-            var structType = _module.Context.GetStructType(fields, false);
+            var i32 = _module.Context.Int32Type;
+            var recordType = (RecordType)expr.Type;
 
-            // 2. Fix: Use structType.SizeOf (it's a property, not a method)
+            // Use the SAME struct type used everywhere else
+            var structType = GetOrCreateRecordStructType(recordType);
             var sizeValue = structType.SizeOf;
-
-            // 3. Fix: Ensure malloc arguments are an explicit LLVMValueRef array
-            var mallocArgs = new LLVMValueRef[] { sizeValue };
-            var instancePtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), mallocArgs, "record_ptr");
-
-            var structPtrType = LLVMTypeRef.CreatePointer(structType, 0);
-            var typedInstance = _builder.BuildBitCast(instancePtr, structPtrType, "typed_record");
+            var instancePtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { sizeValue }, "record_ptr");
+            var typedPtr = _builder.BuildBitCast(instancePtr, LLVMTypeRef.CreatePointer(structType, 0), "typed_record");
 
             for (int i = 0; i < expr.Fields.Count; i++)
             {
                 var fieldValue = Visit(expr.Fields[i].Value);
 
-                // Convert pointers (like strings) to i64 for our uniform 8-byte grid
-                if (fieldValue.TypeOf.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                {
-                    fieldValue = _builder.BuildPtrToInt(fieldValue, _module.Context.Int64Type, "ptr_to_i64");
-                }
+                var fieldPtr = _builder.BuildGEP2(
+                    structType,
+                    typedPtr,
+                    new LLVMValueRef[]
+                    {
+                        LLVMValueRef.CreateConstInt(i32, 0),
+                        LLVMValueRef.CreateConstInt(i32, (ulong)i)
+                    },
+                    $"field_{i}"
+                );
 
-                // Navigate and store
-                var fieldPtr = _builder.BuildStructGEP2(structType, typedInstance, (uint)i, $"field_{i}");
-                var store = _builder.BuildStore(fieldValue, fieldPtr);
-                store.Alignment = 8;
+                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetAlignment(fieldValue.TypeOf));
             }
 
             return instancePtr;
         }
 
+        private uint GetAlignment(LLVMTypeRef type)
+        {
+            var ctx = _module.Context;
+
+            if (type == ctx.Int64Type)
+                return 8;
+
+            if (type == ctx.DoubleType)
+                return 8;
+
+            if (type == ctx.Int1Type) // for bools, we store as i64 for simplicity, so alignment is 8
+                return 8;
+
+            if (type.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                return 8;
+
+            return 4;
+        }
+
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
-            // Use the helper to get the address of the slot in the record
-            var (fieldSlotPtr, _) = GetFieldPointer(expr.IdRecord, expr.IdField);
-
+            var fieldPtr = GetFieldPointer(expr.IdRecord, expr.IdField);
             var newValue = Visit(expr.AssignExpression);
 
-            // Get type info for boxing logic
             var recType = (RecordType)expr.IdRecord.Type;
             var fieldDef = recType.RecordFields.First(f => f.Label == expr.IdField);
 
-            if (!IsReferenceType(fieldDef.Type))
-            {
-                // Primitives are boxed: load the pointer to the box, then store the value
-                var boxPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0), fieldSlotPtr, "box_ptr");
-                var castBoxPtr = _builder.BuildBitCast(boxPtr, LLVMTypeRef.CreatePointer(newValue.TypeOf, 0));
-                _builder.BuildStore(newValue, castBoxPtr);
-            }
-            else
-            {
-                // Strings/Records: Store the pointer directly in the slot
-                _builder.BuildStore(newValue, fieldSlotPtr);
-            }
+            // Primitive stored inline
+            _builder.BuildStore(newValue, fieldPtr);
 
             return newValue;
         }
 
-        private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode recordExpr, string fieldName)
+        private LLVMValueRef GetFieldPointer(ExpressionNode recordExpr, string fieldName)
         {
+            var i32 = _module.Context.Int32Type;
             var recordPtr = Visit(recordExpr);
-            var recordType = recordExpr.Type as RecordType;
-            if (recordType == null) throw new Exception("Expected record type");
+
+            if (recordExpr.Type is not RecordType recordType)
+                throw new Exception("Expected record type");
 
             int fieldIndex = GetFieldIndex(fieldName, recordType.RecordFields);
+            var structType = GetOrCreateRecordStructType(recordType);
 
-            // EVERY field in your record buffer is a pointer (i8*)
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-
-            // Use GEP to find the N-th pointer in the record buffer
-            // This is equivalent to: recordPtr + (fieldIndex * 8)
-            var fieldPtr = _builder.BuildGEP2(
-                i8Ptr,
-                recordPtr,
-                new[] { LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)fieldIndex) },
+            return _builder.BuildGEP2(structType, recordPtr, new LLVMValueRef[]
+                { LLVMValueRef.CreateConstInt(i32, 0),
+                LLVMValueRef.CreateConstInt(i32, (ulong)fieldIndex)
+                },
                 $"ptr_{fieldName}"
             );
-
-            // We return i8Ptr because the slot contains a pointer
-            return (fieldPtr, i8Ptr);
         }
 
         private int GetFieldIndex(string name, IReadOnlyList<RecordField> Fields)
@@ -4373,7 +4368,7 @@ namespace MyCompiler
             if (expr.SourceExpression.Type is RecordType)
             {
                 // Get the pointer to the specific slot (e.g., recordBase + 8)
-                var (fieldSlotPtr, _) = GetFieldPointer(expr.SourceExpression, expr.IdField);
+                var fieldSlotPtr = GetFieldPointer(expr.SourceExpression, expr.IdField);
                 var ctx = _module.Context;
 
                 // Perform a SINGLE load based on the type
@@ -4406,9 +4401,7 @@ namespace MyCompiler
                 return Visit(d);
             }
             else
-            {
                 throw new Exception("Field access is only supported on records");
-            }
         }
 
         public LLVMValueRef VisitToCsv(ToCsvNode expr)

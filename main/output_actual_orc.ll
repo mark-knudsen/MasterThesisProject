@@ -1,160 +1,20 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-%dataframe = type { ptr, ptr, ptr }
-%array = type { i64, i64, ptr }
-
 @x = external global ptr
-@__map_src = external global ptr, align 8
-@str = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@str.1 = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@str.2 = private unnamed_addr constant [4 x i8] c"age\00", align 1
-@__map_result = external global ptr, align 8
-@__map_i = external global i64, align 8
-@__current_row = external global ptr, align 8
 
-define ptr @main_5() {
+define ptr @main_6() {
 entry:
   %x_load = load ptr, ptr @x, align 8
-  store ptr %x_load, ptr @__map_src, align 8
-  %arr_header = call ptr @malloc(i64 24)
-  %arr_data_raw = call ptr @malloc(i64 32)
-  %len_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 0
-  %cap_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 1
-  %data_field_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 2
-  store i64 3, ptr %len_ptr, align 8
-  store i64 3, ptr %cap_ptr, align 8
-  store ptr %arr_data_raw, ptr %data_field_ptr, align 8
-  %elem_ptr = getelementptr ptr, ptr %arr_data_raw, i64 0
-  store ptr @str, ptr %elem_ptr, align 8
-  %elem_ptr1 = getelementptr ptr, ptr %arr_data_raw, i64 1
-  store ptr @str.1, ptr %elem_ptr1, align 8
-  %elem_ptr2 = getelementptr ptr, ptr %arr_data_raw, i64 2
-  store ptr @str.2, ptr %elem_ptr2, align 8
-  %arr_header3 = call ptr @malloc(i64 24)
-  %arr_data_raw4 = call ptr @malloc(i64 800)
-  %len_ptr5 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header3, i32 0, i32 0
-  %cap_ptr6 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header3, i32 0, i32 1
-  %data_field_ptr7 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header3, i32 0, i32 2
-  store i64 0, ptr %len_ptr5, align 8
-  store i64 100, ptr %cap_ptr6, align 8
-  store ptr %arr_data_raw4, ptr %data_field_ptr7, align 8
-  %arr_header8 = call ptr @malloc(i64 24)
-  %arr_data_raw9 = call ptr @malloc(i64 32)
-  %len_ptr10 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header8, i32 0, i32 0
-  %cap_ptr11 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header8, i32 0, i32 1
-  %data_field_ptr12 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header8, i32 0, i32 2
-  store i64 3, ptr %len_ptr10, align 8
-  store i64 3, ptr %cap_ptr11, align 8
-  store ptr %arr_data_raw9, ptr %data_field_ptr12, align 8
-  %elem_ptr13 = getelementptr i64, ptr %arr_data_raw9, i64 0
-  store i64 4, ptr %elem_ptr13, align 8
-  %elem_ptr14 = getelementptr i64, ptr %arr_data_raw9, i64 1
-  store i64 4, ptr %elem_ptr14, align 8
-  %elem_ptr15 = getelementptr i64, ptr %arr_data_raw9, i64 2
-  store i64 4, ptr %elem_ptr15, align 8
-  %df = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
-  %0 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 0
-  store ptr %arr_header, ptr %0, align 8
-  %1 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 1
-  store ptr %arr_header3, ptr %1, align 8
-  %2 = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 2
-  store ptr %arr_header8, ptr %2, align 8
-  store ptr %df, ptr @__map_result, align 8
-  store i64 0, ptr @__map_i, align 8
-  br label %for.cond
-
-for.cond:                                         ; preds = %for.step, %entry
-  %__map_i_load = load i64, ptr @__map_i, align 8
-  %__map_src_load = load ptr, ptr @__map_src, align 8
-  %rows_ptr_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__map_src_load, i32 0, i32 1
-  %rows_ptr = load ptr, ptr %rows_ptr_field, align 8
-  %rows_array_ptr = bitcast ptr %rows_ptr to ptr
-  %rows_length_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array_ptr, i32 0, i32 0
-  %rows_length = load i64, ptr %rows_length_ptr, align 8
-  %icmp_tmp = icmp slt i64 %__map_i_load, %rows_length
-  br i1 %icmp_tmp, label %for.body, label %for.end
-
-for.body:                                         ; preds = %for.cond
-  %__map_src_load16 = load ptr, ptr @__map_src, align 8
-  %__map_i_load17 = load i64, ptr @__map_i, align 8
-  %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %__map_src_load16, i32 0, i32 1
-  %rows = load ptr, ptr %rows_ptr_ptr, align 8
-  %data_ptr_ptr = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 2
-  %data = load ptr, ptr %data_ptr_ptr, align 8
-  %elem_ptr18 = getelementptr ptr, ptr %data, i64 %__map_i_load17
-  %record = load ptr, ptr %elem_ptr18, align 8
-  store ptr %record, ptr @__current_row, align 8
-  %__map_result_load = load ptr, ptr @__map_result, align 8
-  %record_ptr = call ptr @malloc(i64 ptrtoint (ptr getelementptr ({ i64, i64, i64 }, ptr null, i32 1) to i64))
-  %__current_row_load = load ptr, ptr @__current_row, align 8
-  %ptr_name = getelementptr ptr, ptr %__current_row_load, i64 0
-  %val_name = load ptr, ptr %ptr_name, align 8
-  %ptr_to_i64 = ptrtoint ptr %val_name to i64
-  %field_0 = getelementptr inbounds nuw { i64, i64, i64 }, ptr %record_ptr, i32 0, i32 0
-  store i64 %ptr_to_i64, ptr %field_0, align 8
-  %__current_row_load19 = load ptr, ptr @__current_row, align 8
-  %ptr_name20 = getelementptr ptr, ptr %__current_row_load19, i64 0
-  %val_name21 = load ptr, ptr %ptr_name20, align 8
-  %ptr_to_i6422 = ptrtoint ptr %val_name21 to i64
-  %field_1 = getelementptr inbounds nuw { i64, i64, i64 }, ptr %record_ptr, i32 0, i32 1
-  store i64 %ptr_to_i6422, ptr %field_1, align 8
-  %__current_row_load23 = load ptr, ptr @__current_row, align 8
-  %ptr_age = getelementptr ptr, ptr %__current_row_load23, i64 1
-  %val_age = load i64, ptr %ptr_age, align 4
-  %field_2 = getelementptr inbounds nuw { i64, i64, i64 }, ptr %record_ptr, i32 0, i32 2
-  store i64 %val_age, ptr %field_2, align 8
-  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__map_result_load, i32 0, i32 1
-  %rows_array = load ptr, ptr %rows_field, align 8
-  %len_ptr24 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
-  %cap_ptr25 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
-  %data_ptr_ptr26 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
-  %len = load i64, ptr %len_ptr24, align 8
-  %cap = load i64, ptr %cap_ptr25, align 8
-  %data27 = load ptr, ptr %data_ptr_ptr26, align 8
-  %is_full = icmp uge i64 %len, %cap
-  br i1 %is_full, label %grow, label %cont
-
-for.step:                                         ; preds = %cont
-  %x_load28 = load i64, ptr @__map_i, align 8
-  %inc_add = add i64 %x_load28, 1
-  store i64 %inc_add, ptr @__map_i, align 8
-  br label %for.cond, !llvm.loop !0
-
-for.end:                                          ; preds = %for.cond
-  %__map_result_load29 = load ptr, ptr @__map_result, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
-  store i64 7, ptr %tag_ptr, align 8
+  store i64 6, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %__map_result_load29, ptr %data_ptr, align 8
+  store ptr %x_load, ptr %data_ptr, align 8
   ret ptr %runtime_obj
-
-grow:                                             ; preds = %for.body
-  %3 = icmp eq i64 %cap, 0
-  %4 = mul i64 %cap, 2
-  %new_cap = select i1 %3, i64 4, i64 %4
-  %bytes = mul i64 %new_cap, 8
-  %realloc = call ptr @realloc(ptr %data27, i64 %bytes)
-  store i64 %new_cap, ptr %cap_ptr25, align 8
-  store ptr %realloc, ptr %data_ptr_ptr26, align 8
-  br label %cont
-
-cont:                                             ; preds = %grow, %for.body
-  %final_data_ptr = phi ptr [ %data27, %for.body ], [ %realloc, %grow ]
-  %target_slot_ptr = getelementptr ptr, ptr %final_data_ptr, i64 %len
-  store ptr %record_ptr, ptr %target_slot_ptr, align 8
-  %new_len = add i64 %len, 1
-  store i64 %new_len, ptr %len_ptr24, align 8
-  br label %for.step
 }
 
 declare i32 @printf(ptr, ...)
 
 declare noalias ptr @malloc(i64)
-
-declare ptr @realloc(ptr, i64)
-
-!0 = !{!"loop.id", !1}
-!1 = !{!"llvm.loop.vectorize.enable", i1 true}

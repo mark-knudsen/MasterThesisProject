@@ -10,7 +10,6 @@
     public MyCompiler.ExpressionNode expr; 
     public List<MyCompiler.ExpressionNode> exprList; // for expr_list
     public List<MyCompiler.NamedArgumentNode> arglist; // for arg_list
-    public List<MyCompiler.Node> nodeList; // for map_body
 }
 
 %token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
@@ -40,9 +39,9 @@
 %left DOT
 %left LBRACKET /* Add this to give indexing high priority */
 
-%type <node> Prog Statement StatementList Assignment Block Separator OptNewlines
+%type <node> prog statement statement_list assignment block seperator opt_newlines
 %type <node> expr
-%type <expr> Type
+%type <expr> type
 
 %type <expr> arg
 %type <exprList> expr_list
@@ -56,75 +55,67 @@
 
 %%
 
-Prog
-    : StatementList { $$ = $1; RootNode = $$; }
+prog
+    : statement_list { $$ = $1; RootNode = $$; }
     ;
 
-Block
-    : LBRACE StatementList RBRACE { $$ = $2; }
-    | StatementList { $$ = $1; }
+block
+    : LBRACE statement_list RBRACE { $$ = $2; }
+    | statement_list { $$ = $1; }
     ;
 
-Separator
+seperator
     : SEMICOLON
     | NEWLINE
     | SEMICOLON NEWLINE
     | NEWLINE SEMICOLON
     ;
 
-OptNewlines
+opt_newlines
     : /* empty */
-    | OptNewlines NEWLINE
+    | opt_newlines NEWLINE
     ;
 
-StatementList
+statement_list
     : /* empty */
       { $$ = new SequenceNode(); }
 
-    | StatementList Separator
-      { $$ = $1; }
-
-    | StatementList Statement
-      { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
-
-    | StatementList Separator Statement
-      { ((SequenceNode)$1).Statements.Add($3); $$ = $1; }
+    | statement_list seperator             { $$ = $1; }
+    | statement_list statement             { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
+    | statement_list seperator statement   { ((SequenceNode)$1).Statements.Add($3); $$ = $1; }
     ;
 
-Statement
-    : Assignment          { $$ = $1; } 
+statement
+    : assignment          { $$ = $1; } 
     | expr                { $$ = $1; }             
-    | IF LPAREN expr RPAREN Block %prec IF
-      { $$ = new IfNode($3 as ExpressionNode, $5); }
-    | IF LPAREN expr RPAREN Block ELSE Block
-      { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
+    | IF LPAREN expr RPAREN block %prec IF    { $$ = new IfNode($3 as ExpressionNode, $5); }
+    | IF LPAREN expr RPAREN block ELSE block  { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
 
-   | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN OptNewlines Statement
+   | FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines statement
       { $$ = new ForLoopNode($3 as StatementNode, $5 as ExpressionNode, $7 as StatementNode, $10); }
 
-    | FOR LPAREN Assignment SEMICOLON expr SEMICOLON Assignment RPAREN OptNewlines Block
+    | FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block
       { $$ = new ForLoopNode($3 as StatementNode, $5 as ExpressionNode, $7 as StatementNode, $10); }
     
-    | FOREACH LPAREN ID IN expr RPAREN LBRACE StatementList RBRACE
+    | FOREACH LPAREN ID IN expr RPAREN LBRACE statement_list RBRACE
         { $$ = new ForEachLoopNode(new IdNode((string)$3), $5 as ExpressionNode, $8 ); }
-    | FOREACH LPAREN ID IN expr RPAREN StatementList
+    | FOREACH LPAREN ID IN expr RPAREN statement_list
         { $$ = new ForEachLoopNode(new IdNode((string)$3), $5 as ExpressionNode, $7 ); }
     ;
 
-Type
+type
     : INT                 { $$ = new TypeNode("int"); }
     | FLOAT               { $$ = new TypeNode("float"); }
     | BOOL                { $$ = new TypeNode("bool"); }
     | STRING              { $$ = new TypeNode("string"); }   
     | VOID                { $$ = new TypeNode("void"); }
     | NULL                { $$ = new TypeNode("null"); }
-    | ARRAY GT Type LT    { $$ = new TypeNode("array"); }
+    | ARRAY GT type LT    { $$ = new TypeNode("array"); }
     ;
 
-Assignment 
+assignment 
     : ID ASSIGN expr      { $$ = new AssignNode((string)$1, $3 as ExpressionNode); } 
     | ID PLUS_ASSIGN expr { 
-        // Sugar: x += 1  becomes  x = x + 1
         var id = new IdNode((string)$1);
         var add = new BinaryOpNode(id, "+", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, add); 
@@ -140,8 +131,8 @@ Assignment
             add
         );
     }
-    | ID MINUS_ASSIGN expr { 
-        // Sugar: x -= 1  becomes  x = x - 1
+    | ID MINUS_ASSIGN expr 
+    { 
         var id = new IdNode((string)$1);
         var sub = new BinaryOpNode(id, "-", $3 as ExpressionNode);
         $$ = new AssignNode((string)$1, sub); 
@@ -179,7 +170,7 @@ Assignment
     ;
 
 expr_list
-    : expr                  { $$ = new List<ExpressionNode> { $1 as ExpressionNode }; }
+    : expr                 { $$ = new List<ExpressionNode> { $1 as ExpressionNode }; }
     | expr_list COMMA expr { ((List<ExpressionNode>)$1).Add($3 as ExpressionNode); $$ = $1; }
     ;
 
@@ -191,36 +182,22 @@ expr
     | STRING_LITERAL      { $$ = new StringNode((string)$1); }
     | STRING              { $$ = new TypeLiteralNode(new TypeNode("string")); }
     | NULL_LITERAL        { $$ = new NullNode(); }
-    | Type                { $$ = new TypeLiteralNode($1 as TypeNode); }
-    
+    | type                { $$ = new TypeLiteralNode($1 as TypeNode); }
     | ID                  { $$ = new IdNode((string)$1); }
-    | PRINT LPAREN expr RPAREN 
-                          { $$ = new PrintNode($3 as ExpressionNode); }
-    | RANDOM LPAREN expr_list RPAREN
-                          { $$ = new RandomNode($3 as List<ExpressionNode>); }
-    | ROUND LPAREN expr_list RPAREN
-                          { $$ = new RoundNode(($3 as List<ExpressionNode>)[0], ($3 as List<ExpressionNode>)[1]); }
+
+    | PRINT LPAREN expr RPAREN        { $$ = new PrintNode($3 as ExpressionNode); }
+    | RANDOM LPAREN expr_list RPAREN  { $$ = new RandomNode($3 as List<ExpressionNode>); }
+    | ROUND LPAREN expr_list RPAREN   { $$ = new RoundNode(($3 as List<ExpressionNode>)[0], ($3 as List<ExpressionNode>)[1]); }
+
     | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
     | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
     | expr MULT expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "*", $3 as ExpressionNode); }
     | expr DIV expr       { $$ = new BinaryOpNode($1 as ExpressionNode, "/", $3 as ExpressionNode); }
 
-    | SQRT LPAREN expr RPAREN 
-    { 
-        $$ = new SqrtNode($3 as ExpressionNode); 
-    }
-    | EXP LPAREN expr RPAREN 
-    { 
-        $$ = new ExponentialMathFuncNode($3 as ExpressionNode); 
-    }
-    | POW LPAREN expr COMMA expr RPAREN 
-    { 
-        $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); 
-    }
-    | LOG LPAREN expr RPAREN 
-    { 
-        $$ = new LogNode($3 as ExpressionNode); 
-    }
+    | SQRT LPAREN expr RPAREN            { $$ = new SqrtNode($3 as ExpressionNode); }
+    | EXP LPAREN expr RPAREN             { $$ = new ExponentialMathFuncNode($3 as ExpressionNode); }
+    | POW LPAREN expr COMMA expr RPAREN  { $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); }
+    | LOG LPAREN expr RPAREN             { $$ = new LogNode($3 as ExpressionNode); }
 
     | expr LOGICAL_AND expr { $$ = new LogicalOpNode($1 as ExpressionNode, "&&", $3 as ExpressionNode); }  
     | expr LOGICAL_OR expr  { $$ = new LogicalOpNode($1 as ExpressionNode, "||", $3 as ExpressionNode); }  
@@ -232,9 +209,9 @@ expr
     | expr GT expr        { $$ = new ComparisonNode($1 as ExpressionNode, ">", $3 as ExpressionNode); }    
     | expr LT expr        { $$ = new ComparisonNode($1 as ExpressionNode, "<", $3 as ExpressionNode); }
 
-    | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
-    | LBRACE arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*{ name: "Bob", age: 23 } */
-    | LBRACKET arg_list RBRACKET { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*[index: int, name: string] */
+    | LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($2 as List<ExpressionNode>); }     /*[1,2,3] */
+    | LBRACE arg_list RBRACE        { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*{ name: "Bob", age: 23 } */
+    | LBRACKET arg_list RBRACKET    { $$ = new RecordNode($2 as List<NamedArgumentNode>); } /*[index: int, name: string] */
     | ID LBRACKET expr RBRACKET 
     { 
         // Cast $1 to string so the IdNode constructor accepts it
@@ -286,11 +263,7 @@ expr
         $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, wrapperList);
     }
 
-    /* | expr DOT SHOW LPAREN LBRACKET expr_list RBRACKET RPAREN { $$ = new ShowDataframeNode($1 as ExpressionNode, $6 as List<ExpressionNode>); } */
- 
-    
     /* Global Function Style */
-        /* Global Function Style */
     | READCSV LPAREN expr COMMA expr RPAREN 
     { 
         // Force the creation of a list with exactly TWO elements
