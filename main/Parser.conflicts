@@ -1,0 +1,3244 @@
+// Parser Conflict Information for grammar file "Parser/Parser.y - 12-05-2026 14:48:55"
+
+Shift/Reduce conflict on symbol "ID", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "ID":	State-4 -> State-7
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 7
+    30 assignment: ID . ASSIGN expr 
+    31 assignment: ID . PLUS_ASSIGN expr 
+    49 expr: ID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    72 expr: ID . LBRACKET expr RBRACKET 
+    33 assignment: ID . MINUS_ASSIGN expr 
+    35 assignment: ID . INC 
+    36 assignment: ID . DECR 
+    37 assignment: ID . LBRACKET expr RBRACKET ASSIGN expr 
+
+Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "BOOL_LITERAL":	State-4 -> State-39
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 39
+    41 expr: BOOL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NUMBER", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "NUMBER":	State-4 -> State-40
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 40
+    42 expr: NUMBER .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "FLOAT_LITERAL":	State-4 -> State-41
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 41
+    43 expr: FLOAT_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "MINUS":	State-4 -> State-42
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 42
+    44 expr: MINUS . expr 
+
+Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "STRING_LITERAL":	State-4 -> State-44
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 44
+    45 expr: STRING_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "STRING", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "STRING":	State-4 -> State-45
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 45
+    46 expr: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+    26 type: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "NULL_LITERAL":	State-4 -> State-46
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 46
+    47 expr: NULL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "INT", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "INT":	State-4 -> State-48
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 48
+    23 type: INT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "FLOAT":	State-4 -> State-49
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 49
+    24 type: FLOAT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "BOOL", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "BOOL":	State-4 -> State-50
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 50
+    25 type: BOOL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "VOID", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "VOID":	State-4 -> State-51
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 51
+    27 type: VOID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "NULL":	State-4 -> State-52
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 52
+    28 type: NULL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "ARRAY", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "ARRAY":	State-4 -> State-53
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 53
+    29 type: ARRAY . GT type LT 
+
+Shift/Reduce conflict on symbol "PRINT", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "PRINT":	State-4 -> State-62
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 62
+    50 expr: PRINT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "RANDOM", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "RANDOM":	State-4 -> State-66
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 66
+    51 expr: RANDOM . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "ROUND", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "ROUND":	State-4 -> State-72
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 72
+    52 expr: ROUND . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "SQRT", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "SQRT":	State-4 -> State-77
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 77
+    57 expr: SQRT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "EXP", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "EXP":	State-4 -> State-81
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 81
+    58 expr: EXP . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "POW", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "POW":	State-4 -> State-85
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 85
+    59 expr: POW . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "LOG", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "LOG":	State-4 -> State-91
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 91
+    60 expr: LOG . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "LBRACKET":	State-4 -> State-95
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 95
+    69 expr: LBRACKET . expr_list RBRACKET 
+    71 expr: LBRACKET . arg_list RBRACKET 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "LBRACE":	State-4 -> State-105
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 105
+    70 expr: LBRACE . arg_list RBRACE 
+
+Shift/Reduce conflict on symbol "LPAREN", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "LPAREN":	State-4 -> State-112
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 112
+    73 expr: LPAREN . expr RPAREN 
+
+Shift/Reduce conflict on symbol "READCSV", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "READCSV":	State-4 -> State-115
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 115
+    87 expr: READCSV . LPAREN expr COMMA expr RPAREN 
+    88 expr: READCSV . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "TOCSV", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "TOCSV":	State-4 -> State-121
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 121
+    89 expr: TOCSV . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "RECORD", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "RECORD":	State-4 -> State-127
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 127
+    90 expr: RECORD . LPAREN LBRACE arg_list RBRACE RPAREN 
+
+Shift/Reduce conflict on symbol "DATAFRAME", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "DATAFRAME":	State-4 -> State-134
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 134
+    93 expr: DATAFRAME . LPAREN arg_list RPAREN 
+
+Shift/Reduce conflict on symbol "IF", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "IF":	State-4 -> State-204
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 204
+    17 statement: IF . LPAREN expr RPAREN block 
+    18 statement: IF . LPAREN expr RPAREN block ELSE block 
+
+Shift/Reduce conflict on symbol "FOR", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "FOR":	State-4 -> State-219
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 219
+    19 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines statement 
+    20 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block 
+
+Shift/Reduce conflict on symbol "FOREACH", parser will shift
+ Reduce 12:	statement_list -> statement_list, seperator
+ Shift "FOREACH":	State-4 -> State-232
+  Items for From-state State 4
+    12 statement_list: statement_list seperator .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    14 statement_list: statement_list seperator . statement 
+  Items for Next-state State 232
+    21 statement: FOREACH . LPAREN ID IN expr RPAREN LBRACE statement_list RBRACE 
+    22 statement: FOREACH . LPAREN ID IN expr RPAREN statement_list 
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 49:	expr -> ID
+ Shift "LBRACKET":	State-7 -> State-186
+  Items for From-state State 7
+    30 assignment: ID . ASSIGN expr 
+    31 assignment: ID . PLUS_ASSIGN expr 
+    49 expr: ID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    72 expr: ID . LBRACKET expr RBRACKET 
+    33 assignment: ID . MINUS_ASSIGN expr 
+    35 assignment: ID . INC 
+    36 assignment: ID . DECR 
+    37 assignment: ID . LBRACKET expr RBRACKET ASSIGN expr 
+  Items for Next-state State 186
+    72 expr: ID LBRACKET . expr RBRACKET 
+    37 assignment: ID LBRACKET . expr RBRACKET ASSIGN expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 30:	assignment -> ID, ASSIGN, expr
+ Shift "MINUS":	State-9 -> State-12
+  Items for From-state State 9
+    30 assignment: ID ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Reduce/Reduce conflict in state 45 on symbol "DOT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "PLUS", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "MINUS", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "MULT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "DIV", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LOGICAL_AND", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LOGICAL_OR", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "GE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "EQ", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "NE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "GT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "SEMICOLON", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "NEWLINE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "ID", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "BOOL_LITERAL", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "NUMBER", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "FLOAT_LITERAL", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "STRING_LITERAL", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "STRING", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "NULL_LITERAL", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "INT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "FLOAT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "BOOL", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "VOID", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "NULL", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "ARRAY", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "PRINT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "RANDOM", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "ROUND", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "SQRT", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "EXP", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "POW", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LOG", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LBRACKET", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LBRACE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "LPAREN", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "READCSV", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "TOCSV", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "RECORD", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "DATAFRAME", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "IF", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "FOR", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "FOREACH", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "EOF", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "ELSE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "RBRACE", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "RPAREN", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "RBRACKET", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Reduce/Reduce conflict in state 45 on symbol "COMMA", parser will reduce production 26
+ Reduce 46:	expr -> STRING
+ Reduce 26:	type -> STRING
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 49:	expr -> ID
+ Shift "LBRACKET":	State-58 -> State-59
+  Items for From-state State 58
+    49 expr: ID .
+	-lookahead: PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, EQ, NE, 
+                GT, LT, DOT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+    72 expr: ID . LBRACKET expr RBRACKET 
+  Items for Next-state State 59
+    72 expr: ID LBRACKET . expr RBRACKET 
+
+Reduce/Reduce conflict in state 143 on symbol "RBRACKET", parser will reduce production 39
+ Reduce 39:	expr_list -> expr
+ Reduce 101:	arg -> expr
+
+Reduce/Reduce conflict in state 143 on symbol "COMMA", parser will reduce production 39
+ Reduce 39:	expr_list -> expr
+ Reduce 101:	arg -> expr
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 31:	assignment -> ID, PLUS_ASSIGN, expr
+ Shift "MINUS":	State-185 -> State-12
+  Items for From-state State 185
+    31 assignment: ID PLUS_ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 37:	assignment -> ID, LBRACKET, expr, RBRACKET, ASSIGN, expr
+ Shift "MINUS":	State-190 -> State-12
+  Items for From-state State 190
+    37 assignment: ID LBRACKET expr RBRACKET ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 33:	assignment -> ID, MINUS_ASSIGN, expr
+ Shift "MINUS":	State-192 -> State-12
+  Items for From-state State 192
+    33 assignment: ID MINUS_ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 16:	statement -> expr
+ Shift "MINUS":	State-195 -> State-12
+  Items for From-state State 195
+    32 assignment: expr . DOT ID PLUS_ASSIGN expr 
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+    34 assignment: expr . DOT ID MINUS_ASSIGN expr 
+    38 assignment: expr . DOT ID ASSIGN expr 
+    16 statement: expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 32:	assignment -> expr, DOT, ID, PLUS_ASSIGN, expr
+ Shift "MINUS":	State-199 -> State-12
+  Items for From-state State 199
+    32 assignment: expr DOT ID PLUS_ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 34:	assignment -> expr, DOT, ID, MINUS_ASSIGN, expr
+ Shift "MINUS":	State-201 -> State-12
+  Items for From-state State 201
+    34 assignment: expr DOT ID MINUS_ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 38:	assignment -> expr, DOT, ID, ASSIGN, expr
+ Shift "MINUS":	State-203 -> State-12
+  Items for From-state State 203
+    38 assignment: expr DOT ID ASSIGN expr .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN
+    53 expr: expr . PLUS expr 
+    54 expr: expr . MINUS expr 
+    55 expr: expr . MULT expr 
+    56 expr: expr . DIV expr 
+    61 expr: expr . LOGICAL_AND expr 
+    62 expr: expr . LOGICAL_OR expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    76 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    77 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    78 expr: expr . DOT LENGTH 
+    79 expr: expr . DOT MIN 
+    80 expr: expr . DOT MAX 
+    81 expr: expr . DOT MEAN 
+    82 expr: expr . DOT SUM 
+    83 expr: expr . DOT CORR LPAREN expr RPAREN 
+    84 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT MAP LPAREN ID LAMBDA expr_list RPAREN 
+    86 expr: expr . DOT SELECT LPAREN expr_list RPAREN 
+    91 expr: expr . DOT ID 
+    92 expr: expr . DOT COPY 
+    94 expr: expr . DOT COLUMNS 
+  Items for Next-state State 12
+    54 expr: expr MINUS . expr 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACE":	State-207 -> State-211
+  Items for From-state State 207
+    17 statement: IF LPAREN expr RPAREN . block 
+    18 statement: IF LPAREN expr RPAREN . block ELSE block 
+  Items for Next-state State 211
+    3 block: LBRACE . statement_list RBRACE 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACE":	State-209 -> State-211
+  Items for From-state State 209
+    18 statement: IF LPAREN expr RPAREN block ELSE . block 
+  Items for Next-state State 211
+    3 block: LBRACE . statement_list RBRACE 
+
+Shift/Reduce conflict on symbol "NEWLINE", parser will shift
+ Reduce 5:	seperator -> SEMICOLON
+ Shift "NEWLINE":	State-215 -> State-216
+  Items for From-state State 215
+    5 seperator: SEMICOLON .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+    7 seperator: SEMICOLON . NEWLINE 
+  Items for Next-state State 216
+    7 seperator: SEMICOLON NEWLINE .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+
+Shift/Reduce conflict on symbol "SEMICOLON", parser will shift
+ Reduce 6:	seperator -> NEWLINE
+ Shift "SEMICOLON":	State-217 -> State-218
+  Items for From-state State 217
+    6 seperator: NEWLINE .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+    8 seperator: NEWLINE . SEMICOLON 
+  Items for Next-state State 218
+    8 seperator: NEWLINE SEMICOLON .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+
+Shift/Reduce conflict on symbol "NEWLINE", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NEWLINE":	State-227 -> State-230
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 230
+    10 opt_newlines: opt_newlines NEWLINE .
+	-lookahead: NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, 
+                STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, 
+                NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, SEMICOLON, EOF, ELSE, RBRACE
+
+Shift/Reduce conflict on symbol "ID", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "ID":	State-227 -> State-7
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 7
+    30 assignment: ID . ASSIGN expr 
+    31 assignment: ID . PLUS_ASSIGN expr 
+    49 expr: ID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    72 expr: ID . LBRACKET expr RBRACKET 
+    33 assignment: ID . MINUS_ASSIGN expr 
+    35 assignment: ID . INC 
+    36 assignment: ID . DECR 
+    37 assignment: ID . LBRACKET expr RBRACKET ASSIGN expr 
+
+Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "BOOL_LITERAL":	State-227 -> State-39
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 39
+    41 expr: BOOL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NUMBER", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NUMBER":	State-227 -> State-40
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 40
+    42 expr: NUMBER .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "FLOAT_LITERAL":	State-227 -> State-41
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 41
+    43 expr: FLOAT_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "MINUS":	State-227 -> State-42
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 42
+    44 expr: MINUS . expr 
+
+Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "STRING_LITERAL":	State-227 -> State-44
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 44
+    45 expr: STRING_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "STRING", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "STRING":	State-227 -> State-45
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 45
+    46 expr: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+    26 type: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NULL_LITERAL":	State-227 -> State-46
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 46
+    47 expr: NULL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "INT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "INT":	State-227 -> State-48
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 48
+    23 type: INT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "FLOAT":	State-227 -> State-49
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 49
+    24 type: FLOAT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "BOOL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "BOOL":	State-227 -> State-50
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 50
+    25 type: BOOL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "VOID", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "VOID":	State-227 -> State-51
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 51
+    27 type: VOID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NULL":	State-227 -> State-52
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 52
+    28 type: NULL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "ARRAY", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "ARRAY":	State-227 -> State-53
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 53
+    29 type: ARRAY . GT type LT 
+
+Shift/Reduce conflict on symbol "PRINT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "PRINT":	State-227 -> State-62
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 62
+    50 expr: PRINT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "RANDOM", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "RANDOM":	State-227 -> State-66
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 66
+    51 expr: RANDOM . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "ROUND", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "ROUND":	State-227 -> State-72
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 72
+    52 expr: ROUND . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "SQRT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "SQRT":	State-227 -> State-77
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 77
+    57 expr: SQRT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "EXP", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "EXP":	State-227 -> State-81
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 81
+    58 expr: EXP . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "POW", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "POW":	State-227 -> State-85
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 85
+    59 expr: POW . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "LOG", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LOG":	State-227 -> State-91
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 91
+    60 expr: LOG . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACKET":	State-227 -> State-95
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 95
+    69 expr: LBRACKET . expr_list RBRACKET 
+    71 expr: LBRACKET . arg_list RBRACKET 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACE":	State-227 -> State-231
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+
+Shift/Reduce conflict on symbol "LPAREN", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LPAREN":	State-227 -> State-112
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 112
+    73 expr: LPAREN . expr RPAREN 
+
+Shift/Reduce conflict on symbol "READCSV", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "READCSV":	State-227 -> State-115
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 115
+    87 expr: READCSV . LPAREN expr COMMA expr RPAREN 
+    88 expr: READCSV . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "TOCSV", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "TOCSV":	State-227 -> State-121
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 121
+    89 expr: TOCSV . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "RECORD", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "RECORD":	State-227 -> State-127
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 127
+    90 expr: RECORD . LPAREN LBRACE arg_list RBRACE RPAREN 
+
+Shift/Reduce conflict on symbol "DATAFRAME", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "DATAFRAME":	State-227 -> State-134
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 134
+    93 expr: DATAFRAME . LPAREN arg_list RPAREN 
+
+Shift/Reduce conflict on symbol "IF", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "IF":	State-227 -> State-204
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 204
+    17 statement: IF . LPAREN expr RPAREN block 
+    18 statement: IF . LPAREN expr RPAREN block ELSE block 
+
+Shift/Reduce conflict on symbol "FOR", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "FOR":	State-227 -> State-219
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 219
+    19 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines statement 
+    20 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block 
+
+Shift/Reduce conflict on symbol "FOREACH", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "FOREACH":	State-227 -> State-232
+  Items for From-state State 227
+    19 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . statement 
+    20 statement: FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines . block 
+    10 opt_newlines: opt_newlines . NEWLINE 
+  Items for Next-state State 232
+    21 statement: FOREACH . LPAREN ID IN expr RPAREN LBRACE statement_list RBRACE 
+    22 statement: FOREACH . LPAREN ID IN expr RPAREN statement_list 
+
+Shift/Reduce conflict on symbol "ID", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "ID":	State-231 -> State-102
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 102
+    97 arg: ID . ASSIGN expr 
+    98 arg: ID . COLON expr 
+    49 expr: ID .
+	-lookahead: PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, EQ, NE, 
+                GT, LT, DOT, RBRACKET, COMMA, RBRACE, RPAREN
+    72 expr: ID . LBRACKET expr RBRACKET 
+
+Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "BOOL_LITERAL":	State-231 -> State-39
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 39
+    41 expr: BOOL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NUMBER", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NUMBER":	State-231 -> State-40
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 40
+    42 expr: NUMBER .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "FLOAT_LITERAL":	State-231 -> State-41
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 41
+    43 expr: FLOAT_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "MINUS":	State-231 -> State-42
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 42
+    44 expr: MINUS . expr 
+
+Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "STRING_LITERAL":	State-231 -> State-44
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 44
+    45 expr: STRING_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "STRING", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "STRING":	State-231 -> State-45
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 45
+    46 expr: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+    26 type: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NULL_LITERAL":	State-231 -> State-46
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 46
+    47 expr: NULL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "INT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "INT":	State-231 -> State-48
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 48
+    23 type: INT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "FLOAT":	State-231 -> State-49
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 49
+    24 type: FLOAT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "BOOL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "BOOL":	State-231 -> State-50
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 50
+    25 type: BOOL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "VOID", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "VOID":	State-231 -> State-51
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 51
+    27 type: VOID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "NULL":	State-231 -> State-52
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 52
+    28 type: NULL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "ARRAY", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "ARRAY":	State-231 -> State-53
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 53
+    29 type: ARRAY . GT type LT 
+
+Shift/Reduce conflict on symbol "PRINT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "PRINT":	State-231 -> State-62
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 62
+    50 expr: PRINT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "RANDOM", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "RANDOM":	State-231 -> State-66
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 66
+    51 expr: RANDOM . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "ROUND", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "ROUND":	State-231 -> State-72
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 72
+    52 expr: ROUND . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "SQRT", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "SQRT":	State-231 -> State-77
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 77
+    57 expr: SQRT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "EXP", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "EXP":	State-231 -> State-81
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 81
+    58 expr: EXP . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "POW", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "POW":	State-231 -> State-85
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 85
+    59 expr: POW . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "LOG", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LOG":	State-231 -> State-91
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 91
+    60 expr: LOG . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACKET":	State-231 -> State-95
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 95
+    69 expr: LBRACKET . expr_list RBRACKET 
+    71 expr: LBRACKET . arg_list RBRACKET 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACE":	State-231 -> State-105
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 105
+    70 expr: LBRACE . arg_list RBRACE 
+
+Shift/Reduce conflict on symbol "LPAREN", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LPAREN":	State-231 -> State-112
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 112
+    73 expr: LPAREN . expr RPAREN 
+
+Shift/Reduce conflict on symbol "READCSV", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "READCSV":	State-231 -> State-115
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 115
+    87 expr: READCSV . LPAREN expr COMMA expr RPAREN 
+    88 expr: READCSV . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "TOCSV", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "TOCSV":	State-231 -> State-121
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 121
+    89 expr: TOCSV . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "RECORD", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "RECORD":	State-231 -> State-127
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 127
+    90 expr: RECORD . LPAREN LBRACE arg_list RBRACE RPAREN 
+
+Shift/Reduce conflict on symbol "DATAFRAME", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "DATAFRAME":	State-231 -> State-134
+  Items for From-state State 231
+    70 expr: LBRACE . arg_list RBRACE 
+    3 block: LBRACE . statement_list RBRACE 
+  Items for Next-state State 134
+    93 expr: DATAFRAME . LPAREN arg_list RPAREN 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 11:	statement_list -> /* empty */
+ Shift "LBRACE":	State-237 -> State-238
+  Items for From-state State 237
+    21 statement: FOREACH LPAREN ID IN expr RPAREN . LBRACE statement_list RBRACE 
+    22 statement: FOREACH LPAREN ID IN expr RPAREN . statement_list 
+  Items for Next-state State 238
+    21 statement: FOREACH LPAREN ID IN expr RPAREN LBRACE . statement_list RBRACE 
+
+Shift/Reduce conflict on symbol "SEMICOLON", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "SEMICOLON":	State-241 -> State-215
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 215
+    5 seperator: SEMICOLON .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+    7 seperator: SEMICOLON . NEWLINE 
+
+Shift/Reduce conflict on symbol "NEWLINE", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "NEWLINE":	State-241 -> State-217
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 217
+    6 seperator: NEWLINE .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+    8 seperator: NEWLINE . SEMICOLON 
+
+Shift/Reduce conflict on symbol "ID", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "ID":	State-241 -> State-7
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 7
+    30 assignment: ID . ASSIGN expr 
+    31 assignment: ID . PLUS_ASSIGN expr 
+    49 expr: ID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    72 expr: ID . LBRACKET expr RBRACKET 
+    33 assignment: ID . MINUS_ASSIGN expr 
+    35 assignment: ID . INC 
+    36 assignment: ID . DECR 
+    37 assignment: ID . LBRACKET expr RBRACKET ASSIGN expr 
+
+Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "BOOL_LITERAL":	State-241 -> State-39
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 39
+    41 expr: BOOL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NUMBER", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "NUMBER":	State-241 -> State-40
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 40
+    42 expr: NUMBER .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "FLOAT_LITERAL":	State-241 -> State-41
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 41
+    43 expr: FLOAT_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "MINUS":	State-241 -> State-42
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 42
+    44 expr: MINUS . expr 
+
+Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "STRING_LITERAL":	State-241 -> State-44
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 44
+    45 expr: STRING_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "STRING", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "STRING":	State-241 -> State-45
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 45
+    46 expr: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+    26 type: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "NULL_LITERAL":	State-241 -> State-46
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 46
+    47 expr: NULL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "INT", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "INT":	State-241 -> State-48
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 48
+    23 type: INT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "FLOAT":	State-241 -> State-49
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 49
+    24 type: FLOAT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "BOOL", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "BOOL":	State-241 -> State-50
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 50
+    25 type: BOOL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "VOID", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "VOID":	State-241 -> State-51
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 51
+    27 type: VOID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "NULL":	State-241 -> State-52
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 52
+    28 type: NULL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "ARRAY", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "ARRAY":	State-241 -> State-53
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 53
+    29 type: ARRAY . GT type LT 
+
+Shift/Reduce conflict on symbol "PRINT", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "PRINT":	State-241 -> State-62
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 62
+    50 expr: PRINT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "RANDOM", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "RANDOM":	State-241 -> State-66
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 66
+    51 expr: RANDOM . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "ROUND", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "ROUND":	State-241 -> State-72
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 72
+    52 expr: ROUND . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "SQRT", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "SQRT":	State-241 -> State-77
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 77
+    57 expr: SQRT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "EXP", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "EXP":	State-241 -> State-81
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 81
+    58 expr: EXP . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "POW", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "POW":	State-241 -> State-85
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 85
+    59 expr: POW . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "LOG", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "LOG":	State-241 -> State-91
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 91
+    60 expr: LOG . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "LBRACKET":	State-241 -> State-95
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 95
+    69 expr: LBRACKET . expr_list RBRACKET 
+    71 expr: LBRACKET . arg_list RBRACKET 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "LBRACE":	State-241 -> State-105
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 105
+    70 expr: LBRACE . arg_list RBRACE 
+
+Shift/Reduce conflict on symbol "LPAREN", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "LPAREN":	State-241 -> State-112
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 112
+    73 expr: LPAREN . expr RPAREN 
+
+Shift/Reduce conflict on symbol "READCSV", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "READCSV":	State-241 -> State-115
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 115
+    87 expr: READCSV . LPAREN expr COMMA expr RPAREN 
+    88 expr: READCSV . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "TOCSV", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "TOCSV":	State-241 -> State-121
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 121
+    89 expr: TOCSV . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "RECORD", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "RECORD":	State-241 -> State-127
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 127
+    90 expr: RECORD . LPAREN LBRACE arg_list RBRACE RPAREN 
+
+Shift/Reduce conflict on symbol "DATAFRAME", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "DATAFRAME":	State-241 -> State-134
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 134
+    93 expr: DATAFRAME . LPAREN arg_list RPAREN 
+
+Shift/Reduce conflict on symbol "IF", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "IF":	State-241 -> State-204
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 204
+    17 statement: IF . LPAREN expr RPAREN block 
+    18 statement: IF . LPAREN expr RPAREN block ELSE block 
+
+Shift/Reduce conflict on symbol "FOR", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "FOR":	State-241 -> State-219
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 219
+    19 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines statement 
+    20 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block 
+
+Shift/Reduce conflict on symbol "FOREACH", parser will shift
+ Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
+ Shift "FOREACH":	State-241 -> State-232
+  Items for From-state State 241
+    22 statement: FOREACH LPAREN ID IN expr RPAREN statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 232
+    21 statement: FOREACH . LPAREN ID IN expr RPAREN LBRACE statement_list RBRACE 
+    22 statement: FOREACH . LPAREN ID IN expr RPAREN statement_list 
+
+Shift/Reduce conflict on symbol "SEMICOLON", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "SEMICOLON":	State-242 -> State-215
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 215
+    5 seperator: SEMICOLON .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+    7 seperator: SEMICOLON . NEWLINE 
+
+Shift/Reduce conflict on symbol "NEWLINE", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "NEWLINE":	State-242 -> State-217
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 217
+    6 seperator: NEWLINE .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, MINUS, STRING_LITERAL, 
+                STRING, NULL_LITERAL, INT, FLOAT, BOOL, VOID, NULL, ARRAY, 
+                PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, LBRACKET, LBRACE, 
+                LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, IF, FOR, FOREACH, 
+                SEMICOLON, NEWLINE, EOF, RBRACE, ELSE
+    8 seperator: NEWLINE . SEMICOLON 
+
+Shift/Reduce conflict on symbol "ID", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "ID":	State-242 -> State-7
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 7
+    30 assignment: ID . ASSIGN expr 
+    31 assignment: ID . PLUS_ASSIGN expr 
+    49 expr: ID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    72 expr: ID . LBRACKET expr RBRACKET 
+    33 assignment: ID . MINUS_ASSIGN expr 
+    35 assignment: ID . INC 
+    36 assignment: ID . DECR 
+    37 assignment: ID . LBRACKET expr RBRACKET ASSIGN expr 
+
+Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "BOOL_LITERAL":	State-242 -> State-39
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 39
+    41 expr: BOOL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NUMBER", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "NUMBER":	State-242 -> State-40
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 40
+    42 expr: NUMBER .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "FLOAT_LITERAL":	State-242 -> State-41
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 41
+    43 expr: FLOAT_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "MINUS":	State-242 -> State-42
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 42
+    44 expr: MINUS . expr 
+
+Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "STRING_LITERAL":	State-242 -> State-44
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 44
+    45 expr: STRING_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "STRING", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "STRING":	State-242 -> State-45
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 45
+    46 expr: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+    26 type: STRING .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "NULL_LITERAL":	State-242 -> State-46
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 46
+    47 expr: NULL_LITERAL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "INT", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "INT":	State-242 -> State-48
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 48
+    23 type: INT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "FLOAT", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "FLOAT":	State-242 -> State-49
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 49
+    24 type: FLOAT .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "BOOL", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "BOOL":	State-242 -> State-50
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 50
+    25 type: BOOL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "VOID", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "VOID":	State-242 -> State-51
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 51
+    27 type: VOID .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "NULL", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "NULL":	State-242 -> State-52
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 52
+    28 type: NULL .
+	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
+                EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
+                FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
+                EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
+                RPAREN, RBRACKET, COMMA
+
+Shift/Reduce conflict on symbol "ARRAY", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "ARRAY":	State-242 -> State-53
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 53
+    29 type: ARRAY . GT type LT 
+
+Shift/Reduce conflict on symbol "PRINT", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "PRINT":	State-242 -> State-62
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 62
+    50 expr: PRINT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "RANDOM", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "RANDOM":	State-242 -> State-66
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 66
+    51 expr: RANDOM . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "ROUND", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "ROUND":	State-242 -> State-72
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 72
+    52 expr: ROUND . LPAREN expr_list RPAREN 
+
+Shift/Reduce conflict on symbol "SQRT", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "SQRT":	State-242 -> State-77
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 77
+    57 expr: SQRT . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "EXP", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "EXP":	State-242 -> State-81
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 81
+    58 expr: EXP . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "POW", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "POW":	State-242 -> State-85
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 85
+    59 expr: POW . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "LOG", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "LOG":	State-242 -> State-91
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 91
+    60 expr: LOG . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "LBRACKET":	State-242 -> State-95
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 95
+    69 expr: LBRACKET . expr_list RBRACKET 
+    71 expr: LBRACKET . arg_list RBRACKET 
+
+Shift/Reduce conflict on symbol "LBRACE", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "LBRACE":	State-242 -> State-105
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 105
+    70 expr: LBRACE . arg_list RBRACE 
+
+Shift/Reduce conflict on symbol "LPAREN", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "LPAREN":	State-242 -> State-112
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 112
+    73 expr: LPAREN . expr RPAREN 
+
+Shift/Reduce conflict on symbol "READCSV", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "READCSV":	State-242 -> State-115
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 115
+    87 expr: READCSV . LPAREN expr COMMA expr RPAREN 
+    88 expr: READCSV . LPAREN expr RPAREN 
+
+Shift/Reduce conflict on symbol "TOCSV", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "TOCSV":	State-242 -> State-121
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 121
+    89 expr: TOCSV . LPAREN expr COMMA expr RPAREN 
+
+Shift/Reduce conflict on symbol "RECORD", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "RECORD":	State-242 -> State-127
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 127
+    90 expr: RECORD . LPAREN LBRACE arg_list RBRACE RPAREN 
+
+Shift/Reduce conflict on symbol "DATAFRAME", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "DATAFRAME":	State-242 -> State-134
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 134
+    93 expr: DATAFRAME . LPAREN arg_list RPAREN 
+
+Shift/Reduce conflict on symbol "IF", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "IF":	State-242 -> State-204
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 204
+    17 statement: IF . LPAREN expr RPAREN block 
+    18 statement: IF . LPAREN expr RPAREN block ELSE block 
+
+Shift/Reduce conflict on symbol "FOR", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "FOR":	State-242 -> State-219
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 219
+    19 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines statement 
+    20 statement: FOR . LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block 
+
+Shift/Reduce conflict on symbol "FOREACH", parser will shift
+ Reduce 4:	block -> statement_list
+ Shift "FOREACH":	State-242 -> State-232
+  Items for From-state State 242
+    4 block: statement_list .
+	-lookahead: SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, 
+                MINUS, STRING_LITERAL, STRING, NULL_LITERAL, INT, FLOAT, BOOL, 
+                VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, EXP, POW, LOG, 
+                LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, RECORD, DATAFRAME, 
+                IF, FOR, FOREACH, EOF, ELSE, RBRACE
+    12 statement_list: statement_list . seperator 
+    13 statement_list: statement_list . statement 
+    14 statement_list: statement_list . seperator statement 
+  Items for Next-state State 232
+    21 statement: FOREACH . LPAREN ID IN expr RPAREN LBRACE statement_list RBRACE 
+    22 statement: FOREACH . LPAREN ID IN expr RPAREN statement_list 
+
+// End conflict information for parser
