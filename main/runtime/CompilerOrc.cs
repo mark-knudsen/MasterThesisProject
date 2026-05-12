@@ -5037,7 +5037,7 @@ namespace MyCompiler
         public LLVMValueRef VisitExponentialMathFunc(ExponentialMathFuncNode expr)
         {
             var val = Visit(expr.Value);
-
+            
             // Promote int → double (same as sqrt)
             if (expr.Value.Type is IntType)
             {
