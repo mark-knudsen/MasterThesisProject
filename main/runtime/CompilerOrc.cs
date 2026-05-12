@@ -1129,14 +1129,12 @@ namespace MyCompiler
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
 
-            var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeValueType, 0), "runtime_cast");
-
             // Store tag
-            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 0, "tag_ptr");
+            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, objRaw, 0, "tag_ptr");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr).SetAlignment(8);
 
             // Store data
-            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 1, "data_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, objRaw, 1, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr).SetAlignment(8);
 
             return objRaw;

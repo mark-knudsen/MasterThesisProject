@@ -1,4 +1,4 @@
-// Parser Conflict Information for grammar file "Parser/Parser.y - 12-05-2026 14:48:55"
+// Parser Conflict Information for grammar file "Parser/Parser.y - 11/05/2026 16:34:11"
 
 Shift/Reduce conflict on symbol "ID", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -45,8 +45,8 @@ Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NUMBER", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -66,8 +66,8 @@ Shift/Reduce conflict on symbol "NUMBER", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -87,8 +87,8 @@ Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -122,8 +122,8 @@ Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "STRING", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -143,16 +143,16 @@ Shift/Reduce conflict on symbol "STRING", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
     26 type: STRING .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
                 EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -172,8 +172,8 @@ Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "INT", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -193,8 +193,8 @@ Shift/Reduce conflict on symbol "INT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -214,8 +214,8 @@ Shift/Reduce conflict on symbol "FLOAT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "BOOL", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -235,8 +235,8 @@ Shift/Reduce conflict on symbol "BOOL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "VOID", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -256,8 +256,8 @@ Shift/Reduce conflict on symbol "VOID", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -277,8 +277,8 @@ Shift/Reduce conflict on symbol "NULL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "ARRAY", parser will shift
  Reduce 12:	statement_list -> statement_list, seperator
@@ -814,8 +814,8 @@ Shift/Reduce conflict on symbol "LBRACKET", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
     72 expr: ID . LBRACKET expr RBRACKET 
   Items for Next-state State 59
     72 expr: ID LBRACKET . expr RBRACKET 
@@ -1225,8 +1225,8 @@ Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NUMBER", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1242,8 +1242,8 @@ Shift/Reduce conflict on symbol "NUMBER", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1259,8 +1259,8 @@ Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1286,8 +1286,8 @@ Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "STRING", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1303,16 +1303,16 @@ Shift/Reduce conflict on symbol "STRING", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
     26 type: STRING .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
                 EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1328,8 +1328,8 @@ Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "INT", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1345,8 +1345,8 @@ Shift/Reduce conflict on symbol "INT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1362,8 +1362,8 @@ Shift/Reduce conflict on symbol "FLOAT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "BOOL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1379,8 +1379,8 @@ Shift/Reduce conflict on symbol "BOOL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "VOID", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1396,8 +1396,8 @@ Shift/Reduce conflict on symbol "VOID", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1413,8 +1413,8 @@ Shift/Reduce conflict on symbol "NULL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "ARRAY", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1629,8 +1629,8 @@ Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NUMBER", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1645,8 +1645,8 @@ Shift/Reduce conflict on symbol "NUMBER", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1661,8 +1661,8 @@ Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1686,8 +1686,8 @@ Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "STRING", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1702,16 +1702,16 @@ Shift/Reduce conflict on symbol "STRING", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
     26 type: STRING .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
                 EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1726,8 +1726,8 @@ Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "INT", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1742,8 +1742,8 @@ Shift/Reduce conflict on symbol "INT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1758,8 +1758,8 @@ Shift/Reduce conflict on symbol "FLOAT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "BOOL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1774,8 +1774,8 @@ Shift/Reduce conflict on symbol "BOOL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "VOID", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1790,8 +1790,8 @@ Shift/Reduce conflict on symbol "VOID", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -1806,8 +1806,8 @@ Shift/Reduce conflict on symbol "NULL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "ARRAY", parser will shift
  Reduce 11:	statement_list -> /* empty */
@@ -2048,8 +2048,8 @@ Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NUMBER", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2071,8 +2071,8 @@ Shift/Reduce conflict on symbol "NUMBER", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2094,8 +2094,8 @@ Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2133,8 +2133,8 @@ Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "STRING", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2156,16 +2156,16 @@ Shift/Reduce conflict on symbol "STRING", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
     26 type: STRING .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
                 EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2187,8 +2187,8 @@ Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "INT", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2210,8 +2210,8 @@ Shift/Reduce conflict on symbol "INT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2233,8 +2233,8 @@ Shift/Reduce conflict on symbol "FLOAT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "BOOL", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2256,8 +2256,8 @@ Shift/Reduce conflict on symbol "BOOL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "VOID", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2279,8 +2279,8 @@ Shift/Reduce conflict on symbol "VOID", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2302,8 +2302,8 @@ Shift/Reduce conflict on symbol "NULL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "ARRAY", parser will shift
  Reduce 22:	statement -> FOREACH, LPAREN, ID, IN, expr, RPAREN, statement_list
@@ -2691,8 +2691,8 @@ Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NUMBER", parser will shift
  Reduce 4:	block -> statement_list
@@ -2714,8 +2714,8 @@ Shift/Reduce conflict on symbol "NUMBER", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
  Reduce 4:	block -> statement_list
@@ -2737,8 +2737,8 @@ Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 4:	block -> statement_list
@@ -2776,8 +2776,8 @@ Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "STRING", parser will shift
  Reduce 4:	block -> statement_list
@@ -2799,16 +2799,16 @@ Shift/Reduce conflict on symbol "STRING", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
     26 type: STRING .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, LOGICAL_AND, LOGICAL_OR, GE, LE, 
                 EQ, NE, GT, LT, SEMICOLON, NEWLINE, ID, BOOL_LITERAL, NUMBER, 
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
  Reduce 4:	block -> statement_list
@@ -2830,8 +2830,8 @@ Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "INT", parser will shift
  Reduce 4:	block -> statement_list
@@ -2853,8 +2853,8 @@ Shift/Reduce conflict on symbol "INT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "FLOAT", parser will shift
  Reduce 4:	block -> statement_list
@@ -2876,8 +2876,8 @@ Shift/Reduce conflict on symbol "FLOAT", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "BOOL", parser will shift
  Reduce 4:	block -> statement_list
@@ -2899,8 +2899,8 @@ Shift/Reduce conflict on symbol "BOOL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "VOID", parser will shift
  Reduce 4:	block -> statement_list
@@ -2922,8 +2922,8 @@ Shift/Reduce conflict on symbol "VOID", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "NULL", parser will shift
  Reduce 4:	block -> statement_list
@@ -2945,8 +2945,8 @@ Shift/Reduce conflict on symbol "NULL", parser will shift
                 FLOAT_LITERAL, STRING_LITERAL, STRING, NULL_LITERAL, INT, 
                 FLOAT, BOOL, VOID, NULL, ARRAY, PRINT, RANDOM, ROUND, SQRT, 
                 EXP, POW, LOG, LBRACKET, LBRACE, LPAREN, READCSV, TOCSV, 
-                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, 
-                RPAREN, RBRACKET, COMMA
+                RECORD, DATAFRAME, IF, FOR, FOREACH, EOF, ELSE, RBRACE, RPAREN, 
+                RBRACKET, COMMA
 
 Shift/Reduce conflict on symbol "ARRAY", parser will shift
  Reduce 4:	block -> statement_list

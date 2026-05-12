@@ -71,7 +71,6 @@
 "+="            { return (int)Tokens.PLUS_ASSIGN; }
 "-="            { return (int)Tokens.MINUS_ASSIGN; }
 
-
 [0-9]+\.[0-9]+([eE][+\-]?[0-9]+)?   {  yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;}
 [0-9]+[eE][+\-]?[0-9]+  {  yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;}
 [0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
