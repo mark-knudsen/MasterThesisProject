@@ -1079,6 +1079,8 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+            // 1. ALWAYS get the fresh function signature for THIS context
             var mallocFunc = GetOrDeclareMalloc();
 
             // --- THE SHIELD ---
@@ -1099,6 +1101,7 @@ namespace MyCompiler
                     _ => 8
                 };
 
+                // 2. FIX: Use 'mallocFuncType' instead of '_mallocType'
                 var mem = _builder.BuildCall2(_mallocType, mallocFunc,
                     new[] { LLVMValueRef.CreateConstInt(i64, (ulong)size) }, "value_mem");
 
@@ -1116,16 +1119,19 @@ namespace MyCompiler
             }
             else if (IsReferenceType(type))
             {
-                // Treat as pointer
-                //if (_debug) Console.WriteLine($"Boxing complex type: {type} (Tag: {tag})");
                 dataPtr = _builder.BuildBitCast(value, i8Ptr, "boxed_ptr_cast");
             }
             else if (type is VoidType)
+            {
+                // For void, we point to null data
                 dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
+            }
             else
+            {
                 throw new Exception($"Unsupported type in BoxValue: {type}");
+            }
 
-            // Allocate RuntimeValue (struct { i16 tag, i8* data })
+            // 3. FIX: Use 'mallocFuncType' instead of '_mallocType' here too
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
 
@@ -4269,13 +4275,23 @@ namespace MyCompiler
 
         public LLVMValueRef VisitRecord(RecordNode expr)
         {
-            var i32 = _module.Context.Int32Type;
+            var ctx = _module.Context;
+            var i32 = ctx.Int32Type;
+            var i64 = ctx.Int64Type;
             var recordType = (RecordType)expr.Type;
 
-            // Use the SAME struct type used everywhere else
+            // 1. Get the struct definition for THIS module
             var structType = GetOrCreateRecordStructType(recordType);
-            var sizeValue = structType.SizeOf;
-            var instancePtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { sizeValue }, "record_ptr");
+
+            // 2. Get malloc and its signature type for THIS context
+            var mallocFunc = GetOrDeclareMalloc();
+            // 3. Size calculation (Ensure it is i64 for malloc)
+            var sizeValue = _builder.BuildIntCast(structType.SizeOf, i64, "malloc_size");
+
+            // 4. THE CRITICAL CALL: Use the fresh mallocFuncType
+            var instancePtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeValue }, "record_ptr");
+
+            // 5. Cast to the specific struct pointer
             var typedPtr = _builder.BuildBitCast(instancePtr, LLVMTypeRef.CreatePointer(structType, 0), "typed_record");
 
             for (int i = 0; i < expr.Fields.Count; i++)
@@ -4285,15 +4301,12 @@ namespace MyCompiler
                 var fieldPtr = _builder.BuildGEP2(
                     structType,
                     typedPtr,
-                    new LLVMValueRef[]
-                    {
-                        LLVMValueRef.CreateConstInt(i32, 0),
-                        LLVMValueRef.CreateConstInt(i32, (ulong)i)
-                    },
+                    new[] { LLVMValueRef.CreateConstInt(i32, 0), LLVMValueRef.CreateConstInt(i32, (ulong)i) },
                     $"field_{i}"
                 );
 
-                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetAlignment(fieldValue.TypeOf));
+                var store = _builder.BuildStore(fieldValue, fieldPtr);
+                store.SetAlignment(GetAlignment(fieldValue.TypeOf));
             }
 
             return instancePtr;
@@ -5035,7 +5048,7 @@ namespace MyCompiler
         public LLVMValueRef VisitExponentialMathFunc(ExponentialMathFuncNode expr)
         {
             var val = Visit(expr.Value);
-            
+
             // Promote int → double (same as sqrt)
             if (expr.Value.Type is IntType)
             {
@@ -5096,14 +5109,14 @@ namespace MyCompiler
         df.select(["latitude", "longitude"])
 
         # TEST: WHERE
-        df.where(x => x.latitude > -18.0)
-        df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
+        rdf.where(x => x.latitude > -18.0)
+        rdf.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
 
         # TEST: MAP
         df.map(x => x.latitude - 100.0)
-        df.map(x => x + {latitude: x.latitude - 100.0})
-        df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
+        rdf.map(x => x + {latitude: x.latitude - 100.0})
+        rdf.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
         df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
 
 
