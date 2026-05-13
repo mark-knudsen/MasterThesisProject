@@ -4408,11 +4408,72 @@ namespace MyCompiler
 
                 return _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), fieldSlotPtr, "val_ptr");
             }
-            else if (expr.SourceExpression.Type is DataframeType)
+            else if (expr.SourceExpression.Type is DataframeType dfType)
             {
-                var d = ColumnAccessForDataframe(expr);
-                PerformSemanticAnalysis(d);
-                return Visit(d);
+                switch (expr.IdField)
+                {
+                    case "columns":
+                        {
+                            var columnNodes = dfType.ColumnNames.Select(name =>
+                            {
+                                var node = new StringNode(name);
+                                node.SetType(new StringType());
+                                return (ExpressionNode)node;
+                            }).ToList();
+
+                            var columnArray = new ArrayNode(columnNodes)
+                            {
+                                ElementType = new StringType()
+                            };
+                            columnArray.SetType(new ArrayType(new StringType()));
+                            return Visit(columnArray);
+                        }
+                    case "schema":
+                        {
+                            var schemaFields = dfType.RowType.RecordFields.Select(field =>
+                                new NamedArgumentNode(field.Label, new StringNode(field.Type.ToString())))
+                                .ToList();
+
+                            var schemaRecord = new RecordNode(schemaFields);
+                            foreach (var field in schemaRecord.Fields)
+                            {
+                                field.Value.SetType(new StringType());
+                                field.Type = new StringType();
+                            }
+
+                            var recordType = new RecordType(schemaRecord.Fields);
+                            schemaRecord.SetType(recordType);
+                            return Visit(schemaRecord);
+                        }
+                    case "types":
+                        {
+                            var datatypeNodes = dfType.DataTypes.Select(t =>
+                            {
+                                var node = new NumberNode(GetTypeByTag(t));
+                                node.SetType(new IntType());
+                                return (ExpressionNode)node;
+                            }).ToList();
+
+                            var datatypeArray = new ArrayNode(datatypeNodes)
+                            {
+                                ElementType = new IntType()
+                            };
+                            datatypeArray.SetType(new ArrayType(new IntType()));
+                            return Visit(datatypeArray);
+                        }
+                    case "rows":
+                        {
+                            // Use the stored actual rows array in the dataframe value.
+                            // This is not yet implemented, so fall back to a generic ColumnAccessForDataframe if needed.
+                            throw new Exception("Accessing df.rows at runtime is not supported yet.");
+                        }
+                    default:
+                        {
+                            var d = ColumnAccessForDataframe(expr);
+                            PerformSemanticAnalysis(d);
+                            return Visit(d);
+                        }
+                }
             }
             else
                 throw new Exception("Field access is only supported on records");

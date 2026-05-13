@@ -1103,12 +1103,32 @@ namespace MyCompiler
             }
             else if (SourceType is DataframeType dfType)
             {
-                // 4. Look up the field label in the dataframe definition
-                int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
-                if (idx >= 0)
-                    resolvedFieldType = new ArrayType(dfType.DataTypes[idx]);
-                else
-                    throw new Exception($"Column '{expr.IdField}' not found in dataframe.");
+                switch (expr.IdField)
+                {
+                    case "columns":
+                        resolvedFieldType = new ArrayType(new StringType());
+                        break;
+                    case "schema":
+                        resolvedFieldType = new RecordType(dfType.RowType.RecordFields
+                            .Select(f => new RecordField { Label = f.Label, Type = new StringType() })
+                            .ToList());
+                        break;
+                    case "types":
+                        resolvedFieldType = new ArrayType(new IntType());
+                        break;
+                    case "rows":
+                        resolvedFieldType = new ArrayType(dfType.RowType);
+                        break;
+                    default:
+                        {
+                            int idx = dfType.ColumnNames.ToList().IndexOf(expr.IdField);
+                            if (idx >= 0)
+                                resolvedFieldType = new ArrayType(dfType.DataTypes[idx]);
+                            else
+                                throw new Exception($"Column '{expr.IdField}' not found in dataframe.");
+                            break;
+                        }
+                }
             }
             else
                 throw new Exception($"Cannot access field '{expr.IdField}' on non-record or dataframe type: {SourceType}");
