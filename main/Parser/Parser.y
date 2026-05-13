@@ -181,6 +181,7 @@ expr
     }
     | expr LBRACKET expr RBRACKET    { $$ = new IndexNode($1 as ExpressionNode, $3 as ExpressionNode); }
     | expr DOT ID %prec LOWER_THAN_LPAREN { $$ = new FieldNode($1 as ExpressionNode, (string)$3); }
+    | expr DOT ADD LPAREN expr RPAREN { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); }
     | expr DOT LENGTH                { $$ = new LengthNode($1 as ExpressionNode); }
     | expr DOT SUM                   { $$ = new SumNode($1 as ExpressionNode); }
     

@@ -1,9 +1,9 @@
-// Parser Conflict Information for grammar file "Parser/Parser.y - 13-05-2026 23:48:46"
+// Parser Conflict Information for grammar file "Parser/Parser.y - 14-05-2026 01:11:21"
 
 Shift/Reduce conflict on symbol "RPAREN", parser will shift
  Reduce 41:	unified_element -> expr
- Shift "RPAREN":	State-132 -> State-63
-  Items for From-state State 132
+ Shift "RPAREN":	State-136 -> State-59
+  Items for From-state State 136
     49 primary_expr: LPAREN expr . RPAREN 
     41 unified_element: expr .
 	-lookahead: RPAREN, COMMA
@@ -19,12 +19,13 @@ Shift/Reduce conflict on symbol "RPAREN", parser will shift
     70 expr: expr . LT expr 
     72 expr: expr . LBRACKET expr RBRACKET 
     73 expr: expr . DOT ID 
-    74 expr: expr . DOT LENGTH 
-    75 expr: expr . DOT SUM 
-    76 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
-    77 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
-    78 expr: expr . DOT MAP LPAREN ID LAMBDA LPAREN unified_list RPAREN RPAREN 
-  Items for Next-state State 63
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT LENGTH 
+    76 expr: expr . DOT SUM 
+    77 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    78 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
+    79 expr: expr . DOT MAP LPAREN ID LAMBDA LPAREN unified_list RPAREN RPAREN 
+  Items for Next-state State 59
     49 primary_expr: LPAREN expr RPAREN .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -35,8 +36,8 @@ Shift/Reduce conflict on symbol "RPAREN", parser will shift
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 14:	statement -> expr
- Shift "MINUS":	State-139 -> State-12
-  Items for From-state State 139
+ Shift "MINUS":	State-143 -> State-12
+  Items for From-state State 143
     29 assignment: expr . DOT ID PLUS_ASSIGN expr 
     61 expr: expr . PLUS expr 
     62 expr: expr . MINUS expr 
@@ -50,11 +51,12 @@ Shift/Reduce conflict on symbol "MINUS", parser will shift
     70 expr: expr . LT expr 
     72 expr: expr . LBRACKET expr RBRACKET 
     73 expr: expr . DOT ID 
-    74 expr: expr . DOT LENGTH 
-    75 expr: expr . DOT SUM 
-    76 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
-    77 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
-    78 expr: expr . DOT MAP LPAREN ID LAMBDA LPAREN unified_list RPAREN RPAREN 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT LENGTH 
+    76 expr: expr . DOT SUM 
+    77 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    78 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
+    79 expr: expr . DOT MAP LPAREN ID LAMBDA LPAREN unified_list RPAREN RPAREN 
     33 assignment: expr . LBRACKET expr RBRACKET ASSIGN expr 
     34 assignment: expr . DOT ID ASSIGN expr 
     14 statement: expr .
@@ -68,8 +70,8 @@ Shift/Reduce conflict on symbol "MINUS", parser will shift
 
 Shift/Reduce conflict on symbol "LBRACKET", parser will shift
  Reduce 14:	statement -> expr
- Shift "LBRACKET":	State-139 -> State-146
-  Items for From-state State 139
+ Shift "LBRACKET":	State-143 -> State-150
+  Items for From-state State 143
     29 assignment: expr . DOT ID PLUS_ASSIGN expr 
     61 expr: expr . PLUS expr 
     62 expr: expr . MINUS expr 
@@ -83,11 +85,12 @@ Shift/Reduce conflict on symbol "LBRACKET", parser will shift
     70 expr: expr . LT expr 
     72 expr: expr . LBRACKET expr RBRACKET 
     73 expr: expr . DOT ID 
-    74 expr: expr . DOT LENGTH 
-    75 expr: expr . DOT SUM 
-    76 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
-    77 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
-    78 expr: expr . DOT MAP LPAREN ID LAMBDA LPAREN unified_list RPAREN RPAREN 
+    74 expr: expr . DOT ADD LPAREN expr RPAREN 
+    75 expr: expr . DOT LENGTH 
+    76 expr: expr . DOT SUM 
+    77 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    78 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
+    79 expr: expr . DOT MAP LPAREN ID LAMBDA LPAREN unified_list RPAREN RPAREN 
     33 assignment: expr . LBRACKET expr RBRACKET ASSIGN expr 
     34 assignment: expr . DOT ID ASSIGN expr 
     14 statement: expr .
@@ -96,17 +99,17 @@ Shift/Reduce conflict on symbol "LBRACKET", parser will shift
                 LPAREN, LBRACE, PRINT, RANDOM, ROUND, READCSV, DATAFRAME, 
                 RECORD, SQRT, POW, MINUS, LBRACKET, IF, FOR, FOREACH, 
                 SEMICOLON, NEWLINE, EOF, RBRACE
-  Items for Next-state State 146
+  Items for Next-state State 150
     72 expr: expr LBRACKET . expr RBRACKET 
     33 assignment: expr LBRACKET . expr RBRACKET ASSIGN expr 
 
 Shift/Reduce conflict on symbol "ID", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "ID":	State-151 -> State-69
-  Items for From-state State 151
+ Shift "ID":	State-155 -> State-65
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 69
+  Items for Next-state State 65
     37 unified_element: ID . ASSIGN expr 
     38 unified_element: ID . COLON expr 
     47 primary_expr: ID .
@@ -115,11 +118,11 @@ Shift/Reduce conflict on symbol "ID", parser will shift
 
 Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "BOOL_LITERAL":	State-151 -> State-44
-  Items for From-state State 151
+ Shift "BOOL_LITERAL":	State-155 -> State-40
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 44
+  Items for Next-state State 40
     42 primary_expr: BOOL_LITERAL .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -130,11 +133,11 @@ Shift/Reduce conflict on symbol "BOOL_LITERAL", parser will shift
 
 Shift/Reduce conflict on symbol "NUMBER", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "NUMBER":	State-151 -> State-45
-  Items for From-state State 151
+ Shift "NUMBER":	State-155 -> State-41
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 45
+  Items for Next-state State 41
     43 primary_expr: NUMBER .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -145,11 +148,11 @@ Shift/Reduce conflict on symbol "NUMBER", parser will shift
 
 Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "FLOAT_LITERAL":	State-151 -> State-46
-  Items for From-state State 151
+ Shift "FLOAT_LITERAL":	State-155 -> State-42
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 46
+  Items for Next-state State 42
     44 primary_expr: FLOAT_LITERAL .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -160,11 +163,11 @@ Shift/Reduce conflict on symbol "FLOAT_LITERAL", parser will shift
 
 Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "STRING_LITERAL":	State-151 -> State-47
-  Items for From-state State 151
+ Shift "STRING_LITERAL":	State-155 -> State-43
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 47
+  Items for Next-state State 43
     45 primary_expr: STRING_LITERAL .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -175,11 +178,11 @@ Shift/Reduce conflict on symbol "STRING_LITERAL", parser will shift
 
 Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "NULL_LITERAL":	State-151 -> State-48
-  Items for From-state State 151
+ Shift "NULL_LITERAL":	State-155 -> State-44
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 48
+  Items for Next-state State 44
     46 primary_expr: NULL_LITERAL .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -190,11 +193,11 @@ Shift/Reduce conflict on symbol "NULL_LITERAL", parser will shift
 
 Shift/Reduce conflict on symbol "INT", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "INT":	State-151 -> State-51
-  Items for From-state State 151
+ Shift "INT":	State-155 -> State-47
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 51
+  Items for Next-state State 47
     20 type: INT .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -205,11 +208,11 @@ Shift/Reduce conflict on symbol "INT", parser will shift
 
 Shift/Reduce conflict on symbol "FLOAT", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "FLOAT":	State-151 -> State-52
-  Items for From-state State 151
+ Shift "FLOAT":	State-155 -> State-48
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 52
+  Items for Next-state State 48
     21 type: FLOAT .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -220,11 +223,11 @@ Shift/Reduce conflict on symbol "FLOAT", parser will shift
 
 Shift/Reduce conflict on symbol "BOOL", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "BOOL":	State-151 -> State-53
-  Items for From-state State 151
+ Shift "BOOL":	State-155 -> State-49
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 53
+  Items for Next-state State 49
     22 type: BOOL .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -235,11 +238,11 @@ Shift/Reduce conflict on symbol "BOOL", parser will shift
 
 Shift/Reduce conflict on symbol "STRING", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "STRING":	State-151 -> State-54
-  Items for From-state State 151
+ Shift "STRING":	State-155 -> State-50
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 54
+  Items for Next-state State 50
     23 type: STRING .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -250,11 +253,11 @@ Shift/Reduce conflict on symbol "STRING", parser will shift
 
 Shift/Reduce conflict on symbol "VOID", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "VOID":	State-151 -> State-55
-  Items for From-state State 151
+ Shift "VOID":	State-155 -> State-51
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 55
+  Items for Next-state State 51
     24 type: VOID .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -265,11 +268,11 @@ Shift/Reduce conflict on symbol "VOID", parser will shift
 
 Shift/Reduce conflict on symbol "NULL", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "NULL":	State-151 -> State-56
-  Items for From-state State 151
+ Shift "NULL":	State-155 -> State-52
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 56
+  Items for Next-state State 52
     25 type: NULL .
 	-lookahead: DOT, PLUS, MINUS, MULT, DIV, GE, LE, EQ, NE, GT, LT, LBRACKET, 
                 ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
@@ -280,125 +283,125 @@ Shift/Reduce conflict on symbol "NULL", parser will shift
 
 Shift/Reduce conflict on symbol "ARRAY", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "ARRAY":	State-151 -> State-57
-  Items for From-state State 151
+ Shift "ARRAY":	State-155 -> State-53
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 57
+  Items for Next-state State 53
     26 type: ARRAY . GT type LT 
 
 Shift/Reduce conflict on symbol "LPAREN", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "LPAREN":	State-151 -> State-61
-  Items for From-state State 151
+ Shift "LPAREN":	State-155 -> State-57
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 61
+  Items for Next-state State 57
     49 primary_expr: LPAREN . expr RPAREN 
 
 Shift/Reduce conflict on symbol "LBRACE", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "LBRACE":	State-151 -> State-64
-  Items for From-state State 151
+ Shift "LBRACE":	State-155 -> State-60
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 64
+  Items for Next-state State 60
     50 primary_expr: LBRACE . unified_list RBRACE 
 
 Shift/Reduce conflict on symbol "PRINT", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "PRINT":	State-151 -> State-72
-  Items for From-state State 151
+ Shift "PRINT":	State-155 -> State-68
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 72
+  Items for Next-state State 68
     51 primary_expr: PRINT . LPAREN expr RPAREN 
 
 Shift/Reduce conflict on symbol "RANDOM", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "RANDOM":	State-151 -> State-76
-  Items for From-state State 151
+ Shift "RANDOM":	State-155 -> State-72
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 76
+  Items for Next-state State 72
     52 primary_expr: RANDOM . LPAREN unified_list RPAREN 
 
 Shift/Reduce conflict on symbol "ROUND", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "ROUND":	State-151 -> State-84
-  Items for From-state State 151
+ Shift "ROUND":	State-155 -> State-80
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 84
+  Items for Next-state State 80
     53 primary_expr: ROUND . LPAREN unified_list RPAREN 
 
 Shift/Reduce conflict on symbol "READCSV", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "READCSV":	State-151 -> State-89
-  Items for From-state State 151
+ Shift "READCSV":	State-155 -> State-85
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 89
+  Items for Next-state State 85
     54 primary_expr: READCSV . LPAREN unified_list RPAREN 
 
 Shift/Reduce conflict on symbol "DATAFRAME", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "DATAFRAME":	State-151 -> State-93
-  Items for From-state State 151
+ Shift "DATAFRAME":	State-155 -> State-89
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 93
+  Items for Next-state State 89
     55 primary_expr: DATAFRAME . LPAREN unified_list RPAREN 
 
 Shift/Reduce conflict on symbol "RECORD", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "RECORD":	State-151 -> State-97
-  Items for From-state State 151
+ Shift "RECORD":	State-155 -> State-93
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 97
+  Items for Next-state State 93
     56 primary_expr: RECORD . LPAREN LBRACE unified_list RBRACE RPAREN 
 
 Shift/Reduce conflict on symbol "SQRT", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "SQRT":	State-151 -> State-103
-  Items for From-state State 151
+ Shift "SQRT":	State-155 -> State-99
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 103
+  Items for Next-state State 99
     57 primary_expr: SQRT . LPAREN expr RPAREN 
 
 Shift/Reduce conflict on symbol "POW", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "POW":	State-151 -> State-107
-  Items for From-state State 151
+ Shift "POW":	State-155 -> State-103
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 107
+  Items for Next-state State 103
     58 primary_expr: POW . LPAREN expr COMMA expr RPAREN 
 
 Shift/Reduce conflict on symbol "MINUS", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "MINUS":	State-151 -> State-113
-  Items for From-state State 151
+ Shift "MINUS":	State-155 -> State-109
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 113
+  Items for Next-state State 109
     60 expr: MINUS . expr 
 
 Shift/Reduce conflict on symbol "LBRACKET", parser will shift
  Reduce 10:	statement_list -> /* empty */
- Shift "LBRACKET":	State-151 -> State-115
-  Items for From-state State 151
+ Shift "LBRACKET":	State-155 -> State-111
+  Items for From-state State 155
     50 primary_expr: LBRACE . unified_list RBRACE 
     3 block: LBRACE . statement_list RBRACE 
-  Items for Next-state State 115
+  Items for Next-state State 111
     71 expr: LBRACKET . unified_list RBRACKET 
 
 Shift/Reduce conflict on symbol "NEWLINE", parser will shift
  Reduce 4:	seperator -> SEMICOLON
- Shift "NEWLINE":	State-183 -> State-184
-  Items for From-state State 183
+ Shift "NEWLINE":	State-187 -> State-188
+  Items for From-state State 187
     4 seperator: SEMICOLON .
 	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
                 NULL_LITERAL, INT, FLOAT, BOOL, STRING, VOID, NULL, ARRAY, 
@@ -406,7 +409,7 @@ Shift/Reduce conflict on symbol "NEWLINE", parser will shift
                 RECORD, SQRT, POW, MINUS, LBRACKET, IF, FOR, FOREACH, 
                 SEMICOLON, NEWLINE, EOF, RBRACE
     6 seperator: SEMICOLON . NEWLINE 
-  Items for Next-state State 184
+  Items for Next-state State 188
     6 seperator: SEMICOLON NEWLINE .
 	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
                 NULL_LITERAL, INT, FLOAT, BOOL, STRING, VOID, NULL, ARRAY, 
@@ -416,8 +419,8 @@ Shift/Reduce conflict on symbol "NEWLINE", parser will shift
 
 Shift/Reduce conflict on symbol "SEMICOLON", parser will shift
  Reduce 5:	seperator -> NEWLINE
- Shift "SEMICOLON":	State-185 -> State-186
-  Items for From-state State 185
+ Shift "SEMICOLON":	State-189 -> State-190
+  Items for From-state State 189
     5 seperator: NEWLINE .
 	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
                 NULL_LITERAL, INT, FLOAT, BOOL, STRING, VOID, NULL, ARRAY, 
@@ -425,7 +428,7 @@ Shift/Reduce conflict on symbol "SEMICOLON", parser will shift
                 RECORD, SQRT, POW, MINUS, LBRACKET, IF, FOR, FOREACH, 
                 SEMICOLON, NEWLINE, EOF, RBRACE
     7 seperator: NEWLINE . SEMICOLON 
-  Items for Next-state State 186
+  Items for Next-state State 190
     7 seperator: NEWLINE SEMICOLON .
 	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
                 NULL_LITERAL, INT, FLOAT, BOOL, STRING, VOID, NULL, ARRAY, 
