@@ -5160,7 +5160,7 @@ namespace MyCompiler
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
-        
+        df = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
         to_csv(df, "CSV/mytest.csv")
 
         df2 = dataframe(columns=["name", "age"],type=[string, int])         
