@@ -3120,6 +3120,9 @@ namespace MyCompiler
 
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
+            if (expr.Type == null) Console.WriteLine("DEBUG: Array Type is NULL");
+            if (expr.ElementType == null) Console.WriteLine("DEBUG: Array ElementType is NULL");
+
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             uint count = (uint)expr.Elements.Count;
@@ -4674,37 +4677,56 @@ namespace MyCompiler
         {
             return LLVMTypeRef.CreatePointer(GetOrCreateDataframeType(), 0);
         }
-
         public LLVMValueRef VisitDataframe(DataframeNode expr)
         {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var dfType = (DataframeType)expr.Type;
 
-            // 1. Get pointers
-            var colsPtr = Visit(expr.Columns);
+            // 1. Column Names Array
+            var columnNodes = dfType.ColumnNames.Select(name =>
+            {
+                var node = new StringNode(name);
+                node.SetType(new StringType());
+                return (ExpressionNode)node;
+            }).ToList();
+
+            var columnArray = new ArrayNode(columnNodes);
+            var colType = new StringType();
+            columnArray.ElementType = colType;
+            // CRITICAL: Ensure the node.Type is a fully formed ArrayType
+            columnArray.SetType(new ArrayType(colType));
+
+            var colsPtr = Visit(columnArray);
+
+            // 2. Rows (Assuming expr.Rows was already typed by the TypeChecker)
             var rowsPtr = Visit(expr.Rows);
 
-            // 2. Build datatype array from TYPE (not AST)
-            var dfType = expr.Type as DataframeType
-                ?? throw new Exception("Expected dataframe type.");
-
-            var datatypeNodes = dfType.DataTypes
-                .Select(t => new NumberNode(GetTypeByTag(t)))
-                .Cast<ExpressionNode>()
-                .ToList();
+            // 3. Type Tags Array
+            var datatypeNodes = dfType.DataTypes.Select(t =>
+            {
+                var node = new NumberNode(GetTypeByTag(t));
+                node.SetType(new IntType());
+                return (ExpressionNode)node;
+            }).ToList();
 
             var datatypeArray = new ArrayNode(datatypeNodes);
-            PerformSemanticAnalysis(datatypeArray);
+            var tagType = new IntType();
+            datatypeArray.ElementType = tagType;
+            // CRITICAL: Ensure the node.Type is a fully formed ArrayType
+            datatypeArray.SetType(new ArrayType(tagType));
+
             var dataTypesPtr = Visit(datatypeArray);
 
-            // 3. Struct: { cols, rows, types }
+            // 4. Struct Allocation
             var dfStructType = GetOrCreateDataframeType();
             var dfPtr = _builder.BuildMalloc(dfStructType, "df");
 
-            _builder.BuildStore(colsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 0));
-            _builder.BuildStore(rowsPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 1));
-            _builder.BuildStore(dataTypesPtr, _builder.BuildStructGEP2(dfStructType, dfPtr, 2));
+            var f0 = _builder.BuildStructGEP2(dfStructType, dfPtr, 0, "cols_gep");
+            var f1 = _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "rows_gep");
+            var f2 = _builder.BuildStructGEP2(dfStructType, dfPtr, 2, "types_gep");
+
+            _builder.BuildStore(colsPtr, f0);
+            _builder.BuildStore(rowsPtr, f1);
+            _builder.BuildStore(dataTypesPtr, f2);
 
             return dfPtr;
         }

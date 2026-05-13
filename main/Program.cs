@@ -405,8 +405,8 @@ namespace MyCompiler
                 // --- Dataframe & Records ---
                 case DataframeNode df:
                     Console.WriteLine($"{space}DATAFRAME:");
-                    Console.WriteLine($"{space}  Columns:");
-                    PrintNode(df.Columns, indent + 2);
+                    Console.WriteLine($"{space}  Schema:");
+                    PrintNode(df.Schema, indent + 2);
                     Console.WriteLine($"{space}  Rows:");
                     PrintNode(df.Rows, indent + 2);
                     break;

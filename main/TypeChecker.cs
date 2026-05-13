@@ -134,7 +134,7 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
-            System.Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type    );
+            System.Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -281,7 +281,7 @@ namespace MyCompiler
 
             throw new Exception($"Cannot cast from {fromType} to {toType}");
         }
-        
+
         private ExpressionNode InsertCast(ExpressionNode node, Type from, Type to)
         {
             if (from.GetType() == to.GetType())
@@ -510,17 +510,23 @@ namespace MyCompiler
         public Type VisitArray(ArrayNode expr)
         {
             if (expr.Elements.Count > 0)
+            {
                 expr.ElementType = Visit(expr.Elements[0]);
 
-            for (int i = 1; i < expr.Elements.Count; i++)
+                for (int i = 1; i < expr.Elements.Count; i++)
+                {
+                    Type indexType = Visit(expr.Elements[i]);
+                    if (indexType is ArrayType) continue;
+
+                    if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
+
+                    if (expr.ElementType.GetType() != indexType.GetType())
+                        throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+                }
+            }
+            else if (expr.ElementType == null)
             {
-                Type indexType = Visit(expr.Elements[i]);
-                if (indexType is ArrayType) continue;
-
-                if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
-
-                if (expr.ElementType.GetType() != indexType.GetType())
-                    throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+                throw new Exception("Cannot infer type of empty array. Provide a typed array or schema metadata.");
             }
 
             var arrayType = new ArrayType(expr.ElementType);
@@ -1061,22 +1067,18 @@ namespace MyCompiler
         {
             foreach (var field in expr.Fields)
             {
-                // 1. Visit the node (NamedArgument or Value)
-                Type fieldType = Visit(field.Value);
+                // This MUST return a valid Type (e.g., IntType from 'int' or '25')
+                field.Type = Visit(field.Value);
 
-                // 2. Explicitly store the type in the node instance
-                // This ensures field.Value.Type and field.Type are populated
-                field.Value.SetType(fieldType);
-                field.Type = fieldType;
+                if (field.Type == null)
+                    throw new Exception($"Could not resolve type for record field '{field.Label}'");
 
-                if (_debug) Console.WriteLine($"Field {field.Label} resolved to {fieldType}");
+                field.Value.SetType(field.Type);
             }
 
-            // 3. Create the RecordType using the now-populated fields
             var recordType = new RecordType(expr.Fields);
-
             expr.SetType(recordType);
-            return expr.Type;
+            return recordType;
         }
 
         public Type VisitField(FieldNode expr)
@@ -1126,67 +1128,173 @@ namespace MyCompiler
             return expr.Type;
         }
 
-            public Type VisitDataframe(DataframeNode expr)
+
+
+
+        private bool TryResolveTypeName(string name, out Type type)
         {
-            Visit(expr.Columns);
-            Visit(expr.Rows);
-
-            RecordType rowType = new RecordType(new List<RecordField>());
-            // 1. Extract and Normalize Columns
-            var columnNames = expr.Columns.Elements.OfType<StringNode>().Select(c => c.Value).ToArray();
-
-            // 3. Now determine types based on the ALREADY MODIFIED columns
-            List<Type> columnTypes = new List<Type>();
-            if (expr.Rows != null && expr.Rows.Elements.Count > 0)
+            type = name switch
             {
-                var inferredRowType = Visit(expr.Rows.Elements[0]) as RecordType;
-                foreach (var name in columnNames)
+                "int" => new IntType(),
+                "float" => new FloatType(),
+                "bool" => new BoolType(),
+                "string" => new StringType(),
+                _ => null
+            };
+
+            return type != null;
+        }
+
+        private RecordNode BuildSchemaFromColumnsAndTypes(ArrayNode columns, ArrayNode types)
+        {
+            if (columns == null || columns.Elements == null)
+                throw new Exception("Dataframe 'columns' metadata is missing or invalid.");
+
+            if (types == null || types.Elements == null)
+                throw new Exception("Dataframe 'type' metadata is missing or invalid.");
+
+            if (columns.Elements.Count != types.Elements.Count)
+                throw new Exception("Dataframe 'columns' and 'type' arrays must have the same length.");
+
+            var fields = new List<NamedArgumentNode>();
+
+            for (int i = 0; i < columns.Elements.Count; i++)
+            {
+                if (columns.Elements[i] is not StringNode colName)
+                    throw new Exception("Dataframe 'columns' must be a list of string literals.");
+
+                ExpressionNode typeExpr = types.Elements[i];
+                if (typeExpr is StringNode typeNameValue && TryResolveTypeName(typeNameValue.Value, out _))
                 {
-                    var field = inferredRowType.RecordFields.FirstOrDefault(f => f.Label == name);
-                    columnTypes.Add(field?.Type ?? new IntType()); // Default index to Int
+                    typeExpr = new TypeLiteralNode(new TypeNode(typeNameValue.Value));
                 }
-                rowType = inferredRowType;
+
+                fields.Add(new NamedArgumentNode(colName.Value, typeExpr));
+            }
+
+            return new RecordNode(fields);
+        }
+
+        private void ValidateDataframeRow(RecordType rowType, IReadOnlyList<string> colNames, IReadOnlyList<Type> colTypes)
+        {
+            if (rowType.RecordFields.Count != colNames.Count)
+                throw new Exception($"Row has {rowType.RecordFields.Count} fields, but schema expects {colNames.Count}");
+
+            bool isPositional = rowType.RecordFields.All(f => f.Label.StartsWith("item"));
+
+            if (isPositional)
+            {
+                for (int i = 0; i < colTypes.Count; i++)
+                {
+                    var rowFieldType = rowType.RecordFields[i].Type;
+                    if (rowFieldType == null)
+                        throw new Exception($"Row field {i + 1} has an unresolved type.");
+
+                    if (rowFieldType.GetType() != colTypes[i].GetType())
+                        throw new Exception($"Row field {i + 1} expected type {colTypes[i]}, but got {rowFieldType}.");
+                }
+
+                return;
+            }
+
+            var rowMap = rowType.RecordFields.ToDictionary(f => f.Label, f => f);
+            if (!colNames.All(name => rowMap.ContainsKey(name)))
+                throw new Exception("Row field names do not match dataframe schema.");
+
+            for (int i = 0; i < colNames.Count; i++)
+            {
+                var field = rowMap[colNames[i]];
+                if (field.Type == null)
+                    throw new Exception($"Row field '{field.Label}' has an unresolved type.");
+
+                if (field.Type.GetType() != colTypes[i].GetType())
+                    throw new Exception($"Row field '{field.Label}' expected type {colTypes[i]}, but got {field.Type}.");
+            }
+        }
+
+        public Type VisitDataframe(DataframeNode expr)
+        {
+            RecordType schemaType = null;
+
+            if (expr.Schema != null)
+            {
+                var schemaResult = Visit(expr.Schema);
+                if (schemaResult == null)
+                    throw new Exception("TypeChecker Error: Schema visitation returned null.");
+
+                schemaType = schemaResult as RecordType;
+                if (schemaType == null)
+                    throw new Exception($"Schema must be a record definition, but found {schemaResult.GetType().Name}");
+            }
+            else if (expr.Columns != null && expr.Types != null)
+            {
+                var schemaRecord = BuildSchemaFromColumnsAndTypes(expr.Columns, expr.Types);
+                var schemaResult = Visit(schemaRecord);
+
+                if (schemaResult == null)
+                    throw new Exception("TypeChecker Error: Generated schema visitation returned null.");
+
+                schemaType = schemaResult as RecordType;
+                if (schemaType == null)
+                    throw new Exception($"Generated schema must be a record definition, but found {schemaResult.GetType().Name}");
             }
             else
             {
-                if (expr.DataTypes == null) throw new Exception("Empty dataframe requires 'types'.");
-
-                Visit(expr.DataTypes);
-
-                columnTypes = expr.DataTypes.Elements.Select(e => ResolveType(e)).ToList();
-
-                rowType = new RecordType(columnNames.Select((name, i) => new RecordField
-                {
-                    Label = name,
-                    Type = columnTypes[i]
-                }).ToList());
-
-                expr.Rows.ElementType = rowType;
+                throw new Exception($"Dataframe must provide either a schema record or both columns and type metadata. Schema={expr.Schema != null}, Columns={expr.Columns != null}, Types={expr.Types != null}, Rows={expr.Rows != null}");
             }
 
-            var dfType = new DataframeType(columnNames, columnTypes, rowType);
+            var colNames = new List<string>();
+            var colTypes = new List<Type>();
+
+            foreach (var field in schemaType.RecordFields)
+            {
+                if (field.Type == null)
+                    throw new Exception($"Field '{field.Label}' in schema has an unresolved type.");
+
+                colNames.Add(field.Label);
+                colTypes.Add(field.Type);
+            }
+
+            var dfType = new DataframeType(colNames, colTypes, schemaType);
             expr.SetType(dfType);
+
+            if (expr.Columns != null)
+                Visit(expr.Columns);
+            if (expr.Types != null)
+                Visit(expr.Types);
+
+            if (expr.Rows != null)
+            {
+                if (expr.Rows.Elements.Count == 0)
+                {
+                    expr.Rows.ElementType = schemaType;
+                    expr.Rows.SetType(new ArrayType(schemaType));
+                }
+                else
+                {
+                    foreach (var row in expr.Rows.Elements)
+                    {
+                        var rowType = Visit(row) as RecordType;
+                        if (rowType == null)
+                            throw new Exception("Each row in 'rows' must be a record (e.g., {\"Value\", 10}).");
+
+                        ValidateDataframeRow(rowType, colNames, colTypes);
+                    }
+
+                    Visit(expr.Rows);
+                }
+            }
+
             return expr.Type;
         }
-
-        private Type ResolveType(ExpressionNode expr) // FIX, might be redundant
+        private Type ResolveType(ExpressionNode expr)
         {
+            if (expr == null) throw new Exception("Cannot resolve type of a null expression.");
 
-            if (expr.Type is Type type)
-                return type;
+            // Unwrap NamedArguments automatically
+            if (expr is NamedArgumentNode named) return ResolveType(named.Value);
 
-            if (expr is TypeNode typeNod)
-            {
-                return typeNod.Name switch
-                {
-                    "int" => new IntType(),
-                    "float" => new FloatType(),
-                    "string" => new StringType(),
-                    "bool" => new BoolType(),
-                    _ => throw new Exception($"Unknown type '{typeNod.Name}'")
-                };
-            }
-
+            // 1. Handle TypeLiterals (the 'string' in {name: string})
             if (expr is TypeLiteralNode typeLit)
             {
                 return typeLit.TypeNode.Name switch
@@ -1195,12 +1303,30 @@ namespace MyCompiler
                     "float" => new FloatType(),
                     "bool" => new BoolType(),
                     "string" => new StringType(),
-                    "dataframe" => new DataframeType(new List<string>(), new List<Type>(), new RecordType(new List<RecordField>())),
-                    _ => throw new Exception($"Unknown type '{typeLit.TypeNode.Name}'")
+                    "void" => new VoidType(),
+                    _ => throw new Exception($"Unknown type literal '{typeLit.TypeNode.Name}'")
                 };
             }
 
-            throw new Exception("Expected type node." + expr.Type);
+            // 2. Handle TypeNodes directly
+            if (expr is TypeNode typeNode)
+            {
+                return typeNode.Name switch
+                {
+                    "int" => new IntType(),
+                    "float" => new FloatType(),
+                    "bool" => new BoolType(),
+                    "string" => new StringType(),
+                    _ => throw new Exception($"Unknown type node '{typeNode.Name}'")
+                };
+            }
+
+            // 3. IMPORTANT: If it's a value (like "Alice" or 25), visit it to get its type
+            // This prevents the NullReference when validating rows.
+            var resultType = Visit(expr);
+            if (resultType != null) return resultType;
+
+            throw new Exception($"Expected a type or value, but found: {expr.GetType().Name}");
         }
 
         public Type VisitNamedArgument(NamedArgumentNode expr)

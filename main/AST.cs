@@ -562,43 +562,30 @@ namespace MyCompiler
         // Filled during typechecking
         public Type Type { get; set; }
     }
-
     public class RecordNode : ExpressionNode
     {
         public List<RecordField> Fields { get; set; } = new List<RecordField>();
-        public List<Type> ElementTypes { get; } = new List<Type>();
 
         public RecordNode(List<NamedArgumentNode> valuesArray)
         {
-            // 1. Cast the inputs to ArrayNode to get into their internal lists
-            var labelNodes = valuesArray.Select(v => new StringNode(v.Name)).ToList();
-            var valueNodes = valuesArray;
+            Fields = new List<RecordField>();
+            if (valuesArray == null) return;
 
-            if (labelNodes == null || valueNodes == null)
-                throw new Exception("Record requires two arrays: labels and values.");
-
-            if (labelNodes.Count != valueNodes.Count)
-                throw new Exception("Record labels and values count mismatch.");
-
-            // 2. Zip them together into the Fields list
-            for (int i = 0; i < labelNodes.Count; i++)
+            for (int i = 0; i < valuesArray.Count; i++)
             {
-                // Ensure the label is actually a StringNode
-                if (labelNodes[i] is StringNode strNode)
+                var arg = valuesArray[i];
+                // For rows like {"Alice", 25}, arg.Name is null. 
+                // We assign a placeholder so the field object isn't broken.
+                string label = arg.Name ?? $"item{i + 1}";
+
+                Fields.Add(new RecordField
                 {
-                    Fields.Add(new RecordField
-                    {
-                        Label = strNode.Value,
-                        Value = valueNodes[i]
-                    });
-                    ElementTypes.Add(valueNodes[i].Type);
-                }
-                else
-                {
-                    throw new Exception("Record labels must be string literals.");
-                }
+                    Label = label,
+                    Value = arg.Value ?? new NullNode()
+                });
             }
         }
+
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecord(this);
     }
 
@@ -659,62 +646,42 @@ namespace MyCompiler
 
     public class DataframeNode : ExpressionNode
     {
+        public RecordNode Schema { get; }
         public ArrayNode Columns { get; }
         public ArrayNode Rows { get; }
-        public ArrayNode DataTypes { get; }
+        public ArrayNode Types { get; }
         public ulong Capacity { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            ArrayNode columns = null;
-            ArrayNode rows = null;
-            ArrayNode types = null;
-
-            int positionalIndex = 0;
-
             foreach (var arg in args)
             {
-                // ALWAYS unwrap if NamedArgumentNode
-                if (arg is NamedArgumentNode named)
+                var argName = arg.Name?.ToLowerInvariant();
+
+                if (argName == "schema")
                 {
-                    if (named.Value is not ArrayNode value)
-                        throw new Exception("Dataframe arguments must be arrays.");
-
-                    if (named.Name != null)
-                    {
-                        // --- Named arguments ---
-                        switch (named.Name)
-                        {
-                            case "columns": columns = value; break;
-                            case "rows":
-                            case "data": rows = value; break;
-                            case "types":
-                            case "type": types = value; break;
-                            default:
-                                throw new Exception($"Unknown dataframe argument '{named.Name}'");
-                        }
-                    }
-                    else
-                    {
-                        // --- Positional arguments ---
-                        switch (positionalIndex)
-                        {
-                            case 0: columns = value; break;
-                            case 1: rows = value; break;
-                            case 2: types = value; break;
-                            default:
-                                throw new Exception("Too many positional arguments for dataframe");
-                        }
-                        positionalIndex++;
-                    }
+                    if (arg.Value is RecordNode r) Schema = r;
+                    else throw new Exception("Schema must be a record definition.");
                 }
-                else
-                    throw new Exception("Unexpected argument type in dataframe");
+                else if (argName == "columns")
+                {
+                    if (arg.Value is ArrayNode a) Columns = a;
+                }
+                else if (argName == "rows" || argName == "data")
+                {
+                    if (arg.Value is ArrayNode a) Rows = a;
+                }
+                else if (argName == "type")
+                {
+                    if (arg.Value is ArrayNode a) Types = a;
+                }
+                else if (Schema == null && arg.Value is RecordNode r)
+                {
+                    // Fallback: unnamed record argument may still represent the schema.
+                    Schema = r;
+                }
             }
-
-            Columns = columns ?? throw new Exception("Dataframe requires 'columns'");
-            Rows = rows ?? new ArrayNode(new List<ExpressionNode>());
-            DataTypes = types;
+            Rows ??= new ArrayNode(new List<ExpressionNode>());
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
