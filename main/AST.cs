@@ -321,8 +321,6 @@ namespace MyCompiler
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
         public ExpressionNode Condition { get; }
-        // ADD THIS LINE
-        public ExpressionNode CapacityExpression { get; set; }
 
         public WhereNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode condition)
         {
@@ -562,6 +560,7 @@ namespace MyCompiler
         // Filled during typechecking
         public Type Type { get; set; }
     }
+    
     public class RecordNode : ExpressionNode
     {
         public List<RecordField> Fields { get; set; } = new List<RecordField>();
@@ -576,12 +575,12 @@ namespace MyCompiler
                 var arg = valuesArray[i];
                 // For rows like {"Alice", 25}, arg.Name is null. 
                 // We assign a placeholder so the field object isn't broken.
-                string label = arg.Name ?? throw new Exception($"Record fields must be named. Missing name for field at position {i}.");
+                string label = arg.Name ?? $"item{i + 1}";
 
                 Fields.Add(new RecordField
                 {
                     Label = label,
-                    Value = arg.Value ?? new NullNode()
+                    Value = arg.Value
                 });
             }
         }
@@ -650,7 +649,6 @@ namespace MyCompiler
         public ArrayNode Columns { get; }
         public ArrayNode Rows { get; }
         public ArrayNode Types { get; }
-        public ulong Capacity { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
@@ -679,6 +677,10 @@ namespace MyCompiler
                 {
                     // Fallback: unnamed record argument may still represent the schema.
                     Schema = r;
+                }
+                else if(Rows == null && arg.Value is ArrayNode arr)
+                {
+                    Rows = arr;
                 }
             }
             Rows ??= new ArrayNode(new List<ExpressionNode>());

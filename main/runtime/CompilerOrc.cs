@@ -2348,8 +2348,8 @@ namespace MyCompiler
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
-        // x=dataframe(["name", "age"], type=[string, int])
-        // x=dataframe(["name", "age"], [{name: "dan", age: 30}, {name: "alice", age: 25}])
+        // x=dataframe({name: string, age: int})
+        // x=dataframe({name: string, age: int}, [{name: "dan", age: 30}, {name: "alice", age: 25}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})  
 
@@ -2357,7 +2357,7 @@ namespace MyCompiler
         // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
         // for(i=0; i<50; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) 
-        // for(i=0; i<5200000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) 
+        // for(i=0; i<5200000; i++) {x.add({name: "Hary potter", age: 10 + random(1,100)}) }
         // for(i=0; i<5000000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) // 5 million
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 

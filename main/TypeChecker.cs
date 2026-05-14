@@ -520,7 +520,6 @@ namespace MyCompiler
                         RecordType record = Visit(expr.Elements[i]) as RecordType;
                         if (recordType.ToString() != record.ToString())
                             throw new Exception("Not all records have the same field names, which is not allowed in an array");
-
                     }
 
                     Type indexType = Visit(expr.Elements[i]);

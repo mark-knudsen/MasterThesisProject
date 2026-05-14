@@ -131,7 +131,6 @@ assignment
         );
     }
 
-
     | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }
     | expr LBRACKET expr RBRACKET ASSIGN expr    
@@ -148,7 +147,6 @@ expr_list
     : expr                 { $$ = new List<ExpressionNode> { $1 as ExpressionNode }; }
     | expr_list COMMA expr { ((List<ExpressionNode>)$1).Add($3 as ExpressionNode); $$ = $1; }
     ;
-
 
 expr
     : BOOL_LITERAL         { $$ = new BooleanNode((bool)$1); }
@@ -180,8 +178,15 @@ expr
     
     | DATAFRAME LPAREN args_list RPAREN { $$ = new DataframeNode($3); }
     | RECORD LPAREN LBRACE args_list RBRACE RPAREN { $$ = new RecordNode($4); }
-    | SQRT LPAREN expr RPAREN              { $$ = new SqrtNode($3 as ExpressionNode); }
-    | POW LPAREN expr COMMA expr RPAREN   { $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); }
+
+    | SQRT LPAREN expr RPAREN            { $$ = new SqrtNode($3 as ExpressionNode); }
+    | EXP LPAREN expr RPAREN             { $$ = new ExponentialMathFuncNode($3 as ExpressionNode); }
+    | POW LPAREN expr COMMA expr RPAREN  { $$ = new PowNode($3 as ExpressionNode, $5 as ExpressionNode); }
+    | LOG LPAREN expr RPAREN             { $$ = new LogNode($3 as ExpressionNode); }
+
+    | expr LOGICAL_AND expr { $$ = new LogicalOpNode($1 as ExpressionNode, "&&", $3 as ExpressionNode); }  
+    | expr LOGICAL_OR expr  { $$ = new LogicalOpNode($1 as ExpressionNode, "||", $3 as ExpressionNode); }  
+
     | MINUS expr          { $$ = new UnaryOpNode("-", $2 as ExpressionNode); }
     | expr PLUS expr      { $$ = new BinaryOpNode($1 as ExpressionNode, "+", $3 as ExpressionNode); }
     | expr MINUS expr     { $$ = new BinaryOpNode($1 as ExpressionNode, "-", $3 as ExpressionNode); }
@@ -259,7 +264,6 @@ args
     | COLUMNS COLON expr  { $$ = new NamedArgumentNode("columns", $3 as ExpressionNode); }
     | expr                { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
     ;
-
 
 %%
 
