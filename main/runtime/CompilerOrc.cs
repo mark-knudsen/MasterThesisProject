@@ -2667,62 +2667,12 @@ namespace MyCompiler
 
         private LLVMValueRef EmitDeepCopy(LLVMValueRef sourceVal, Type type)
         {
-            if (type is ArrayType at)
-                return CopyArray(sourceVal, at);
+            if (type is ArrayType at) return CopyArray(sourceVal, at);
+            if (type is RecordType rt) return CopyRecord(sourceVal, rt);
+            if (type is DataframeType dt) return CopyDataframe(sourceVal, dt);
 
-            if (type is RecordType rt)
-                return CopyRecord(sourceVal, rt);
-
-            // 3. Dataframes
-            if (type is DataframeType dt)
-                return CopyDataframe(sourceVal, dt);
-
-            // 4. Primitives (Your existing Boxed Logic)
-            if (type is IntType || type is FloatType || type is BoolType)
-            {
-                var ctx = _module.Context;
-                var mallocFunc = GetOrDeclareMalloc();
-                var i64 = ctx.Int64Type;
-                var newBox = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "primitive_box_copy");
-                var llvmType = GetLLVMType(type);
-                var srcTyped = _builder.BuildBitCast(sourceVal, LLVMTypeRef.CreatePointer(llvmType, 0));
-                var dstTyped = _builder.BuildBitCast(newBox, LLVMTypeRef.CreatePointer(llvmType, 0));
-                var val = _builder.BuildLoad2(llvmType, srcTyped, "box_val");
-                _builder.BuildStore(val, dstTyped);
-                return newBox;
-            }
-
+            // Primitives (Int, Float, Bool) and Strings are returned as-is
             return sourceVal;
-        }
-
-        private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
-        {
-            var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // 1. Allocate the NEW Dataframe header container
-            var newDfPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "df_copy_header");
-
-            // 2. Deep Copy Columns (Array of Strings)
-            var colsPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 0), "ld_cols");
-            var columnArrayType = new ArrayType(new StringType()); // Columns are always strings
-            var newCols = CopyArray(colsPtr, columnArrayType);
-            _builder.BuildStore(newCols, _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 0));
-
-            // 3. Deep Copy Rows (Array of Records)
-            var rowsPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1), "ld_rows");
-            var rowArrayType = new ArrayType(dfType.RowType); // Uses the RowType from your DataframeType
-            var newRows = CopyArray(rowsPtr, rowArrayType);
-            _builder.BuildStore(newRows, _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 1));
-
-            // 4. Deep Copy DataTypes (Array of Integers)
-            var typesPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2), "ld_types");
-            var typeArrayType = new ArrayType(new IntType()); // Metadata array is always ints
-            var newTypes = CopyArray(typesPtr, typeArrayType);
-            _builder.BuildStore(newTypes, _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 2));
-
-            return newDfPtr;
         }
 
         private LLVMValueRef CopyRecord(LLVMValueRef recordPtr, RecordType recordType)
@@ -2730,52 +2680,72 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
 
-            // 1. Get the actual LLVM Struct Type for this record
-            var recordStructType = GetLLVMType(recordType);
+            // 1. Get the actual Struct Layout (e.g., { ptr, i64 })
+            // DO NOT use GetLLVMType here, as it returns just a 'ptr'
+            var recordStructType = GetLLVMStorageType(recordType);
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 2. Calculate size using LLVM's offsetof logic to ensure alignment/padding is correct
-            var sizeOfRecord = LLVMValueRef.CreateConstInt(i64, GetStructSize(recordType));
+            // 2. Calculate size: Total fields * 8 bytes
+            var sizeOfRecord = LLVMValueRef.CreateConstInt(i64, (ulong)(recordType.RecordFields.Count * 8));
+            var newRecordBuffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeOfRecord }, "record_copy_mem");
 
-            // 3. Allocate the new record
-            var newRecordBuffer = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { sizeOfRecord },
-                "record_copy_mem"
-            );
-
-            // No need for generic i8** casts; we work with the struct pointers directly
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var fieldInfo = recordType.RecordFields[i];
                 var fieldLLVMType = GetLLVMType(fieldInfo.Type);
 
-                // 4. Use BuildStructGEP2 to get the exact field address
+                // 3. Pass the Struct Type to GEP. 
+                // This ensures %src_f1_ptr points to the 8th byte (age), not index 1 of a ptr array.
                 var srcFieldPtr = _builder.BuildStructGEP2(recordStructType, recordPtr, (uint)i, $"src_f{i}_ptr");
                 var dstFieldPtr = _builder.BuildStructGEP2(recordStructType, newRecordBuffer, (uint)i, $"dst_f{i}_ptr");
 
-                // 5. Load the actual value (could be a double, i64, or ptr)
+                // 4. Load the value
                 var val = _builder.BuildLoad2(fieldLLVMType, srcFieldPtr, $"f{i}_val");
-                val.SetAlignment(8);
 
-                // 6. Deep copy if it's a reference type; otherwise store the primitive
-                LLVMValueRef copiedValue;
-                if (fieldInfo.Type is ArrayType || fieldInfo.Type is RecordType || fieldInfo.Type is DataframeType)
+                // 5. Recursive deep copy for reference types
+                LLVMValueRef valueToStore;
+                if (fieldInfo.Type is RecordType || fieldInfo.Type is ArrayType || fieldInfo.Type is DataframeType)
                 {
-                    copiedValue = EmitDeepCopy(val, fieldInfo.Type);
+                    valueToStore = EmitDeepCopy(val, fieldInfo.Type);
                 }
                 else
                 {
-                    // For primitives (Double, Int), we just store the loaded value
-                    copiedValue = val;
+                    valueToStore = val; // Primitives (int, float) and strings
                 }
 
-                var storeInstr = _builder.BuildStore(copiedValue, dstFieldPtr);
-                storeInstr.SetAlignment(8);
+                _builder.BuildStore(valueToStore, dstFieldPtr);
             }
 
             return newRecordBuffer;
+        }
+
+        private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
+        {
+            var ctx = _module.Context;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var i64 = ctx.Int64Type;
+
+            // Allocate the header (3 pointers = 24 bytes)
+            var newDfPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
+                new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "df_copy_header");
+
+            // Copy the 3 internal arrays: Columns, Rows, and Types
+            for (uint i = 0; i < 3; i++)
+            {
+                // Use _dataframeStruct (which is { ptr, ptr, ptr })
+                var srcFieldPtr = _builder.BuildStructGEP2(_dataframeStruct, dfPtr, i, $"src_df_f{i}");
+                var dstFieldPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, i, $"dst_df_f{i}");
+
+                var arrayPtr = _builder.BuildLoad2(i8Ptr, srcFieldPtr, "ld_arr");
+
+                // Map the index to the correct ArrayType for deep copying
+                Type elemType = i switch { 0 => new StringType(), 1 => dfType.RowType, _ => new IntType() };
+                var copiedArray = CopyArray(arrayPtr, new ArrayType(elemType));
+
+                _builder.BuildStore(copiedArray, dstFieldPtr);
+            }
+
+            return newDfPtr;
         }
 
         private LLVMValueRef CopyArray(LLVMValueRef srcHeaderPtr, ArrayType arrayType)
@@ -3443,7 +3413,7 @@ namespace MyCompiler
             {
                 FloatType => ctx.DoubleType,
                 IntType => ctx.Int64Type,
-                BoolType => ctx.Int1Type,
+                BoolType => ctx.Int8Type,
                 NullType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Represent Null as i8*
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
@@ -3451,6 +3421,25 @@ namespace MyCompiler
                 RecordType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                 _ => throw new Exception($"Unsupported type: {type}")
             };
+        }
+
+        private LLVMTypeRef GetLLVMStorageType(Type type)
+        {
+            var ctx = _module.Context;
+            if (type is RecordType rt)
+            {
+                // 1. Map every field to its storage type (i64, double, or ptr)
+                var fieldTypes = rt.RecordFields
+                    .Select(f => GetLLVMType(f.Type))
+                    .ToArray();
+
+                // 2. Correct way in LLVMSharp 20: 
+                // Use the static CreateStruct method on LLVMTypeRef
+                return LLVMTypeRef.CreateStruct(fieldTypes, Packed: false);
+            }
+
+            // For non-records, standard GetLLVMType is fine
+            return GetLLVMType(type);
         }
 
         public LLVMValueRef VisitAdd(AddNode expr)
@@ -4278,24 +4267,23 @@ namespace MyCompiler
             var ctx = _module.Context;
             var i32 = ctx.Int32Type;
             var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type; // Added for booleans
             var recordType = (RecordType)expr.Type;
 
-            // 1. Get the struct definition for THIS module
             var structType = GetOrCreateRecordStructType(recordType);
-
-            // 2. Get malloc and its signature type for THIS context
             var mallocFunc = GetOrDeclareMalloc();
-
-            // 3. Size calculation (Ensure it is i64 for malloc)
             var sizeValue = structType.SizeOf;
 
-            // 4. THE CRITICAL CALL: Use the fresh mallocFuncType
             var instancePtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeValue }, "record_ptr");
-            var typedPtr = _builder.BuildBitCast(instancePtr, LLVMTypeRef.CreatePointer(structType, 0), "typed_record");
+
+            // In LLVM 20, we generally just use the opaque ptr directly, 
+            // but we'll keep the variable name for clarity in your GEP calls.
+            var typedPtr = instancePtr;
 
             for (int i = 0; i < expr.Fields.Count; i++)
             {
                 var fieldValue = Visit(expr.Fields[i].Value);
+                var fieldType = recordType.RecordFields[i].Type;
 
                 var fieldPtr = _builder.BuildGEP2(
                     structType,
@@ -4303,6 +4291,14 @@ namespace MyCompiler
                     new[] { LLVMValueRef.CreateConstInt(i32, 0), LLVMValueRef.CreateConstInt(i32, (ulong)i) },
                     $"field_{i}"
                 );
+
+                // --- FIX FOR BOOLEANS ---
+                // If the field is a boolean, cast the i1 to i8 (ZExt) 
+                // to match the storage type returned by GetLLVMType.
+                if (fieldType is BoolType)
+                {
+                    fieldValue = _builder.BuildZExt(fieldValue, i8, "bool_to_i8");
+                }
 
                 var store = _builder.BuildStore(fieldValue, fieldPtr);
                 store.SetAlignment(GetAlignment(fieldValue.TypeOf));
@@ -4315,20 +4311,21 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
 
-            if (type == ctx.Int64Type)
+            if (type == ctx.Int64Type || type == ctx.DoubleType)
                 return 8;
 
-            if (type == ctx.DoubleType)
-                return 8;
-
-            if (type == ctx.Int1Type) // for bools, we store as i64 for simplicity, so alignment is 8
-                return 8;
-
+            // Pointers are 8 bytes on 64-bit systems
             if (type.Kind == LLVMTypeKind.LLVMPointerTypeKind)
                 return 8;
 
+            // Booleans stored as i8 need 1-byte alignment
+            if (type == ctx.Int8Type)
+                return 1;
+
+            // Default for i32 etc.
             return 4;
         }
+
 
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {

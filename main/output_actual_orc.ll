@@ -1,297 +1,234 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-%dataframe = type { ptr, ptr, ptr }
-%array = type { i64, i64, ptr }
-%struct_name_age = type { ptr, i64 }
+@str = private unnamed_addr constant [51 x i8] c"CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv\00", align 1
+@csv_schema_code = private unnamed_addr constant [38 x i8] c"SFFFFFFFFFFFFFFFFFFFIBBBBBBBBBBBBBBBB\00", align 1
+@col_name_0 = private unnamed_addr constant [5 x i8] c"date\00", align 1
+@col_name_1 = private unnamed_addr constant [9 x i8] c"latitude\00", align 1
+@col_name_2 = private unnamed_addr constant [10 x i8] c"longitude\00", align 1
+@col_name_3 = private unnamed_addr constant [15 x i8] c"wind-speed-min\00", align 1
+@col_name_4 = private unnamed_addr constant [15 x i8] c"wind-speed-max\00", align 1
+@col_name_5 = private unnamed_addr constant [16 x i8] c"wind-speed-mean\00", align 1
+@col_name_6 = private unnamed_addr constant [19 x i8] c"wind-direction-min\00", align 1
+@col_name_7 = private unnamed_addr constant [19 x i8] c"wind-direction-max\00", align 1
+@col_name_8 = private unnamed_addr constant [20 x i8] c"wind-direction-mean\00", align 1
+@col_name_9 = private unnamed_addr constant [28 x i8] c"surface-air-temperature-min\00", align 1
+@col_name_10 = private unnamed_addr constant [28 x i8] c"surface-air-temperature-max\00", align 1
+@col_name_11 = private unnamed_addr constant [29 x i8] c"surface-air-temperature-mean\00", align 1
+@col_name_12 = private unnamed_addr constant [19 x i8] c"total-rainfall-sum\00", align 1
+@col_name_13 = private unnamed_addr constant [21 x i8] c"surface-humidity-min\00", align 1
+@col_name_14 = private unnamed_addr constant [21 x i8] c"surface-humidity-max\00", align 1
+@col_name_15 = private unnamed_addr constant [22 x i8] c"surface-humidity-mean\00", align 1
+@col_name_16 = private unnamed_addr constant [5 x i8] c"ndvi\00", align 1
+@col_name_17 = private unnamed_addr constant [10 x i8] c"elevation\00", align 1
+@col_name_18 = private unnamed_addr constant [6 x i8] c"slope\00", align 1
+@col_name_19 = private unnamed_addr constant [7 x i8] c"aspect\00", align 1
+@col_name_20 = private unnamed_addr constant [11 x i8] c"fire_label\00", align 1
+@col_name_21 = private unnamed_addr constant [19 x i8] c"land_cover_class_1\00", align 1
+@col_name_22 = private unnamed_addr constant [19 x i8] c"land_cover_class_2\00", align 1
+@col_name_23 = private unnamed_addr constant [19 x i8] c"land_cover_class_4\00", align 1
+@col_name_24 = private unnamed_addr constant [19 x i8] c"land_cover_class_5\00", align 1
+@col_name_25 = private unnamed_addr constant [19 x i8] c"land_cover_class_6\00", align 1
+@col_name_26 = private unnamed_addr constant [19 x i8] c"land_cover_class_7\00", align 1
+@col_name_27 = private unnamed_addr constant [19 x i8] c"land_cover_class_8\00", align 1
+@col_name_28 = private unnamed_addr constant [19 x i8] c"land_cover_class_9\00", align 1
+@col_name_29 = private unnamed_addr constant [20 x i8] c"land_cover_class_10\00", align 1
+@col_name_30 = private unnamed_addr constant [20 x i8] c"land_cover_class_11\00", align 1
+@col_name_31 = private unnamed_addr constant [20 x i8] c"land_cover_class_12\00", align 1
+@col_name_32 = private unnamed_addr constant [20 x i8] c"land_cover_class_13\00", align 1
+@col_name_33 = private unnamed_addr constant [20 x i8] c"land_cover_class_14\00", align 1
+@col_name_34 = private unnamed_addr constant [20 x i8] c"land_cover_class_15\00", align 1
+@col_name_35 = private unnamed_addr constant [20 x i8] c"land_cover_class_16\00", align 1
+@col_name_36 = private unnamed_addr constant [20 x i8] c"land_cover_class_17\00", align 1
+@df = global ptr null, align 8
 
-@x = external global ptr
-@__where_src = external global ptr, align 8
-@str = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@str.1 = private unnamed_addr constant [4 x i8] c"age\00", align 1
-@__where_result = external global ptr, align 8
-@__where_i = external global i64, align 8
-@str.2 = private unnamed_addr constant [5 x i8] c"name\00", align 1
-@str.3 = private unnamed_addr constant [4 x i8] c"age\00", align 1
-@str.4 = private unnamed_addr constant [12 x i8] c"Hary potter\00", align 1
-
-define ptr @main_6() {
+define ptr @main_0() {
 entry:
-  %x_load = load ptr, ptr @x, align 8
-  store ptr %x_load, ptr @__where_src, align 8
-  %arr_header = call ptr @malloc(i64 24)
-  %arr_data_raw = call ptr @malloc(i64 32)
-  %len_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 0
-  %cap_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 1
-  %data_field_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 2
-  store i64 2, ptr %len_ptr, align 8
-  store i64 2, ptr %cap_ptr, align 8
-  store ptr %arr_data_raw, ptr %data_field_ptr, align 8
-  %elem_ptr = getelementptr ptr, ptr %arr_data_raw, i64 0
-  store ptr @str, ptr %elem_ptr, align 8
-  %elem_ptr1 = getelementptr ptr, ptr %arr_data_raw, i64 1
-  store ptr @str.1, ptr %elem_ptr1, align 8
-  %arr_header2 = call ptr @malloc(i64 24)
-  %arr_data_raw3 = call ptr @malloc(i64 800)
-  %len_ptr4 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header2, i32 0, i32 0
-  %cap_ptr5 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header2, i32 0, i32 1
-  %data_field_ptr6 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header2, i32 0, i32 2
-  store i64 0, ptr %len_ptr4, align 8
-  store i64 100, ptr %cap_ptr5, align 8
-  store ptr %arr_data_raw3, ptr %data_field_ptr6, align 8
-  %arr_header7 = call ptr @malloc(i64 24)
-  %arr_data_raw8 = call ptr @malloc(i64 32)
-  %len_ptr9 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header7, i32 0, i32 0
-  %cap_ptr10 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header7, i32 0, i32 1
-  %data_field_ptr11 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header7, i32 0, i32 2
-  store i64 2, ptr %len_ptr9, align 8
-  store i64 2, ptr %cap_ptr10, align 8
-  store ptr %arr_data_raw8, ptr %data_field_ptr11, align 8
-  %elem_ptr12 = getelementptr i64, ptr %arr_data_raw8, i64 0
-  store i64 4, ptr %elem_ptr12, align 8
-  %elem_ptr13 = getelementptr i64, ptr %arr_data_raw8, i64 1
-  store i64 1, ptr %elem_ptr13, align 8
-  %df = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
-  %cols_gep = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 0
-  %rows_gep = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 1
-  %types_gep = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 2
-  store ptr %arr_header, ptr %cols_gep, align 8
-  store ptr %arr_header2, ptr %rows_gep, align 8
-  store ptr %arr_header7, ptr %types_gep, align 8
-  store ptr %df, ptr @__where_result, align 8
-  store i64 0, ptr @__where_i, align 8
-  br label %for.cond
-
-for.cond:                                         ; preds = %for.step, %entry
-  %__where_i_load = load i64, ptr @__where_i, align 8
-  %__where_src_load = load ptr, ptr @__where_src, align 8
-  %rows_ptr_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_src_load, i32 0, i32 1
-  %rows_ptr = load ptr, ptr %rows_ptr_field, align 8
-  %rows_array_ptr = bitcast ptr %rows_ptr to ptr
-  %rows_length_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array_ptr, i32 0, i32 0
-  %rows_length = load i64, ptr %rows_length_ptr, align 8
-  %icmp_tmp = icmp slt i64 %__where_i_load, %rows_length
-  br i1 %icmp_tmp, label %for.body, label %for.end
-
-for.body:                                         ; preds = %for.cond
-  %__where_src_load14 = load ptr, ptr @__where_src, align 8
-  %__where_i_load15 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %__where_src_load14, i32 0, i32 1
-  %rows = load ptr, ptr %rows_ptr_ptr, align 8
-  %data_ptr_ptr = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 2
-  %data = load ptr, ptr %data_ptr_ptr, align 8
-  %elem_ptr16 = getelementptr ptr, ptr %data, i64 %__where_i_load15
-  %record = load ptr, ptr %elem_ptr16, align 8
-  %ptr_age = getelementptr %struct_name_age, ptr %record, i32 0, i32 1
-  %val_age = load i64, ptr %ptr_age, align 4
-  %icmp_tmp17 = icmp sgt i64 %val_age, 91
-  br i1 %icmp_tmp17, label %then, label %else
-
-for.step:                                         ; preds = %ifcont
-  %x_load30 = load i64, ptr @__where_i, align 8
-  %inc_add = add i64 %x_load30, 1
-  store i64 %inc_add, ptr @__where_i, align 8
-  br label %for.cond, !llvm.loop !0
-
-for.end:                                          ; preds = %for.cond
-  %__where_result_load31 = load ptr, ptr @__where_result, align 8
-  store ptr %__where_result_load31, ptr @__where_src, align 8
-  %arr_header32 = call ptr @malloc(i64 24)
-  %arr_data_raw33 = call ptr @malloc(i64 32)
-  %len_ptr34 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header32, i32 0, i32 0
-  %cap_ptr35 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header32, i32 0, i32 1
-  %data_field_ptr36 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header32, i32 0, i32 2
-  store i64 2, ptr %len_ptr34, align 8
-  store i64 2, ptr %cap_ptr35, align 8
-  store ptr %arr_data_raw33, ptr %data_field_ptr36, align 8
-  %elem_ptr37 = getelementptr ptr, ptr %arr_data_raw33, i64 0
-  store ptr @str.2, ptr %elem_ptr37, align 8
-  %elem_ptr38 = getelementptr ptr, ptr %arr_data_raw33, i64 1
-  store ptr @str.3, ptr %elem_ptr38, align 8
-  %arr_header39 = call ptr @malloc(i64 24)
-  %arr_data_raw40 = call ptr @malloc(i64 800)
-  %len_ptr41 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header39, i32 0, i32 0
-  %cap_ptr42 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header39, i32 0, i32 1
-  %data_field_ptr43 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header39, i32 0, i32 2
-  store i64 0, ptr %len_ptr41, align 8
-  store i64 100, ptr %cap_ptr42, align 8
-  store ptr %arr_data_raw40, ptr %data_field_ptr43, align 8
-  %arr_header44 = call ptr @malloc(i64 24)
-  %arr_data_raw45 = call ptr @malloc(i64 32)
-  %len_ptr46 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header44, i32 0, i32 0
-  %cap_ptr47 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header44, i32 0, i32 1
-  %data_field_ptr48 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header44, i32 0, i32 2
-  store i64 2, ptr %len_ptr46, align 8
-  store i64 2, ptr %cap_ptr47, align 8
-  store ptr %arr_data_raw45, ptr %data_field_ptr48, align 8
-  %elem_ptr49 = getelementptr i64, ptr %arr_data_raw45, i64 0
-  store i64 4, ptr %elem_ptr49, align 8
-  %elem_ptr50 = getelementptr i64, ptr %arr_data_raw45, i64 1
-  store i64 1, ptr %elem_ptr50, align 8
-  %df51 = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
-  %cols_gep52 = getelementptr inbounds nuw %dataframe, ptr %df51, i32 0, i32 0
-  %rows_gep53 = getelementptr inbounds nuw %dataframe, ptr %df51, i32 0, i32 1
-  %types_gep54 = getelementptr inbounds nuw %dataframe, ptr %df51, i32 0, i32 2
-  store ptr %arr_header32, ptr %cols_gep52, align 8
-  store ptr %arr_header39, ptr %rows_gep53, align 8
-  store ptr %arr_header44, ptr %types_gep54, align 8
-  store ptr %df51, ptr @__where_result, align 8
-  store i64 0, ptr @__where_i, align 8
-  br label %for.cond55
-
-then:                                             ; preds = %for.body
-  %__where_result_load = load ptr, ptr @__where_result, align 8
-  %__where_src_load18 = load ptr, ptr @__where_src, align 8
-  %__where_i_load19 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr20 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load18, i32 0, i32 1
-  %rows21 = load ptr, ptr %rows_ptr_ptr20, align 8
-  %data_ptr_ptr22 = getelementptr inbounds nuw %array, ptr %rows21, i32 0, i32 2
-  %data23 = load ptr, ptr %data_ptr_ptr22, align 8
-  %elem_ptr24 = getelementptr ptr, ptr %data23, i64 %__where_i_load19
-  %record25 = load ptr, ptr %elem_ptr24, align 8
-  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_result_load, i32 0, i32 1
-  %rows_array = load ptr, ptr %rows_field, align 8
-  %len_ptr26 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
-  %cap_ptr27 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
-  %data_ptr_ptr28 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
-  %len = load i64, ptr %len_ptr26, align 8
-  %cap = load i64, ptr %cap_ptr27, align 8
-  %data29 = load ptr, ptr %data_ptr_ptr28, align 8
-  %is_full = icmp uge i64 %len, %cap
-  br i1 %is_full, label %grow, label %cont
-
-else:                                             ; preds = %for.body
-  br label %ifcont
-
-ifcont:                                           ; preds = %else, %cont
-  %iftmp = phi ptr [ %__where_result_load, %cont ], [ 0.000000e+00, %else ]
-  br label %for.step
-
-grow:                                             ; preds = %then
-  %0 = icmp eq i64 %cap, 0
-  %1 = mul i64 %cap, 2
-  %new_cap = select i1 %0, i64 4, i64 %1
-  %bytes = mul i64 %new_cap, 8
-  %realloc = call ptr @realloc(ptr %data29, i64 %bytes)
-  store i64 %new_cap, ptr %cap_ptr27, align 8
-  store ptr %realloc, ptr %data_ptr_ptr28, align 8
-  br label %cont
-
-cont:                                             ; preds = %grow, %then
-  %final_data_ptr = phi ptr [ %data29, %then ], [ %realloc, %grow ]
-  %target_slot_ptr = getelementptr ptr, ptr %final_data_ptr, i64 %len
-  store ptr %record25, ptr %target_slot_ptr, align 8
-  %new_len = add i64 %len, 1
-  store i64 %new_len, ptr %len_ptr26, align 8
-  br label %ifcont
-
-for.cond55:                                       ; preds = %for.step57, %for.end
-  %__where_i_load59 = load i64, ptr @__where_i, align 8
-  %__where_src_load60 = load ptr, ptr @__where_src, align 8
-  %rows_ptr_field61 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_src_load60, i32 0, i32 1
-  %rows_ptr62 = load ptr, ptr %rows_ptr_field61, align 8
-  %rows_array_ptr63 = bitcast ptr %rows_ptr62 to ptr
-  %rows_length_ptr64 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array_ptr63, i32 0, i32 0
-  %rows_length65 = load i64, ptr %rows_length_ptr64, align 8
-  %icmp_tmp66 = icmp slt i64 %__where_i_load59, %rows_length65
-  br i1 %icmp_tmp66, label %for.body56, label %for.end58
-
-for.body56:                                       ; preds = %for.cond55
-  %__where_src_load67 = load ptr, ptr @__where_src, align 8
-  %__where_i_load68 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr69 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load67, i32 0, i32 1
-  %rows70 = load ptr, ptr %rows_ptr_ptr69, align 8
-  %data_ptr_ptr71 = getelementptr inbounds nuw %array, ptr %rows70, i32 0, i32 2
-  %data72 = load ptr, ptr %data_ptr_ptr71, align 8
-  %elem_ptr73 = getelementptr ptr, ptr %data72, i64 %__where_i_load68
-  %record74 = load ptr, ptr %elem_ptr73, align 8
-  %ptr_age75 = getelementptr %struct_name_age, ptr %record74, i32 0, i32 1
-  %val_age76 = load i64, ptr %ptr_age75, align 4
-  %icmp_tmp77 = icmp slt i64 %val_age76, 93
-  %__where_src_load78 = load ptr, ptr @__where_src, align 8
-  %__where_i_load79 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr80 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load78, i32 0, i32 1
-  %rows81 = load ptr, ptr %rows_ptr_ptr80, align 8
-  %data_ptr_ptr82 = getelementptr inbounds nuw %array, ptr %rows81, i32 0, i32 2
-  %data83 = load ptr, ptr %data_ptr_ptr82, align 8
-  %elem_ptr84 = getelementptr ptr, ptr %data83, i64 %__where_i_load79
-  %record85 = load ptr, ptr %elem_ptr84, align 8
-  %ptr_name = getelementptr %struct_name_age, ptr %record85, i32 0, i32 0
-  %val_name = load ptr, ptr %ptr_name, align 8
-  %strcmp_res = call i32 @strcmp(ptr %val_name, ptr @str.4)
-  %str_eq = icmp eq i32 %strcmp_res, 0
-  %andtmp = and i1 %icmp_tmp77, %str_eq
-  br i1 %andtmp, label %then86, label %else87
-
-for.step57:                                       ; preds = %ifcont88
-  %x_load116 = load i64, ptr @__where_i, align 8
-  %inc_add117 = add i64 %x_load116, 1
-  store i64 %inc_add117, ptr @__where_i, align 8
-  br label %for.cond55, !llvm.loop !0
-
-for.end58:                                        ; preds = %for.cond55
-  %__where_result_load118 = load ptr, ptr @__where_result, align 8
+  %csv_boxed_res = call ptr @ReadCsvInternal(ptr @str, ptr @csv_schema_code)
+  %unbox_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %csv_boxed_res, i32 0, i32 1
+  %raw_rows_ptr = load ptr, ptr %unbox_ptr, align 8
+  %names_header = call ptr @malloc(i64 24)
+  %names_data = call ptr @malloc(i64 296)
+  %ptr_0 = getelementptr ptr, ptr %names_data, i64 0
+  store ptr @col_name_0, ptr %ptr_0, align 8
+  %ptr_1 = getelementptr ptr, ptr %names_data, i64 1
+  store ptr @col_name_1, ptr %ptr_1, align 8
+  %ptr_2 = getelementptr ptr, ptr %names_data, i64 2
+  store ptr @col_name_2, ptr %ptr_2, align 8
+  %ptr_3 = getelementptr ptr, ptr %names_data, i64 3
+  store ptr @col_name_3, ptr %ptr_3, align 8
+  %ptr_4 = getelementptr ptr, ptr %names_data, i64 4
+  store ptr @col_name_4, ptr %ptr_4, align 8
+  %ptr_5 = getelementptr ptr, ptr %names_data, i64 5
+  store ptr @col_name_5, ptr %ptr_5, align 8
+  %ptr_6 = getelementptr ptr, ptr %names_data, i64 6
+  store ptr @col_name_6, ptr %ptr_6, align 8
+  %ptr_7 = getelementptr ptr, ptr %names_data, i64 7
+  store ptr @col_name_7, ptr %ptr_7, align 8
+  %ptr_8 = getelementptr ptr, ptr %names_data, i64 8
+  store ptr @col_name_8, ptr %ptr_8, align 8
+  %ptr_9 = getelementptr ptr, ptr %names_data, i64 9
+  store ptr @col_name_9, ptr %ptr_9, align 8
+  %ptr_10 = getelementptr ptr, ptr %names_data, i64 10
+  store ptr @col_name_10, ptr %ptr_10, align 8
+  %ptr_11 = getelementptr ptr, ptr %names_data, i64 11
+  store ptr @col_name_11, ptr %ptr_11, align 8
+  %ptr_12 = getelementptr ptr, ptr %names_data, i64 12
+  store ptr @col_name_12, ptr %ptr_12, align 8
+  %ptr_13 = getelementptr ptr, ptr %names_data, i64 13
+  store ptr @col_name_13, ptr %ptr_13, align 8
+  %ptr_14 = getelementptr ptr, ptr %names_data, i64 14
+  store ptr @col_name_14, ptr %ptr_14, align 8
+  %ptr_15 = getelementptr ptr, ptr %names_data, i64 15
+  store ptr @col_name_15, ptr %ptr_15, align 8
+  %ptr_16 = getelementptr ptr, ptr %names_data, i64 16
+  store ptr @col_name_16, ptr %ptr_16, align 8
+  %ptr_17 = getelementptr ptr, ptr %names_data, i64 17
+  store ptr @col_name_17, ptr %ptr_17, align 8
+  %ptr_18 = getelementptr ptr, ptr %names_data, i64 18
+  store ptr @col_name_18, ptr %ptr_18, align 8
+  %ptr_19 = getelementptr ptr, ptr %names_data, i64 19
+  store ptr @col_name_19, ptr %ptr_19, align 8
+  %ptr_20 = getelementptr ptr, ptr %names_data, i64 20
+  store ptr @col_name_20, ptr %ptr_20, align 8
+  %ptr_21 = getelementptr ptr, ptr %names_data, i64 21
+  store ptr @col_name_21, ptr %ptr_21, align 8
+  %ptr_22 = getelementptr ptr, ptr %names_data, i64 22
+  store ptr @col_name_22, ptr %ptr_22, align 8
+  %ptr_23 = getelementptr ptr, ptr %names_data, i64 23
+  store ptr @col_name_23, ptr %ptr_23, align 8
+  %ptr_24 = getelementptr ptr, ptr %names_data, i64 24
+  store ptr @col_name_24, ptr %ptr_24, align 8
+  %ptr_25 = getelementptr ptr, ptr %names_data, i64 25
+  store ptr @col_name_25, ptr %ptr_25, align 8
+  %ptr_26 = getelementptr ptr, ptr %names_data, i64 26
+  store ptr @col_name_26, ptr %ptr_26, align 8
+  %ptr_27 = getelementptr ptr, ptr %names_data, i64 27
+  store ptr @col_name_27, ptr %ptr_27, align 8
+  %ptr_28 = getelementptr ptr, ptr %names_data, i64 28
+  store ptr @col_name_28, ptr %ptr_28, align 8
+  %ptr_29 = getelementptr ptr, ptr %names_data, i64 29
+  store ptr @col_name_29, ptr %ptr_29, align 8
+  %ptr_30 = getelementptr ptr, ptr %names_data, i64 30
+  store ptr @col_name_30, ptr %ptr_30, align 8
+  %ptr_31 = getelementptr ptr, ptr %names_data, i64 31
+  store ptr @col_name_31, ptr %ptr_31, align 8
+  %ptr_32 = getelementptr ptr, ptr %names_data, i64 32
+  store ptr @col_name_32, ptr %ptr_32, align 8
+  %ptr_33 = getelementptr ptr, ptr %names_data, i64 33
+  store ptr @col_name_33, ptr %ptr_33, align 8
+  %ptr_34 = getelementptr ptr, ptr %names_data, i64 34
+  store ptr @col_name_34, ptr %ptr_34, align 8
+  %ptr_35 = getelementptr ptr, ptr %names_data, i64 35
+  store ptr @col_name_35, ptr %ptr_35, align 8
+  %ptr_36 = getelementptr ptr, ptr %names_data, i64 36
+  store ptr @col_name_36, ptr %ptr_36, align 8
+  %len = getelementptr inbounds nuw { i64, i64, ptr }, ptr %names_header, i32 0, i32 0
+  store i64 37, ptr %len, align 4
+  %cap = getelementptr inbounds nuw { i64, i64, ptr }, ptr %names_header, i32 0, i32 1
+  store i64 37, ptr %cap, align 4
+  %data = getelementptr inbounds nuw { i64, i64, ptr }, ptr %names_header, i32 0, i32 2
+  store ptr %names_data, ptr %data, align 8
+  %types_header = call ptr @malloc(i64 24)
+  %types_data = call ptr @malloc(i64 296)
+  %ptr = getelementptr i64, ptr %types_data, i64 0
+  store i64 4, ptr %ptr, align 4
+  %ptr1 = getelementptr i64, ptr %types_data, i64 1
+  store i64 2, ptr %ptr1, align 4
+  %ptr2 = getelementptr i64, ptr %types_data, i64 2
+  store i64 2, ptr %ptr2, align 4
+  %ptr3 = getelementptr i64, ptr %types_data, i64 3
+  store i64 2, ptr %ptr3, align 4
+  %ptr4 = getelementptr i64, ptr %types_data, i64 4
+  store i64 2, ptr %ptr4, align 4
+  %ptr5 = getelementptr i64, ptr %types_data, i64 5
+  store i64 2, ptr %ptr5, align 4
+  %ptr6 = getelementptr i64, ptr %types_data, i64 6
+  store i64 2, ptr %ptr6, align 4
+  %ptr7 = getelementptr i64, ptr %types_data, i64 7
+  store i64 2, ptr %ptr7, align 4
+  %ptr8 = getelementptr i64, ptr %types_data, i64 8
+  store i64 2, ptr %ptr8, align 4
+  %ptr9 = getelementptr i64, ptr %types_data, i64 9
+  store i64 2, ptr %ptr9, align 4
+  %ptr10 = getelementptr i64, ptr %types_data, i64 10
+  store i64 2, ptr %ptr10, align 4
+  %ptr11 = getelementptr i64, ptr %types_data, i64 11
+  store i64 2, ptr %ptr11, align 4
+  %ptr12 = getelementptr i64, ptr %types_data, i64 12
+  store i64 2, ptr %ptr12, align 4
+  %ptr13 = getelementptr i64, ptr %types_data, i64 13
+  store i64 2, ptr %ptr13, align 4
+  %ptr14 = getelementptr i64, ptr %types_data, i64 14
+  store i64 2, ptr %ptr14, align 4
+  %ptr15 = getelementptr i64, ptr %types_data, i64 15
+  store i64 2, ptr %ptr15, align 4
+  %ptr16 = getelementptr i64, ptr %types_data, i64 16
+  store i64 2, ptr %ptr16, align 4
+  %ptr17 = getelementptr i64, ptr %types_data, i64 17
+  store i64 2, ptr %ptr17, align 4
+  %ptr18 = getelementptr i64, ptr %types_data, i64 18
+  store i64 2, ptr %ptr18, align 4
+  %ptr19 = getelementptr i64, ptr %types_data, i64 19
+  store i64 2, ptr %ptr19, align 4
+  %ptr20 = getelementptr i64, ptr %types_data, i64 20
+  store i64 1, ptr %ptr20, align 4
+  %ptr21 = getelementptr i64, ptr %types_data, i64 21
+  store i64 3, ptr %ptr21, align 4
+  %ptr22 = getelementptr i64, ptr %types_data, i64 22
+  store i64 3, ptr %ptr22, align 4
+  %ptr23 = getelementptr i64, ptr %types_data, i64 23
+  store i64 3, ptr %ptr23, align 4
+  %ptr24 = getelementptr i64, ptr %types_data, i64 24
+  store i64 3, ptr %ptr24, align 4
+  %ptr25 = getelementptr i64, ptr %types_data, i64 25
+  store i64 3, ptr %ptr25, align 4
+  %ptr26 = getelementptr i64, ptr %types_data, i64 26
+  store i64 3, ptr %ptr26, align 4
+  %ptr27 = getelementptr i64, ptr %types_data, i64 27
+  store i64 3, ptr %ptr27, align 4
+  %ptr28 = getelementptr i64, ptr %types_data, i64 28
+  store i64 3, ptr %ptr28, align 4
+  %ptr29 = getelementptr i64, ptr %types_data, i64 29
+  store i64 3, ptr %ptr29, align 4
+  %ptr30 = getelementptr i64, ptr %types_data, i64 30
+  store i64 3, ptr %ptr30, align 4
+  %ptr31 = getelementptr i64, ptr %types_data, i64 31
+  store i64 3, ptr %ptr31, align 4
+  %ptr32 = getelementptr i64, ptr %types_data, i64 32
+  store i64 3, ptr %ptr32, align 4
+  %ptr33 = getelementptr i64, ptr %types_data, i64 33
+  store i64 3, ptr %ptr33, align 4
+  %ptr34 = getelementptr i64, ptr %types_data, i64 34
+  store i64 3, ptr %ptr34, align 4
+  %ptr35 = getelementptr i64, ptr %types_data, i64 35
+  store i64 3, ptr %ptr35, align 4
+  %ptr36 = getelementptr i64, ptr %types_data, i64 36
+  store i64 3, ptr %ptr36, align 4
+  %0 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %types_header, i32 0, i32 0
+  store i64 37, ptr %0, align 4
+  %1 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %types_header, i32 0, i32 1
+  store i64 37, ptr %1, align 4
+  %2 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %types_header, i32 0, i32 2
+  store ptr %types_data, ptr %2, align 8
+  %df_ptr = call ptr @malloc(i64 24)
+  %cols = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 0
+  %rows = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 1
+  %types = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %df_ptr, i32 0, i32 2
+  store ptr %names_header, ptr %cols, align 8
+  store ptr %raw_rows_ptr, ptr %rows, align 8
+  store ptr %types_header, ptr %types, align 8
+  store ptr %df_ptr, ptr @df, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i64 7, ptr %tag_ptr, align 8
+  store i64 0, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr %__where_result_load118, ptr %data_ptr, align 8
+  store ptr null, ptr %data_ptr, align 8
   ret ptr %runtime_obj
-
-then86:                                           ; preds = %for.body56
-  %__where_result_load89 = load ptr, ptr @__where_result, align 8
-  %__where_src_load90 = load ptr, ptr @__where_src, align 8
-  %__where_i_load91 = load i64, ptr @__where_i, align 8
-  %rows_ptr_ptr92 = getelementptr inbounds nuw %dataframe, ptr %__where_src_load90, i32 0, i32 1
-  %rows93 = load ptr, ptr %rows_ptr_ptr92, align 8
-  %data_ptr_ptr94 = getelementptr inbounds nuw %array, ptr %rows93, i32 0, i32 2
-  %data95 = load ptr, ptr %data_ptr_ptr94, align 8
-  %elem_ptr96 = getelementptr ptr, ptr %data95, i64 %__where_i_load91
-  %record97 = load ptr, ptr %elem_ptr96, align 8
-  %rows_field98 = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__where_result_load89, i32 0, i32 1
-  %rows_array99 = load ptr, ptr %rows_field98, align 8
-  %len_ptr100 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array99, i32 0, i32 0
-  %cap_ptr101 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array99, i32 0, i32 1
-  %data_ptr_ptr102 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array99, i32 0, i32 2
-  %len103 = load i64, ptr %len_ptr100, align 8
-  %cap104 = load i64, ptr %cap_ptr101, align 8
-  %data105 = load ptr, ptr %data_ptr_ptr102, align 8
-  %is_full106 = icmp uge i64 %len103, %cap104
-  br i1 %is_full106, label %grow107, label %cont108
-
-else87:                                           ; preds = %for.body56
-  br label %ifcont88
-
-ifcont88:                                         ; preds = %else87, %cont108
-  %iftmp115 = phi ptr [ %__where_result_load89, %cont108 ], [ 0.000000e+00, %else87 ]
-  br label %for.step57
-
-grow107:                                          ; preds = %then86
-  %2 = icmp eq i64 %cap104, 0
-  %3 = mul i64 %cap104, 2
-  %new_cap109 = select i1 %2, i64 4, i64 %3
-  %bytes110 = mul i64 %new_cap109, 8
-  %realloc111 = call ptr @realloc(ptr %data105, i64 %bytes110)
-  store i64 %new_cap109, ptr %cap_ptr101, align 8
-  store ptr %realloc111, ptr %data_ptr_ptr102, align 8
-  br label %cont108
-
-cont108:                                          ; preds = %grow107, %then86
-  %final_data_ptr112 = phi ptr [ %data105, %then86 ], [ %realloc111, %grow107 ]
-  %target_slot_ptr113 = getelementptr ptr, ptr %final_data_ptr112, i64 %len103
-  store ptr %record97, ptr %target_slot_ptr113, align 8
-  %new_len114 = add i64 %len103, 1
-  store i64 %new_len114, ptr %len_ptr100, align 8
-  br label %ifcont88
 }
 
 declare i32 @printf(ptr, ...)
 
+declare ptr @ReadCsvInternal(ptr, ptr)
+
 declare noalias ptr @malloc(i64)
-
-declare ptr @realloc(ptr, i64)
-
-declare i32 @strcmp(ptr, ptr)
-
-!0 = !{!"loop.id", !1}
-!1 = !{!"llvm.loop.vectorize.enable", i1 true}

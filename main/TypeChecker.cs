@@ -383,13 +383,26 @@ namespace MyCompiler
             expr.SetType(idType);
             return expr.Type;
         }
-
         public Type VisitAssign(AssignNode expr)
         {
             Type valType = Visit(expr.Expression);
 
-            // Use 'default' for LLVMValueRef to avoid CS0246
+            // Instead of .Contains, use .Get and check for null
+            var existingEntry = _context.Get(expr.Id);
+
+            if (existingEntry != null)
+            {
+                // Compare the type of the new value with the existing variable's type
+                if (!valType.Equals(existingEntry.Type))
+                {
+                    throw new Exception($"Type mismatch: Cannot assign {valType} to variable '{expr.Id}' of type {existingEntry.Type}");
+                }
+            }
+
+            // Update context with the type. 
+            // Using 'default' for LLVMValueRef is correct for the Type Checking phase.
             _context = _context.Add(expr.Id, default, null, valType);
+
             expr.SetType(valType);
             return valType;
         }
@@ -552,64 +565,92 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNode expr)
         {
-            // 1. Visit children first to resolve their types
-            Visit(expr.SourceExpression);
-            Type indexType = Visit(expr.IndexExpression);
+            Type sourceT = Visit(expr.SourceExpression);
+            Type indexT = Visit(expr.IndexExpression);
+            Type inferred = new IntType();
 
-            Type inferred = new IntType(); // Default
-
-            if (expr.SourceExpression is IdNode idNode)
+            if (sourceT is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
-                    inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
-                else if (entry?.Type is DataframeType dfType)
+                if (indexT is not IntType)
+                    throw new Exception("Array index must be an integer.");
+                inferred = arrType.ElementType ?? new IntType();
+            }
+            else if (sourceT is DataframeType dfType)
+            {
+                if (indexT is StringType)
                 {
-                    if (indexType is StringType)
+                    if (expr.IndexExpression is StringNode strNode)
                     {
-                        Type columnType = new IntType();
+                        // Fix: Manual IndexOf for IReadOnlyList compatibility
+                        int colIndex = -1;
                         for (int i = 0; i < dfType.ColumnNames.Count; i++)
                         {
-                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
+                            if (dfType.ColumnNames[i] == strNode.Value) { colIndex = i; break; }
                         }
 
-                        inferred = new ArrayType(columnType);
+                        if (colIndex != -1)
+                            inferred = new ArrayType(dfType.DataTypes[colIndex]);
+                        else
+                            throw new Exception($"Column '{strNode.Value}' not found in Dataframe.");
                     }
                     else
-                        inferred = dfType.RowType;
+                    {
+                        inferred = new ArrayType(new IntType());
+                    }
                 }
+                else if (indexT is IntType)
+                {
+                    inferred = dfType.RowType;
+                }
+            }
+            else
+            {
+                throw new Exception($"Type {sourceT} is not indexable.");
             }
 
             expr.SetType(inferred);
             return expr.Type;
         }
+
         public Type VisitIndexAssign(IndexAssignNode expr)
         {
-            // 1. Visit children to ensure their .Type properties are populated
-            Type arrayOrDfType = Visit(expr.ArrayExpression);
-            Visit(expr.IndexExpression);
+            Type collectionType = Visit(expr.ArrayExpression);
+            Type indexType = Visit(expr.IndexExpression);
             Type valueType = Visit(expr.AssignExpression);
 
-            // 2. Determine the expected element type
             Type expectedType = null;
 
-            if (arrayOrDfType is ArrayType arr)
+            if (collectionType is ArrayType arr)
             {
+                if (indexType is not IntType)
+                    throw new Exception("Array index assignment requires an integer index.");
                 expectedType = arr.ElementType;
             }
-            else if (arrayOrDfType is DataframeType df)
+            else if (collectionType is DataframeType df)
             {
-                // When assigning to a dataframe directly by index, we expect a Row (Record)
-                expectedType = df.RowType;
-            }
-            else
-            {
-                throw new Exception($"Cannot perform index assignment on non-indexable type: {arrayOrDfType}");
+                if (indexType is IntType)
+                {
+                    expectedType = df.RowType;
+                }
+                else if (indexType is StringType)
+                {
+                    if (expr.IndexExpression is StringNode strNode)
+                    {
+                        // Fix: Manual search for IReadOnlyList compatibility
+                        for (int i = 0; i < df.ColumnNames.Count; i++)
+                        {
+                            if (df.ColumnNames[i] == strNode.Value)
+                            {
+                                expectedType = new ArrayType(df.DataTypes[i]);
+                                break;
+                            }
+                        }
+                    }
+                    if (expectedType == null) expectedType = new ArrayType(new IntType());
+                }
             }
 
-            // 3. Validate types (using your compiler's type equality, not C# GetType)
-            // Assuming you have a way to check if types match
-            if (expectedType.ToString() != valueType.ToString())
+            if (expectedType != null && expectedType.ToString() != valueType.ToString())
             {
                 throw new Exception($"Type mismatch: Cannot assign {valueType} to {expectedType} element.");
             }
