@@ -63,10 +63,10 @@ namespace MyCompiler
         public ExpressionNode Value { get; }
         public ExpressionNode Decimals { get; }
 
-        public RoundNode(ExpressionNode value, ExpressionNode decimals)
+        public RoundNode(List<ExpressionNode> args)
         {
-            Value = value;
-            Decimals = decimals;
+            Value = args[0];
+            Decimals = args.Count > 1 ? args[1] : new NumberNode(0);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRound(this);
@@ -576,7 +576,7 @@ namespace MyCompiler
                 var arg = valuesArray[i];
                 // For rows like {"Alice", 25}, arg.Name is null. 
                 // We assign a placeholder so the field object isn't broken.
-                string label = arg.Name ?? $"item{i + 1}";
+                string label = arg.Name ?? throw new Exception($"Record fields must be named. Missing name for field at position {i}.");
 
                 Fields.Add(new RecordField
                 {

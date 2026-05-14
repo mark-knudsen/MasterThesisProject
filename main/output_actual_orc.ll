@@ -1,18 +1,155 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-define ptr @main_9() {
+%dataframe = type { ptr, ptr, ptr }
+%array = type { i64, i64, ptr }
+%struct_latitude_longitude_test = type { double, double, ptr }
+%struct_date_latitude_longitude_wind-speed-min_wind-speed-max_wind-speed-mean_wind-direction-min_wind-direction-max_wind-direction-mean_surface-air-temperature-min_surface-air-temperature-max_surface-air-temperature-mean_total-rainfall-sum_surface-humidity-min_surface-humidity-max_surface-humidity-mean_ndvi_elevation_slope_aspect_fire_label_land_cover_class_1_land_cover_class_2_land_cover_class_4_land_cover_class_5_land_cover_class_6_land_cover_class_7_land_cover_class_8_land_cover_class_9_land_cover_class_10_land_cover_class_11_land_cover_class_12_land_cover_class_13_land_cover_class_14_land_cover_class_15_land_cover_class_16_land_cover_class_17 = type { ptr, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, double, i64, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1, i1 }
+
+@df = external global ptr
+@__map_src = external global ptr, align 8
+@str = private unnamed_addr constant [9 x i8] c"latitude\00", align 1
+@str.1 = private unnamed_addr constant [10 x i8] c"longitude\00", align 1
+@str.2 = private unnamed_addr constant [5 x i8] c"test\00", align 1
+@__map_result = external global ptr, align 8
+@__map_i = external global i64, align 8
+@__current_row = external global ptr, align 8
+@str.3 = private unnamed_addr constant [3 x i8] c"HA\00", align 1
+
+define ptr @main_5() {
 entry:
-  %value_mem = call ptr @malloc(i64 8)
-  store i64 12, ptr %value_mem, align 4
+  %df_load = load ptr, ptr @df, align 8
+  store ptr %df_load, ptr @__map_src, align 8
+  %arr_header = call ptr @malloc(i64 24)
+  %arr_data_raw = call ptr @malloc(i64 32)
+  %len_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 0
+  %cap_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 1
+  %data_field_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header, i32 0, i32 2
+  store i64 3, ptr %len_ptr, align 8
+  store i64 3, ptr %cap_ptr, align 8
+  store ptr %arr_data_raw, ptr %data_field_ptr, align 8
+  %elem_ptr = getelementptr ptr, ptr %arr_data_raw, i64 0
+  store ptr @str, ptr %elem_ptr, align 8
+  %elem_ptr1 = getelementptr ptr, ptr %arr_data_raw, i64 1
+  store ptr @str.1, ptr %elem_ptr1, align 8
+  %elem_ptr2 = getelementptr ptr, ptr %arr_data_raw, i64 2
+  store ptr @str.2, ptr %elem_ptr2, align 8
+  %arr_header3 = call ptr @malloc(i64 24)
+  %arr_data_raw4 = call ptr @malloc(i64 800)
+  %len_ptr5 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header3, i32 0, i32 0
+  %cap_ptr6 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header3, i32 0, i32 1
+  %data_field_ptr7 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header3, i32 0, i32 2
+  store i64 0, ptr %len_ptr5, align 8
+  store i64 100, ptr %cap_ptr6, align 8
+  store ptr %arr_data_raw4, ptr %data_field_ptr7, align 8
+  %arr_header8 = call ptr @malloc(i64 24)
+  %arr_data_raw9 = call ptr @malloc(i64 32)
+  %len_ptr10 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header8, i32 0, i32 0
+  %cap_ptr11 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header8, i32 0, i32 1
+  %data_field_ptr12 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %arr_header8, i32 0, i32 2
+  store i64 3, ptr %len_ptr10, align 8
+  store i64 3, ptr %cap_ptr11, align 8
+  store ptr %arr_data_raw9, ptr %data_field_ptr12, align 8
+  %elem_ptr13 = getelementptr i64, ptr %arr_data_raw9, i64 0
+  store i64 4, ptr %elem_ptr13, align 8
+  %elem_ptr14 = getelementptr i64, ptr %arr_data_raw9, i64 1
+  store i64 4, ptr %elem_ptr14, align 8
+  %elem_ptr15 = getelementptr i64, ptr %arr_data_raw9, i64 2
+  store i64 4, ptr %elem_ptr15, align 8
+  %df = tail call ptr @malloc(i32 ptrtoint (ptr getelementptr (%dataframe, ptr null, i32 1) to i32))
+  %cols_gep = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 0
+  %rows_gep = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 1
+  %types_gep = getelementptr inbounds nuw %dataframe, ptr %df, i32 0, i32 2
+  store ptr %arr_header, ptr %cols_gep, align 8
+  store ptr %arr_header3, ptr %rows_gep, align 8
+  store ptr %arr_header8, ptr %types_gep, align 8
+  store ptr %df, ptr @__map_result, align 8
+  store i64 0, ptr @__map_i, align 8
+  br label %for.cond
+
+for.cond:                                         ; preds = %for.step, %entry
+  %__map_i_load = load i64, ptr @__map_i, align 8
+  %__map_src_load = load ptr, ptr @__map_src, align 8
+  %rows_ptr_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__map_src_load, i32 0, i32 1
+  %rows_ptr = load ptr, ptr %rows_ptr_field, align 8
+  %rows_array_ptr = bitcast ptr %rows_ptr to ptr
+  %rows_length_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array_ptr, i32 0, i32 0
+  %rows_length = load i64, ptr %rows_length_ptr, align 8
+  %icmp_tmp = icmp slt i64 %__map_i_load, %rows_length
+  br i1 %icmp_tmp, label %for.body, label %for.end
+
+for.body:                                         ; preds = %for.cond
+  %__map_src_load16 = load ptr, ptr @__map_src, align 8
+  %__map_i_load17 = load i64, ptr @__map_i, align 8
+  %rows_ptr_ptr = getelementptr inbounds nuw %dataframe, ptr %__map_src_load16, i32 0, i32 1
+  %rows = load ptr, ptr %rows_ptr_ptr, align 8
+  %data_ptr_ptr = getelementptr inbounds nuw %array, ptr %rows, i32 0, i32 2
+  %data = load ptr, ptr %data_ptr_ptr, align 8
+  %elem_ptr18 = getelementptr ptr, ptr %data, i64 %__map_i_load17
+  %record = load ptr, ptr %elem_ptr18, align 8
+  store ptr %record, ptr @__current_row, align 8
+  %__map_result_load = load ptr, ptr @__map_result, align 8
+  %record_ptr = call ptr @malloc(i64 ptrtoint (ptr getelementptr (%struct_latitude_longitude_test, ptr null, i32 1) to i64))
+  %__current_row_load = load ptr, ptr @__current_row, align 8
+  %ptr_latitude = getelementptr %struct_date_latitude_longitude_wind-speed-min_wind-speed-max_wind-speed-mean_wind-direction-min_wind-direction-max_wind-direction-mean_surface-air-temperature-min_surface-air-temperature-max_surface-air-temperature-mean_total-rainfall-sum_surface-humidity-min_surface-humidity-max_surface-humidity-mean_ndvi_elevation_slope_aspect_fire_label_land_cover_class_1_land_cover_class_2_land_cover_class_4_land_cover_class_5_land_cover_class_6_land_cover_class_7_land_cover_class_8_land_cover_class_9_land_cover_class_10_land_cover_class_11_land_cover_class_12_land_cover_class_13_land_cover_class_14_land_cover_class_15_land_cover_class_16_land_cover_class_17, ptr %__current_row_load, i32 0, i32 1
+  %val_latitude = load double, ptr %ptr_latitude, align 8
+  %fsubtmp = fsub double %val_latitude, 1.000000e+02
+  %field_0 = getelementptr %struct_latitude_longitude_test, ptr %record_ptr, i32 0, i32 0
+  store double %fsubtmp, ptr %field_0, align 8
+  %field_1 = getelementptr %struct_latitude_longitude_test, ptr %record_ptr, i32 0, i32 1
+  store double 1.000000e+02, ptr %field_1, align 8
+  %field_2 = getelementptr %struct_latitude_longitude_test, ptr %record_ptr, i32 0, i32 2
+  store ptr @str.3, ptr %field_2, align 8
+  %rows_field = getelementptr inbounds nuw { ptr, ptr, ptr }, ptr %__map_result_load, i32 0, i32 1
+  %rows_array = load ptr, ptr %rows_field, align 8
+  %len_ptr19 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 0
+  %cap_ptr20 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 1
+  %data_ptr_ptr21 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %rows_array, i32 0, i32 2
+  %len = load i64, ptr %len_ptr19, align 8
+  %cap = load i64, ptr %cap_ptr20, align 8
+  %data22 = load ptr, ptr %data_ptr_ptr21, align 8
+  %is_full = icmp uge i64 %len, %cap
+  br i1 %is_full, label %grow, label %cont
+
+for.step:                                         ; preds = %cont
+  %x_load = load i64, ptr @__map_i, align 8
+  %inc_add = add i64 %x_load, 1
+  store i64 %inc_add, ptr @__map_i, align 8
+  br label %for.cond, !llvm.loop !0
+
+for.end:                                          ; preds = %for.cond
+  %__map_result_load23 = load ptr, ptr @__map_result, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i64 1, ptr %tag_ptr, align 8
+  store i64 7, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr %value_mem, ptr %data_ptr, align 8
+  store ptr %__map_result_load23, ptr %data_ptr, align 8
   ret ptr %runtime_obj
+
+grow:                                             ; preds = %for.body
+  %0 = icmp eq i64 %cap, 0
+  %1 = mul i64 %cap, 2
+  %new_cap = select i1 %0, i64 4, i64 %1
+  %bytes = mul i64 %new_cap, 8
+  %realloc = call ptr @realloc(ptr %data22, i64 %bytes)
+  store i64 %new_cap, ptr %cap_ptr20, align 8
+  store ptr %realloc, ptr %data_ptr_ptr21, align 8
+  br label %cont
+
+cont:                                             ; preds = %grow, %for.body
+  %final_data_ptr = phi ptr [ %data22, %for.body ], [ %realloc, %grow ]
+  %target_slot_ptr = getelementptr ptr, ptr %final_data_ptr, i64 %len
+  store ptr %record_ptr, ptr %target_slot_ptr, align 8
+  %new_len = add i64 %len, 1
+  store i64 %new_len, ptr %len_ptr19, align 8
+  br label %for.step
 }
 
 declare i32 @printf(ptr, ...)
 
 declare noalias ptr @malloc(i64)
+
+declare ptr @realloc(ptr, i64)
+
+!0 = !{!"loop.id", !1}
+!1 = !{!"llvm.loop.vectorize.enable", i1 true}

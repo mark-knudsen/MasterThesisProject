@@ -3120,9 +3120,6 @@ namespace MyCompiler
 
         public LLVMValueRef VisitArray(ArrayNode expr)
         {
-            if (expr.Type == null) Console.WriteLine("DEBUG: Array Type is NULL");
-            if (expr.ElementType == null) Console.WriteLine("DEBUG: Array ElementType is NULL");
-
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             uint count = (uint)expr.Elements.Count;
@@ -4288,13 +4285,12 @@ namespace MyCompiler
 
             // 2. Get malloc and its signature type for THIS context
             var mallocFunc = GetOrDeclareMalloc();
+
             // 3. Size calculation (Ensure it is i64 for malloc)
-            var sizeValue = _builder.BuildIntCast(structType.SizeOf, i64, "malloc_size");
+            var sizeValue = structType.SizeOf;
 
             // 4. THE CRITICAL CALL: Use the fresh mallocFuncType
             var instancePtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeValue }, "record_ptr");
-
-            // 5. Cast to the specific struct pointer
             var typedPtr = _builder.BuildBitCast(instancePtr, LLVMTypeRef.CreatePointer(structType, 0), "typed_record");
 
             for (int i = 0; i < expr.Fields.Count; i++)
@@ -4410,70 +4406,11 @@ namespace MyCompiler
             }
             else if (expr.SourceExpression.Type is DataframeType dfType)
             {
-                switch (expr.IdField)
-                {
-                    case "columns":
-                        {
-                            var columnNodes = dfType.ColumnNames.Select(name =>
-                            {
-                                var node = new StringNode(name);
-                                node.SetType(new StringType());
-                                return (ExpressionNode)node;
-                            }).ToList();
 
-                            var columnArray = new ArrayNode(columnNodes)
-                            {
-                                ElementType = new StringType()
-                            };
-                            columnArray.SetType(new ArrayType(new StringType()));
-                            return Visit(columnArray);
-                        }
-                    case "schema":
-                        {
-                            var schemaFields = dfType.RowType.RecordFields.Select(field =>
-                                new NamedArgumentNode(field.Label, new StringNode(field.Type.ToString())))
-                                .ToList();
+                var d = ColumnAccessForDataframe(expr);
+                PerformSemanticAnalysis(d);
+                return Visit(d);
 
-                            var schemaRecord = new RecordNode(schemaFields);
-                            foreach (var field in schemaRecord.Fields)
-                            {
-                                field.Value.SetType(new StringType());
-                                field.Type = new StringType();
-                            }
-
-                            var recordType = new RecordType(schemaRecord.Fields);
-                            schemaRecord.SetType(recordType);
-                            return Visit(schemaRecord);
-                        }
-                    case "types":
-                        {
-                            var datatypeNodes = dfType.DataTypes.Select(t =>
-                            {
-                                var node = new NumberNode(GetTypeByTag(t));
-                                node.SetType(new IntType());
-                                return (ExpressionNode)node;
-                            }).ToList();
-
-                            var datatypeArray = new ArrayNode(datatypeNodes)
-                            {
-                                ElementType = new IntType()
-                            };
-                            datatypeArray.SetType(new ArrayType(new IntType()));
-                            return Visit(datatypeArray);
-                        }
-                    case "rows":
-                        {
-                            // Use the stored actual rows array in the dataframe value.
-                            // This is not yet implemented, so fall back to a generic ColumnAccessForDataframe if needed.
-                            throw new Exception("Accessing df.rows at runtime is not supported yet.");
-                        }
-                    default:
-                        {
-                            var d = ColumnAccessForDataframe(expr);
-                            PerformSemanticAnalysis(d);
-                            return Visit(d);
-                        }
-                }
             }
             else
                 throw new Exception("Field access is only supported on records");
@@ -5160,7 +5097,9 @@ namespace MyCompiler
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
-        df = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
+        df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])
+        
+        df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
         to_csv(df, "CSV/mytest.csv")
 
         df2 = dataframe(columns=["name", "age"],type=[string, int])         
@@ -5192,14 +5131,14 @@ namespace MyCompiler
         df.select(["latitude", "longitude"])
 
         # TEST: WHERE
-        rdf.where(x => x.latitude > -18.0)
-        rdf.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
+        df.where(x => x.latitude > -18.0)
+        df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
         df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
 
         # TEST: MAP
         df.map(x => x.latitude - 100.0)
-        rdf.map(x => x + {latitude: x.latitude - 100.0})
-        rdf.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
+        df.map(x => x + {latitude: x.latitude - 100.0})
+        df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
         df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
 
 

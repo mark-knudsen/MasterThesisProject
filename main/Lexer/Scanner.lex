@@ -24,7 +24,6 @@
 "pow"           { return (int)Tokens.POW; }
 "log"           { return (int)Tokens.LOG; }
 "exp"           { return (int)Tokens.EXP; }
-"func"          { return (int)Tokens.FUNC; }
 "foreach"       { return (int)Tokens.FOREACH; }
 "for"           { return (int)Tokens.FOR; }
 "in"            { return (int)Tokens.IN; }
@@ -56,10 +55,9 @@
 
 "record"        { return (int)Tokens.RECORD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
-"columns"       { yylval.obj = yytext; return (int)Tokens.ID; }
+"columns"       { yylval.obj = yytext; return (int)Tokens.COLUMNS; }
 "schema"        { yylval.obj = yytext; return (int)Tokens.ID; }
 "select"        { return (int)Tokens.SELECT; }  /* others: extract, derive, select  */
-"show"          { return (int)Tokens.SHOW; }
 
 ">="            { return (int)Tokens.GE; }
 "<="            { return (int)Tokens.LE; }
