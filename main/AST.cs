@@ -277,13 +277,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
     }
 
-    public class CopyArrayNode : CopyNode
-    {
-        public CopyArrayNode(ExpressionNode source) : base(source) { }
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
-    }
-
     public class IndexNode : ExpressionNode
     {
         public ExpressionNode SourceExpression { get; }
