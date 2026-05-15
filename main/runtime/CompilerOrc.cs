@@ -1109,7 +1109,7 @@ namespace MyCompiler
                 {
                     IntType => LLVMTypeRef.CreatePointer(i64, 0),
                     FloatType => LLVMTypeRef.CreatePointer(ctx.DoubleType, 0),
-                    BoolType => LLVMTypeRef.CreatePointer(ctx.Int1Type, 0),
+                    BoolType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                     _ => LLVMTypeRef.CreatePointer(i64, 0)
                 };
 
@@ -1221,7 +1221,7 @@ namespace MyCompiler
                 condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
                     condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
             }
-            else if (condition.TypeOf != ctx.Int1Type)
+            else if (condition.TypeOf != ctx.Int8Type) // If it's not already i8, treat it as an integer condition NOTE
             {
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
                     condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
@@ -1241,7 +1241,7 @@ namespace MyCompiler
             // --- VECTORIZATION HINT START ---
             // 1. Create the attribute: !{!"llvm.loop.vectorize.enable", i1 1}
             var metadataName = ctx.GetMDString("llvm.loop.vectorize.enable", 26);
-            var valOne = LLVMValueRef.CreateConstInt(ctx.Int1Type, 1);
+            var valOne = LLVMValueRef.CreateConstInt(ctx.Int8Type, 1);
             var vectorizeAttr = LLVMValueRef.CreateMDNode(new[] { metadataName, valOne });
 
             // 2. Create a non-circular Loop Node. 
@@ -1905,7 +1905,7 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitBoolean(BooleanNode expr)
         {
-            return LLVMValueRef.CreateConstInt(_module.Context.Int1Type, expr.Value ? 1UL : 0UL);
+            return LLVMValueRef.CreateConstInt(_module.Context.Int8Type, expr.Value ? 1UL : 0UL);
         }
         public LLVMValueRef VisitNull(NullNode expr)
         {
@@ -2176,36 +2176,8 @@ namespace MyCompiler
                     case BoolType:
                         DeclareBoolStrings();
 
-                        LLVMValueRef boolCond;
-
-                        if (valueToPrint.TypeOf == llvmCtx.Int1Type)
-                        {
-                            boolCond = valueToPrint;
-                        }
-                        else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                        {
-                            var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
-                            boolCond = _builder.BuildICmp(
-                                LLVMIntPredicate.LLVMIntNE,
-                                valueToPrint,
-                                zero,
-                                "boolcond");
-                        }
-                        else if (valueToPrint.TypeOf == llvmCtx.DoubleType)
-                        {
-                            var zero = LLVMValueRef.CreateConstReal(llvmCtx.DoubleType, 0.0);
-                            boolCond = _builder.BuildFCmp(
-                                LLVMRealPredicate.LLVMRealONE,
-                                valueToPrint,
-                                zero,
-                                "boolcond");
-                        }
-                        else
-                        {
-                            throw new Exception("Unsupported bool representation");
-                        }
-
-                        var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
+                        finalArg  = valueToPrint;
+                        var selectedStr = _builder.BuildSelect(finalArg, _trueStr, _falseStr, "boolstr");
 
                         return _builder.BuildCall2(
                             _printfType,
@@ -2280,7 +2252,7 @@ namespace MyCompiler
                                 }
                                 else if (field.Type is BoolType)
                                 {
-                                    fieldVal = _builder.BuildLoad2(ctx.Int1Type, storedPtr, "bool_val");
+                                    fieldVal = _builder.BuildLoad2(ctx.Int8Type, storedPtr, "bool_val");
 
                                     DeclareBoolStrings();
                                     var str = _builder.BuildSelect(fieldVal, _trueStr, _falseStr, "boolstr");
@@ -2677,22 +2649,7 @@ namespace MyCompiler
             if (type is DataframeType dt)
                 return CopyDataframe(sourceVal, dt);
 
-            // 4. Primitives (Your existing Boxed Logic)
-            if (type is IntType || type is FloatType || type is BoolType)
-            {
-                var ctx = _module.Context;
-                var mallocFunc = GetOrDeclareMalloc();
-                var i64 = ctx.Int64Type;
-                var newBox = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "primitive_box_copy");
-                var llvmType = GetLLVMType(type);
-                var srcTyped = _builder.BuildBitCast(sourceVal, LLVMTypeRef.CreatePointer(llvmType, 0));
-                var dstTyped = _builder.BuildBitCast(newBox, LLVMTypeRef.CreatePointer(llvmType, 0));
-                var val = _builder.BuildLoad2(llvmType, srcTyped, "box_val");
-                _builder.BuildStore(val, dstTyped);
-                return newBox;
-            }
-
-            return sourceVal;
+            throw new Exception($"Deep copy not supported for type: {type}");
         }
 
         private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
@@ -3261,7 +3218,7 @@ namespace MyCompiler
 
                 return arrayType.ElementType switch
                 {
-                    BoolType => _builder.BuildZExt(loadedValue, ctx.Int1Type, "bool_val"),
+                    BoolType => _builder.BuildZExt(loadedValue, ctx.Int8Type, "bool_val"),
                     _ => loadedValue
                 };
             }
@@ -3443,7 +3400,7 @@ namespace MyCompiler
             {
                 FloatType => ctx.DoubleType,
                 IntType => ctx.Int64Type,
-                BoolType => ctx.Int1Type,
+                BoolType => ctx.Int8Type,
                 NullType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Represent Null as i8*
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
@@ -4321,7 +4278,7 @@ namespace MyCompiler
             if (type == ctx.DoubleType)
                 return 8;
 
-            if (type == ctx.Int1Type) // for bools, we store as i64 for simplicity, so alignment is 8
+            if (type == ctx.Int8Type) // for bools, we store as i64 for simplicity, so alignment is 8
                 return 8;
 
             if (type.Kind == LLVMTypeKind.LLVMPointerTypeKind)
@@ -4392,7 +4349,7 @@ namespace MyCompiler
                 {
                     // If you store bools as i64 in C#, load i64 and truncate to i1
                     var i64Val = _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_bool_raw");
-                    return _builder.BuildIntCast(i64Val, ctx.Int1Type, $"val_{expr.IdField}");
+                    return _builder.BuildIntCast(i64Val, ctx.Int8Type, $"val_{expr.IdField}");
                 }
 
                 if (expr.Type is StringType)
@@ -4888,7 +4845,7 @@ namespace MyCompiler
                         {
                             IntType => ctx.Int64Type,
                             FloatType => ctx.DoubleType,
-                            _ => ctx.Int1Type // Bool
+                            _ => ctx.Int8Type // Bool
                         };
 
                         // Store the raw value into the box
