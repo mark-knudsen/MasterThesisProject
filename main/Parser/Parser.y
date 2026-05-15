@@ -44,7 +44,7 @@
 %type <node> prog statement statement_list assignment block seperator opt_newlines
 %type <node> expr 
 %type <expr> type
-%type <exprList> expr_list exprs
+%type <exprList> expr_list 
 %type <argList> arg_list
 %type <node> arg
 
@@ -152,7 +152,7 @@ expr
     | type                 { $$ = new TypeLiteralNode($1 as TypeNode); }
 
     | LPAREN expr RPAREN   { $$ = $2; }    /* ( 2+2 ) */
-    | LBRACKET exprs RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
+    | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
     | LBRACE arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); }  /*{ name: "Bob", age: 23 } */
 
     /* Built-ins */
@@ -215,12 +215,11 @@ expr
     }
     ;
     
-exprs: /* empty*/ { $$ = new List<ExpressionNode>(); }
-    | expr_list { $$ = $1; } 
-    ;
+
 
 expr_list
-    : expr                   { $$ = new List<ExpressionNode> { $1 as ExpressionNode }; }
+    : /* empty*/             { $$ = new List<ExpressionNode>(); }
+    | expr                   { $$ = new List<ExpressionNode> { $1 as ExpressionNode }; }
     | expr_list COMMA expr   { $1.Add($3 as ExpressionNode); $$ = $1; }
     ;
 
