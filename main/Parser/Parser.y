@@ -98,7 +98,7 @@ type
     | FLOAT               { $$ = new TypeNode("float"); }
     | BOOL                { $$ = new TypeNode("bool"); }
     | STRING              { $$ = new TypeNode("string"); }   
-    | VOID                { $$ = new TypeNode("void"); }
+    | VOID                { $$ = new TypeNode("void"); }    /* We currently do not use VOID! */
     | NULL                { $$ = new TypeNode("null"); }    /* We currently do not use NULL! */
     | ARRAY LT type GT    { $$ = new TypeNode("array"); }   /* We currently do not use typed array! */
     ;
