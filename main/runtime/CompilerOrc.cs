@@ -2176,7 +2176,7 @@ namespace MyCompiler
                     case BoolType:
                         DeclareBoolStrings();
 
-                        finalArg  = valueToPrint;
+                        finalArg = valueToPrint;
                         var selectedStr = _builder.BuildSelect(finalArg, _trueStr, _falseStr, "boolstr");
 
                         return _builder.BuildCall2(
@@ -5047,6 +5047,117 @@ namespace MyCompiler
             }
 
             return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
+        }
+
+        public LLVMValueRef VisitSlice(SliceNode node)
+        {
+            var sourceVal = node.Source.Accept(this); // The pointer to ArrayObject or DataframeObject
+            var sourceType = node.Source.Type;
+            var _mallocFunc = GetOrDeclareMalloc();
+
+            // 1. If it's a regular array: [1, 2, 3][0:2]
+            if (sourceType is ArrayType arrayType)
+            {
+                var llvmElemType = GetLLVMType(arrayType.ElementType);
+                return SliceArrayInternal(sourceVal, llvmElemType, node.Start, node.End);
+            }
+
+            // 2. If it's a dataframe: df[5:10]
+            if (sourceType is DataframeType dfType)
+            {
+                // Load the original Dataframe components (3 pointers: columns, rows, dataTypes)
+                // Structure: { ptr columns, ptr rows, ptr dataTypes }
+                var colsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 0, "cols_ptr_ptr");
+                var rowsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 1, "rows_ptr_ptr");
+                var typesPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 2, "types_ptr_ptr");
+
+                var originalCols = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), colsPtrPtr, "orig_cols");
+                var originalRows = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), rowsPtrPtr, "orig_rows");
+                var originalTypes = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), typesPtrPtr, "orig_types");
+
+                // Slice the 'rows' array specifically. 
+                // Rows are array<ptr to Record>, so the element type is a pointer.
+                var llvmPtrType = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
+                var slicedRows = SliceArrayInternal(originalRows, llvmPtrType, node.Start, node.End);
+
+                // Allocate a new DataframeObject header (3 pointers * 8 bytes = 24 bytes)
+                var newDfPtr = _builder.BuildCall2(_mallocType, _mallocFunc,
+                    new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 24) }, "new_df_header");
+
+                // Construct the new Dataframe header
+                var newColsPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 0, "new_cols_ptr");
+                var newRowsPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 1, "new_rows_ptr");
+                var newTypesPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 2, "new_types_ptr");
+
+                // Store pointers: Columns and Types are shared; Rows is the new slice
+                _builder.BuildStore(originalCols, newColsPtr);
+                _builder.BuildStore(slicedRows, newRowsPtr);
+                _builder.BuildStore(originalTypes, newTypesPtr);
+
+                return newDfPtr;
+            }
+
+            throw new Exception("Codegen Error: Slicing not supported for type " + sourceType);
+        }
+
+        /// <summary>
+        /// Core logic to create a new array containing a subset of elements from a source array.
+        /// </summary>
+        private LLVMValueRef SliceArrayInternal(LLVMValueRef sourceArrayPtr, LLVMTypeRef llvmElemType, ExpressionNode startNode, ExpressionNode endNode)
+        {
+            // A. Get current length from the source array header
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourceArrayPtr, 0, "len_ptr");
+            var sourceLen = _builder.BuildLoad2(LLVMTypeRef.Int64, lenPtr, "source_len");
+
+            // B. Resolve Start/End with defaults (0 and sourceLen)
+            var startIdx = startNode != null ? startNode.Accept(this) : LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0);
+            var endIdx = endNode != null ? endNode.Accept(this) : sourceLen;
+
+            // C. Boundary Protection (Clamping)
+            // start = max(0, min(start, sourceLen))
+            var startClamped = _builder.BuildSelect(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, startIdx, LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0)),
+                LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0),
+                _builder.BuildSelect(
+                    _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, startIdx, sourceLen),
+                    sourceLen, startIdx), "start_final");
+
+            // end = max(start, min(end, sourceLen))
+            var endClamped = _builder.BuildSelect(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, endIdx, sourceLen),
+                sourceLen,
+                _builder.BuildSelect(
+                    _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endIdx, startClamped),
+                    startClamped, endIdx), "end_final");
+
+            // D. Calculate new length
+            var newLen = _builder.BuildSub(endClamped, startClamped, "new_len");
+
+            // E. Allocate and setup the new array
+            var newArrayPtr = AllocateArrayHeader(newLen); // Uses your existing helper
+            var newDataRaw = GetArrayData(newArrayPtr);    // returns ptr (i8*)
+
+            // F. Get Typed Pointers for GEP
+            var sourceDataRaw = GetArrayData(sourceArrayPtr);
+            var srcTyped = _builder.BuildBitCast(sourceDataRaw, LLVMTypeRef.CreatePointer(llvmElemType, 0), "src_typed");
+            var destTyped = _builder.BuildBitCast(newDataRaw, LLVMTypeRef.CreatePointer(llvmElemType, 0), "dest_typed");
+
+            // G. Calculate the source offset
+            var offsetSrcPtr = _builder.BuildGEP2(llvmElemType, srcTyped, new[] { startClamped }, "offset_src_ptr");
+
+            // H. Copy elements using a loop
+            BuildLoop(newLen, (index) =>
+            {
+                // Load from source
+                var elPtr = _builder.BuildGEP2(llvmElemType, offsetSrcPtr, new[] { index }, "el_ptr");
+                var element = _builder.BuildLoad2(llvmElemType, elPtr, "el");
+
+                // Store to destination
+                var destPtr = _builder.BuildGEP2(llvmElemType, destTyped, new[] { index }, "dest_ptr");
+                _builder.BuildStore(element, destPtr);
+            });
+
+            return newArrayPtr;
         }
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:

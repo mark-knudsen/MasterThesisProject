@@ -58,6 +58,7 @@ namespace MyCompiler
         LLVMValueRef VisitPow(PowNode expr);
         LLVMValueRef VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         LLVMValueRef VisitCast(CastNode expr);
+        LLVMValueRef VisitSlice(SliceNode expr);
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);

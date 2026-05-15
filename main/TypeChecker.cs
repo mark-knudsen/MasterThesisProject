@@ -62,8 +62,6 @@ namespace MyCompiler
                 MeanNode mean => VisitMean(mean),
                 SumNode sum => VisitSum(sum),
                 CorrelationNode corr => VisitCorrelation(corr),
-                //FunctionDefNode fdef => VisitFunctionDef(fdef),
-                //FunctionCallNode fcall => VisitFunctionCall(fcall),
                 RoundNode rnd => VisitRound(rnd),
                 FloatNode flt => VisitFloat(flt),
                 RecordNode rec => VisitRecord(rec),
@@ -80,6 +78,7 @@ namespace MyCompiler
                 PowNode pow => VisitPow(pow),
                 ExponentialMathFuncNode exp => VisitExponentialMathFunc(exp),
                 CastNode cast => VisitCast(cast),
+                SliceNode slice => VisitSlice(slice),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -142,8 +141,37 @@ namespace MyCompiler
 
         public Type VisitBinary(BinaryOpNode expr)
         {
-            Type leftType = new NullType();
-            Type rightType = new NullType();
+            Type leftType = Visit(expr.Left);
+            Type rightType = Visit(expr.Right);
+
+            bool isLeftArray = leftType is ArrayType;
+            bool isRightArray = rightType is ArrayType;
+
+            // Handle Vectorized Operations (Array + Scalar, Scalar + Array, Array + Array)
+            if (isLeftArray || isRightArray)
+            {
+                Type elementL = isLeftArray ? ((ArrayType)leftType).ElementType : leftType;
+                Type elementR = isRightArray ? ((ArrayType)rightType).ElementType : rightType;
+
+                // Ensure elements are numeric for math operators
+                if (expr.Operator is "+" or "-" or "*" or "/")
+                {
+                    bool isNumL = elementL is IntType || elementL is FloatType;
+                    bool isNumR = elementR is IntType || elementR is FloatType;
+
+                    if (!isNumL || !isNumR)
+                        throw new Exception($"Vectorized math requires numeric elements, got {elementL} and {elementR}");
+
+                    Type resultElement = (elementL is FloatType || elementR is FloatType) ? new FloatType() : new IntType();
+
+                    // If it's a division, we always promote to Float
+                    if (expr.Operator == "/") resultElement = new FloatType();
+
+                    var resultType = new ArrayType(resultElement);
+                    expr.SetType(resultType);
+                    return resultType;
+                }
+            }
 
             if (expr.Operator == "/")
             {
@@ -1444,6 +1472,30 @@ namespace MyCompiler
         public Type VisitTypeLiteral(TypeLiteralNode expr)
         {
             return ResolveType(expr); // Just return the wrapped type
+        }
+
+        public Type VisitSlice(SliceNode node)
+        {
+            Type sourceType = Visit(node.Source);
+
+            // Support both Arrays and Dataframes
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception($"Slicing is only supported on arrays or dataframes, got {sourceType}");
+
+            if (node.Start != null)
+            {
+                if (Visit(node.Start) is not IntType)
+                    throw new Exception("Slice start index must be an integer");
+            }
+
+            if (node.End != null)
+            {
+                if (Visit(node.End) is not IntType)
+                    throw new Exception("Slice end index must be an integer");
+            }
+
+            node.SetType(sourceType); // df[start:end] returns a DataframeType
+            return node.Type;
         }
     }
 }

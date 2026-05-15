@@ -44,6 +44,7 @@
 %type <node> prog statement statement_list assignment block seperator opt_newlines
 %type <node> expr 
 %type <expr> type
+%type <expr> opt_expr
 %type <exprList> expr_list 
 %type <argList> arg_list
 %type <node> arg
@@ -155,6 +156,10 @@ expr
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
     | LBRACE arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); }  /*{ name: "Bob", age: 23 } */
 
+    /* Under your expr rules */
+    | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1 as ExpressionNode, $3, $5); }
+
+
     /* Built-ins */
     | PRINT LPAREN expr RPAREN                      { $$ = new PrintNode($3 as ExpressionNode); }
     | RANDOM LPAREN expr_list RPAREN                { $$ = new RandomNode($3); }
@@ -216,6 +221,11 @@ expr
     ;
     
 
+/* Helper for optional expressions */
+opt_expr
+    : /* empty */ { $$ = null; }
+    | expr        { $$ = $1 as ExpressionNode; }
+    ;
 
 expr_list
     : /* empty*/             { $$ = new List<ExpressionNode>(); }

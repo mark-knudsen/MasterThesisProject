@@ -553,7 +553,7 @@ namespace MyCompiler
         // Filled during typechecking
         public Type Type { get; set; }
     }
-    
+
     public class RecordNode : ExpressionNode
     {
         public List<RecordField> Fields { get; set; } = new List<RecordField>();
@@ -671,7 +671,7 @@ namespace MyCompiler
                     // Fallback: unnamed record argument may still represent the schema.
                     Schema = r;
                 }
-                else if(Rows == null && arg.Value is ArrayNode arr)
+                else if (Rows == null && arg.Value is ArrayNode arr)
                 {
                     Rows = arr;
                 }
@@ -790,5 +790,21 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
+    }
+
+    public class SliceNode : ExpressionNode
+    {
+        public ExpressionNode Source { get; }
+        public ExpressionNode Start { get; } // Can be null for [:20]
+        public ExpressionNode End { get; }   // Can be null for [10:]
+
+        public SliceNode(ExpressionNode source, ExpressionNode start, ExpressionNode end)
+        {
+            Source = source;
+            Start = start;
+            End = end;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSlice(this);
     }
 }
