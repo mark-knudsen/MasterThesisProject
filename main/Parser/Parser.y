@@ -28,6 +28,7 @@
 %right ASSIGN PLUS_ASSIGN MINUS_ASSIGN
 %nonassoc LOWEST
 %nonassoc LOWER_THAN_LPAREN
+%nonassoc UNARY
 %nonassoc IF
 %nonassoc ELSE
 
@@ -99,7 +100,7 @@ type
     | STRING              { $$ = new TypeNode("string"); }   
     | VOID                { $$ = new TypeNode("void"); }
     | NULL                { $$ = new TypeNode("null"); }    /* We currently do not use NULL! */
-    | ARRAY GT type LT    { $$ = new TypeNode("array"); }
+    | ARRAY LT type GT    { $$ = new TypeNode("array"); }   /* We currently do not use typed array! */
     ;
 
 assignment 
