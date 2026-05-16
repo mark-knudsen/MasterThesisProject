@@ -3174,22 +3174,28 @@ namespace MyCompiler
                 if (indexVal.TypeOf == ctx.DoubleType)
                     indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-                // 1. Load Metadata
+                // Load Metadata fields
                 var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
                 var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
 
                 var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
                 rawDataPtr.SetAlignment(8);
 
+                var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+                arrayLen.SetAlignment(8);
+
+                // --- PYTHON-STYLE NEGATIVE INDEX RESOLUTION ---
+                // if indexVal < 0 then indexVal + arrayLen else indexVal
+                var indexIsNeg = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0), "index_is_neg");
+                var indexRegulated = _builder.BuildAdd(indexVal, arrayLen, "index_rel");
+                var resolvedIndex = _builder.BuildSelect(indexIsNeg, indexRegulated, indexVal, "resolved_index");
+
                 // --- OPTIMIZATION: Conditional Bounds Check ---
                 if (!expr.SkipBoundsCheck)
                 {
-                    var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
-                    arrayLen.SetAlignment(8);
-
-                    // Bounds Check Logic
-                    var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0));
-                    var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, indexVal, arrayLen);
+                    // Bounds Check Logic using the resolved index value
+                    var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, resolvedIndex, LLVMValueRef.CreateConstInt(i64, 0), "is_neg");
+                    var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, resolvedIndex, arrayLen, "is_too_big");
                     var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
 
                     var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
@@ -3208,13 +3214,22 @@ namespace MyCompiler
                     _builder.PositionAtEnd(safeBlock);
                 }
 
-                // 2. DATA ACCESS (Now potentially branchless)
+                // 2. DATA ACCESS (Using resolvedIndex instead of raw indexVal)
                 var llvmElementType = GetLLVMType(arrayType.ElementType);
                 var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(llvmElementType, 0), "typed_data_ptr");
 
-                var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { indexVal }, "elem_ptr");
+                var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { resolvedIndex }, "elem_ptr");
                 var loadedValue = _builder.BuildLoad2(llvmElementType, elementPtr, "loaded_val");
-                //loadedValue.SetAlignment(8);
+
+                // Enforce rigid alignment patterns based on primitives
+                if (llvmElementType == i64 || llvmElementType == ctx.DoubleType || llvmElementType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                {
+                    loadedValue.SetAlignment(8);
+                }
+                else if (llvmElementType == ctx.Int32Type || llvmElementType == ctx.FloatType)
+                {
+                    loadedValue.SetAlignment(4);
+                }
 
                 return arrayType.ElementType switch
                 {
@@ -3226,8 +3241,6 @@ namespace MyCompiler
             {
                 if (expr.IndexExpression.Type is IntType)
                 {
-                    // Note: You should update your DataframeIndex helper to also accept expr.SkipBoundsCheck
-                    // to eliminate the internal checks for rows.
                     var result = DataframeIndex(headerPtr, indexVal, expr.SkipBoundsCheck);
                     return _builder.BuildBitCast(result, i8Ptr);
                 }
@@ -5049,24 +5062,28 @@ namespace MyCompiler
             return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
         }
 
+
         public LLVMValueRef VisitSlice(SliceNode node)
         {
             var sourceVal = node.Source.Accept(this); // The pointer to ArrayObject or DataframeObject
             var sourceType = node.Source.Type;
             var _mallocFunc = GetOrDeclareMalloc();
 
+            // Fix: Fall back to a raw AST node instead of an LLVM value if it's null
+            var startNode = node.Start ?? new NumberNode(0);
+            var endNode = node.End ?? new NumberNode(0);
+
             // 1. If it's a regular array: [1, 2, 3][0:2]
             if (sourceType is ArrayType arrayType)
             {
                 var llvmElemType = GetLLVMType(arrayType.ElementType);
-                return SliceArrayInternal(sourceVal, llvmElemType, node.Start, node.End);
+                // Pass the AST nodes directly since SliceArrayInternal handles their compilation
+                return SliceArrayInternal(sourceVal, llvmElemType, startNode, endNode);
             }
 
             // 2. If it's a dataframe: df[5:10]
             if (sourceType is DataframeType dfType)
             {
-                // Load the original Dataframe components (3 pointers: columns, rows, dataTypes)
-                // Structure: { ptr columns, ptr rows, ptr dataTypes }
                 var colsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 0, "cols_ptr_ptr");
                 var rowsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 1, "rows_ptr_ptr");
                 var typesPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 2, "types_ptr_ptr");
@@ -5075,24 +5092,28 @@ namespace MyCompiler
                 var originalRows = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), rowsPtrPtr, "orig_rows");
                 var originalTypes = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), typesPtrPtr, "orig_types");
 
-                // Slice the 'rows' array specifically. 
-                // Rows are array<ptr to Record>, so the element type is a pointer.
-                var llvmPtrType = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
-                var slicedRows = SliceArrayInternal(originalRows, llvmPtrType, node.Start, node.End);
+                originalCols.SetAlignment(8);
+                originalRows.SetAlignment(8);
+                originalTypes.SetAlignment(8);
 
-                // Allocate a new DataframeObject header (3 pointers * 8 bytes = 24 bytes)
+                // Pass the AST nodes here too
+                var llvmPtrType = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
+                var slicedRows = SliceArrayInternal(originalRows, llvmPtrType, startNode, endNode);
+
                 var newDfPtr = _builder.BuildCall2(_mallocType, _mallocFunc,
                     new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 24) }, "new_df_header");
 
-                // Construct the new Dataframe header
                 var newColsPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 0, "new_cols_ptr");
                 var newRowsPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 1, "new_rows_ptr");
                 var newTypesPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 2, "new_types_ptr");
 
-                // Store pointers: Columns and Types are shared; Rows is the new slice
-                _builder.BuildStore(originalCols, newColsPtr);
-                _builder.BuildStore(slicedRows, newRowsPtr);
-                _builder.BuildStore(originalTypes, newTypesPtr);
+                var store0 = _builder.BuildStore(originalCols, newColsPtr);
+                var store1 = _builder.BuildStore(slicedRows, newRowsPtr);
+                var store2 = _builder.BuildStore(originalTypes, newTypesPtr);
+
+                store0.SetAlignment(8);
+                store1.SetAlignment(8);
+                store2.SetAlignment(8);
 
                 return newDfPtr;
             }
@@ -5105,37 +5126,50 @@ namespace MyCompiler
         /// </summary>
         private LLVMValueRef SliceArrayInternal(LLVMValueRef sourceArrayPtr, LLVMTypeRef llvmElemType, ExpressionNode startNode, ExpressionNode endNode)
         {
+            var i64 = LLVMTypeRef.Int64;
+            var zero = LLVMValueRef.CreateConstInt(i64, 0);
+
             // A. Get current length from the source array header
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourceArrayPtr, 0, "len_ptr");
-            var sourceLen = _builder.BuildLoad2(LLVMTypeRef.Int64, lenPtr, "source_len");
+            var sourceLen = _builder.BuildLoad2(i64, lenPtr, "source_len");
+            sourceLen.SetAlignment(8);
 
             // B. Resolve Start/End with defaults (0 and sourceLen)
-            var startIdx = startNode != null ? startNode.Accept(this) : LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0);
+            var startIdx = startNode != null ? startNode.Accept(this) : zero;
             var endIdx = endNode != null ? endNode.Accept(this) : sourceLen;
 
-            // C. Boundary Protection (Clamping)
-            // start = max(0, min(start, sourceLen))
-            var startClamped = _builder.BuildSelect(
-                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, startIdx, LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0)),
-                LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0),
-                _builder.BuildSelect(
-                    _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, startIdx, sourceLen),
-                    sourceLen, startIdx), "start_final");
+            // C. Boundary Protection (Clamping) & Negative Index Resolution
 
-            // end = max(start, min(end, sourceLen))
-            var endClamped = _builder.BuildSelect(
-                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, endIdx, sourceLen),
-                sourceLen,
-                _builder.BuildSelect(
-                    _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endIdx, startClamped),
-                    startClamped, endIdx), "end_final");
+            // 1. Process Start Index: if start < 0 then start + sourceLen else start
+            var startIsNeg = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, startIdx, zero, "start_is_neg");
+            var startRegulated = _builder.BuildAdd(startIdx, sourceLen, "start_rel");
+            var startResolved = _builder.BuildSelect(startIsNeg, startRegulated, startIdx, "start_resolved");
+
+            // Clamp start: max(0, min(startResolved, sourceLen))
+            var startTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, startResolved, sourceLen, "start_too_big");
+            var startTmp = _builder.BuildSelect(startTooBig, sourceLen, startResolved);
+            var startTooSmall = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, startTmp, zero, "start_too_small");
+            var startFinal = _builder.BuildSelect(startTooSmall, zero, startTmp, "start_final");
+
+
+            // 2. Process End Index: if end < 0 then end + sourceLen else end
+            var endIsNeg = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endIdx, zero, "end_is_neg");
+            var endRegulated = _builder.BuildAdd(endIdx, sourceLen, "end_rel");
+            var endResolved = _builder.BuildSelect(endIsNeg, endRegulated, endIdx, "end_resolved");
+
+            // Clamp end: max(startFinal, min(endResolved, sourceLen))
+            var endTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, endResolved, sourceLen, "end_too_big");
+            var endTmp = _builder.BuildSelect(endTooBig, sourceLen, endResolved);
+            var endTooSmall = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endTmp, startFinal, "end_too_small");
+            var endFinal = _builder.BuildSelect(endTooSmall, startFinal, endTmp, "end_final");
+
 
             // D. Calculate new length
-            var newLen = _builder.BuildSub(endClamped, startClamped, "new_len");
+            var newLen = _builder.BuildSub(endFinal, startFinal, "new_len");
 
             // E. Allocate and setup the new array
-            var newArrayPtr = AllocateArrayHeader(newLen); // Uses your existing helper
-            var newDataRaw = GetArrayData(newArrayPtr);    // returns ptr (i8*)
+            var newArrayPtr = AllocateArrayHeader(newLen);
+            var newDataRaw = GetArrayData(newArrayPtr);
 
             // F. Get Typed Pointers for GEP
             var sourceDataRaw = GetArrayData(sourceArrayPtr);
@@ -5143,7 +5177,7 @@ namespace MyCompiler
             var destTyped = _builder.BuildBitCast(newDataRaw, LLVMTypeRef.CreatePointer(llvmElemType, 0), "dest_typed");
 
             // G. Calculate the source offset
-            var offsetSrcPtr = _builder.BuildGEP2(llvmElemType, srcTyped, new[] { startClamped }, "offset_src_ptr");
+            var offsetSrcPtr = _builder.BuildGEP2(llvmElemType, srcTyped, new[] { startFinal }, "offset_src_ptr");
 
             // H. Copy elements using a loop
             BuildLoop(newLen, (index) =>
@@ -5152,6 +5186,12 @@ namespace MyCompiler
                 var elPtr = _builder.BuildGEP2(llvmElemType, offsetSrcPtr, new[] { index }, "el_ptr");
                 var element = _builder.BuildLoad2(llvmElemType, elPtr, "el");
 
+                // Match structure element widths for primitive alignments
+                if (llvmElemType == i64 || llvmElemType == LLVMTypeRef.Double || llvmElemType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                {
+                    element.SetAlignment(8);
+                }
+
                 // Store to destination
                 var destPtr = _builder.BuildGEP2(llvmElemType, destTyped, new[] { index }, "dest_ptr");
                 _builder.BuildStore(element, destPtr);
@@ -5159,6 +5199,7 @@ namespace MyCompiler
 
             return newArrayPtr;
         }
+
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
