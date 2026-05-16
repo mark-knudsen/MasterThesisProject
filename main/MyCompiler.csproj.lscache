@@ -13,23 +13,23 @@ primary
 lastDtbSucceeded
 
 [properties]
-AssemblyName=MyCompiler.Tests
+AssemblyName=MyCompiler
 CommandLineArgsForDesignTimeEvaluation=-langversion:12.0 -define:TRACE
 CompilerGeneratedFilesOutputPath=
 MaxSupportedLangVersion=12.0
 ProjectAssetsFile=<PATH>obj/project.assets.json
-RootNamespace=MyCompiler.Tests
+RootNamespace=MyCompiler
 RunAnalyzers=
 RunAnalyzersDuringLiveAnalysis=
 SolutionPath=<PATH>../MyCompiler.sln
 TargetFrameworkIdentifier=.NETCoreApp
-TargetPath=<PATH>bin/Debug/net8.0/MyCompiler.Tests.dll
-TargetRefPath=<PATH>obj/Debug/net8.0/ref/MyCompiler.Tests.dll
+TargetPath=<PATH>bin/Debug/net8.0/MyCompiler.dll
+TargetRefPath=<PATH>obj/Debug/net8.0/ref/MyCompiler.dll
 TemporaryDependencyNodeTargetIdentifier=net8.0
 
 [commandLineArguments]
 /noconfig
-/unsafe-
+/unsafe+
 /checked-
 /nowarn:1701,1702,1701,1702
 /fullpaths
@@ -38,13 +38,13 @@ TemporaryDependencyNodeTargetIdentifier=net8.0
 /warn:8
 /define:TRACE;DEBUG;NET;NET8_0;NETCOREAPP;NET5_0_OR_GREATER;NET6_0_OR_GREATER;NET7_0_OR_GREATER;NET8_0_OR_GREATER;NETCOREAPP1_0_OR_GREATER;NETCOREAPP1_1_OR_GREATER;NETCOREAPP2_0_OR_GREATER;NETCOREAPP2_1_OR_GREATER;NETCOREAPP2_2_OR_GREATER;NETCOREAPP3_0_OR_GREATER;NETCOREAPP3_1_OR_GREATER
 /highentropyva+
-/nullable:enable
+/nullable:disable
 /debug+
 /debug:portable
 /filealign:512
 /optimize-
-/out:obj\Debug\net8.0\MyCompiler.Tests.dll
-/refout:obj\Debug\net8.0\refint\MyCompiler.Tests.dll
+/out:obj\Debug\net8.0\MyCompiler.dll
+/refout:obj\Debug\net8.0\refint\MyCompiler.dll
 /target:exe
 /warnaserror-
 /utf8output
@@ -53,18 +53,28 @@ TemporaryDependencyNodeTargetIdentifier=net8.0
 /warnaserror+:NU1605,SYSLIB0011
 
 [sourceFiles]
-<NUGET>/microsoft.net.test.sdk/17.6.0/build/netcoreapp3.1/Microsoft.NET.Test.Sdk.Program.cs
-GlobalUsings.cs
-IntegrationTest_JIT.cs
-IntegrationTest_ORC.cs
+AST.cs
+Context.cs
+Generated/
+ Parser.cs
+ Scanner.cs
+Interfaces/
+ ICompiler.cs
+ IExpressionVisitor.cs
+ ITypeVisitor.cs
+Misc/
+ DataTypes.cs
+ OrcBindings.cs
 obj/Debug/net8.0/
  .NETCoreApp,Version=v8.0.AssemblyAttributes.cs
- MyCompiler.Tests.AssemblyInfo.cs
- MyCompiler.Tests.GlobalUsings.g.cs
-UnitTest.cs
+ MyCompiler.AssemblyInfo.cs
+ MyCompiler.GlobalUsings.g.cs
+Program.cs
+runtime/CompilerOrc.cs
+ShiftReduceParserCode.cs
+TypeChecker.cs
 
 [metadataReferences]
-../main/obj/Debug/net8.0/ref/MyCompiler.dll
 <DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/
  Microsoft.CSharp.dll
  Microsoft.VisualBasic.Core.dll
@@ -232,22 +242,6 @@ UnitTest.cs
 <NUGET>/
  llvmsharp.interop/20.1.2/lib/net8.0/LLVMSharp.Interop.dll
  llvmsharp/20.1.2/lib/net8.0/LLVMSharp.dll
- microsoft.codecoverage/17.6.0/lib/netcoreapp3.1/Microsoft.VisualStudio.CodeCoverage.Shim.dll
- microsoft.testplatform.testhost/17.6.0/lib/netcoreapp3.1/
-  Microsoft.TestPlatform.CommunicationUtilities.dll
-  Microsoft.TestPlatform.CoreUtilities.dll
-  Microsoft.TestPlatform.CrossPlatEngine.dll
-  Microsoft.TestPlatform.PlatformAbstractions.dll
-  Microsoft.TestPlatform.Utilities.dll
-  Microsoft.VisualStudio.TestPlatform.Common.dll
-  Microsoft.VisualStudio.TestPlatform.ObjectModel.dll
-  testhost.dll
- newtonsoft.json/13.0.1/lib/netstandard2.0/Newtonsoft.Json.dll
- nuget.frameworks/5.11.0/lib/netstandard2.0/NuGet.Frameworks.dll
- xunit.abstractions/2.0.3/lib/netstandard2.0/xunit.abstractions.dll
- xunit.assert/2.4.2/lib/netstandard1.1/xunit.assert.dll
- xunit.extensibility.core/2.4.2/lib/netstandard1.1/xunit.core.dll
- xunit.extensibility.execution/2.4.2/lib/netstandard1.1/xunit.execution.dotnet.dll
 
 [analyzerReferences]
 <DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/analyzers/dotnet/cs/
@@ -260,10 +254,7 @@ UnitTest.cs
 <DOTNET>/sdk/9.0.308/Sdks/Microsoft.NET.Sdk/analyzers/
  Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
  Microsoft.CodeAnalysis.NetAnalyzers.dll
-<NUGET>/xunit.analyzers/1.0.0/analyzers/dotnet/cs/
- xunit.analyzers.dll
- xunit.analyzers.fixes.dll
 
 [analyzerConfigFiles]
 <DOTNET>/sdk/9.0.308/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
-obj/Debug/net8.0/MyCompiler.Tests.GeneratedMSBuildEditorConfig.editorconfig
+obj/Debug/net8.0/MyCompiler.GeneratedMSBuildEditorConfig.editorconfig

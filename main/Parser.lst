@@ -1,3 +1,12 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 16-05-2026 02:30:43>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 16-05-2026 02:30:48
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
@@ -44,7 +53,7 @@
 %type <node> prog statement statement_list assignment block seperator opt_newlines
 %type <node> expr 
 %type <expr> type
-%type <expr> opt_expr
+
 %type <exprList> expr_list 
 %type <argList> arg_list
 %type <node> arg
@@ -156,8 +165,6 @@ expr
     | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
     | LBRACE arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); }  /*{ name: "Bob", age: 23 } */
 
-    /* Under your expr rules */
-    | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1 as ExpressionNode, $3, $5); }
 
 
     /* Built-ins */
@@ -221,11 +228,11 @@ expr
     ;
     
 
-/* Helper for optional expressions */
-opt_expr
-    : /* empty */ { $$ = null; }
-    | expr        { $$ = $1 as ExpressionNode; }
+
     ;
+//-^^
+// Error: Syntax error, unexpected ';', expecting %%, or anchoredSymbol, or EOF
+// ----------------------------------------------------------------------------
 
 expr_list
     : /* empty*/             { $$ = new List<ExpressionNode>(); }
@@ -239,15 +246,11 @@ arg_list
     ;
 
 arg
-    : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
-    | ID COLON expr          { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
-    /* --- Explicitly handle type assignments like name: string --- */
-    | ID ASSIGN type         { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
-    | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
-    /* --- Re-introduced fallback rule for raw positional expressions {"Alice", 25} --- */
-    | expr                   { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
+    : ID ASSIGN expr      { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
+    | ID COLON expr       { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
     ;
 
 %%
 
-internal Parser(Scanner s) : base(s) { }
+internal Parser(Scanner s) : base(s) { }// ==========================================================================
+
