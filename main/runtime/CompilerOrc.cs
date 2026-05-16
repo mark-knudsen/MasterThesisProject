@@ -5188,17 +5188,14 @@ namespace MyCompiler
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
-        df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])
-        
-        df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
         to_csv(df, "CSV/mytest.csv")
 
-        df2 = dataframe(columns=["name", "age"],type=[string, int])         
+        df2 = dataframe({name: string, age: int}, [{"Alice", 25},{"Charlie", 22}])        
+        df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true},{"Charlie", 22, true},{"Charlie", 22, false},{"Peter", 22, true},{"Charlie", 22, true}])
         
-        df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
-        df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
         
-        df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
+        
+        df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })exit
         df2.map(x => { age: x.age - 10, name: "Harry" })
         df2.map(x => { age: 10, name: x.name + "_2" })
         df2.map(x => x.age - 10)

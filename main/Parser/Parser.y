@@ -242,8 +242,8 @@ arg
     : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
     | ID COLON expr          { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
     /* --- Explicitly handle type assignments like name: string --- */
-    | ID ASSIGN type         { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
-    | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
+    /* | ID ASSIGN type         { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); } */
+    /* | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); } */
     /* --- Re-introduced fallback rule for raw positional expressions {"Alice", 25} --- */
     | expr                   { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
     ;
