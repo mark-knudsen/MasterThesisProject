@@ -1109,7 +1109,7 @@ namespace MyCompiler
                 {
                     IntType => LLVMTypeRef.CreatePointer(i64, 0),
                     FloatType => LLVMTypeRef.CreatePointer(ctx.DoubleType, 0),
-                    BoolType => LLVMTypeRef.CreatePointer(ctx.Int1Type, 0),
+                    BoolType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                     _ => LLVMTypeRef.CreatePointer(i64, 0)
                 };
 
@@ -1221,7 +1221,7 @@ namespace MyCompiler
                 condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
                     condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
             }
-            else if (condition.TypeOf != ctx.Int1Type)
+            else if (condition.TypeOf != ctx.Int8Type) // If it's not already i8, treat it as an integer condition NOTE
             {
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
                     condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
@@ -1241,7 +1241,7 @@ namespace MyCompiler
             // --- VECTORIZATION HINT START ---
             // 1. Create the attribute: !{!"llvm.loop.vectorize.enable", i1 1}
             var metadataName = ctx.GetMDString("llvm.loop.vectorize.enable", 26);
-            var valOne = LLVMValueRef.CreateConstInt(ctx.Int1Type, 1);
+            var valOne = LLVMValueRef.CreateConstInt(ctx.Int8Type, 1);
             var vectorizeAttr = LLVMValueRef.CreateMDNode(new[] { metadataName, valOne });
 
             // 2. Create a non-circular Loop Node. 
@@ -1905,7 +1905,7 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitBoolean(BooleanNode expr)
         {
-            return LLVMValueRef.CreateConstInt(_module.Context.Int1Type, expr.Value ? 1UL : 0UL);
+            return LLVMValueRef.CreateConstInt(_module.Context.Int8Type, expr.Value ? 1UL : 0UL);
         }
         public LLVMValueRef VisitNull(NullNode expr)
         {
@@ -2176,36 +2176,8 @@ namespace MyCompiler
                     case BoolType:
                         DeclareBoolStrings();
 
-                        LLVMValueRef boolCond;
-
-                        if (valueToPrint.TypeOf == llvmCtx.Int1Type)
-                        {
-                            boolCond = valueToPrint;
-                        }
-                        else if (valueToPrint.TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind)
-                        {
-                            var zero = LLVMValueRef.CreateConstInt(valueToPrint.TypeOf, 0);
-                            boolCond = _builder.BuildICmp(
-                                LLVMIntPredicate.LLVMIntNE,
-                                valueToPrint,
-                                zero,
-                                "boolcond");
-                        }
-                        else if (valueToPrint.TypeOf == llvmCtx.DoubleType)
-                        {
-                            var zero = LLVMValueRef.CreateConstReal(llvmCtx.DoubleType, 0.0);
-                            boolCond = _builder.BuildFCmp(
-                                LLVMRealPredicate.LLVMRealONE,
-                                valueToPrint,
-                                zero,
-                                "boolcond");
-                        }
-                        else
-                        {
-                            throw new Exception("Unsupported bool representation");
-                        }
-
-                        var selectedStr = _builder.BuildSelect(boolCond, _trueStr, _falseStr, "boolstr");
+                        finalArg = valueToPrint;
+                        var selectedStr = _builder.BuildSelect(finalArg, _trueStr, _falseStr, "boolstr");
 
                         return _builder.BuildCall2(
                             _printfType,
@@ -2280,7 +2252,7 @@ namespace MyCompiler
                                 }
                                 else if (field.Type is BoolType)
                                 {
-                                    fieldVal = _builder.BuildLoad2(ctx.Int1Type, storedPtr, "bool_val");
+                                    fieldVal = _builder.BuildLoad2(ctx.Int8Type, storedPtr, "bool_val");
 
                                     DeclareBoolStrings();
                                     var str = _builder.BuildSelect(fieldVal, _trueStr, _falseStr, "boolstr");
@@ -2667,12 +2639,17 @@ namespace MyCompiler
 
         private LLVMValueRef EmitDeepCopy(LLVMValueRef sourceVal, Type type)
         {
-            if (type is ArrayType at) return CopyArray(sourceVal, at);
-            if (type is RecordType rt) return CopyRecord(sourceVal, rt);
-            if (type is DataframeType dt) return CopyDataframe(sourceVal, dt);
+            if (type is ArrayType at)
+                return CopyArray(sourceVal, at);
 
-            // Primitives (Int, Float, Bool) and Strings are returned as-is
-            return sourceVal;
+            if (type is RecordType rt)
+                return CopyRecord(sourceVal, rt);
+
+            // 3. Dataframes
+            if (type is DataframeType dt)
+                return CopyDataframe(sourceVal, dt);
+
+            throw new Exception($"Deep copy not supported for type: {type}");
         }
 
         private LLVMValueRef CopyRecord(LLVMValueRef recordPtr, RecordType recordType)
@@ -3231,7 +3208,7 @@ namespace MyCompiler
 
                 return arrayType.ElementType switch
                 {
-                    BoolType => _builder.BuildZExt(loadedValue, ctx.Int1Type, "bool_val"),
+                    BoolType => _builder.BuildZExt(loadedValue, ctx.Int8Type, "bool_val"),
                     _ => loadedValue
                 };
             }
@@ -4311,7 +4288,13 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
 
-            if (type == ctx.Int64Type || type == ctx.DoubleType)
+            if (type == ctx.Int64Type)
+                return 8;
+
+            if (type == ctx.DoubleType)
+                return 8;
+
+            if (type == ctx.Int8Type) // for bools, we store as i64 for simplicity, so alignment is 8
                 return 8;
 
             // Pointers are 8 bytes on 64-bit systems
@@ -4389,7 +4372,7 @@ namespace MyCompiler
                 {
                     // If you store bools as i64 in C#, load i64 and truncate to i1
                     var i64Val = _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_bool_raw");
-                    return _builder.BuildIntCast(i64Val, ctx.Int1Type, $"val_{expr.IdField}");
+                    return _builder.BuildIntCast(i64Val, ctx.Int8Type, $"val_{expr.IdField}");
                 }
 
                 if (expr.Type is StringType)
@@ -4885,7 +4868,7 @@ namespace MyCompiler
                         {
                             IntType => ctx.Int64Type,
                             FloatType => ctx.DoubleType,
-                            _ => ctx.Int1Type // Bool
+                            _ => ctx.Int8Type // Bool
                         };
 
                         // Store the raw value into the box
@@ -5087,6 +5070,117 @@ namespace MyCompiler
             }
 
             return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
+        }
+
+        public LLVMValueRef VisitSlice(SliceNode node)
+        {
+            var sourceVal = node.Source.Accept(this); // The pointer to ArrayObject or DataframeObject
+            var sourceType = node.Source.Type;
+            var _mallocFunc = GetOrDeclareMalloc();
+
+            // 1. If it's a regular array: [1, 2, 3][0:2]
+            if (sourceType is ArrayType arrayType)
+            {
+                var llvmElemType = GetLLVMType(arrayType.ElementType);
+                return SliceArrayInternal(sourceVal, llvmElemType, node.Start, node.End);
+            }
+
+            // 2. If it's a dataframe: df[5:10]
+            if (sourceType is DataframeType dfType)
+            {
+                // Load the original Dataframe components (3 pointers: columns, rows, dataTypes)
+                // Structure: { ptr columns, ptr rows, ptr dataTypes }
+                var colsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 0, "cols_ptr_ptr");
+                var rowsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 1, "rows_ptr_ptr");
+                var typesPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 2, "types_ptr_ptr");
+
+                var originalCols = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), colsPtrPtr, "orig_cols");
+                var originalRows = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), rowsPtrPtr, "orig_rows");
+                var originalTypes = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(_arrayStruct, 0), typesPtrPtr, "orig_types");
+
+                // Slice the 'rows' array specifically. 
+                // Rows are array<ptr to Record>, so the element type is a pointer.
+                var llvmPtrType = LLVMTypeRef.CreatePointer(_runtimeValueType, 0);
+                var slicedRows = SliceArrayInternal(originalRows, llvmPtrType, node.Start, node.End);
+
+                // Allocate a new DataframeObject header (3 pointers * 8 bytes = 24 bytes)
+                var newDfPtr = _builder.BuildCall2(_mallocType, _mallocFunc,
+                    new[] { LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 24) }, "new_df_header");
+
+                // Construct the new Dataframe header
+                var newColsPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 0, "new_cols_ptr");
+                var newRowsPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 1, "new_rows_ptr");
+                var newTypesPtr = _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 2, "new_types_ptr");
+
+                // Store pointers: Columns and Types are shared; Rows is the new slice
+                _builder.BuildStore(originalCols, newColsPtr);
+                _builder.BuildStore(slicedRows, newRowsPtr);
+                _builder.BuildStore(originalTypes, newTypesPtr);
+
+                return newDfPtr;
+            }
+
+            throw new Exception("Codegen Error: Slicing not supported for type " + sourceType);
+        }
+
+        /// <summary>
+        /// Core logic to create a new array containing a subset of elements from a source array.
+        /// </summary>
+        private LLVMValueRef SliceArrayInternal(LLVMValueRef sourceArrayPtr, LLVMTypeRef llvmElemType, ExpressionNode startNode, ExpressionNode endNode)
+        {
+            // A. Get current length from the source array header
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourceArrayPtr, 0, "len_ptr");
+            var sourceLen = _builder.BuildLoad2(LLVMTypeRef.Int64, lenPtr, "source_len");
+
+            // B. Resolve Start/End with defaults (0 and sourceLen)
+            var startIdx = startNode != null ? startNode.Accept(this) : LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0);
+            var endIdx = endNode != null ? endNode.Accept(this) : sourceLen;
+
+            // C. Boundary Protection (Clamping)
+            // start = max(0, min(start, sourceLen))
+            var startClamped = _builder.BuildSelect(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, startIdx, LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0)),
+                LLVMValueRef.CreateConstInt(LLVMTypeRef.Int64, 0),
+                _builder.BuildSelect(
+                    _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, startIdx, sourceLen),
+                    sourceLen, startIdx), "start_final");
+
+            // end = max(start, min(end, sourceLen))
+            var endClamped = _builder.BuildSelect(
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGT, endIdx, sourceLen),
+                sourceLen,
+                _builder.BuildSelect(
+                    _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endIdx, startClamped),
+                    startClamped, endIdx), "end_final");
+
+            // D. Calculate new length
+            var newLen = _builder.BuildSub(endClamped, startClamped, "new_len");
+
+            // E. Allocate and setup the new array
+            var newArrayPtr = AllocateArrayHeader(newLen); // Uses your existing helper
+            var newDataRaw = GetArrayData(newArrayPtr);    // returns ptr (i8*)
+
+            // F. Get Typed Pointers for GEP
+            var sourceDataRaw = GetArrayData(sourceArrayPtr);
+            var srcTyped = _builder.BuildBitCast(sourceDataRaw, LLVMTypeRef.CreatePointer(llvmElemType, 0), "src_typed");
+            var destTyped = _builder.BuildBitCast(newDataRaw, LLVMTypeRef.CreatePointer(llvmElemType, 0), "dest_typed");
+
+            // G. Calculate the source offset
+            var offsetSrcPtr = _builder.BuildGEP2(llvmElemType, srcTyped, new[] { startClamped }, "offset_src_ptr");
+
+            // H. Copy elements using a loop
+            BuildLoop(newLen, (index) =>
+            {
+                // Load from source
+                var elPtr = _builder.BuildGEP2(llvmElemType, offsetSrcPtr, new[] { index }, "el_ptr");
+                var element = _builder.BuildLoad2(llvmElemType, elPtr, "el");
+
+                // Store to destination
+                var destPtr = _builder.BuildGEP2(llvmElemType, destTyped, new[] { index }, "dest_ptr");
+                _builder.BuildStore(element, destPtr);
+            });
+
+            return newArrayPtr;
         }
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:

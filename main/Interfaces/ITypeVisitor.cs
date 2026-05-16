@@ -51,7 +51,7 @@ namespace MyCompiler
         Type VisitPow(PowNode expr);
         Type VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         Type VisitCast(CastNode expr);
-
+        Type VisitSlice(SliceNode expr);
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);
     }
