@@ -173,7 +173,7 @@ namespace MyCompiler
                 }
             }
 
-            if (expr.Operator == "/")
+            if (expr.Operator == "/" || expr.Operator == "/=")
             {
                 expr.Left = InsertCast(expr.Left, Visit(expr.Left), new FloatType());
                 expr.Right = InsertCast(expr.Right, Visit(expr.Right), new FloatType());
@@ -266,7 +266,7 @@ namespace MyCompiler
             }
 
             // Handle Comparisons (==, !=, <, >)
-            if (expr.Operator is "==" or "!=" or "<" or ">")
+            if (expr.Operator is "==" or "!=" or "<" or ">" or "<=" or ">=")
             {
                 // For comparisons, we just need the types to be compatible 
                 // (e.g., comparing a Float and an Int is fine)
@@ -1176,8 +1176,12 @@ namespace MyCompiler
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
         {
-            Visit(expr.AssignExpression);
-            Visit(expr.IdRecord);
+            Type assignType = Visit(expr.AssignExpression);
+            Type idType = Visit(expr.IdRecord);
+            var fieldType = (idType as RecordType).RecordFields.FirstOrDefault(f => f.Label == expr.IdField).Type.GetType();
+
+            if (assignType.GetType() != fieldType)
+                throw new Exception($"Wrong assign type {assignType}: Expected {fieldType}");
 
             expr.SetType(new VoidType());
             return expr.Type;

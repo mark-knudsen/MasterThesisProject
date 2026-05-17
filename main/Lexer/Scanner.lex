@@ -69,6 +69,8 @@
 "--"            { return (int)Tokens.DECR; }
 "+="            { return (int)Tokens.PLUS_ASSIGN; }
 "-="            { return (int)Tokens.MINUS_ASSIGN; }
+"*="            { return (int)Tokens.MULT_ASSIGN; }
+"/="            { return (int)Tokens.DIV_ASSIGN; }
 
 [0-9]+\.[0-9]+([eE][+\-]?[0-9]+)?   {  yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;}
 [0-9]+[eE][+\-]?[0-9]+  {  yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;}

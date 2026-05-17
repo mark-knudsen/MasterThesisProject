@@ -1,16 +1,16 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@df2 = external global ptr
+@v = global i64 0, align 8
 
-define ptr @main_1() {
+define ptr @main_5() {
 entry:
-  %df2_load = load ptr, ptr @df2, align 8
+  store i64 10, ptr @v, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i64 7, ptr %tag_ptr, align 8
+  store i64 0, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr %df2_load, ptr %data_ptr, align 8
+  store ptr null, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
 

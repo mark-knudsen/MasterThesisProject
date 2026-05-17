@@ -164,7 +164,7 @@ namespace MyCompiler
     public class AssignNode : StatementNode
     {
         public string Id { get; }  // ID = expr  -->   x = 10 
-        public ExpressionNode Expression { get; }
+        public ExpressionNode Expression { get; set; }
         public AssignNode(string id, ExpressionNode expr)
         {
             Id = id;

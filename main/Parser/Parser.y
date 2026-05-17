@@ -16,7 +16,7 @@
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT COLON LAMBDA NEWLINE COLUMNS
-%token PLUS_ASSIGN MINUS_ASSIGN
+%token PLUS_ASSIGN MINUS_ASSIGN MULT_ASSIGN DIV_ASSIGN
 %token LPAREN RPAREN LBRACE RBRACE LBRACKET RBRACKET IF ELSE FOR FOREACH IN INC DECR
 %token PRINT RANDOM ROUND SQRT POW LOG EXP READCSV TOCSV 
 %token REMOVE REMOVERANGE LENGTH MIN MAX MEAN SUM CORR COPY RECORD WHERE MAP ADD ADDRANGE 
@@ -25,7 +25,7 @@
 %token INT FLOAT BOOL STRING VOID NULL ARRAY
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
-%right ASSIGN PLUS_ASSIGN MINUS_ASSIGN
+%right ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULT_ASSIGN DIV_ASSIGN
 %nonassoc LOWEST
 %nonassoc LOWER_THAN_LPAREN
 %nonassoc UNARY
@@ -75,9 +75,11 @@ opt_newlines
 
 statement_list
     : /* empty */                           { $$ = new SequenceNode(); }
-    | statement_list statement separator    { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
     | statement_list statement              { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
+    | statement_list separator              { $$ = $1; }
     ;
+
+    
 
 statement
     : assignment                                { $$ = $1; }
@@ -129,6 +131,19 @@ assignment
         var left = new FieldNode($1 as ExpressionNode, (string)$3);
         var sub = new BinaryOpNode(left, "-", $5 as ExpressionNode);
         $$ = new RecordFieldAssignNode($1 as ExpressionNode, (string)$3, sub);
+    }
+    | ID MULT_ASSIGN expr
+    {
+        var id = new IdNode((string)$1);
+        var mul = new BinaryOpNode(id, "*", $3 as ExpressionNode);
+        $$ = new AssignNode((string)$1, mul);
+    }
+
+    | ID DIV_ASSIGN expr
+    {
+        var id = new IdNode((string)$1);
+        var div = new BinaryOpNode(id, "/", $3 as ExpressionNode);
+        $$ = new AssignNode((string)$1, div);
     }
     | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }

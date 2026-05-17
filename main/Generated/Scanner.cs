@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 17-05-2026 11:21:59
-//  GPLEX input file <Lexer/Scanner.lex - 14-05-2026 14:03:12>
+//  DateTime: 17-05-2026 14:43:11
+//  GPLEX input file <Lexer/Scanner.lex - 17-05-2026 13:06:01>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -121,8 +121,8 @@ namespace MyCompiler
         
         enum Result {accept, noMatch, contextFound};
 
-        const int maxAccept = 208;
-        const int initial = 209;
+        const int maxAccept = 210;
+        const int initial = 211;
         const int eofNum = 0;
         const int goStart = -1;
         const int INITIAL = 0;
@@ -159,35 +159,35 @@ namespace MyCompiler
         }
     };
 
-    static int[] startState = new int[] {209, 0};
+    static int[] startState = new int[] {211, 0};
 
-    static Table[] NxS = new Table[216] {
+    static Table[] NxS = new Table[218] {
 /* NxS[   0] */ new Table(0, 0, 0, null),
 /* NxS[   1] */ new Table(0, 0, -1, null),
 /* NxS[   2] */ new Table(9, 24, -1, new short[] {2, -1, -1, -1, -1, -1, 
           -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
           -1, 2}),
 /* NxS[   3] */ new Table(0, 0, -1, null),
-/* NxS[   4] */ new Table(10, 1, -1, new short[] {208}),
-/* NxS[   5] */ new Table(61, 1, -1, new short[] {207}),
-/* NxS[   6] */ new Table(34, 1, 215, new short[] {206}),
+/* NxS[   4] */ new Table(10, 1, -1, new short[] {210}),
+/* NxS[   5] */ new Table(61, 1, -1, new short[] {209}),
+/* NxS[   6] */ new Table(34, 1, 217, new short[] {208}),
 /* NxS[   7] */ new Table(10, 1, 7, new short[] {-1}),
 /* NxS[   8] */ new Table(0, 0, -1, null),
 /* NxS[   9] */ new Table(0, 0, -1, null),
 /* NxS[  10] */ new Table(0, 0, -1, null),
-/* NxS[  11] */ new Table(0, 0, -1, null),
-/* NxS[  12] */ new Table(43, 19, -1, new short[] {204, -1, -1, -1, -1, -1, 
-          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 205}),
+/* NxS[  11] */ new Table(61, 1, -1, new short[] {207}),
+/* NxS[  12] */ new Table(43, 19, -1, new short[] {205, -1, -1, -1, -1, -1, 
+          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 206}),
 /* NxS[  13] */ new Table(0, 0, -1, null),
-/* NxS[  14] */ new Table(45, 17, -1, new short[] {202, -1, -1, -1, -1, -1, 
-          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 203}),
+/* NxS[  14] */ new Table(45, 17, -1, new short[] {203, -1, -1, -1, -1, -1, 
+          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 204}),
 /* NxS[  15] */ new Table(0, 0, -1, null),
-/* NxS[  16] */ new Table(0, 0, -1, null),
-/* NxS[  17] */ new Table(46, 56, -1, new short[] {210, -1, 17, 17, 17, 17, 
+/* NxS[  16] */ new Table(61, 1, -1, new short[] {202}),
+/* NxS[  17] */ new Table(46, 56, -1, new short[] {212, -1, 17, 17, 17, 17, 
           17, 17, 17, 17, 17, 17, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
-          -1, 211, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
+          -1, 213, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
           -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
-          -1, 211}),
+          -1, 213}),
 /* NxS[  18] */ new Table(0, 0, -1, null),
 /* NxS[  19] */ new Table(0, 0, -1, null),
 /* NxS[  20] */ new Table(61, 1, -1, new short[] {198}),
@@ -1207,9 +1207,9 @@ namespace MyCompiler
 /* NxS[ 199] */ new Table(48, 10, -1, new short[] {199, 199, 199, 199, 199, 199, 
           199, 199, 199, 199}),
 /* NxS[ 200] */ new Table(48, 54, -1, new short[] {200, 200, 200, 200, 200, 200, 
-          200, 200, 200, 200, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 213, 
+          200, 200, 200, 200, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 215, 
           -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 
-          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 213}),
+          -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 215}),
 /* NxS[ 201] */ new Table(48, 10, -1, new short[] {201, 201, 201, 201, 201, 201, 
           201, 201, 201, 201}),
 /* NxS[ 202] */ new Table(0, 0, -1, null),
@@ -1219,7 +1219,9 @@ namespace MyCompiler
 /* NxS[ 206] */ new Table(0, 0, -1, null),
 /* NxS[ 207] */ new Table(0, 0, -1, null),
 /* NxS[ 208] */ new Table(0, 0, -1, null),
-/* NxS[ 209] */ new Table(9, 117, 1, new short[] {2, 3, 1, 1, 4, 1, 
+/* NxS[ 209] */ new Table(0, 0, -1, null),
+/* NxS[ 210] */ new Table(0, 0, -1, null),
+/* NxS[ 211] */ new Table(9, 117, 1, new short[] {2, 3, 1, 1, 4, 1, 
           1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 
           1, 2, 5, 6, 7, 1, 1, 8, 1, 9, 10, 11, 12, 13, 14, 15, 
           16, 17, 17, 17, 17, 17, 17, 17, 17, 17, 17, 18, 19, 20, 21, 22, 
@@ -1227,17 +1229,17 @@ namespace MyCompiler
           23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 23, 25, 1, 26, 1, 
           23, 1, 27, 28, 29, 30, 31, 32, 23, 23, 33, 23, 23, 34, 35, 36, 
           37, 38, 23, 39, 40, 41, 23, 42, 43, 23, 23, 23, 44, 45, 46}),
-/* NxS[ 210] */ new Table(48, 10, -1, new short[] {200, 200, 200, 200, 200, 200, 
+/* NxS[ 212] */ new Table(48, 10, -1, new short[] {200, 200, 200, 200, 200, 200, 
           200, 200, 200, 200}),
-/* NxS[ 211] */ new Table(43, 15, -1, new short[] {212, -1, 212, -1, -1, 199, 
+/* NxS[ 213] */ new Table(43, 15, -1, new short[] {214, -1, 214, -1, -1, 199, 
           199, 199, 199, 199, 199, 199, 199, 199, 199}),
-/* NxS[ 212] */ new Table(48, 10, -1, new short[] {199, 199, 199, 199, 199, 199, 
+/* NxS[ 214] */ new Table(48, 10, -1, new short[] {199, 199, 199, 199, 199, 199, 
           199, 199, 199, 199}),
-/* NxS[ 213] */ new Table(43, 15, -1, new short[] {214, -1, 214, -1, -1, 201, 
+/* NxS[ 215] */ new Table(43, 15, -1, new short[] {216, -1, 216, -1, -1, 201, 
           201, 201, 201, 201, 201, 201, 201, 201, 201}),
-/* NxS[ 214] */ new Table(48, 10, -1, new short[] {201, 201, 201, 201, 201, 201, 
+/* NxS[ 216] */ new Table(48, 10, -1, new short[] {201, 201, 201, 201, 201, 201, 
           201, 201, 201, 201}),
-/* NxS[ 215] */ new Table(34, 1, 215, new short[] {206}),
+/* NxS[ 217] */ new Table(34, 1, 217, new short[] {208}),
     };
 
 int NextState() {
@@ -2011,24 +2013,30 @@ yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)To
 yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;
             break;
         case 202:
-return (int)Tokens.DECR;
+return (int)Tokens.DIV_ASSIGN;
             break;
         case 203:
-return (int)Tokens.MINUS_ASSIGN;
+return (int)Tokens.DECR;
             break;
         case 204:
-return (int)Tokens.INC;
+return (int)Tokens.MINUS_ASSIGN;
             break;
         case 205:
-return (int)Tokens.PLUS_ASSIGN;
+return (int)Tokens.INC;
             break;
         case 206:
-yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL;
+return (int)Tokens.PLUS_ASSIGN;
             break;
         case 207:
-return (int)Tokens.NE;
+return (int)Tokens.MULT_ASSIGN;
             break;
         case 208:
+yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL;
+            break;
+        case 209:
+return (int)Tokens.NE;
+            break;
+        case 210:
 return (int)Tokens.NEWLINE;
             break;
         default:
