@@ -511,11 +511,11 @@ namespace MyCompiler
             return statement.Type;
         }
 
-        public Type VisitSequence(SequenceNode expr)
+        public Type VisitSequence(SequenceNode node)
         {
             Type lastType = new VoidType();
 
-            foreach (var stmt in expr.Statements)
+            foreach (var stmt in node.Statements)
                 lastType = Visit(stmt);
 
             return lastType;
