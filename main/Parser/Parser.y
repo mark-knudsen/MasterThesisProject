@@ -41,7 +41,7 @@
 %left DOT
 %left LBRACKET 
 
-%type <node> prog statement statement_list assignment block seperator opt_newlines
+%type <node> prog statement statement_list assignment block separator opt_newlines
 %type <node> expr 
 %type <expr> type
 %type <expr> opt_expr
@@ -63,7 +63,7 @@ block
     : LBRACE statement_list RBRACE { $$ = $2; }
     ;
 
-seperator
+separator
     : SEMICOLON
     | NEWLINE
     ;
@@ -74,9 +74,9 @@ opt_newlines
     ;
 
 statement_list
-    : /* empty */               { $$ = new SequenceNode(); }
-    | statement_list statement  { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
-    | statement_list seperator  { $$ = $1; }
+    : /* empty */                           { $$ = new SequenceNode(); }
+    | statement_list statement separator    { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
+    | statement_list statement              { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
     ;
 
 statement

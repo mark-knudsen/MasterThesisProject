@@ -65,7 +65,7 @@ UnitTest.cs
 
 [metadataReferences]
 ../main/obj/Debug/net8.0/ref/MyCompiler.dll
-<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/ref/net8.0/
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.20/ref/net8.0/
  Microsoft.CSharp.dll
  Microsoft.VisualBasic.Core.dll
  Microsoft.VisualBasic.dll
@@ -250,14 +250,14 @@ UnitTest.cs
  xunit.extensibility.execution/2.4.2/lib/netstandard1.1/xunit.execution.dotnet.dll
 
 [analyzerReferences]
-<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.22/analyzers/dotnet/cs/
+<DOTNET>/packs/Microsoft.NETCore.App.Ref/8.0.20/analyzers/dotnet/cs/
  Microsoft.Interop.ComInterfaceGenerator.dll
  Microsoft.Interop.JavaScript.JSImportGenerator.dll
  Microsoft.Interop.LibraryImportGenerator.dll
  Microsoft.Interop.SourceGeneration.dll
  System.Text.Json.SourceGeneration.dll
  System.Text.RegularExpressions.Generator.dll
-<DOTNET>/sdk/9.0.308/Sdks/Microsoft.NET.Sdk/analyzers/
+<DOTNET>/sdk/9.0.305/Sdks/Microsoft.NET.Sdk/analyzers/
  Microsoft.CodeAnalysis.CSharp.NetAnalyzers.dll
  Microsoft.CodeAnalysis.NetAnalyzers.dll
 <NUGET>/xunit.analyzers/1.0.0/analyzers/dotnet/cs/
@@ -265,5 +265,5 @@ UnitTest.cs
  xunit.analyzers.fixes.dll
 
 [analyzerConfigFiles]
-<DOTNET>/sdk/9.0.308/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
+<DOTNET>/sdk/9.0.305/Sdks/Microsoft.NET.Sdk/analyzers/build/config/analysislevel_8_default.globalconfig
 obj/Debug/net8.0/MyCompiler.Tests.GeneratedMSBuildEditorConfig.editorconfig
