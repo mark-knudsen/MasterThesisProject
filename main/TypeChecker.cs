@@ -84,9 +84,9 @@ namespace MyCompiler
             };
         }
 
-        public Type VisitForEachLoop(ForEachLoopNode expr)
+        public Type VisitForEachLoop(ForEachLoopNode statement)
         {
-            var collectionType = Visit(expr.Source);
+            var collectionType = Visit(statement.Source);
             Type rowType = null;
 
             // Determine the type of 'item'
@@ -97,10 +97,11 @@ namespace MyCompiler
             if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
 
             // it should use an assign node to assign the value instead of harcoding it here
-            _context = _context.Add(expr.Iterator.Name, default, _value: null!, type: rowType);
+            _context = _context.Add(statement.Iterator.Name, default, _value: null!, type: rowType);
 
-            Visit(expr.Body);
-            return new VoidType();
+            Visit(statement.Body);
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
         public Type VisitNumber(NumberNode expr)
@@ -133,7 +134,7 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
-            System.Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
+            Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -398,27 +399,27 @@ namespace MyCompiler
             throw new Exception($"Unknown operator {expr.Operator}");
         }
 
-        public Type VisitIncrement(IncrementNode expr)
+        public Type VisitIncrement(IncrementNode statement)
         {
-            var idType = Visit(expr.Id);
-            expr.SetType(idType);
-            return expr.Type;
+            Visit(statement.Id);
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
-        public Type VisitDecrement(DecrementNode expr)
+        public Type VisitDecrement(DecrementNode statement)
         {
-            var idType = Visit(expr.Id);
-            expr.SetType(idType);
-            return expr.Type;
+            Visit(statement.Id);
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
-        public Type VisitAssign(AssignNode expr)
+        public Type VisitAssign(AssignNode statement)
         {
-            Type valType = Visit(expr.Expression);
+            Type valType = Visit(statement.Expression);
 
             // Use 'default' for LLVMValueRef to avoid CS0246
-            _context = _context.Add(expr.Id, default, null, valType);
-            expr.SetType(valType);
+            _context = _context.Add(statement.Id, default, null, valType);
+            statement.SetType(new VoidType());
             return valType;
         }
 
@@ -456,22 +457,20 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitIf(IfNode expr)
+        public Type VisitIf(IfNode statement)
         {
-            var condType = Visit(expr.Condition);
+            var condType = Visit(statement.Condition);
 
             // 1. Condition Check
             if (condType is not BoolType)
                 throw new Exception("If condition must be Bool: " + condType);
 
             // Use .Then and .Else to match your Node definition
-            Type thenType = Visit(expr.ThenPart);
+            Type thenType = Visit(statement.ThenPart);
 
             Type elseType = new VoidType();
-            if (expr.ElsePart != null)
-                elseType = Visit(expr.ElsePart);
-
-            Type finalType;
+            if (statement.ElsePart != null)
+                elseType = Visit(statement.ElsePart);
 
             // 2. Promotion Logic (Bool <-> Number)
             if (thenType.GetType() != elseType.GetType())
@@ -481,47 +480,35 @@ namespace MyCompiler
                 bool isElseNumeric = (elseType is FloatType || elseType is IntType || elseType is BoolType);
 
                 // If we have mixed Numbers and Bools
-                if (isThenNumeric && isElseNumeric)
-                {
-                    // If either side is an Int, let's treat the result as an Int/Float 
-                    // so we see numbers instead of "True/False"
-                    finalType = new FloatType();
-                }
-                // Handle cases where one side is None (Void)
-                else if (thenType is VoidType)
-                    finalType = elseType;
-                else if (elseType is VoidType)
-                    finalType = thenType;
+                if (isThenNumeric && isElseNumeric || (isThenNumeric && elseType is BoolType) || (thenType is BoolType && isElseNumeric)) { }
                 else
                     throw new Exception($"Type Mismatch: Then branch is {thenType}, Else is {elseType}");
             }
-            else
-                finalType = thenType;
-
-            // 3. Set the type and return
-            expr.SetType(finalType);
-            return expr.Type;
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
-        public Type VisitPrint(PrintNode expr)
+        public Type VisitPrint(PrintNode statement)
         {
-            Visit(expr.Expression);
-            return new VoidType();
+            Visit(statement.Expression);
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
-        public Type VisitForLoop(ForLoopNode expr)
+        public Type VisitForLoop(ForLoopNode statement)
         {
-            if (expr.Initialization != null) Visit(expr.Initialization);
+            if (statement.Initialization != null) Visit(statement.Initialization);
 
-            var condType = Visit(expr.Condition);
+            var condType = Visit(statement.Condition);
             // Optimization: Allow Float as condition (0.0 is false)
             if (condType is not BoolType && condType is not FloatType)
                 throw new Exception("For loop condition must be Bool or Number");
 
-            if (expr.Step != null) Visit(expr.Step);
+            if (statement.Step != null) Visit(statement.Step);
 
-            Visit(expr.Body); // Now visits the sequence/block
-            return new VoidType();
+            Visit(statement.Body); // Now visits the sequence/block
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
         public Type VisitSequence(SequenceNode expr)
@@ -1174,21 +1161,18 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitRecordFieldAssign(RecordFieldAssignNode expr)
+        public Type VisitRecordFieldAssign(RecordFieldAssignNode statement)
         {
-            Type assignType = Visit(expr.AssignExpression);
-            Type idType = Visit(expr.IdRecord);
-            var fieldType = (idType as RecordType).RecordFields.FirstOrDefault(f => f.Label == expr.IdField).Type.GetType();
+            Type assignType = Visit(statement.AssignExpression);
+            Type idType = Visit(statement.IdRecord);
+            var fieldType = (idType as RecordType).RecordFields.FirstOrDefault(f => f.Label == statement.IdField).Type.GetType();
 
             if (assignType.GetType() != fieldType)
                 throw new Exception($"Wrong assign type {assignType}: Expected {fieldType}");
 
-            expr.SetType(new VoidType());
-            return expr.Type;
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
-
-
-
 
         private bool TryResolveTypeName(string name, out Type type)
         {
@@ -1298,9 +1282,7 @@ namespace MyCompiler
                     throw new Exception($"Generated schema must be a record definition, but found {schemaResult.GetType().Name}");
             }
             else
-            {
                 throw new Exception($"Dataframe must provide either a schema record or both columns and type metadata. Schema={expr.Schema != null}, Columns={expr.Columns != null}, Types={expr.Types != null}, Rows={expr.Rows != null}");
-            }
 
             var colNames = new List<string>();
             var colTypes = new List<Type>();

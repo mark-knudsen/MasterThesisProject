@@ -5062,7 +5062,6 @@ namespace MyCompiler
             return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
         }
 
-
         public LLVMValueRef VisitSlice(SliceNode node)
         {
             var sourceVal = node.Source.Accept(this); // The pointer to ArrayObject or DataframeObject
@@ -5151,7 +5150,6 @@ namespace MyCompiler
             var startTooSmall = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, startTmp, zero, "start_too_small");
             var startFinal = _builder.BuildSelect(startTooSmall, zero, startTmp, "start_final");
 
-
             // 2. Process End Index: if end < 0 then end + sourceLen else end
             var endIsNeg = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endIdx, zero, "end_is_neg");
             var endRegulated = _builder.BuildAdd(endIdx, sourceLen, "end_rel");
@@ -5162,7 +5160,6 @@ namespace MyCompiler
             var endTmp = _builder.BuildSelect(endTooBig, sourceLen, endResolved);
             var endTooSmall = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, endTmp, startFinal, "end_too_small");
             var endFinal = _builder.BuildSelect(endTooSmall, startFinal, endTmp, "end_final");
-
 
             // D. Calculate new length
             var newLen = _builder.BuildSub(endFinal, startFinal, "new_len");
@@ -5199,7 +5196,6 @@ namespace MyCompiler
 
             return newArrayPtr;
         }
-
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 

@@ -79,8 +79,6 @@ statement_list
     | statement_list separator              { $$ = $1; }
     ;
 
-    
-
 statement
     : assignment                                { $$ = $1; }
     | expr %prec LOWEST                         { $$ = $1; } 
@@ -157,7 +155,6 @@ assignment
     }
     ;
 
-
 expr
     : BOOL_LITERAL         { $$ = new BooleanNode((bool)$1); }
     | NUMBER               { $$ = new NumberNode((int)$1); }
@@ -173,7 +170,6 @@ expr
 
     /* Under your expr rules */
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1 as ExpressionNode, $3, $5); }
-
 
     /* Built-ins */
     | PRINT LPAREN expr RPAREN                      { $$ = new PrintNode($3 as ExpressionNode); }
@@ -233,8 +229,7 @@ expr
     {
         $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, new List<ExpressionNode> { new ArrayNode($5) });
     }
-    ;
-    
+    ; 
 
 /* Helper for optional expressions */
 opt_expr
