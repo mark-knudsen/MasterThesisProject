@@ -7,7 +7,8 @@
     public bool boolVal;
     public double fval;
     public MyCompiler.Node node; 
-    public MyCompiler.ExpressionNode expr; 
+    public MyCompiler.ExpressionNode expr;    
+    public List<ExpressionNode> idList;
     public List<ExpressionNode> exprList;
     public List<NamedArgumentNode> argList; 
 }
@@ -42,9 +43,10 @@
 %left LBRACKET 
 
 %type <node> prog statement statement_list assignment block separator opt_newlines
-%type <node> expr 
+%type <node> expr
 %type <expr> type
-%type <expr> opt_expr
+%type <expr> opt_expr 
+%type <idList> id_list
 %type <exprList> expr_list 
 %type <argList> arg_list
 %type <node> arg
@@ -84,6 +86,7 @@ statement
     | expr %prec LOWEST                         { $$ = $1; } 
     | IF LPAREN expr RPAREN block %prec IF      { $$ = new IfNode($3 as ExpressionNode, $5); }
     | IF LPAREN expr RPAREN block ELSE block    { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
+    | PRINT LPAREN expr RPAREN                      { $$ = new PrintNode($3 as ExpressionNode); }
     | FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block
     {
         $$ = new ForLoopNode($3 as StatementNode, $5 as ExpressionNode, $7 as StatementNode, $10);
@@ -172,7 +175,6 @@ expr
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1 as ExpressionNode, $3, $5); }
 
     /* Built-ins */
-    | PRINT LPAREN expr RPAREN                      { $$ = new PrintNode($3 as ExpressionNode); }
     | RANDOM LPAREN expr_list RPAREN                { $$ = new RandomNode($3); }
     | ROUND LPAREN expr_list RPAREN                 { $$ = new RoundNode($3); }
     | READCSV LPAREN expr COMMA expr RPAREN         { $$ = new ReadCsvNode(new List<ExpressionNode>{$3 as ExpressionNode, $5 as ExpressionNode}); }
@@ -213,7 +215,7 @@ expr
     | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1 as ExpressionNode, $5 as ExpressionNode); }
 
     /* Functional methods */
-    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); }
+    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1 as ExpressionNode, $5 as ExpressionNode); }   
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNode($1 as ExpressionNode, $5 as ExpressionNode); }
     | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNode($1 as ExpressionNode, $5 as ExpressionNode); }
     | expr DOT REMOVERANGE LPAREN expr RPAREN { $$ = new RemoveRangeNode($1 as ExpressionNode, $5 as ExpressionNode); }
@@ -221,15 +223,37 @@ expr
     {
         $$ = new WhereNode(new IdNode((string)$5), $1 as ExpressionNode, $7 as ExpressionNode); 
     }
-    | expr DOT MAP LPAREN ID LAMBDA expr_list RPAREN  
+    | expr DOT MAP LPAREN ID LAMBDA expr RPAREN  
     {
-        $$ = new MapNode(new IdNode((string)$5), $1 as ExpressionNode, $7);
+        $$ = new MapNode(new IdNode((string)$5), $1 as ExpressionNode, $7 as ExpressionNode);
     }
-    | expr DOT SELECT LPAREN expr_list RPAREN
+    | expr DOT SELECT LPAREN id_list RPAREN
     {
-        $$ = new MapNode(new IdNode("__show_x"), $1 as ExpressionNode, new List<ExpressionNode> { new ArrayNode($5) });
+        $$ = new MapNode(
+            new IdNode("__show_x"),
+            $1 as ExpressionNode,
+            new ArrayNode(
+                $5 as List<ExpressionNode>
+            )
+        );
     }
-    ; 
+    ;
+
+
+id_list
+    : ID
+    {
+        $$ = new List<ExpressionNode>
+        {
+            new IdNode((string)$1)
+        };
+    }
+    | id_list COMMA ID
+    {
+        $1.Add(new IdNode((string)$3));
+        $$ = $1;
+    }
+    ;
 
 /* Helper for optional expressions */
 opt_expr

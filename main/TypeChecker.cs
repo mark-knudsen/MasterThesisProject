@@ -130,7 +130,7 @@ namespace MyCompiler
         public Type VisitId(IdNode expr)
         {
             var entry = _context.Get(expr.Name);
-
+            
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
@@ -732,30 +732,28 @@ namespace MyCompiler
 
             try
             {
-                Type currentType = iteratorType;
-                foreach (var node in expr.Assignments)
-                {
-                    currentType = Visit(node);
-                    if (node is ExpressionNode en2) en2.SetType(currentType);
-                }
+                Type transformType = Visit(expr.TransformExpr);
 
-                var lastNode = expr.Assignments.Last();
-                Type finalRowType = (lastNode is ExpressionNode en) ? en.Type : currentType;
+                expr.TransformExpr.SetType(transformType);
+                System.Console.WriteLine("map transform type: " + transformType);
 
-                if (finalRowType is RecordType rec)
+                // Record => Dataframe
+                if (transformType is RecordType rec)
                 {
                     var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
                         rec.RecordFields.Select(f => f.Type).ToList(),
                         rec
                     );
+
                     expr.SetType(resultType);
                     return resultType;
                 }
 
-                var finalArrayType = new ArrayType(finalRowType);
-                expr.SetType(finalArrayType);
-                return finalArrayType;
+                // Scalar => Array
+                var arrayType = new ArrayType(transformType);
+                expr.SetType(arrayType);
+                return arrayType;
             }
             finally { _context = previousContext; }
         }

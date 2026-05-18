@@ -2488,11 +2488,12 @@ namespace MyCompiler
             rowAccess.SkipBoundsCheck = true;
 
             // 3. Transform the lambda body
-            ExpressionNode lastExpr = null;
-            foreach (var e in expr.Assignments)
-            {
-                lastExpr = (ExpressionNode)ReplaceIteratorInNode(e, expr.IteratorId.Name, rowAccess);
-            }
+            var lastExpr =
+            (ExpressionNode)ReplaceIteratorInNode(
+                expr.TransformExpr,
+                expr.IteratorId.Name,
+                rowAccess
+            );
 
             // 4. Add to the result list
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
@@ -2572,7 +2573,11 @@ namespace MyCompiler
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
             // 5. Transformation Logic
-            ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(expr.Assignments.First(), expr.IteratorId.Name, replacementNode);
+            ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
+                expr.TransformExpr,
+                expr.IteratorId.Name,
+                replacementNode
+            );
 
             // Because we initialized 'rowsArray' with 'srcLength', 
             // the 'grow' block in the IR will exist but will NEVER be executed.
@@ -2833,73 +2838,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(exitBlock);
         }
 
-        // Not used!
-        public LLVMValueRef VisitMapExprMutating(MapNode expr) // not in use, maybe use with like an argument, eg: x.map(d => d+2, true) 
-        {
-            // Temp variable names
-            var srcVarName = "__map_src";
-            var indexVarName = "__map_i";
 
-            // 1. Store source array
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-
-            // 2. i = 0
-            var indexAssign = new AssignNode(indexVarName, new NumberNode(0));
-
-            // 3. Loop condition: i < src.length
-            var loopCond = new ComparisonNode(
-                new IdNode(indexVarName),
-                "<",
-                new LengthNode(new IdNode(srcVarName))
-            );
-
-            // 4. i++
-            var loopStep = new IncrementNode(new IdNode(indexVarName));
-
-            // 5. src[i]
-            var currentElement = new IndexNode(
-                new IdNode(srcVarName),
-                new IdNode(indexVarName)
-            );
-
-            // 6. Replace iterator (d => ...) with actual element
-            var mappedExpr = ReplaceIterator(
-                expr.Assignments[0] as ExpressionNode,
-                expr.IteratorId.Name,
-                currentElement
-            );
-
-            // 7. src[i] = mappedExpr
-            var indexAssignNode = new IndexAssignNode(
-                new IdNode(srcVarName),
-                new IdNode(indexVarName),
-                mappedExpr
-            );
-
-            // 8. Loop body
-            var loopBody = new SequenceNode();
-            loopBody.Statements.Add(indexAssignNode);
-
-            var forLoop = new ForLoopNode(
-                indexAssign,
-                loopCond,
-                loopStep,
-                loopBody
-            );
-
-            // 9. Full sequence
-            var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(forLoop);
-
-            // Return the modified array
-            program.Statements.Add(new IdNode(srcVarName));
-
-            // Optional semantic check
-            PerformSemanticAnalysis(program);
-
-            return VisitSequence(program);
-        }
 
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
@@ -5228,6 +5167,11 @@ namespace MyCompiler
         for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
          for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude:  fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
        
+
+df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})        
+
+for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
+
         x.where(d=> d.age > 50)
 
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]

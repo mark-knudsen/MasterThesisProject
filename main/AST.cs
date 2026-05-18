@@ -324,20 +324,20 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhere(this);
     }
-
     public class MapNode : ExpressionNode
     {
         public IdNode IteratorId { get; }
         public ExpressionNode SourceExpr { get; }
-        public List<ExpressionNode> Assignments { get; }
+        public ExpressionNode TransformExpr { get; }
 
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, List<ExpressionNode> assignments)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode transformExpr)
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
-
-            if (assignments != null && assignments.Count > 0 && assignments[0] is ArrayNode arrayNode)
+            System.Console.WriteLine("Creating MapNode with transform expression of type: " + transformExpr.GetType().Name);
+            if (transformExpr is ArrayNode arrayNode)
             {
+                System.Console.WriteLine("Map transform is an array with " + arrayNode.Elements.Count + " elements.");
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
                 {
@@ -352,13 +352,14 @@ namespace MyCompiler
                         throw new Exception("Map array elements must be identifiers");
                 }
 
-                Assignments = new List<ExpressionNode> { new RecordNode(namedArguments) };
+                TransformExpr = new RecordNode(namedArguments);
             }
             else
-                Assignments = assignments;
+                TransformExpr = transformExpr;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitMap(this);
     }
 
     public class ReadCsvNode : ExpressionNode

@@ -456,10 +456,9 @@ namespace MyCompiler
                     Console.WriteLine($"{space}  Source:");
                     PrintNode(map.SourceExpr, indent + 2);
                     Console.WriteLine($"{space}  Transformation:");
-                    foreach (var assignment in map.Assignments)
-                    {
-                        PrintNode(assignment, indent + 2);
-                    }
+
+                    PrintNode(map.TransformExpr, indent + 2);
+
 
                     break;
 
