@@ -367,23 +367,14 @@ namespace MyCompiler
         public ExpressionNode SchemaExpr { get; set; }
         public ExpressionNode FileNameExpr { get; }
 
-        public ReadCsvNode(List<ExpressionNode> args)
+        public ReadCsvNode(ExpressionNode schemaExpr, ExpressionNode fileNameExpr)
         {
-            // Find the actual string literal (e.g., "test.csv")
-            FileNameExpr = args.FirstOrDefault(a => a is StringNode);
-
-            // Find the record/schema ([index: int...])
-            SchemaExpr = args.FirstOrDefault(a => a is RecordNode);
-
-            // If the parser didn't find them by type, fallback to positions
-            if (FileNameExpr == null && args.Count >= 2)
-            {
-                FileNameExpr = args[1];
-                SchemaExpr = args[0];
-            }
+            SchemaExpr = schemaExpr;
+            FileNameExpr = fileNameExpr;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitReadCsv(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitReadCsv(this);
     }
 
     public class ToCsvNode : ExpressionNode

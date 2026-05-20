@@ -564,13 +564,13 @@ namespace MyCompiler
             DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
-            if (!_stopwatch)
-            {
-                compilerTestList = new List<double>();
-                IRTestList = new List<double>();
-                RuntimeTestList = new List<double>();
+            // if (!_stopwatch)
+            // {
+            //     compilerTestList = new List<double>();
+            //     IRTestList = new List<double>();
+            //     RuntimeTestList = new List<double>();
 
-            }
+            // }
             if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
             if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
@@ -3489,19 +3489,157 @@ namespace MyCompiler
 
         public LLVMValueRef VisitAddRange(AddRangeNode expr)
         {
-            Visit(expr.SourceExpression);
-            Visit(expr.AddRangeExpression); // visits the array we are on, like x.addRange, then we visit x on this line of code
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            var fullSequence = new SequenceNode();
+            // =========================================================
+            // Evaluate arrays
+            // =========================================================
 
-            foreach (var item in ((ArrayNode)expr.AddRangeExpression).Elements) // it is hardcoded, it can't be given an id
-            {
-                var addNode = new AddNode(expr.SourceExpression, item);
-                fullSequence.Statements.Add(addNode);
-            }
-            var newRange = Visit(fullSequence);
+            var targetPtr = Visit(expr.SourceExpression);
+            var sourcePtr = Visit(expr.AddRangeExpression);
 
-            return newRange;
+            // =========================================================
+            // Type checking
+            // =========================================================
+
+            if (expr.AddRangeExpression.Type is not ArrayType sourceArrayType)
+                throw new Exception("addRange expects an array");
+
+            var elementType = sourceArrayType.ElementType;
+
+            LLVMTypeRef llvmElementType = GetLLVMType(elementType);
+            LLVMTypeRef elementPtrType = LLVMTypeRef.CreatePointer(llvmElementType, 0);
+
+            // =========================================================
+            // Load source array metadata
+            // =========================================================
+
+            var srcLenPtr = _builder.BuildStructGEP2(
+                _arrayStruct,
+                sourcePtr,
+                0,
+                "add_len_ptr"
+            );
+
+            var srcDataPtrPtr = _builder.BuildStructGEP2(
+                _arrayStruct,
+                sourcePtr,
+                2,
+                "add_data_ptr_ptr"
+            );
+
+            var srcLen = _builder.BuildLoad2(
+                i64,
+                srcLenPtr,
+                "add_len"
+            );
+
+            var srcRawData = _builder.BuildLoad2(
+                i8Ptr,
+                srcDataPtrPtr,
+                "add_raw_data"
+            );
+
+            // =========================================================
+            // Create blocks
+            // =========================================================
+
+            var function = _builder.InsertBlock.Parent;
+
+            var loopBlock = ctx.AppendBasicBlock(function, "addrange_loop");
+            var bodyBlock = ctx.AppendBasicBlock(function, "addrange_body");
+            var afterBlock = ctx.AppendBasicBlock(function, "addrange_after");
+
+            // Save entry block BEFORE branching
+            var entryBlock = _builder.InsertBlock;
+
+            _builder.BuildBr(loopBlock);
+
+            // =========================================================
+            // LOOP BLOCK
+            // =========================================================
+
+            _builder.PositionAtEnd(loopBlock);
+
+            var indexPhi = _builder.BuildPhi(i64, "i");
+
+            // First incoming edge
+            indexPhi.AddIncoming(
+                new[] { LLVMValueRef.CreateConstInt(i64, 0) },
+                new[] { entryBlock },
+                1
+            );
+
+            var cond = _builder.BuildICmp(
+                LLVMIntPredicate.LLVMIntULT,
+                indexPhi,
+                srcLen,
+                "loop_cond"
+            );
+
+            _builder.BuildCondBr(cond, bodyBlock, afterBlock);
+
+            // =========================================================
+            // BODY BLOCK
+            // =========================================================
+
+            _builder.PositionAtEnd(bodyBlock);
+
+            // Cast raw source data
+            var typedSrcData = _builder.BuildBitCast(
+                srcRawData,
+                elementPtrType,
+                "typed_src_data"
+            );
+
+            // Get current element pointer
+            var elemPtr = _builder.BuildGEP2(
+                llvmElementType,
+                typedSrcData,
+                new[] { indexPhi },
+                "elem_ptr"
+            );
+
+            // Load current element
+            var elem = _builder.BuildLoad2(
+                llvmElementType,
+                elemPtr,
+                "elem"
+            );
+
+            // Append to target
+            ExecuteArrayAddition(targetPtr, elem, elementType);
+
+            // Increment loop counter
+            var nextIndex = _builder.BuildAdd(
+                indexPhi,
+                LLVMValueRef.CreateConstInt(i64, 1),
+                "next_i"
+            );
+
+            // IMPORTANT:
+            // ExecuteArrayAddition creates additional blocks internally
+            // (grow/cont), so we must get the REAL current block
+            var currentBlock = _builder.InsertBlock;
+
+            _builder.BuildBr(loopBlock);
+
+            // Second PHI incoming edge
+            indexPhi.AddIncoming(
+                new[] { nextIndex },
+                new[] { currentBlock },
+                1
+            );
+
+            // =========================================================
+            // AFTER BLOCK
+            // =========================================================
+
+            _builder.PositionAtEnd(afterBlock);
+
+            return targetPtr;
         }
 
         public LLVMValueRef VisitRemove(RemoveNode expr)
@@ -5170,8 +5308,12 @@ namespace MyCompiler
 
 df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})        
 
-for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
-
+for(i=0; i < 10000; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
+acc=0; for(i=0; i < 10000000; i++) {acc += i+i}
+acc=0; for(i=0; i < 20000000; i++) {acc += i+i}
+acc=0; for(i=0; i < 30000000; i++) {acc += i+i}
+acc=0; for(i=0; i < 40000000; i++) {acc += i+i}
+acc=0; for(i=0; i < 50000000; i++) {acc += i+i}
         x.where(d=> d.age > 50)
 
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]

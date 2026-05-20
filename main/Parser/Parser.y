@@ -177,8 +177,21 @@ expr
     /* Built-ins */
     | RANDOM LPAREN expr_list RPAREN                { $$ = new RandomNode($3); }
     | ROUND LPAREN expr_list RPAREN                 { $$ = new RoundNode($3); }
-    | READCSV LPAREN expr COMMA expr RPAREN         { $$ = new ReadCsvNode(new List<ExpressionNode>{$3 as ExpressionNode, $5 as ExpressionNode}); }
-    | READCSV LPAREN expr RPAREN                    { $$ = new ReadCsvNode(new List<ExpressionNode>{$3 as ExpressionNode}); }
+    | READCSV LPAREN expr COMMA expr RPAREN
+    {
+        $$ = new ReadCsvNode(
+            $3 as ExpressionNode,
+            $5 as ExpressionNode
+        );
+    }
+
+    | READCSV LPAREN expr RPAREN
+    {
+        $$ = new ReadCsvNode(
+            null,
+            $3 as ExpressionNode
+        );
+    }
     | TOCSV LPAREN expr COMMA expr RPAREN           { $$ = new ToCsvNode($3 as ExpressionNode, $5 as ExpressionNode); }
     | DATAFRAME LPAREN arg_list RPAREN              { $$ = new DataframeNode($3); }
     | RECORD LPAREN LBRACE arg_list RBRACE RPAREN   { $$ = new RecordNode($4); }

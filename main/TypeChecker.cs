@@ -130,7 +130,7 @@ namespace MyCompiler
         public Type VisitId(IdNode expr)
         {
             var entry = _context.Get(expr.Name);
-            
+
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
@@ -416,9 +416,8 @@ namespace MyCompiler
         public Type VisitAssign(AssignNode statement)
         {
             Type valType = Visit(statement.Expression);
-
-            // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(statement.Id, default, null, valType);
+
             statement.SetType(new VoidType());
             return valType;
         }
@@ -883,14 +882,32 @@ namespace MyCompiler
 
             return recordNode;
         }
-
         public Type VisitReadCsv(ReadCsvNode expr)
         {
-            Visit(expr.FileNameExpr);
+            Type fileType = Visit(expr.FileNameExpr);
+
+            if (!(fileType is StringType))
+                throw new Exception("readcsv filename must evaluate to a string");
 
             if (expr.SchemaExpr == null)
             {
-                string path = (expr.FileNameExpr as StringNode).Value;
+                string path = null;
+
+                if (expr.FileNameExpr is StringNode str)
+                {
+                    path = str.Value;
+                }
+                else if (expr.FileNameExpr is IdNode id)
+                {
+                    var symbol = _context.Get(id.Name);
+
+                    if (symbol?.value is string s)
+                        path = s;
+                }
+
+                if (path == null)
+                    throw new Exception("Could not resolve csv file path");
+
                 expr.SchemaExpr = BuildRecordNodeFromCsv(path);
             }
 
@@ -898,8 +915,13 @@ namespace MyCompiler
 
             if (schemaType is RecordType recType)
             {
-                var names = recType.RecordFields.Select(f => f.Label).ToList();
-                var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
+                var names = recType.RecordFields
+                    .Select(f => f.Label)
+                    .ToList();
+
+                var types = recType.RecordFields
+                    .Select(f => f.Value?.Type ?? f.Type)
+                    .ToList();
 
                 for (int i = 0; i < recType.RecordFields.Count; i++)
                 {
@@ -907,11 +929,15 @@ namespace MyCompiler
                 }
 
                 var dfType = new DataframeType(names, types, recType);
+
                 expr.SetType(dfType);
+
                 return expr.Type;
             }
 
-            throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
+            throw new Exception(
+                $"readcsv requires a record template, but got {schemaType?.GetType().Name}"
+            );
         }
 
         public Type VisitToCsv(ToCsvNode expr)
@@ -967,13 +993,36 @@ namespace MyCompiler
             expr.SetType(sourceType);
             return expr.Type;
         }
-
         public Type VisitAddRange(AddRangeNode expr)
         {
-            Visit(expr.SourceExpression);
-            Visit(expr.AddRangeExpression);
-            expr.SetType(expr.SourceExpression.Type);
-            return expr.Type;
+            Type sourceType = Visit(expr.SourceExpression);
+            Type addType = Visit(expr.AddRangeExpression);
+
+            if (sourceType is ArrayType sourceArr &&
+                addType is ArrayType addArr)
+            {
+                if (!TypesEqual(sourceArr.ElementType, addArr.ElementType))
+                    throw new Exception(
+                        $"Cannot add range of {addArr.ElementType} to {sourceArr.ElementType}"
+                    );
+
+                expr.SetType(sourceType);
+                return expr.Type;
+            }
+
+            if (sourceType is DataframeType dfType &&
+                addType is ArrayType addDfArr)
+            {
+                if (!TypesEqual(dfType.RowType, addDfArr.ElementType))
+                    throw new Exception(
+                        $"Cannot add rows of type {addDfArr.ElementType} to dataframe row type {dfType.RowType}"
+                    );
+
+                expr.SetType(sourceType);
+                return expr.Type;
+            }
+
+            throw new Exception("addRange requires compatible arrays/dataframes");
         }
 
         public Type VisitRemove(RemoveNode expr)
@@ -990,6 +1039,46 @@ namespace MyCompiler
             Visit(expr.RemoveRangeExpression);
             expr.SetType(expr.SourceExpression.Type);
             return expr.Type;
+        }
+
+        private bool TypesEqual(Type a, Type b)
+        {
+            if (a == null || b == null) return false;
+
+            if (a.GetType() != b.GetType())
+                return false;
+
+            switch (a)
+            {
+                case IntType:
+                case FloatType:
+                case BoolType:
+                case StringType:
+                    return true;
+
+                case ArrayType aArr when b is ArrayType bArr:
+                    return TypesEqual(aArr.ElementType, bArr.ElementType);
+
+                case RecordType aRec when b is RecordType bRec:
+                    if (aRec.RecordFields.Count != bRec.RecordFields.Count)
+                        return false;
+
+                    for (int i = 0; i < aRec.RecordFields.Count; i++)
+                    {
+                        if (aRec.RecordFields[i].Label != bRec.RecordFields[i].Label)
+                            return false;
+
+                        if (!TypesEqual(aRec.RecordFields[i].Type, bRec.RecordFields[i].Type))
+                            return false;
+                    }
+                    return true;
+
+                case DataframeType aDf when b is DataframeType bDf:
+                    return TypesEqual(aDf.RowType, bDf.RowType);
+
+                default:
+                    return false;
+            }
         }
 
         public Type VisitLength(LengthNode expr)
