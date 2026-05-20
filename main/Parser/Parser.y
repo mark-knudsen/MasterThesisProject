@@ -7,10 +7,12 @@
     public bool boolVal;
     public double fval;
     public MyCompiler.Node node; 
-    public MyCompiler.ExpressionNode expr;    
+    public MyCompiler.ExpressionNode expr;
     public List<ExpressionNode> idList;
     public List<ExpressionNode> exprList;
-    public List<NamedArgumentNode> argList; 
+    public List<NamedArgumentNode> dataframeArgList;
+    public List<NamedArgumentNode> recordArgList; 
+    /* public List<RecordNode> recordList; */
 }
 
 %token <obj> NUMBER STRING ID NULL_LITERAL STRING_LITERAL
@@ -44,12 +46,16 @@
 
 %type <node> prog statement statement_list assignment block separator opt_newlines
 %type <node> expr
+%type <node> record_struct
 %type <expr> type
 %type <expr> opt_expr 
 %type <idList> id_list
 %type <exprList> expr_list 
-%type <argList> arg_list
-%type <node> arg
+%type <dataframeArgList> dataframe_arg_list
+%type <recordArgList> record_arg_list
+%type <node> dataframe_arg record_arg
+/* %type <recordList> record_list */
+
 
 %{
     public MyCompiler.Node RootNode;
@@ -168,8 +174,7 @@ expr
     /* | type                 { $$ = new TypeLiteralNode($1 as TypeNode); } */
 
     | LPAREN expr RPAREN   { $$ = $2; }    /* ( 2+2 ) */
-    | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2 as List<ExpressionNode>); } /*[1,2,3] */
-    | LBRACE arg_list RBRACE { $$ = new RecordNode($2 as List<NamedArgumentNode>); }  /*{ name: "Bob", age: 23 } */
+    | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2); } /*[1,2,3] */    
 
     /* Under your expr rules */
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1 as ExpressionNode, $3, $5); }
@@ -177,11 +182,12 @@ expr
     /* Built-ins */
     | RANDOM LPAREN expr_list RPAREN                { $$ = new RandomNode($3); }
     | ROUND LPAREN expr_list RPAREN                 { $$ = new RoundNode($3); }
-    | READCSV LPAREN expr COMMA expr RPAREN         { $$ = new ReadCsvNode(new List<ExpressionNode>{$3 as ExpressionNode, $5 as ExpressionNode}); }
-    | READCSV LPAREN expr RPAREN                    { $$ = new ReadCsvNode(new List<ExpressionNode>{$3 as ExpressionNode}); }
+    | READCSV LPAREN expr COMMA record_arg RPAREN          { $$ = new ReadCsvNode(new List<Node>{$3 as ExpressionNode, $5 as NamedArgumentNode}); }
+    | READCSV LPAREN expr RPAREN                    { $$ = new ReadCsvNode(new List<Node>{$3 as ExpressionNode}); }
     | TOCSV LPAREN expr COMMA expr RPAREN           { $$ = new ToCsvNode($3 as ExpressionNode, $5 as ExpressionNode); }
-    | DATAFRAME LPAREN arg_list RPAREN              { $$ = new DataframeNode($3); }
-    | RECORD LPAREN LBRACE arg_list RBRACE RPAREN   { $$ = new RecordNode($4); }
+    | DATAFRAME LPAREN dataframe_arg_list RPAREN              { $$ = new DataframeNode($3); }
+    | record_struct                                 { $$ = $1; }
+    /* | RECORD LPAREN LBRACE arg_list RBRACE RPAREN   { $$ = new RecordNode($4); } */
     
     /* Math & Logic */
     | SQRT LPAREN expr RPAREN               { $$ = new SqrtNode($3 as ExpressionNode); }
@@ -210,6 +216,7 @@ expr
     | expr DOT MAX                          { $$ = new MaxNode($1 as ExpressionNode); }
     | expr DOT MEAN                         { $$ = new MeanNode($1 as ExpressionNode); }
     | expr DOT SUM                          { $$ = new SumNode($1 as ExpressionNode); }
+    | expr DOT COPY LPAREN RPAREN           { $$ = new CopyNode($1 as ExpressionNode); }
     | expr DOT COPY                         { $$ = new CopyNode($1 as ExpressionNode); }
     | expr DOT COLUMNS                      { $$ = new ColumnsNode($1 as ExpressionNode); }
     | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1 as ExpressionNode, $5 as ExpressionNode); }
@@ -239,7 +246,6 @@ expr
     }
     ;
 
-
 id_list
     : ID
     {
@@ -255,6 +261,40 @@ id_list
     }
     ;
 
+
+record_struct
+    : RECORD LPAREN LBRACE record_arg_list RBRACE RPAREN   { $$ = new RecordNode($4); }    /* record({...})  */
+    | LBRACE record_arg_list RBRACE         { $$ = new RecordNode($2); }                   /* ID={...}   */
+    ;
+
+
+/* --- Dataframe Specific Arguments (Strictly Named mappings or columns) --- */
+dataframe_arg_list
+    : dataframe_arg                          { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
+    | dataframe_arg_list COMMA dataframe_arg { $1.Add($3 as NamedArgumentNode); $$ = $1; }
+    ;
+
+dataframe_arg
+    : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
+    | expr                   { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
+    ;
+
+/* --- Record Specific Arguments (Allows positional structural values) --- */
+record_arg_list
+    : record_arg                         { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
+    | record_arg_list COMMA record_arg   { $1.Add($3 as NamedArgumentNode); $$ = $1; }
+    ;
+
+record_arg
+    : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
+    | ID COLON expr          { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
+    | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
+    | expr                   { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
+    ;
+
+
+
+ 
 /* Helper for optional expressions */
 opt_expr
     : /* empty */ { $$ = null; }
@@ -267,20 +307,6 @@ expr_list
     | expr_list COMMA expr   { $1.Add($3 as ExpressionNode); $$ = $1; }
     ;
 
-arg_list
-    : arg                    { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
-    | arg_list COMMA arg     { $1.Add($3 as NamedArgumentNode); $$ = $1; }
-    ;
-
-arg
-    : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
-    | ID COLON expr          { $$ = new NamedArgumentNode((string)$1, $3 as ExpressionNode); }
-    /* --- Explicitly handle type assignments like name: string --- */
-    /* | ID ASSIGN type         { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); } */
-    | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
-    /* --- Re-introduced fallback rule for raw positional expressions {"Alice", 25} --- */
-    | expr                   { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
-    ;
 
 %%
 

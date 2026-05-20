@@ -364,22 +364,22 @@ namespace MyCompiler
 
     public class ReadCsvNode : ExpressionNode
     {
-        public ExpressionNode SchemaExpr { get; set; }
         public ExpressionNode FileNameExpr { get; }
+        public NamedArgumentNode SchemaExpr { get; set; }
 
-        public ReadCsvNode(List<ExpressionNode> args)
+        public ReadCsvNode(List<Node> args)
         {
             // Find the actual string literal (e.g., "test.csv")
-            FileNameExpr = args.FirstOrDefault(a => a is StringNode);
+            FileNameExpr = args.FirstOrDefault(a => a is StringNode) as ExpressionNode;
 
             // Find the record/schema ([index: int...])
-            SchemaExpr = args.FirstOrDefault(a => a is RecordNode);
+            SchemaExpr = args.FirstOrDefault(a => a is NamedArgumentNode) as NamedArgumentNode;
 
             // If the parser didn't find them by type, fallback to positions
             if (FileNameExpr == null && args.Count >= 2)
             {
-                FileNameExpr = args[1];
-                SchemaExpr = args[0];
+                FileNameExpr = args[1] as ExpressionNode;
+                SchemaExpr = args[0] as NamedArgumentNode;
             }
         }
 
@@ -639,49 +639,23 @@ namespace MyCompiler
 
     public class DataframeNode : ExpressionNode
     {
-        public RecordNode Schema { get; }
-        public ArrayNode Columns { get; }
-        public ArrayNode Rows { get; }
-        public ArrayNode Types { get; }
+        // The raw arguments passed directly from the parser
+        public List<NamedArgumentNode> Arguments { get; }
+
+        // These become semantic metadata fields populated exclusively by the Typechecker
+        public RecordNode Schema { get; internal set; }
+        public ArrayNode Columns { get; internal set; }
+        public ArrayNode Rows { get; internal set; }
+        public ArrayNode Types { get; internal set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            foreach (var arg in args)
-            {
-                var argName = arg.Name?.ToLowerInvariant();
-
-                if (argName == "schema")
-                {
-                    if (arg.Value is RecordNode r) Schema = r;
-                    else throw new Exception("Schema must be a record definition.");
-                }
-                else if (argName == "columns")
-                {
-                    if (arg.Value is ArrayNode a) Columns = a;
-                }
-                else if (argName == "rows" || argName == "data")
-                {
-                    if (arg.Value is ArrayNode a) Rows = a;
-                }
-                else if (argName == "type")
-                {
-                    if (arg.Value is ArrayNode a) Types = a;
-                }
-                else if (Schema == null && arg.Value is RecordNode r)
-                {
-                    // Fallback: unnamed record argument may still represent the schema.
-                    Schema = r;
-                }
-                else if (Rows == null && arg.Value is ArrayNode arr)
-                {
-                    Rows = arr;
-                }
-            }
-            Rows ??= new ArrayNode(new List<ExpressionNode>());
+            Arguments = args ?? new List<NamedArgumentNode>();
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
+
 
     public class ColumnsNode : ExpressionNode
     {
@@ -692,19 +666,6 @@ namespace MyCompiler
             DataframeExpression = dataframeExpr;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitColumns(this);
-    }
-
-    public class ShowDataframeNode : ExpressionNode
-    {
-        public ExpressionNode Source { get; }
-        public List<ExpressionNode> Columns { get; }
-
-        public ShowDataframeNode(ExpressionNode source, List<ExpressionNode> columns)
-        {
-            Source = source;
-            Columns = columns;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframe(this);
     }
 
     public class TypeNode : ExpressionNode

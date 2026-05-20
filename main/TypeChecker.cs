@@ -70,7 +70,6 @@ namespace MyCompiler
                 CopyNode cop => VisitCopy(cop),
                 DataframeNode df => VisitDataframe(df),
                 ColumnsNode cols => VisitColumns(cols),
-                ShowDataframeNode showdf => VisitShowDataframe(showdf),
                 NamedArgumentNode namedArg => VisitNamedArgument(namedArg),
                 TypeLiteralNode typeLit => VisitTypeLiteral(typeLit),
                 SqrtNode sqrt => VisitSqrt(sqrt),
@@ -130,7 +129,7 @@ namespace MyCompiler
         public Type VisitId(IdNode expr)
         {
             var entry = _context.Get(expr.Name);
-            
+
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
@@ -890,9 +889,12 @@ namespace MyCompiler
 
             if (expr.SchemaExpr == null)
             {
+                System.Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
                 string path = (expr.FileNameExpr as StringNode).Value;
-                expr.SchemaExpr = BuildRecordNodeFromCsv(path);
+                expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
             }
+            else if (expr.SchemaExpr.Name != "schema")
+                throw new Exception("read_csv requires a 'schema' named argument");
 
             Type schemaType = Visit(expr.SchemaExpr);
 
@@ -1240,8 +1242,63 @@ namespace MyCompiler
         }
 
         public Type VisitDataframe(DataframeNode expr)
-        {
-            RecordType schemaType = null;
+        {// 1. Unpack raw parser arguments into their semantic properties in the Typechecker
+            foreach (var arg in expr.Arguments)
+            {
+                var argName = arg.Name?.ToLowerInvariant();
+
+                // --- STRICT CHECK: Reject completely unnamed elements if they don't hit structural fallbacks later ---
+                // (Optional: If your dataframe_arg_list syntax ensures arg.Name is never null, this is a safety net)
+
+                if (argName == "schema")
+                {
+                    if (arg.Value is RecordNode r) expr.Schema = r;
+                    else throw new Exception("Typechecker Error: 'schema' parameter must be a record definition.");
+                }
+                else if (argName == "columns")
+                {
+                    if (arg.Value is ArrayNode a) expr.Columns = a;
+                    else throw new Exception("Typechecker Error: 'columns' parameter must be an array literal.");
+                }
+                else if (argName == "type" || argName == "types")
+                {
+                    if (arg.Value is ArrayNode a) expr.Types = a;
+                    else throw new Exception("Typechecker Error: 'type'/'types' parameter must be an array literal.");
+                }
+                else if (argName == "rows" || argName == "data")
+                {
+                    if (arg.Value is ArrayNode a) expr.Rows = a;
+                    else throw new Exception("Typechecker Error: 'rows'/'data' parameter must be an array literal.");
+                }
+                else if (argName != null)
+                {
+                    // --- CRITICAL FIX: Explicitly reject invalid parameter names like 'ha' or 'haha' ---
+                    throw new Exception($"Typechecker Error: Invalid parameter '{arg.Name}' provided to dataframe(). Allowed parameters are 'schema', 'columns', 'type'/'types', and 'rows'/'data'.");
+                }
+                // Handle structural, unnamed fallback strategies safely
+                else if (expr.Schema == null && arg.Value is RecordNode r)
+                {
+                    expr.Schema = r;
+                }
+                else if (expr.Rows == null && arg.Value is ArrayNode arr)
+                {
+                    expr.Rows = arr;
+                }
+                else if (arg.Type is not ArrayType)
+
+                    throw new Exception("Typechecker Error: Unnamed dataframe argument must be an array literal (assumed to be 'rows' data).");
+
+
+
+            }
+
+
+
+            // Assign empty rows fallback if still missing
+            expr.Rows ??= new ArrayNode(new List<ExpressionNode>());
+
+            // 2. Perform Schema Resolution & Validation
+            RecordType schemaType;
 
             if (expr.Schema != null)
             {
@@ -1255,19 +1312,20 @@ namespace MyCompiler
             }
             else if (expr.Columns != null && expr.Types != null)
             {
-                var schemaRecord = BuildSchemaFromColumnsAndTypes(expr.Columns, expr.Types);
-                var schemaResult = Visit(schemaRecord);
+                // Build and preserve the dynamic schema inside the AST for upcoming LLVM Codegen pass
+                expr.Schema = BuildSchemaFromColumnsAndTypes(expr.Columns, expr.Types);
 
-                if (schemaResult == null)
-                    throw new Exception("TypeChecker Error: Generated schema visitation returned null.");
-
+                var schemaResult = Visit(expr.Schema);
                 schemaType = schemaResult as RecordType;
                 if (schemaType == null)
                     throw new Exception($"Generated schema must be a record definition, but found {schemaResult.GetType().Name}");
             }
             else
-                throw new Exception($"Dataframe must provide either a schema record or both columns and type metadata. Schema={expr.Schema != null}, Columns={expr.Columns != null}, Types={expr.Types != null}, Rows={expr.Rows != null}");
+            {
+                throw new Exception("Typechecker Error: Dataframe instantiation requires either a 'schema' record or matching 'columns' and 'type' arrays.");
+            }
 
+            // 3. Extract columns metadata for building the final Dataframe Type
             var colNames = new List<string>();
             var colTypes = new List<Type>();
 
@@ -1283,10 +1341,9 @@ namespace MyCompiler
             var dfType = new DataframeType(colNames, colTypes, schemaType);
             expr.SetType(dfType);
 
-            if (expr.Columns != null)
-                Visit(expr.Columns);
-            if (expr.Types != null)
-                Visit(expr.Types);
+            // 4. Visit nested children nodes safely
+            if (expr.Columns != null) Visit(expr.Columns);
+            if (expr.Types != null) Visit(expr.Types);
 
             if (expr.Rows != null)
             {
@@ -1301,14 +1358,14 @@ namespace MyCompiler
                     {
                         var rowType = Visit(row) as RecordType;
                         if (rowType == null)
-                            throw new Exception("Each row in 'rows' must be a record (e.g., {\"Value\", 10}).");
+                            throw new Exception("Each row in 'rows' must evaluate to a record format.");
 
                         ValidateDataframeRow(rowType, colNames, colTypes);
                     }
-
                     Visit(expr.Rows);
                 }
             }
+
 
             return expr.Type;
         }
@@ -1374,64 +1431,6 @@ namespace MyCompiler
             return -1;
         }
 
-        public Type VisitShowDataframe(ShowDataframeNode expr)
-        {
-            // 1. Resolve the source Dataframe
-            var sourceType = Visit(expr.Source) as DataframeType;
-            if (sourceType == null)
-                throw new Exception("Show requires a Dataframe source.");
-
-            var columnNames = new List<string>();
-            var columnTypes = new List<Type>();
-            var semanticFields = new List<RecordField>();
-
-            // 2. Validate requested columns against the source schema
-            foreach (var colExpr in expr.Columns)
-            {
-                // Visit the column name expression (usually a StringNode)
-                var colExprType = Visit(colExpr);
-                if (!(colExprType is StringType))
-                    throw new Exception($"Show column names must be strings, got {colExprType}");
-
-                if (colExpr is StringNode strNode)
-                {
-                    string name = strNode.Value;
-
-                    // Find the index of this column in the source dataframe
-                    int idx = IndexOf(sourceType.ColumnNames, name);
-                    if (idx < 0)
-                        throw new Exception($"Column '{name}' not found in dataframe. Available: {string.Join(", ", sourceType.ColumnNames)}");
-
-                    // Pull the correct Type (which we just fixed in VisitDataframe)
-                    var colType = sourceType.DataTypes[idx];
-                    if (colType == null)
-                        throw new Exception($"Internal Error: Column '{name}' has a null type in source dataframe.");
-
-                    columnNames.Add(name);
-                    columnTypes.Add(colType);
-
-                    // 3. Build the RecordField for the new RowType
-                    semanticFields.Add(new RecordField
-                    {
-                        Label = name,
-                        Type = colType
-                        // Value is null because this is a Type definition
-                    });
-                }
-                else
-                    throw new Exception("Show columns must be string literals (e.g., \"name\")");
-            }
-
-            // 4. Create the new RowType (a subset of the original record)
-            var rowType = new RecordType(semanticFields);
-
-            // 5. Construct the resulting DataframeType
-            // Note: Show creates a "View" or a new DF structure with only selected columns
-            var resultType = new DataframeType(columnNames, columnTypes, rowType);
-
-            expr.SetType(resultType);
-            return expr.Type;
-        }
 
         public Type VisitColumns(ColumnsNode expr)
         {

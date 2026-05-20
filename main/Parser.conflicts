@@ -1,3 +1,18 @@
-// Parser Conflict Information for grammar file "Parser/Parser.y - 18-05-2026 17:45:06"
+// Parser Conflict Information for grammar file "Parser/Parser.y - 20-05-2026 17:33:17"
+
+Shift/Reduce conflict on symbol "LPAREN", parser will shift
+ Reduce 77:	expr -> expr, DOT, COPY
+ Shift "LPAREN":	State-47 -> State-48
+  Items for From-state State 47
+    76 expr: expr DOT COPY . LPAREN RPAREN 
+    77 expr: expr DOT COPY .
+	-lookahead: DOT, LBRACKET, LOGICAL_AND, LOGICAL_OR, PLUS, MINUS, MULT, DIV, 
+                GE, LE, EQ, NE, GT, LT, ID, BOOL_LITERAL, NUMBER, 
+                FLOAT_LITERAL, STRING_LITERAL, NULL_LITERAL, LPAREN, RANDOM, 
+                ROUND, READCSV, TOCSV, DATAFRAME, RECORD, LBRACE, SQRT, EXP, 
+                POW, LOG, IF, PRINT, FOR, FOREACH, SEMICOLON, NEWLINE, EOF, 
+                RBRACE, RPAREN, RBRACKET, COLON, COMMA
+  Items for Next-state State 48
+    76 expr: expr DOT COPY LPAREN . RPAREN 
 
 // End conflict information for parser

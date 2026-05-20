@@ -39,10 +39,8 @@ namespace MyCompiler
         LLVMValueRef VisitCorrelation(CorrelationNode expr);
         LLVMValueRef VisitWhere(WhereNode expr);
         LLVMValueRef VisitMap(MapNode expr);
-
         LLVMValueRef VisitReadCsv(ReadCsvNode expr);
         LLVMValueRef VisitToCsv(ToCsvNode expr);
-
         LLVMValueRef VisitRound(RoundNode expr);
         LLVMValueRef VisitRecord(RecordNode expr);
         LLVMValueRef VisitField(FieldNode expr);
@@ -50,7 +48,6 @@ namespace MyCompiler
         LLVMValueRef VisitCopy(CopyNode expr);
         LLVMValueRef VisitDataframe(DataframeNode expr);
         LLVMValueRef VisitColumns(ColumnsNode expr);
-        LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);
         LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
         LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
         LLVMValueRef VisitSqrt(SqrtNode expr);
@@ -60,8 +57,5 @@ namespace MyCompiler
         LLVMValueRef VisitCast(CastNode expr);
         LLVMValueRef VisitSlice(SliceNode expr);
 
-        // // Visit for define and usage of created functions
-        // LLVMValueRef VisitFunctionDef(FunctionDefNode node);
-        // LLVMValueRef VisitFunctionCall(FunctionCallNode node);
     }
 }
