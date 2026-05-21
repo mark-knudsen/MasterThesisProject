@@ -226,6 +226,12 @@ namespace MyCompiler
         public delegate IntPtr ReadCsvDelegate(IntPtr pathPtr, IntPtr schemaPtr);
         public delegate void ToCsvDelegate(IntPtr data, IntPtr path);
         private LLVMTypeRef _readCsvInternalType;
+        public List<double> compilerTestList = new List<double>();
+        public List<double> IRTestList = new List<double>();
+        public List<double> RuntimeTestList = new List<double>();
+        Stopwatch sw;
+        void StartStopWatch() => sw = Stopwatch.StartNew();
+
 
         public CompilerOrc()
         {
@@ -248,6 +254,21 @@ namespace MyCompiler
             DeclareDataframeStruct();
             SetupCsvFunctions();
         }
+        double StopStopWatch(string testName = null)
+        {
+            sw.Stop();
+            if (testName is not null)
+                Console.WriteLine("\n--- Execution Stats - " + testName + " ---");
+            else
+                Console.WriteLine("\n--- Execution Stats ---");
+
+            Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
+            Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
+            Console.WriteLine("------------------------\n");
+
+            return sw.Elapsed.TotalMilliseconds;
+        }
+
 
         private unsafe void RegisterNativeFunc(LLVMOrcOpaqueJITDylib* dylib, string name, IntPtr fnAddr)
         {
@@ -457,6 +478,12 @@ namespace MyCompiler
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
             _debug = debug;
+            //_stopwatch = useStopWatch;
+
+            //_showAllColumns = showAllColumns;
+            //_showAllRows = showAllRows;
+
+
             // 1. Semantic analysis
             var prediction = PerformSemanticAnalysis(expr);
 
@@ -464,7 +491,17 @@ namespace MyCompiler
             DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
+
+            {
+                compilerTestList = new List<double>();
+                IRTestList = new List<double>();
+                RuntimeTestList = new List<double>();
+
+            }
+
+            //if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
+            //if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
