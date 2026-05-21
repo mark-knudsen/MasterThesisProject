@@ -1,6 +1,19 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 21/05/2026 12:11:44>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 21/05/2026 12:11:47
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
+%locations
+//^^^^^^^^
+// Warning: %locations is the default in GPPG
+// ------------------------------------------
 
 %union { 
     public object obj; 
@@ -302,3 +315,11 @@ expr_list
 %%
 
 internal Parser(Scanner s) : base(s) { }
+
+public void yyerror(string message, LexLocation loc)
+{
+    Console.WriteLine(
+        $"Syntax error at line {loc.StartLine}, column {loc.StartColumn}: {message}"
+    );
+}// ==========================================================================
+

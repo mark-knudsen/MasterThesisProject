@@ -2324,7 +2324,7 @@ namespace MyCompiler
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
         }
         // x=dataframe({name: string, age: int})
-        // x=dataframe({name: string, age: int}, [{name: "dan", age: 30}, {name: "alice", age: 25}])
+        // x=dataframe({name: string, age: int}, [{name= "dan", age= 30}, {name= "alice", age= 25}])
         // x=dataframe({name: string, age: int}, rows=[{name: "dan", age: 30}, {name: "alice", age: 25}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})
