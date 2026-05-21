@@ -478,7 +478,7 @@ namespace MyCompiler
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
             _debug = debug;
-            //_stopwatch = useStopWatch;
+            bool _stopwatch = useStopWatch;
 
             //_showAllColumns = showAllColumns;
             //_showAllRows = showAllRows;
@@ -499,9 +499,9 @@ namespace MyCompiler
 
             }
 
-            //if (_stopwatch) StartStopWatch();
+            if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
-            //if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
+            if (_stopwatch) compilerTestList.Add(StopStopWatch("Ran codegen"));
 
             if (_debug) Console.WriteLine("LLVM TYPE: " + resultValue.TypeOf);
             if (_debug) Console.WriteLine("LANG TYPE: " + prediction);
