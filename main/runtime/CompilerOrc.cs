@@ -2319,7 +2319,7 @@ namespace MyCompiler
         // foreach(item in x) {print(item)} // but this works fine
         // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
 
-        public LLVMValueRef VisitPrint(PrintNode expr) 
+        public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
@@ -3513,12 +3513,11 @@ namespace MyCompiler
 
             return newRange;
         }
-
         public LLVMValueRef VisitRemove(RemoveNode expr)
         {
             var sourceType = expr.SourceExpression.Type;
 
-            if (_debug) Console.WriteLine("semantic type of array being indexed: " + sourceType);
+            if (_debug) Console.WriteLine("semantic type of collection being mutated: " + sourceType);
 
             if (sourceType is ArrayType arrayType)
                 return RemoveFromArray(expr, arrayType);
@@ -3538,36 +3537,37 @@ namespace MyCompiler
             var headerPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.RemoveExpression);
 
-            // 1. Determine if this is a packed (boolean) array
+            // 1. Properly deduce structural GEP type based on underlying array element data type
             bool isBool = arrayType.ElementType is BoolType;
+            bool isInt = arrayType.ElementType is IntType;
 
-            // This is the CRITICAL part:
-            // If bool, we tell GEP the elements are 1-byte (i8).
-            // If not, we tell GEP the elements are 8-bytes (i8Ptr).
-            var gepStrideType = isBool ? i8 : i8Ptr;
+            // Clean up pointer stride typing mismatch: use explicit structural types
+            var gepStrideType = isBool ? i8 : (isInt ? i64 : i8Ptr);
             var strideMultiplier = isBool ? 1 : 8;
+
             var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_ptr");
             var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_ptr_ptr");
+
             var length = _builder.BuildLoad2(i64, lenFieldPtr, "len");
             var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
 
-            // 2. Calculate Pointers
-            // Use gepStrideType here! Do NOT use dataPtr.TypeOf.
+            // 2. Calculate Shift Destination and Source Pointers 
             var dstPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { indexVal }, "dst");
 
-            var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1));
+            var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             var srcPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { nextIdx }, "src");
 
-            // 3. Calculate Bytes to Move
-            var moveCount = _builder.BuildSub(_builder.BuildSub(length, indexVal), LLVMValueRef.CreateConstInt(i64, 1));
+            // 3. Dynamic layout distance arithmetic calculations
+            var elementsLeft = _builder.BuildSub(length, indexVal, "elements_left");
+            var moveCount = _builder.BuildSub(elementsLeft, LLVMValueRef.CreateConstInt(i64, 1), "move_count");
             var bytesToMove = _builder.BuildMul(moveCount, LLVMValueRef.CreateConstInt(i64, (ulong)strideMultiplier), "bytes");
 
-            // 4. Memmove
+            // 4. Perform memory shift
             var memmoveFunc = GetOrDeclareMemmove();
             _builder.BuildCall2(_memmoveType, memmoveFunc, new[] { dstPtr, srcPtr, bytesToMove }, "");
 
-            // 5. Update Length
-            var newLen = _builder.BuildSub(length, LLVMValueRef.CreateConstInt(i64, 1));
+            // 5. Safely update track layout boundaries
+            var newLen = _builder.BuildSub(length, LLVMValueRef.CreateConstInt(i64, 1), "new_len");
             _builder.BuildStore(newLen, lenFieldPtr);
 
             return headerPtr;
@@ -3579,78 +3579,128 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // 1. Define the Dataframe and Array Header Types
-            // Dataframe: { ptr cols, ptr rows, ptr types }
-            var dfStructType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, i8Ptr, i8Ptr }, false);
-            // Array Header: { i64 len, i64 cap, i8* data }
-            var arrayHeaderType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
-
-            // 2. Get the Dataframe pointer and the index to remove
             var dfPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.RemoveExpression);
 
-            // 3. Access df->rows (index 1 in the Dataframe struct)
-            var rowsFieldPtr = _builder.BuildStructGEP2(dfStructType, dfPtr, 1, "df_rows_field");
+            // Replaced on-the-fly anonymous struct types with your verified global cached context fields
+            var rowsFieldPtr = _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1, "df_rows_field");
             var rowsHeaderPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_header_ptr");
 
-            // 4. Access the fields inside the rows array header
-            var lenPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 0, "rows_len_ptr");
-            var dataFieldPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 2, "rows_data_ptr_ptr");
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, rowsHeaderPtr, 0, "rows_len_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, rowsHeaderPtr, 2, "rows_data_ptr_ptr");
 
             var currentLen = _builder.BuildLoad2(i64, lenPtr, "current_len");
             var dataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
 
-            // 5. Calculate Move logic (same as RemoveFromArray)
-            // We are moving pointers (Records), so stride is 8 bytes
+            // Dataframe collections target records (pointers), mapping strictly to 8-byte boundaries
             var gepStrideType = i8Ptr;
             var strideSize = LLVMValueRef.CreateConstInt(i64, 8);
 
-            // Destination: where the removed element is
             var dstPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { indexVal }, "dst_ptr");
 
-            // Source: the element immediately after
             var nextIdx = _builder.BuildAdd(indexVal, LLVMValueRef.CreateConstInt(i64, 1), "next_idx");
             var srcPtr = _builder.BuildGEP2(gepStrideType, dataPtr, new[] { nextIdx }, "src_ptr");
 
-            // Bytes to move: (length - index - 1) * 8
-            var numElementsToMove = _builder.BuildSub(
-                _builder.BuildSub(currentLen, indexVal),
-                LLVMValueRef.CreateConstInt(i64, 1)
-            );
+            var elementsLeft = _builder.BuildSub(currentLen, indexVal, "elements_left");
+            var numElementsToMove = _builder.BuildSub(elementsLeft, LLVMValueRef.CreateConstInt(i64, 1), "num_elements_to_move");
             var bytesToMove = _builder.BuildMul(numElementsToMove, strideSize, "bytes_to_move");
 
-            // 6. Execute Memmove
             var memmoveFunc = GetOrDeclareMemmove();
-            // Signature: void memmove(void* dst, void* src, i64 len)
             _builder.BuildCall2(_memmoveType, memmoveFunc, new[] { dstPtr, srcPtr, bytesToMove }, "");
 
-            // 7. Update the length of the rows array
-            var newLen = _builder.BuildSub(currentLen, LLVMValueRef.CreateConstInt(i64, 1));
+            var newLen = _builder.BuildSub(currentLen, LLVMValueRef.CreateConstInt(i64, 1), "new_df_len");
             _builder.BuildStore(newLen, lenPtr);
 
-            // Return the dataframe pointer (standard for chaining/assignments)
             return dfPtr;
         }
 
         public LLVMValueRef VisitRemoveRange(RemoveRangeNode expr)
         {
-            Visit(expr.SourceExpression);
-            Visit(expr.RemoveRangeExpression); // visits the array we are on, like x.addRange, then we visit x on this line of code
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
 
-            var fullSequence = new SequenceNode();
+            // Evaluate targeted container source collection instance 
+            var sourceCollectionPtr = Visit(expr.SourceExpression);
 
-            var elements = ((ArrayNode)expr.RemoveRangeExpression).Elements; // then we can't take an id, it is hardcoded
-
-            var sorted = elements.OrderBy(n => (n as NumberNode)?.Value).ToList();
-            // iterate backwards
-            for (int i = sorted.Count - 1; i >= 0; i--)
+            // Case A: Compile-Time Literal Expansion (e.g., `arr.removeRange([5, 1])`)
+            if (expr.RemoveRangeExpression is ArrayNode arrayLitNode)
             {
-                var item = sorted[i];
-                var removeElement = new RemoveNode(expr.SourceExpression, item);
-                fullSequence.Statements.Add(removeElement);
+                var elements = arrayLitNode.Elements;
+                var fullSequence = new SequenceNode();
+
+                // FIX: Sort elements by actual constant numeric value in DESCENDING order (largest index first)
+                // This shields lower values from moving out of scope during index-shifting cascades!
+                var sortedDescending = elements
+                    .OrderByDescending(e => e is NumberNode num ? Convert.ToInt64(num.Value) : 0)
+                    .ToList();
+
+                for (int i = 0; i < sortedDescending.Count; i++)
+                {
+                    var removeElement = new RemoveNode(expr.SourceExpression, sortedDescending[i]);
+                    fullSequence.Statements.Add(removeElement);
+                }
+
+                return Visit(fullSequence);
             }
 
-            return Visit(fullSequence);
+            // Case B: Dynamic Expressions (e.g., passing an variable tracking list: `arr.removeRange(my_indices)`)
+            // Generates native low-level basic loop architecture sorting and iterating targets dynamically
+            var rangeValueRef = Visit(expr.RemoveRangeExpression);
+
+            var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, rangeValueRef, 0, "range_len_ptr");
+            var rangeLength = _builder.BuildLoad2(i64, lenFieldPtr, "range_len");
+
+            // Allocate variable counter index: `int i = rangeLength - 1;`
+            var indexAlloca = _builder.BuildAlloca(i64, "loop_idx_alloc");
+            var initialIdx = _builder.BuildSub(rangeLength, LLVMValueRef.CreateConstInt(i64, 1), "start_idx");
+            _builder.BuildStore(initialIdx, indexAlloca);
+
+            var currentFunc = _builder.InsertBlock.Parent;
+            var condBlock = currentFunc.AppendBasicBlock("range_loop_cond");
+            var bodyBlock = currentFunc.AppendBasicBlock("range_loop_body");
+            var mergeBlock = currentFunc.AppendBasicBlock("range_loop_end");
+
+            _builder.BuildBr(condBlock);
+
+            // Check condition block layout: `while (i >= 0)`
+            _builder.PositionAtEnd(condBlock);
+            var currentIdxVal = _builder.BuildLoad2(i64, indexAlloca, "current_idx");
+            var isGreaterOrEqualZero = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, currentIdxVal, LLVMValueRef.CreateConstInt(i64, 0), "cmp_zero");
+            _builder.BuildCondBr(isGreaterOrEqualZero, bodyBlock, mergeBlock);
+
+            // Run loop iteration routine
+            _builder.PositionAtEnd(bodyBlock);
+
+            var rangeDataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, rangeValueRef, 2, "range_data_ptr_ptr");
+            var rangeDataPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), rangeDataFieldPtr, "range_data_ptr");
+
+            // Extract item dynamic position integer
+            var targetValPtr = _builder.BuildGEP2(i64, rangeDataPtr, new[] { currentIdxVal }, "target_val_ptr");
+            var itemToRemoveVal = _builder.BuildLoad2(i64, targetValPtr, "item_to_remove");
+
+            // Formulate raw synthetic structural expression routing node bypassing static constant layout expectations
+            var dynamicRemoveNode = new RemoveNode(expr.SourceExpression, new RawValuePlaceholderNode(itemToRemoveVal, i64));
+
+            if (expr.SourceExpression.Type is ArrayType arrayT)
+                RemoveFromArray(dynamicRemoveNode, arrayT);
+            else if (expr.SourceExpression.Type is DataframeType)
+                RemoveFromDataframe(dynamicRemoveNode);
+
+            // Decrement iterator index register: `i--`
+            var decrementedIdx = _builder.BuildSub(currentIdxVal, LLVMValueRef.CreateConstInt(i64, 1), "dec_idx");
+            _builder.BuildStore(decrementedIdx, indexAlloca);
+            _builder.BuildBr(condBlock);
+
+            _builder.PositionAtEnd(mergeBlock);
+            return sourceCollectionPtr;
+        }
+
+        // Lightweight internal placeholder bridging raw dynamic values inside simulated visitor tree traversals
+        private class RawValuePlaceholderNode : ExpressionNode
+        {
+            private readonly LLVMValueRef _rawVal;
+            public RawValuePlaceholderNode(LLVMValueRef value, LLVMTypeRef explicitType) { _rawVal = value; }
+            public override LLVMValueRef Accept(IExpressionVisitor visitor) => _rawVal;
         }
 
         public LLVMValueRef VisitLength(LengthNode expr)

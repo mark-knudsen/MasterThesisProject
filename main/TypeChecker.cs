@@ -990,17 +990,37 @@ namespace MyCompiler
 
         public Type VisitRemove(RemoveNode expr)
         {
-            Visit(expr.SourceExpression);
-            Visit(expr.RemoveExpression);
-            expr.SetType(expr.SourceExpression.Type);
+            Type sourceType = Visit(expr.SourceExpression);
+            Type indexType = Visit(expr.RemoveExpression);
+
+            // 1. Ensure we are mutating a supported collection type
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception($"Remove method can only mutate Arrays or Dataframes. Got: '{sourceType}'");
+
+            // 2. Ensure that the targeted index evaluates to an integer
+            if (indexType is not IntType)
+                throw new Exception($"Remove index argument must resolve as an integer primitive. Got: '{indexType}'");
+
+            // 3. Propagate the modified type downstream for chained expressions
+            expr.SetType(sourceType);
             return expr.Type;
         }
 
         public Type VisitRemoveRange(RemoveRangeNode expr)
         {
-            Visit(expr.SourceExpression);
-            Visit(expr.RemoveRangeExpression);
-            expr.SetType(expr.SourceExpression.Type);
+            Type sourceType = Visit(expr.SourceExpression);
+            Type rangeType = Visit(expr.RemoveRangeExpression);
+
+            // 1. Ensure we are mutating a supported collection type
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception($"RemoveRange method can only mutate Arrays or Dataframes. Got: '{sourceType}'");
+
+            // 2. Ensure the argument is a collection array and contains entirely integers
+            if (rangeType is not ArrayType arrayType || arrayType.ElementType is not IntType)
+                throw new Exception($"RemoveRange argument expects a collection array of integer indices. Got: '{rangeType}'");
+
+            // 3. Propagate the modified type downstream
+            expr.SetType(sourceType);
             return expr.Type;
         }
 
