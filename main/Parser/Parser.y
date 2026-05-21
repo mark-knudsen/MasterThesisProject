@@ -56,7 +56,6 @@
 %type <node> dataframe_arg record_arg
 /* %type <recordList> record_list */
 
-
 %{
     public MyCompiler.Node RootNode;
 %}
@@ -217,7 +216,6 @@ expr
     | expr DOT MEAN                         { $$ = new MeanNode($1 as ExpressionNode); }
     | expr DOT SUM                          { $$ = new SumNode($1 as ExpressionNode); }
     | expr DOT COPY LPAREN RPAREN           { $$ = new CopyNode($1 as ExpressionNode); }
-    | expr DOT COPY                         { $$ = new CopyNode($1 as ExpressionNode); }
     | expr DOT COLUMNS                      { $$ = new ColumnsNode($1 as ExpressionNode); }
     | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1 as ExpressionNode, $5 as ExpressionNode); }
 
@@ -261,7 +259,6 @@ id_list
     }
     ;
 
-
 record_struct
     : RECORD LPAREN LBRACE record_arg_list RBRACE RPAREN   { $$ = new RecordNode($4); }    /* record({...})  */
     | LBRACE record_arg_list RBRACE         { $$ = new RecordNode($2); }                   /* ID={...}   */
@@ -291,9 +288,6 @@ record_arg
     | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
     | expr                   { $$ = new NamedArgumentNode(null, $1 as ExpressionNode); } 
     ;
-
-
-
  
 /* Helper for optional expressions */
 opt_expr
@@ -306,7 +300,6 @@ expr_list
     | expr                   { $$ = new List<ExpressionNode> { $1 as ExpressionNode }; }
     | expr_list COMMA expr   { $1.Add($3 as ExpressionNode); $$ = $1; }
     ;
-
 
 %%
 

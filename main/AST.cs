@@ -163,7 +163,7 @@ namespace MyCompiler
     // Represents an assignment (e.g., x = 10)
     public class AssignNode : StatementNode
     {
-        public string Id { get; }  // ID = expr  -->   x = 10 
+        public string Id { get; }  // ID = expr  -->   x = 10
         public ExpressionNode Expression { get; set; }
         public AssignNode(string id, ExpressionNode expr)
         {
@@ -567,7 +567,7 @@ namespace MyCompiler
             for (int i = 0; i < valuesArray.Count; i++)
             {
                 var arg = valuesArray[i];
-                // For rows like {"Alice", 25}, arg.Name is null. 
+                // For rows like {"Alice", 25}, arg.Name is null.
                 // We assign a placeholder so the field object isn't broken.
                 string label = arg.Name ?? $"item{i + 1}";
 
@@ -655,7 +655,6 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
-
 
     public class ColumnsNode : ExpressionNode
     {

@@ -96,7 +96,7 @@ namespace MyCompiler
             if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
 
             // it should use an assign node to assign the value instead of harcoding it here
-            _context = _context.Add(statement.Iterator.Name, default, _value: null!, type: rowType);
+            _context = _context.Add(statement.Iterator.Name, type: rowType);
 
             Visit(statement.Body);
             statement.SetType(new VoidType());
@@ -268,7 +268,7 @@ namespace MyCompiler
             // Handle Comparisons (==, !=, <, >)
             if (expr.Operator is "==" or "!=" or "<" or ">" or "<=" or ">=")
             {
-                // For comparisons, we just need the types to be compatible 
+                // For comparisons, we just need the types to be compatible
                 // (e.g., comparing a Float and an Int is fine)
                 if (isLeftNum && isRightNum || leftType == rightType)
                 {
@@ -417,7 +417,7 @@ namespace MyCompiler
             Type valType = Visit(statement.Expression);
 
             // Use 'default' for LLVMValueRef to avoid CS0246
-            _context = _context.Add(statement.Id, default, null, valType);
+            _context = _context.Add(statement.Id, valType);
             statement.SetType(new VoidType());
             return valType;
         }
@@ -727,7 +727,7 @@ namespace MyCompiler
 
             var previousContext = _context;
             // Inject iterator 'x' into scope
-            _context = _context.Add(expr.IteratorId.Name, default, null!, iteratorType);
+            _context = _context.Add(expr.IteratorId.Name, iteratorType);
 
             try
             {
@@ -930,7 +930,7 @@ namespace MyCompiler
             if (pathType is not StringType)
                 throw new Exception($"to_csv() error: Second argument must be a String (file path), but got {pathType?.GetType().Name}");
 
-            // 4. Set the return type to Void/None 
+            // 4. Set the return type to Void/None
             // (Ensure this matches whatever type your REPL uses for 'null' results)
             expr.SetType(new VoidType());
             return expr.Type;
@@ -1287,12 +1287,7 @@ namespace MyCompiler
                 else if (arg.Type is not ArrayType)
 
                     throw new Exception("Typechecker Error: Unnamed dataframe argument must be an array literal (assumed to be 'rows' data).");
-
-
-
             }
-
-
 
             // Assign empty rows fallback if still missing
             expr.Rows ??= new ArrayNode(new List<ExpressionNode>());
@@ -1365,10 +1360,9 @@ namespace MyCompiler
                     Visit(expr.Rows);
                 }
             }
-
-
             return expr.Type;
         }
+
         private Type ResolveType(ExpressionNode expr)
         {
             if (expr == null) throw new Exception("Cannot resolve type of a null expression.");
@@ -1430,7 +1424,6 @@ namespace MyCompiler
             }
             return -1;
         }
-
 
         public Type VisitColumns(ColumnsNode expr)
         {

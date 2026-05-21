@@ -282,7 +282,7 @@ namespace MyCompiler
         LLVMTypeRef _memmoveType;
         LLVMTypeRef _reallocType;
         private Type _lastType; // Store the type of the last expression for auto-printing
-
+        //private Node _lastNode; // Store the last expression for auto-printing
         private LLVMTypeRef _runtimeValueType;
         LLVMTypeRef _arrayStruct;
         LLVMTypeRef _dataframeStruct;
@@ -303,6 +303,7 @@ namespace MyCompiler
         public List<double> compilerTestList = new List<double>();
         public List<double> IRTestList = new List<double>();
         public List<double> RuntimeTestList = new List<double>();
+
         Stopwatch sw;
         void StartStopWatch() => sw = Stopwatch.StartNew();
 
@@ -504,7 +505,7 @@ namespace MyCompiler
             return new VoidType();
         }
 
-        // TODO: 
+        // TODO:
         // none atm
 
         // Problems
@@ -514,11 +515,12 @@ namespace MyCompiler
 
         // TODO: fix the problems
 
-        // BROKEN FUNCTIONALITY   
+        // BROKEN FUNCTIONALITY
         // can't use existing variables inside where and map
         // can't use random inside addRange
         // we do not handle wrong index
         // can't have array of arrays with different types
+        // can't do x.columns[0]
 
         // UNIT TESTING
         // create a orc unit test
@@ -551,7 +553,6 @@ namespace MyCompiler
 
             _builder = builder;
         }
-
 
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
         {
@@ -665,7 +666,6 @@ namespace MyCompiler
             }
 
             return result;
-
         }
 
         private string HandleArray(IntPtr arrayObjPtr, Type type)
@@ -1247,7 +1247,7 @@ namespace MyCompiler
             var valOne = LLVMValueRef.CreateConstInt(ctx.Int8Type, 1);
             var vectorizeAttr = LLVMValueRef.CreateMDNode(new[] { metadataName, valOne });
 
-            // 2. Create a non-circular Loop Node. 
+            // 2. Create a non-circular Loop Node.
             // We use a dummy string as the first element instead of a self-reference.
             // This is often enough for the optimizer to find the hint.
             var dummyId = ctx.GetMDString("loop.id", 7);
@@ -2301,13 +2301,13 @@ namespace MyCompiler
                 "printf_call");
         }
 
-        // syntax 
+        // syntax
         // r + {x: 5, y: 3}                          // should return a record with added fields x and y
         // x.map(d=> d.name + "Smith")               // should return an array
         // x.map(d=> d + {x: 5, y: 3})               // should return a dataframe with added columns x and y
         // x.map(d=> d + {name: d.name + "smith"})   // should return a dataframe with added columns x and y
 
-        // {x:5}+{y:4} = {x:5, y:4}  
+        // {x:5}+{y:4} = {x:5, y:4}
         // {x:5}+{x:4} = {x:4}
         // {x:5}+{x:4, y:2} = {x:4, y:2}
         // {x:5}+{x:4, y:2} + {y:3, z:1} + {x:1} = {x:1, y:3, z:1}
@@ -2325,20 +2325,21 @@ namespace MyCompiler
         }
         // x=dataframe({name: string, age: int})
         // x=dataframe({name: string, age: int}, [{name: "dan", age: 30}, {name: "alice", age: 25}])
+        // x=dataframe({name: string, age: int}, rows=[{name: "dan", age: 30}, {name: "alice", age: 25}])
 
-        // x=record({name: "Hary potter", age: 30, rating: 10.5585})  
+        // x=record({name: "Hary potter", age: 30, rating: 10.5585})
 
         // x.add({name: "Hary potter2", age: 201})
         // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
-        // for(i=0; i<50; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) 
+        // for(i=0; i<50; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
         // for(i=0; i<5200000; i++) {x.add({name: "Hary potter", age: 10 + random(1,100)}) }
         // for(i=0; i<5000000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) // 5 million
         // this below can't do random inside addRange "Cannot perform + on int and"
-        // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
+        // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
-        // x.map(d => d.age + 100) 
-        // x.where(d=> d.age > 50)  
+        // x.map(d => d.age + 100)
+        // x.where(d=> d.age > 50)
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
@@ -2589,7 +2590,7 @@ namespace MyCompiler
                 replacementNode
             );
 
-            // Because we initialized 'rowsArray' with 'srcLength', 
+            // Because we initialized 'rowsArray' with 'srcLength',
             // the 'grow' block in the IR will exist but will NEVER be executed.
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
@@ -2847,8 +2848,6 @@ namespace MyCompiler
 
             _builder.PositionAtEnd(exitBlock);
         }
-
-
 
         public Node ReplaceIteratorInNode(Node node, string iteratorName, ExpressionNode replacement)
         {
@@ -4065,20 +4064,13 @@ namespace MyCompiler
             LLVMValueRef ptrToLoad;
 
             // 1. Resolve the Pointer
-            if (entry.Value.Handle != IntPtr.Zero)
+            var global = _module.GetNamedGlobal(expr.Name);
+            if (global.Handle == IntPtr.Zero)
             {
-                ptrToLoad = entry.Value;
+                global = _module.AddGlobal(llvmType, expr.Name);
+                global.Linkage = LLVMLinkage.LLVMExternalLinkage;
             }
-            else
-            {
-                var global = _module.GetNamedGlobal(expr.Name);
-                if (global.Handle == IntPtr.Zero)
-                {
-                    global = _module.AddGlobal(llvmType, expr.Name);
-                    global.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                }
-                ptrToLoad = global;
-            }
+            ptrToLoad = global;
 
             // 2. Determine Alignment
             // i64 (Int) and double (Float) need 8. Bools need 1. Others (pointers) usually 8 on 64-bit.
@@ -4357,7 +4349,7 @@ namespace MyCompiler
             }
 
             // 5. Build the Call
-            // dfValue is likely already a pointer to the DF struct. 
+            // dfValue is likely already a pointer to the DF struct.
             // We cast to i8Ptr to satisfy the C# signature.
             var dfCast = _builder.BuildBitCast(dfValue, i8Ptr, "df_cast");
 
@@ -4372,7 +4364,7 @@ namespace MyCompiler
             var pathValue = Visit(expr.FileNameExpr);
 
             // This will now always be populated by the Type Checker
-            RecordNode recordSchema = ((NamedArgumentNode)expr.SchemaExpr).Value as RecordNode;
+            RecordNode recordSchema = expr.SchemaExpr.Value as RecordNode;
 
             string schemaString = GetSchemaString(recordSchema);
             var schemaValue = _builder.BuildGlobalStringPtr(schemaString, "csv_schema_code");
@@ -4389,14 +4381,6 @@ namespace MyCompiler
 
             // 5. Construct the DataFrame using the inferred or provided RecordNode
             return BuildDataframeInternal(recordSchema, rawRowsPtr);
-        }
-
-        // Optional: get the constant string value at compile-time
-        private string GetConstantString(ExpressionNode expr)
-        {
-            if (expr is StringNode sn)
-                return sn.Value;
-            throw new InvalidOperationException("Not a stringNode: " + expr.Type);
         }
 
         // Move your dataframe construction logic into this helper
@@ -4655,6 +4639,76 @@ namespace MyCompiler
             return Visit(expr.Value);
         }
 
+        // public LLVMValueRef VisitShowDataframe(ShowDataframeNode expr)
+        // {
+        //     var sourceType = expr.Source.Type as DataframeType;
+        //     var resultType = expr.Type as DataframeType;
+        //     var ctx = _module.Context;
+        //     var i64 = ctx.Int64Type;
+        //     var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+        //     // 1. Source Data
+        //     var sourceDfPtr = Visit(expr.Source);
+        //     var sourceRowsArrayHeader = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, sourceDfPtr, 1), "src_rows_ptr");
+        //     var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourceRowsArrayHeader, 0, "len_ptr");
+        //     var rowCount = _builder.BuildLoad2(i64, lenPtr, "row_count");
+
+        //     // 2. New Metadata (Cols and Types)
+        //     var newColsPtr = Visit(new ArrayNode(resultType.ColumnNames.Select(n => (ExpressionNode)new StringNode(n)).ToList()));
+        //     var datatypeNodes = resultType.DataTypes.Select(t => (ExpressionNode)new NumberNode(GetTypeByTag(t))).ToList();
+        //     var newDataTypesPtr = Visit(new ArrayNode(datatypeNodes));
+
+        //     // 3. Prepare Result Array
+        //     var resultArrayHeader = AllocateArrayHeader(rowCount);
+        //     var itSlot = _builder.BuildAlloca(i8Ptr, "$row_slot");
+
+        //     // 4. THE LOOP
+        //     BuildLoop(rowCount, (indexRef) =>
+        //     {
+        //         // Get source record
+        //         var sourceDataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_arrayStruct, sourceRowsArrayHeader, 2), "src_data");
+        //         var rowPtrPtr = _builder.BuildGEP2(i8Ptr, sourceDataPtr, new[] { indexRef });
+        //         var oldRecordPtr = _builder.BuildLoad2(i8Ptr, rowPtrPtr, "old_rec");
+
+        //         _builder.BuildStore(oldRecordPtr, itSlot);
+
+        //         // Update context so RecordFieldNode knows where to look
+        //         _context = _context.Add("$row", itSlot, null!, sourceType.RowType); // unsure again about the context.add in code gen
+        //         var rowId = new IdNode("$row");
+        //         rowId.SetType(sourceType.RowType);
+
+        //         // --- CRITICAL: Initialize list INSIDE the loop ---
+        //         var projectedValues = new List<LLVMValueRef>();
+
+        //         foreach (var colName in resultType.ColumnNames)
+        //         {
+        //             var fieldAccess = new FieldNode(rowId, colName);
+        //             var fType = sourceType.RowType.RecordFields.First(f => f.Label == colName).Type;
+        //             fieldAccess.SetType(fType);
+
+        //             // VisitRecordField now returns unboxed raw values (i64, double, or i8* for strings)
+        //             LLVMValueRef rawValue = VisitField(fieldAccess);
+        //             projectedValues.Add(rawValue);
+        //         }
+
+        //         // --- CRITICAL: Build record INSIDE the loop ---
+        //         // This ensures the malloc(size) is called with (3 * 8) = 24, not 0
+        //         var newRecordPtr = BuildRecordFromValues(resultType.RowType, projectedValues);
+
+        //         var resultDataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_arrayStruct, resultArrayHeader, 2), "res_data");
+        //         var resElemPtr = _builder.BuildGEP2(i8Ptr, resultDataPtr, new[] { indexRef });
+        //         _builder.BuildStore(newRecordPtr, resElemPtr);
+        //     });
+
+        //     // 5. Final Assembly
+        //     var dfPtr = _builder.BuildMalloc(_dataframeStruct, "df_show");
+        //     _builder.BuildStore(newColsPtr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 0));
+        //     _builder.BuildStore(resultArrayHeader, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1));
+        //     _builder.BuildStore(newDataTypesPtr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2));
+
+        //     return dfPtr;
+        // }
+
         private LLVMValueRef AllocateArrayHeader(LLVMValueRef count)
         {
             var ctx = _module.Context;
@@ -4788,7 +4842,6 @@ namespace MyCompiler
             );
         }
 
-
         public LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr)
         {
             if (_debug) Console.WriteLine("visiting: TypeLiteral (Skipping CodeGen)");
@@ -4807,7 +4860,7 @@ namespace MyCompiler
                 val = _builder.BuildSIToFP(val, _module.Context.DoubleType, "int2double");
             }
 
-            // 3. Define the Intrinsic. 
+            // 3. Define the Intrinsic.
             // LLVM intrinsics are named "llvm.<name>.<type>"
             // For a 64-bit float (double), it is "llvm.sqrt.f64"
             string intrinsicName = "llvm.sqrt.f64";
@@ -5056,7 +5109,6 @@ namespace MyCompiler
 
             return newArrayPtr;
         }
-
         LLVMValueRef GetArrayElementRaw(LLVMValueRef arrayPtr, LLVMValueRef index, bool isBool)
         {
             var ctx = _module.Context;
@@ -5083,33 +5135,33 @@ namespace MyCompiler
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
         df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])
-        
+
         df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
         to_csv(df, "CSV/mytest.csv")
 
-        df2 = dataframe(columns=["name", "age"],type=[string, int])         
-        
-        df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
-        df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])         
-        
+        df2 = dataframe(columns=["name", "age"],type=[string, int])
+
+        df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])
+        df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])
+
         df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
         df2.map(x => { age: x.age - 10, name: "Harry" })
         df2.map(x => { age: 10, name: x.name + "_2" })
         df2.map(x => x.age - 10)
 
-        record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585]) 
+        record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585])
 
         foreach(item in df3) { item.age = item.age + 10 }
 
-        x = dataframe(columns=["name", "age"],type=[string, int])   
+        x = dataframe(columns=["name", "age"],type=[string, int])
         for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
 
 
         for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
          for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude:  fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
-       
 
-df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})        
+
+df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})
 
 for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
 
@@ -5149,17 +5201,17 @@ for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude
         df_lat.map(x => x + 100.0).map(x => x - 0.05)
 
 
-        # TEST: corr        
+        # TEST: corr
         df.latitude.corr(df.wind-speed-max)
 
 
-        compiler list: 
+        compiler list:
         16.6333, 0.9592, 0.5678, 0.5073, 4.9772, 6.3993, 0.5997, 1.033, 0.5602
 
-        IR list: 
+        IR list:
         12.6831, 11.2088, 6.7141, 7.0108, 10.1785, 14.9467, 19.4002, 13.9254, 9.777
 
-        Runtime list: 
+        Runtime list:
         107.503, 108.0411, 60.8264, 59.0818, 64.1876, 1033.8113, 880.304, 1015.3324, 916.654
 
 */
@@ -5168,7 +5220,7 @@ for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude
         /*
                 Performance test for our Language:
                 1) load in csv: around 11 seconds
-                2) For loop add 5,000,000 rows total around 7 million rows: 
+                2) For loop add 5,000,000 rows total around 7 million rows:
                     a) CodeGen time: 2.4462 ms
                     b) Compiler time: 0.0032 ms
                     c) Full stack: 7865 ms
@@ -5190,7 +5242,7 @@ for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude
 
                 Performance test for R:
                 1) load in csv: around 21.859 seconds
-                2) For loop add 100,000 rows total around 2 million rows (not much added!): 32 seconds - [36, 28, 27, 36, 30, 33, 32, 33, 34, 30] avg 32 seconds 
+                2) For loop add 100,000 rows total around 2 million rows (not much added!): 32 seconds - [36, 28, 27, 36, 30, 33, 32, 33, 34, 30] avg 32 seconds
                 3) Query filter test:
                     a) One where with one condition: around 0.228 seconds - [0.74 , 0.93, 0.70, 0.68, 0.57, 0.65, 0.67, 0.57, 0.71, 0.67 ] avg 0.74 seconds
                     b) Two where's with one condition each: around 0.254 seconds -  [0.234 , 0.170, 0.130, 0.188, 0.121, 0.202, 0.160, 0.187, 0.177, 0.301 ] avg 0.187 seconds
@@ -5218,7 +5270,6 @@ sum_dy2 = components.map(x => x.dy2).sum
 correlation = numerator / sqrt(sum_dx2 * sum_dy2)
 
 print(correlation)
-
 
         */
     }

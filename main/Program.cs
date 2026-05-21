@@ -456,10 +456,7 @@ namespace MyCompiler
                     Console.WriteLine($"{space}  Source:");
                     PrintNode(map.SourceExpr, indent + 2);
                     Console.WriteLine($"{space}  Transformation:");
-
                     PrintNode(map.TransformExpr, indent + 2);
-
-
                     break;
 
                 case WhereNode whe:
