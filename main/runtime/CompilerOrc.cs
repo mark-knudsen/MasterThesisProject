@@ -511,6 +511,8 @@ namespace MyCompiler
 
             if (_debug) DumpIR(_module);
 
+            if (_stopwatch) StartStopWatch();
+
             // 5 Wrap in ThreadSafeModule
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
@@ -525,11 +527,22 @@ namespace MyCompiler
             // 7 Call it
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
+            if (_stopwatch) IRTestList.Add(StopStopWatch("Ran IR codegen"));
 
             // Create stopwatch to measure execution time - uncomment if you want to see the stats for each command, but it can be a bit much
             // Stopwatch sw = Stopwatch.StartNew();
 
+            if (_stopwatch) StartStopWatch();
             var tempResult = delegateResult();
+            if (_stopwatch) RuntimeTestList.Add(StopStopWatch("Ran program"));
+
+            if (_stopwatch)
+            {
+                Console.WriteLine($"\ncompiler list: \n{string.Join(", ", compilerTestList)}");
+                Console.WriteLine($"\nIR list: \n{string.Join(", ", IRTestList)}");
+                Console.WriteLine($"\nRuntime list: \n{string.Join(", ", RuntimeTestList)}");
+            }
+
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
 
             // Print execution stats - uncomment if you want to see the stats for each command, but it can be a bit much
@@ -1053,6 +1066,22 @@ namespace MyCompiler
         {
             var result = new Dictionary<int, object>();
             if (dataBuf == IntPtr.Zero) return result;
+            // Defensive: if caller provided an ArrayObject header instead of the raw data pointer,
+            // unwrap it to the actual data buffer. This prevents reading the header region
+            // as element data which can cause AccessViolation when indices are large.
+            try
+            {
+                long possibleLen = Marshal.ReadInt64(dataBuf, 0);
+                IntPtr possibleDataPtr = Marshal.ReadIntPtr(dataBuf, IntPtr.Size * 2);
+                if (possibleLen == len && possibleDataPtr != IntPtr.Zero && (long)possibleDataPtr > 0x1000)
+                {
+                    dataBuf = possibleDataPtr;
+                }
+            }
+            catch
+            {
+                // If any read fails, fall back to using provided pointer as-is
+            }
 
             foreach (var i in indices)
             {
@@ -1068,9 +1097,17 @@ namespace MyCompiler
                 }
                 else if (elemType is BoolType)
                 {
-                    // In LLVM i1 is stored in a byte, but your store uses align 1
-                    // Read 1 byte for bool
-                    result[i] = Marshal.ReadByte(ptr) != 0;
+                    // Bool storage may be either 1-byte or stored as i64 (0/1). Try reading a byte first,
+                    // but fall back to reading an Int64 if that appears invalid.
+                    try
+                    {
+                        result[i] = Marshal.ReadByte(ptr) != 0;
+                    }
+                    catch
+                    {
+                        // Fall back: read 8-byte int
+                        result[i] = Marshal.ReadInt64(ptr) != 0;
+                    }
                 }
                 else if (elemType is StringType)
                 {

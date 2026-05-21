@@ -8,8 +8,8 @@ source_filename = "repl_module"
 @str.1 = private unnamed_addr constant [4 x i8] c"age\00", align 1
 @str.2 = private unnamed_addr constant [7 x i8] c"hasJob\00", align 1
 @str.3 = private unnamed_addr constant [8 x i8] c"savings\00", align 1
-@__result_7c35 = global ptr null
-@__i_7c35 = global i64 0
+@__result_a86b = global ptr null
+@__i_a86b = global i64 0
 @str.4 = private unnamed_addr constant [20 x i8] c"main/CSV/mytest.csv\00", align 1
 @csv_schema = private unnamed_addr constant [5 x i8] c"SIBI\00", align 1
 @str.5 = private unnamed_addr constant [20 x i8] c"main/CSV/mytest.csv\00", align 1
@@ -109,23 +109,23 @@ entry:
   store ptr %arr_header15, ptr %23, align 8
   %24 = getelementptr inbounds nuw %dataframe, ptr %df_instance, i32 0, i32 3
   store i64 0, ptr %24, align 4
-  store ptr %df_instance, ptr @__result_7c35, align 8
-  store i64 0, ptr @__i_7c35, align 8
-  store i64 0, ptr @__i_7c35, align 8
+  store ptr %df_instance, ptr @__result_a86b, align 8
+  store i64 0, ptr @__i_a86b, align 8
+  store i64 0, ptr @__i_a86b, align 8
   br label %for.cond
 
 for.cond:                                         ; preds = %for.step, %entry
-  %__i_7c35_load = load i64, ptr @__i_7c35, align 4
+  %__i_a86b_load = load i64, ptr @__i_a86b, align 4
   %csv_boxed = call ptr @ReadCsvInternal(ptr @str.4, ptr @csv_schema)
   %25 = getelementptr inbounds nuw { i64, ptr }, ptr %csv_boxed, i32 0, i32 1
   %df_ptr = load ptr, ptr %25, align 8
   %rowCount_ptr = getelementptr inbounds nuw { ptr, ptr, ptr, i64 }, ptr %df_ptr, i32 0, i32 3
   %rowCount = load i64, ptr %rowCount_ptr, align 8
-  %icmp_tmp = icmp slt i64 %__i_7c35_load, %rowCount
+  %icmp_tmp = icmp slt i64 %__i_a86b_load, %rowCount
   br i1 %icmp_tmp, label %for.body, label %for.end
 
 for.body:                                         ; preds = %for.cond
-  %__i_7c35_load21 = load i64, ptr @__i_7c35, align 4
+  %__i_a86b_load21 = load i64, ptr @__i_a86b, align 4
   %csv_boxed22 = call ptr @ReadCsvInternal(ptr @str.5, ptr @csv_schema.6)
   %26 = getelementptr inbounds nuw { i64, ptr }, ptr %csv_boxed22, i32 0, i32 1
   %df_ptr23 = load ptr, ptr %26, align 8
@@ -138,7 +138,7 @@ for.body:                                         ; preds = %for.cond
   %col_array_header = load ptr, ptr %col_ptr_ptr, align 8
   %col_data_ptr_ptr = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header, i32 0, i32 2
   %col_data_raw = load ptr, ptr %col_data_ptr_ptr, align 8
-  %elem_ptr24 = getelementptr ptr, ptr %col_data_raw, i64 %__i_7c35_load21
+  %elem_ptr24 = getelementptr ptr, ptr %col_data_raw, i64 %__i_a86b_load21
   %val = load ptr, ptr %elem_ptr24, align 8
   %field_ptr = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row, i32 0, i32 0
   store ptr %val, ptr %field_ptr, align 8
@@ -146,7 +146,7 @@ for.body:                                         ; preds = %for.cond
   %col_array_header26 = load ptr, ptr %col_ptr_ptr25, align 8
   %col_data_ptr_ptr27 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header26, i32 0, i32 2
   %col_data_raw28 = load ptr, ptr %col_data_ptr_ptr27, align 8
-  %elem_ptr29 = getelementptr i64, ptr %col_data_raw28, i64 %__i_7c35_load21
+  %elem_ptr29 = getelementptr i64, ptr %col_data_raw28, i64 %__i_a86b_load21
   %val30 = load i64, ptr %elem_ptr29, align 4
   %field_ptr31 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row, i32 0, i32 1
   store i64 %val30, ptr %field_ptr31, align 4
@@ -154,7 +154,7 @@ for.body:                                         ; preds = %for.cond
   %col_array_header33 = load ptr, ptr %col_ptr_ptr32, align 8
   %col_data_ptr_ptr34 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header33, i32 0, i32 2
   %col_data_raw35 = load ptr, ptr %col_data_ptr_ptr34, align 8
-  %elem_ptr36 = getelementptr i8, ptr %col_data_raw35, i64 %__i_7c35_load21
+  %elem_ptr36 = getelementptr i8, ptr %col_data_raw35, i64 %__i_a86b_load21
   %raw = load i8, ptr %elem_ptr36, align 1
   %bool = trunc i8 %raw to i1
   %field_ptr37 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row, i32 0, i32 2
@@ -163,7 +163,7 @@ for.body:                                         ; preds = %for.cond
   %col_array_header39 = load ptr, ptr %col_ptr_ptr38, align 8
   %col_data_ptr_ptr40 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header39, i32 0, i32 2
   %col_data_raw41 = load ptr, ptr %col_data_ptr_ptr40, align 8
-  %elem_ptr42 = getelementptr i64, ptr %col_data_raw41, i64 %__i_7c35_load21
+  %elem_ptr42 = getelementptr i64, ptr %col_data_raw41, i64 %__i_a86b_load21
   %val43 = load i64, ptr %elem_ptr42, align 4
   %field_ptr44 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row, i32 0, i32 3
   store i64 %val43, ptr %field_ptr44, align 4
@@ -174,23 +174,23 @@ for.body:                                         ; preds = %for.cond
   br i1 %str_eq, label %then, label %else
 
 for.step:                                         ; preds = %ifcont
-  %x_load = load i64, ptr @__i_7c35, align 8
+  %x_load = load i64, ptr @__i_a86b, align 8
   %inc_add = add i64 %x_load, 1
-  store i64 %inc_add, ptr @__i_7c35, align 8
+  store i64 %inc_add, ptr @__i_a86b, align 8
   br label %for.cond
 
 for.end:                                          ; preds = %for.cond
-  %__result_7c35_load134 = load ptr, ptr @__result_7c35, align 8
+  %__result_a86b_load134 = load ptr, ptr @__result_a86b, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %runtime_cast = bitcast ptr %runtime_obj to ptr
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 0
   store i64 7, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_cast, i32 0, i32 1
-  store ptr %__result_7c35_load134, ptr %data_ptr, align 8
+  store ptr %__result_a86b_load134, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 
 then:                                             ; preds = %for.body
-  %__i_7c35_load45 = load i64, ptr @__i_7c35, align 4
+  %__i_a86b_load45 = load i64, ptr @__i_a86b, align 4
   %csv_boxed46 = call ptr @ReadCsvInternal(ptr @str.8, ptr @csv_schema.9)
   %27 = getelementptr inbounds nuw { i64, ptr }, ptr %csv_boxed46, i32 0, i32 1
   %df_ptr47 = load ptr, ptr %27, align 8
@@ -203,7 +203,7 @@ then:                                             ; preds = %for.body
   %col_array_header54 = load ptr, ptr %col_ptr_ptr53, align 8
   %col_data_ptr_ptr55 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header54, i32 0, i32 2
   %col_data_raw56 = load ptr, ptr %col_data_ptr_ptr55, align 8
-  %elem_ptr57 = getelementptr ptr, ptr %col_data_raw56, i64 %__i_7c35_load45
+  %elem_ptr57 = getelementptr ptr, ptr %col_data_raw56, i64 %__i_a86b_load45
   %val58 = load ptr, ptr %elem_ptr57, align 8
   %field_ptr59 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row52, i32 0, i32 0
   store ptr %val58, ptr %field_ptr59, align 8
@@ -211,7 +211,7 @@ then:                                             ; preds = %for.body
   %col_array_header61 = load ptr, ptr %col_ptr_ptr60, align 8
   %col_data_ptr_ptr62 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header61, i32 0, i32 2
   %col_data_raw63 = load ptr, ptr %col_data_ptr_ptr62, align 8
-  %elem_ptr64 = getelementptr i64, ptr %col_data_raw63, i64 %__i_7c35_load45
+  %elem_ptr64 = getelementptr i64, ptr %col_data_raw63, i64 %__i_a86b_load45
   %val65 = load i64, ptr %elem_ptr64, align 4
   %field_ptr66 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row52, i32 0, i32 1
   store i64 %val65, ptr %field_ptr66, align 4
@@ -219,7 +219,7 @@ then:                                             ; preds = %for.body
   %col_array_header68 = load ptr, ptr %col_ptr_ptr67, align 8
   %col_data_ptr_ptr69 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header68, i32 0, i32 2
   %col_data_raw70 = load ptr, ptr %col_data_ptr_ptr69, align 8
-  %elem_ptr71 = getelementptr i8, ptr %col_data_raw70, i64 %__i_7c35_load45
+  %elem_ptr71 = getelementptr i8, ptr %col_data_raw70, i64 %__i_a86b_load45
   %raw72 = load i8, ptr %elem_ptr71, align 1
   %bool73 = trunc i8 %raw72 to i1
   %field_ptr74 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row52, i32 0, i32 2
@@ -228,12 +228,12 @@ then:                                             ; preds = %for.body
   %col_array_header76 = load ptr, ptr %col_ptr_ptr75, align 8
   %col_data_ptr_ptr77 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %col_array_header76, i32 0, i32 2
   %col_data_raw78 = load ptr, ptr %col_data_ptr_ptr77, align 8
-  %elem_ptr79 = getelementptr i64, ptr %col_data_raw78, i64 %__i_7c35_load45
+  %elem_ptr79 = getelementptr i64, ptr %col_data_raw78, i64 %__i_a86b_load45
   %val80 = load i64, ptr %elem_ptr79, align 4
   %field_ptr81 = getelementptr inbounds nuw %struct_name_age_hasJob_savings, ptr %row52, i32 0, i32 3
   store i64 %val80, ptr %field_ptr81, align 4
-  %__result_7c35_load = load ptr, ptr @__result_7c35, align 8
-  %28 = getelementptr inbounds nuw %dataframe, ptr %__result_7c35_load, i32 0, i32 1
+  %__result_a86b_load = load ptr, ptr @__result_a86b, align 8
+  %28 = getelementptr inbounds nuw %dataframe, ptr %__result_a86b_load, i32 0, i32 1
   %29 = load ptr, ptr %28, align 8
   %data_array = bitcast ptr %29 to ptr
   %30 = getelementptr inbounds nuw { i64, i64, ptr }, ptr %data_array, i32 0, i32 2
@@ -255,7 +255,7 @@ else:                                             ; preds = %for.body
   br label %ifcont
 
 ifcont:                                           ; preds = %else, %store_element126
-  %iftmp = phi ptr [ %__result_7c35_load, %store_element126 ], [ null, %else ]
+  %iftmp = phi ptr [ %__result_a86b_load, %store_element126 ], [ null, %else ]
   br label %for.step
 
 grow:                                             ; preds = %then
@@ -365,7 +365,7 @@ store_element126:                                 ; preds = %grow125, %store_ele
   store i64 %48, ptr %raw_elem_ptr132, align 4
   %new_len133 = add i64 %curr_len121, 1
   store i64 %new_len133, ptr %len_ptr118, align 4
-  %52 = getelementptr inbounds nuw %dataframe, ptr %__result_7c35_load, i32 0, i32 3
+  %52 = getelementptr inbounds nuw %dataframe, ptr %__result_a86b_load, i32 0, i32 3
   %53 = load i64, ptr %52, align 4
   %54 = add i64 %53, 1
   store i64 %54, ptr %52, align 4
