@@ -81,9 +81,9 @@ opt_newlines
     ;
 
 statement_list
-    : /* empty */                           { $$ = new SequenceNode(); }
-    | statement_list statement              { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
-    | statement_list separator              { $$ = $1; }
+    : /* empty */               { $$ = new SequenceNode(); }
+    | statement_list statement  { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
+    | statement_list separator  { $$ = $1; }
     ;
 
 statement
@@ -91,7 +91,7 @@ statement
     | expr %prec LOWEST                         { $$ = $1; } 
     | IF LPAREN expr RPAREN block %prec IF      { $$ = new IfNode($3 as ExpressionNode, $5); }
     | IF LPAREN expr RPAREN block ELSE block    { $$ = new IfNode($3 as ExpressionNode, $5, $7); }
-    | PRINT LPAREN expr RPAREN                      { $$ = new PrintNode($3 as ExpressionNode); }
+    | PRINT LPAREN expr RPAREN                  { $$ = new PrintNode($3 as ExpressionNode); }
     | FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block
     {
         $$ = new ForLoopNode($3 as StatementNode, $5 as ExpressionNode, $7 as StatementNode, $10);
@@ -164,29 +164,29 @@ assignment
     ;
 
 expr
-    : BOOL_LITERAL         { $$ = new BooleanNode((bool)$1); }
-    | NUMBER               { $$ = new NumberNode((int)$1); }
-    | FLOAT_LITERAL        { $$ = new FloatNode($1); }
-    | STRING_LITERAL       { $$ = new StringNode((string)$1); }
-    | NULL_LITERAL         { $$ = new NullNode(); }      /* We currently do not use NULL_LITERAL! */
-    | ID                   { $$ = new IdNode((string)$1); }
-    /* | type                 { $$ = new TypeLiteralNode($1 as TypeNode); } */
+    : BOOL_LITERAL                  { $$ = new BooleanNode((bool)$1); }
+    | NUMBER                        { $$ = new NumberNode((int)$1); }
+    | FLOAT_LITERAL                 { $$ = new FloatNode($1); }
+    | STRING_LITERAL                { $$ = new StringNode((string)$1); }
+    | NULL_LITERAL                  { $$ = new NullNode(); }      /* We currently do not use NULL_LITERAL! */
+    | ID                            { $$ = new IdNode((string)$1); }
+    /* | type                       { $$ = new TypeLiteralNode($1 as TypeNode); } */
 
-    | LPAREN expr RPAREN   { $$ = $2; }    /* ( 2+2 ) */
-    | LBRACKET expr_list RBRACKET { $$ = new ArrayNode($2); } /*[1,2,3] */    
+    | LPAREN expr RPAREN            { $$ = $2; }    /* ( 2+2 ) */
+    | LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($2); } /*[1,2,3] */    
 
     /* Under your expr rules */
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1 as ExpressionNode, $3, $5); }
 
     /* Built-ins */
-    | RANDOM LPAREN expr_list RPAREN                { $$ = new RandomNode($3); }
-    | ROUND LPAREN expr_list RPAREN                 { $$ = new RoundNode($3); }
-    | READCSV LPAREN expr COMMA record_arg RPAREN          { $$ = new ReadCsvNode(new List<Node>{$3 as ExpressionNode, $5 as NamedArgumentNode}); }
-    | READCSV LPAREN expr RPAREN                    { $$ = new ReadCsvNode(new List<Node>{$3 as ExpressionNode}); }
-    | TOCSV LPAREN expr COMMA expr RPAREN           { $$ = new ToCsvNode($3 as ExpressionNode, $5 as ExpressionNode); }
-    | DATAFRAME LPAREN dataframe_arg_list RPAREN              { $$ = new DataframeNode($3); }
-    | record_struct                                 { $$ = $1; }
-    /* | RECORD LPAREN LBRACE arg_list RBRACE RPAREN   { $$ = new RecordNode($4); } */
+    | RANDOM LPAREN expr_list RPAREN                    { $$ = new RandomNode($3); }
+    | ROUND LPAREN expr_list RPAREN                     { $$ = new RoundNode($3); }
+    | READCSV LPAREN expr COMMA record_arg RPAREN       { $$ = new ReadCsvNode(new List<Node>{$3 as ExpressionNode, $5 as NamedArgumentNode}); }
+    | READCSV LPAREN expr RPAREN                        { $$ = new ReadCsvNode(new List<Node>{$3 as ExpressionNode}); }
+    | TOCSV LPAREN expr COMMA expr RPAREN               { $$ = new ToCsvNode($3 as ExpressionNode, $5 as ExpressionNode); }
+    | DATAFRAME LPAREN dataframe_arg_list RPAREN        { $$ = new DataframeNode($3); }
+    | record_struct                                     { $$ = $1; }
+    /* | RECORD LPAREN LBRACE arg_list RBRACE RPAREN    { $$ = new RecordNode($4); } */
     
     /* Math & Logic */
     | SQRT LPAREN expr RPAREN               { $$ = new SqrtNode($3 as ExpressionNode); }

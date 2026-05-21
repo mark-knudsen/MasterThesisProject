@@ -949,12 +949,22 @@ namespace MyCompiler
                 // Check if the record fields match the dataframe columns
                 var dfColumns = dfType.ColumnNames;
                 var recFields = recType.RecordFields.Select(f => f.Label).ToArray();
+                var recTypes = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToArray();
 
                 if (dfColumns.Count != recType.RecordFields.Count)
                     throw new Exception("Record fields count must match the dataframe columns count");
 
-                if (!dfColumns.All(col => recFields.Contains(col)))
-                    throw new Exception("Record fields do not match dataframe columns");
+
+                for (int t = 0; t < dfType.DataTypes.Count; t++)
+                {
+                    if (dfType.DataTypes[t].GetType() != recTypes[t].GetType())
+                        throw new Exception($"Dataframe column '{dfType.ColumnNames[t]}' expects type {dfType.DataTypes[t]}, but record provides {recTypes[t]}");
+                }
+
+                // if (!dfColumns.All(col => recFields.Contains(col)))
+                //      throw new Exception("Record fields do not match dataframe columns");
+
+
             }
             else if (sourceType is ArrayType arrType)
             {
