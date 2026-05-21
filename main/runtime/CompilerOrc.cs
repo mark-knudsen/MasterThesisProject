@@ -9,6 +9,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Data;
+using System.Diagnostics.CodeAnalysis;
 
 namespace MyCompiler
 {
@@ -2318,7 +2319,7 @@ namespace MyCompiler
         // foreach(item in x) {print(item)} // but this works fine
         // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
 
-        public LLVMValueRef VisitPrint(PrintNode expr)
+        public LLVMValueRef VisitPrint(PrintNode expr) 
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
@@ -2333,10 +2334,10 @@ namespace MyCompiler
         // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
         // for(i=0; i<50; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-        // for(i=0; i<5200000; i++) {x.add({name: "Hary potter", age: 10 + random(1,100)}) }
-        // for(i=0; i<5000000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)}) // 5 million
+        // for(i=0; i<5200000; i++) {x.add({name="Hary potter", age= 10 + random(1,100)}) }
+        // for(i=0; i<5000000; i++) x.add({name="Hary potter", age= 10 + random(1,100)}) // 5 million
         // this below can't do random inside addRange "Cannot perform + on int and"
-        // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
+        // for(i=0; i<520000; i++) x.addRange([{name="voldemort", age=80}, {name="dumbledore", age=70}, {name="MERLIN", age=101}])
 
         // x.map(d => d.age + 100)
         // x.where(d=> d.age > 50)
@@ -3638,12 +3639,13 @@ namespace MyCompiler
 
             var fullSequence = new SequenceNode();
 
-            var elements = ((ArrayNode)expr.RemoveRangeExpression).Elements;
+            var elements = ((ArrayNode)expr.RemoveRangeExpression).Elements; // then we can't take an id, it is hardcoded
 
+            var sorted = elements.OrderBy(n => (n as NumberNode)?.Value).ToList();
             // iterate backwards
-            for (int i = elements.Count - 1; i >= 0; i--)
+            for (int i = sorted.Count - 1; i >= 0; i--)
             {
-                var item = elements[i];
+                var item = sorted[i];
                 var removeElement = new RemoveNode(expr.SourceExpression, item);
                 fullSequence.Statements.Add(removeElement);
             }
