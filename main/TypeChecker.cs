@@ -529,30 +529,31 @@ namespace MyCompiler
         public Type VisitIndex(IndexNode expr)
         {
             // 1. Visit children first to resolve their types
-            Visit(expr.SourceExpression);
+            Type sourceType = Visit(expr.SourceExpression);
             Type indexType = Visit(expr.IndexExpression);
 
             Type inferred = new IntType(); // Default
 
-            if (expr.SourceExpression is IdNode idNode)
+            if (sourceType is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
-                    inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
-                else if (entry?.Type is DataframeType dfType)
+                inferred = arrType.ElementType ?? new IntType();
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                if (indexType is StringType)
                 {
-                    if (indexType is StringType)
+                    Type columnType = new IntType();
+                    for (int i = 0; i < dfType.ColumnNames.Count; i++)
                     {
-                        Type columnType = new IntType();
-                        for (int i = 0; i < dfType.ColumnNames.Count; i++)
-                        {
-                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
-                        }
-
-                        inferred = new ArrayType(columnType);
+                        if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value)
+                            columnType = dfType.DataTypes[i];
                     }
-                    else
-                        inferred = dfType.RowType;
+
+                    inferred = new ArrayType(columnType);
+                }
+                else
+                {
+                    inferred = dfType.RowType;
                 }
             }
 
@@ -562,15 +563,14 @@ namespace MyCompiler
 
         public Type VisitIndexAssign(IndexAssignNode expr)
         {
-            Visit(expr.ArrayExpression);
+            Type sourceType = Visit(expr.ArrayExpression);
             Visit(expr.IndexExpression);
             Visit(expr.AssignExpression);
 
-            if (expr.ArrayExpression is IdNode idNode)
+            if (sourceType is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
                 var assignType = expr.AssignExpression.Type.GetType();
-                var arrayType = entry?.Type is ArrayType arrType ? arrType.ElementType?.GetType() : null;
+                var arrayType = arrType.ElementType?.GetType();
                 if (arrayType != assignType)
                     throw new Exception($"Can't assign {arrayType.Name} to {assignType.Name} array");
             }

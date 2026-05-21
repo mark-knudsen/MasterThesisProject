@@ -68,13 +68,20 @@ namespace MyCompiler
             int colCount = schema.Length;
 
             // ============================
-            // COLUMN BUFFERS
+            // COLUMN BUFFERS + ARRAY HEADERS
             // ============================
 
             IntPtr[] columnBuffers = new IntPtr[colCount];
+            IntPtr[] columnHeaders = new IntPtr[colCount];
 
             for (int c = 0; c < colCount; c++)
+            {
                 columnBuffers[c] = Marshal.AllocHGlobal(rowCount * 8);
+                columnHeaders[c] = Marshal.AllocHGlobal(24);
+                Marshal.WriteInt64(columnHeaders[c], 0, rowCount);
+                Marshal.WriteInt64(columnHeaders[c], IntPtr.Size, rowCount);
+                Marshal.WriteIntPtr(columnHeaders[c], IntPtr.Size * 2, columnBuffers[c]);
+            }
 
             for (int i = 0; i < rowCount; i++)
             {
@@ -120,7 +127,12 @@ namespace MyCompiler
             IntPtr dataArray = Marshal.AllocHGlobal(colCount * IntPtr.Size);
 
             for (int i = 0; i < colCount; i++)
-                Marshal.WriteIntPtr(dataArray, i * IntPtr.Size, columnBuffers[i]);
+                Marshal.WriteIntPtr(dataArray, i * IntPtr.Size, columnHeaders[i]);
+
+            IntPtr dataArrayHeader = Marshal.AllocHGlobal(24);
+            Marshal.WriteInt64(dataArrayHeader, 0, colCount);
+            Marshal.WriteInt64(dataArrayHeader, IntPtr.Size, colCount);
+            Marshal.WriteIntPtr(dataArrayHeader, IntPtr.Size * 2, dataArray);
 
             // ============================
             // DATAFRAME OBJECT (32 bytes FIXED)
@@ -129,7 +141,7 @@ namespace MyCompiler
             IntPtr df = Marshal.AllocHGlobal(32);
 
             Marshal.WriteIntPtr(df, 0, IntPtr.Zero);        // column names (unused for now)
-            Marshal.WriteIntPtr(df, IntPtr.Size, dataArray);
+            Marshal.WriteIntPtr(df, IntPtr.Size, dataArrayHeader);
             Marshal.WriteIntPtr(df, IntPtr.Size * 2, IntPtr.Zero);
             Marshal.WriteInt64(df, IntPtr.Size * 3, rowCount);
 
@@ -150,19 +162,16 @@ namespace MyCompiler
 
             IntPtr df = Marshal.ReadIntPtr(dfPtr, 8);
 
-            IntPtr dataPtr = Marshal.ReadIntPtr(df, IntPtr.Size);
+            IntPtr dataHeader = Marshal.ReadIntPtr(df, IntPtr.Size);
+            long colCount = Marshal.ReadInt64(dataHeader, 0);
+            IntPtr dataPtr = Marshal.ReadIntPtr(dataHeader, IntPtr.Size * 2);
             long rowCount = Marshal.ReadInt64(df, IntPtr.Size * 3);
-
-            int colCount = 0;
-
-            // infer colCount safely
-            while (Marshal.ReadIntPtr(dataPtr, colCount * IntPtr.Size) != IntPtr.Zero)
-                colCount++;
+            int intColCount = checked((int)colCount);
 
             using var writer = new StreamWriter(path);
 
             // header
-            writer.WriteLine(string.Join(",", Enumerable.Range(0, colCount).Select(i => $"col{i}")));
+            writer.WriteLine(string.Join(",", Enumerable.Range(0, intColCount).Select(i => $"col{i}")));
 
             for (int r = 0; r < rowCount; r++)
             {
@@ -3111,7 +3120,7 @@ namespace MyCompiler
             if (sourceType is DataframeType dfType)
             {
                 var result = DataframeIndex(headerPtr, indexVal, dfType.RowType);
-                return _builder.BuildBitCast(result, i8Ptr);
+                return result;
             }
 
             return LLVMValueRef.CreateConstNull(i8Ptr);
@@ -5038,7 +5047,11 @@ namespace MyCompiler
         {
             // 1. Get record pointer
             var recordPtr = Visit(record);
+            return GetFieldPointer(record, recordPtr, fieldName);
+        }
 
+        private (LLVMValueRef fieldPtr, LLVMTypeRef fieldType) GetFieldPointer(ExpressionNode record, LLVMValueRef recordPtr, string fieldName)
+        {
             // 2. Get record type
             var recordType = record.Type as RecordType;
             if (recordType == null)
@@ -5053,10 +5066,16 @@ namespace MyCompiler
             if (recordPtr.TypeOf.Kind != LLVMTypeKind.LLVMPointerTypeKind)
                 throw new Exception("Record must be a pointer to struct");
 
+            var structPtr = _builder.BuildBitCast(
+                recordPtr,
+                LLVMTypeRef.CreatePointer(structType, 0),
+                "record_ptr_cast"
+            );
+
             // 5. Get pointer to field
             var fieldPtr = _builder.BuildStructGEP2(
                 structType,
-                recordPtr,
+                structPtr,
                 (uint)fieldIndex,
                 $"ptr_{fieldName}"
             );
@@ -6076,7 +6095,7 @@ namespace MyCompiler
             // CASE 1: RECORD
             if (expr.SourceExpression.Type is RecordType)
             {
-                var (fieldPtr, _) = GetFieldPointer(expr.SourceExpression, expr.IdField);
+                var (fieldPtr, _) = GetFieldPointer(expr.SourceExpression, sourceVal, expr.IdField);
 
                 return _builder.BuildLoad2(
                     GetLLVMType(expr.Type),
