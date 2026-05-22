@@ -2319,7 +2319,7 @@ namespace MyCompiler
         // foreach(item in x) {print(item)} // but this works fine
         // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
 
-        public LLVMValueRef VisitPrint(PrintNode expr) 
+        public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
@@ -2552,26 +2552,42 @@ namespace MyCompiler
             var currentRowVar = "__current_row";
             var dfType = (DataframeType)expr.Type;
 
-            // 1. Assign Source
+            // 1. Assign Source Dataframe
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 2. Capture length
+            // 2. Capture source array length to prevent heap reallocations
             var srcLength = new LengthNode(new IdNode(srcVar));
             srcLength.SetType(new IntType());
 
-            // 3. Initialize Result Dataframe with Capacity
+            // 3. Rebuild Column Names as explicit Expression String nodes
             var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
 
-            // Passing srcLength to ArrayNode is the key to stopping reallocs
+            // 4. Rebuild explicit Type Literals to pass your Type Checker's 'columns' + 'type' verification
+            var typeLiterals = new List<ExpressionNode>();
+            foreach (var dataType in dfType.DataTypes)
+            {
+                ExpressionNode typeLit = dataType switch
+                {
+                    IntType => new TypeLiteralNode(new TypeNode("int")),
+                    FloatType => new TypeLiteralNode(new TypeNode("float")),
+                    BoolType => new TypeLiteralNode(new TypeNode("bool")),
+                    StringType => new TypeLiteralNode(new TypeNode("string")),
+                    _ => throw new Exception($"Unknown data type mapping for dataframe compilation: {dataType}")
+                };
+                typeLiterals.Add(typeLit);
+            }
+            var typesArrayNode = new ArrayNode(typeLiterals);
+
+            // This array acts as the raw backing data array for our accumulated rows
             var rowsArray = new ArrayNode(new List<ExpressionNode>());
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
+            // 5. Construct DataframeNode providing BOTH parameters required by Step 2 of your Type Checker
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                new NamedArgumentNode("columns", new ArrayNode(columns)),
-                new NamedArgumentNode("rows", rowsArray),
-                new NamedArgumentNode("type", new ArrayNode(dummyTypes))
-            });
+        new NamedArgumentNode("columns", new ArrayNode(columns)),
+        new NamedArgumentNode("type", typesArrayNode), // Satisfies the Type Checker constraint!
+        new NamedArgumentNode("rows", rowsArray)       // Passes empty rows storage array
+    });
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2580,22 +2596,37 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // 4. Fetch row: currentRow = src[i]
+            // 6. Fetch row loop variant: currentRowVar = srcVar[iVar]
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
-            // 5. Transformation Logic
+            // 7. Dynamic Transformation Replacement Logic
+            // If it's a select statement lowering, we need to make sure the target fields bind correctly
+            ExpressionNode transformTarget = expr.TransformExpr;
+            if (transformTarget is ArrayNode arrNode && expr.IteratorId.Name == "__show_x")
+            {
+                // For lowered select nodes, map raw identifiers (like 'age') to point to fields on our row variant
+                var mappedElements = arrNode.Elements.Select(element =>
+                {
+                    if (element is IdNode idNode)
+                    {
+                        return (ExpressionNode)new FieldNode(replacementNode, idNode.Name);
+                    }
+                    return element;
+                }).ToList();
+                transformTarget = new ArrayNode(mappedElements);
+            }
+
             ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
-                expr.TransformExpr,
+                transformTarget,
                 expr.IteratorId.Name,
                 replacementNode
             );
 
-            // Because we initialized 'rowsArray' with 'srcLength',
-            // the 'grow' block in the IR will exist but will NEVER be executed.
+            // 8. Append transformed element directly into the result reference
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
-            // 7. Loop Setup
+            // 9. Loop Controls bound to structural conditions
             var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
@@ -2603,6 +2634,9 @@ namespace MyCompiler
             program.Statements.Add(new IdNode(resVar));
             return program;
         }
+
+
+
 
         // Helper to check if a node tree uses a specific variable
         private bool IsPure(Node node)
@@ -5137,7 +5171,12 @@ namespace MyCompiler
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
         df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])
-
+  df5 = dataframe(
+            [{"Harry", 12},{"Lilly", 35}]
+            { name:string, age: int},
+        )
+df2 = dataframe( rows=[{"Alice", 25},{"Charlie", 22}], schema={name: string, age: int})
+ df = dataframe({ name:sting, age: int}, [{"Harry", 12},{"Lilly", 35}]) 
         df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
         to_csv(df, "CSV/mytest.csv")
 
