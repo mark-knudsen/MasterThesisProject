@@ -93,7 +93,10 @@ namespace MyCompiler
             Type rowType = null;
 
             // Determine the type of 'item'
-            if (collectionType is DataframeType df) rowType = new NullType(); // THIS IS WRONG, it was df.rowtype before
+            if (collectionType is DataframeType df)
+            {
+                rowType = df.RowType; // Correctly pull the RecordType tracking schema fields
+            }
             else if (collectionType is ArrayType arr && arr.ElementType is not RecordType) rowType = arr.ElementType;
             else if (collectionType is ArrayType arr2 && arr2.ElementType is RecordType rec) rowType = rec;
 

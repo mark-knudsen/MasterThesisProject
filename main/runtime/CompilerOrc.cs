@@ -138,7 +138,7 @@ namespace MyCompiler
             // DATAFRAME OBJECT (32 bytes FIXED)
             // ============================
 
-            IntPtr df = Marshal.AllocHGlobal(32);
+            IntPtr df = Marshal.AllocHGlobal(Marshal.SizeOf<DataframeObject>());
 
             Marshal.WriteIntPtr(df, 0, IntPtr.Zero);        // column names (unused for now)
             Marshal.WriteIntPtr(df, IntPtr.Size, dataArrayHeader);
@@ -607,7 +607,7 @@ namespace MyCompiler
             var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
             var elementType = ((ArrayType)type).ElementType;
             var elements = new List<object>();
-            var stride = (elementType is BoolType) ? 1 : 8;
+            var stride = 8;
 
             for (long i = 0; i < array.length; i++)
             {
@@ -1394,9 +1394,9 @@ namespace MyCompiler
 
             return null;
         }
-
         public LLVMValueRef VisitForLoop(ForLoopNode expr)
         {
+            var ctx = _module.Context;
             var func = _builder.InsertBlock.Parent;
 
             // 1. Initialization
@@ -1415,15 +1415,15 @@ namespace MyCompiler
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-            // If the condition is a Double (typical for your comparison results), 
-            // we need to compare it against 0.0 using FCmp
-            if (condition.TypeOf == _module.Context.DoubleType)
+            // If the condition is a Double (typical for comparison results), 
+            // compare it against 0.0 using FCmp
+            if (condition.TypeOf == ctx.DoubleType)
             {
                 condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
-                    condition, LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0.0), "fortest_dbl");
+                    condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
             }
             // If it's an i64 or i32, use ICmp
-            else if (condition.TypeOf != _module.Context.Int1Type)
+            else if (condition.TypeOf != ctx.Int1Type)
             {
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
                     condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
@@ -1439,7 +1439,29 @@ namespace MyCompiler
             // 5. Step Block (Increment)
             _builder.PositionAtEnd(stepBlock);
             if (expr.Step != null) Visit(expr.Step);
-            _builder.BuildBr(condBlock); // Jump back to condition
+
+            // --- CLEAN VECTORIZATION HINT START ---
+            // 1. Create the inner loop properties node: !{!"llvm.loop.vectorize.enable", i1 true}
+            var metadataName = ctx.GetMDString("llvm.loop.vectorize.enable", 26);
+            var valTrue = LLVMValueRef.CreateConstInt(ctx.Int1Type, 1);
+            var vectorizeAttrValue = LLVMValueRef.CreateMDNode(new[] { metadataName, valTrue });
+
+            // Extract the metadata representation for replacement assignment entries
+            var vectorizeAttrMetadata = LLVM.ValueAsMetadata(vectorizeAttrValue);
+
+            // 2. Create the parent tracking node as a standard Metadata Value Node
+            var loopMetadataValue = LLVMValueRef.CreateMDNode(new[] { vectorizeAttrValue, vectorizeAttrValue });
+
+            // 3. Perform mutations safely using the exact mapped API
+            var loopMetadataMD = LLVM.ValueAsMetadata(loopMetadataValue);
+            LLVM.ReplaceMDNodeOperandWith(loopMetadataValue, 0, loopMetadataMD);
+            LLVM.ReplaceMDNodeOperandWith(loopMetadataValue, 1, vectorizeAttrMetadata);
+
+            // 4. Emit back-edge jump and attach the loop metadata tracking block
+            var backBr = _builder.BuildBr(condBlock);
+            uint loopKindId = ctx.GetMDKindID("llvm.loop");
+            backBr.SetMetadata(loopKindId, loopMetadataValue);
+            // --- CLEAN VECTORIZATION HINT END ---
 
             // 6. End Block
             _builder.PositionAtEnd(endBlock);
@@ -2524,28 +2546,393 @@ namespace MyCompiler
         {
             var sourceType = expr.SourceExpression.Type;
 
-            // Generate unique names for this specific where-instance to prevent collisions
-            // especially since PerformSemanticAnalysis adds these to the global/parent context
+            if (sourceType is DataframeType dfType)
+            {
+                if (IsVectorizableColumnPredicate(expr.Condition, expr.IteratorId.Name, out string targetColumnName, out string op, out ExpressionNode literalExpr))
+                {
+                    return EmitVectorizedDataframeWhere(expr, dfType, targetColumnName, op, literalExpr);
+                }
+                return FallbackToMacroWhere(expr, dfType);
+            }
+            else if (sourceType is ArrayType arrType)
+            {
+                var uniqueId = Guid.NewGuid().ToString("N").Substring(0, 4);
+                var iVar = $"__i_{uniqueId}";
+                var resultVar = $"__result_{uniqueId}";
+                var program = BuildWhereArray(expr, arrType, iVar, resultVar);
+                PerformSemanticAnalysis(program);
+                return VisitSequence(program);
+            }
+            else
+            {
+                throw new Exception("Where only supports arrays and dataframes");
+            }
+        }
+
+        private LLVMValueRef FallbackToMacroWhere(WhereNode expr, DataframeType dfType)
+        {
             var uniqueId = Guid.NewGuid().ToString("N").Substring(0, 4);
             var iVar = $"__i_{uniqueId}";
             var resultVar = $"__result_{uniqueId}";
 
-            SequenceNode program;
-
-            if (sourceType is ArrayType arrType)
-                program = BuildWhereArray(expr, arrType, iVar, resultVar);
-            else if (sourceType is DataframeType dfType)
-                program = BuildWhereDataframe(expr, dfType, iVar, resultVar);
-            else
-                throw new Exception("Where only supports arrays and dataframes");
-
-            // Perform semantic analysis to resolve types and symbols for the NEWLY generated loop nodes
-            // This ensures that the IndexNodes and AddNodes inside the loop have correct LLVM types
+            SequenceNode program = BuildWhereDataframe(expr, dfType, iVar, resultVar);
             PerformSemanticAnalysis(program);
-
-            // Generate IR for the transformed loop
             return VisitSequence(program);
         }
+
+        private bool IsVectorizableColumnPredicate(ExpressionNode condition, string iteratorName, out string columnName, out string op, out ExpressionNode literalNode)
+        {
+            columnName = null; op = null; literalNode = null;
+            ExpressionNode left = null;
+            ExpressionNode right = null;
+
+            if (condition is ComparisonNode cmp)
+            {
+                op = cmp.Operator; left = cmp.Left; right = cmp.Right;
+            }
+            else if (condition is BinaryOpNode bin && (bin.Operator == ">" || bin.Operator == "<" || bin.Operator == "=="))
+            {
+                op = bin.Operator; left = bin.Left; right = bin.Right;
+            }
+
+            if (left != null && right != null)
+            {
+                var leftType = left.GetType();
+                var recordProp = leftType.GetProperty("Expression") ?? leftType.GetProperty("Record");
+                var fieldProp = leftType.GetProperty("FieldName") ?? leftType.GetProperty("Name");
+
+                if (recordProp != null && fieldProp != null)
+                {
+                    var recordValue = recordProp.GetValue(left) as IdNode;
+                    var fieldValue = fieldProp.GetValue(left) as string;
+
+                    if (recordValue != null && recordValue.Name == iteratorName && fieldValue != null)
+                    {
+                        columnName = fieldValue;
+                        literalNode = right;
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        private LLVMValueRef EmitVectorizedDataframeWhere(WhereNode expr, DataframeType dfType, string targetColumnName, string op, ExpressionNode literalNode)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+
+            LLVMValueRef dfPtr = Visit(expr.SourceExpression);
+
+            var arrayHeaderType = LLVMTypeRef.CreateStruct(new[] { i64, i64, i8Ptr }, false);
+            var dataframeType = LLVMTypeRef.CreateStruct(new[] { i8Ptr, LLVMTypeRef.CreatePointer(arrayHeaderType, 0), i8Ptr, i64 }, false);
+
+            var rowCountPtr = _builder.BuildStructGEP2(dataframeType, dfPtr, 3, "rowCount_ptr");
+            LLVMValueRef totalRows = _builder.BuildLoad2(i64, rowCountPtr, "rowCount");
+
+            int filterColIndex = -1;
+            for (int idx = 0; idx < dfType.ColumnNames.Count; idx++)
+            {
+                if (dfType.ColumnNames[idx] == targetColumnName)
+                {
+                    filterColIndex = idx;
+                    break;
+                }
+            }
+
+            var colType = dfType.DataTypes[filterColIndex];
+            if (colType is not IntType && colType is not BoolType)
+            {
+                return FallbackToMacroWhere(expr, dfType);
+            }
+
+            var dataPtrsPtr = _builder.BuildStructGEP2(dataframeType, dfPtr, 1, "data_ptrs_ptr");
+            var columnHeaderArrayPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), dataPtrsPtr, "header_ptr");
+
+            var dataPtrsDataPtr = _builder.BuildStructGEP2(arrayHeaderType, columnHeaderArrayPtr, 2, "data_ptrs_data_ptr");
+            var columnBuffersArrayRaw = _builder.BuildLoad2(i8Ptr, dataPtrsDataPtr, "data_ptrs_raw");
+            var columnBuffersArray = _builder.BuildBitCast(columnBuffersArrayRaw, LLVMTypeRef.CreatePointer(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), 0));
+
+            var colIndexVal = LLVMValueRef.CreateConstInt(i64, (ulong)filterColIndex);
+            var targetColHeaderPtrPtr = _builder.BuildGEP2(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), columnBuffersArray, new[] { colIndexVal }, "col_ptr_ptr");
+            var targetColHeaderPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), targetColHeaderPtrPtr, "col_array_header");
+
+            var targetColDataPtrPtr = _builder.BuildStructGEP2(arrayHeaderType, targetColHeaderPtr, 2, "col_data_ptr_ptr");
+            var targetColDataRaw = _builder.BuildLoad2(i8Ptr, targetColDataPtrPtr, "col_data_raw");
+
+            // Determine sizing bit width maps for targeted predicate processing
+            var targetLoadType = colType is BoolType ? i8 : i64;
+            var typedFilterColumnData = _builder.BuildBitCast(targetColDataRaw, LLVMTypeRef.CreatePointer(targetLoadType, 0), "typed_column_data");
+
+            LLVMValueRef compConstant = Visit(literalNode);
+            if (colType is BoolType && compConstant.TypeOf == ctx.Int1Type)
+            {
+                compConstant = _builder.BuildZExt(compConstant, i8, "bool_to_i8");
+            }
+
+            // Allocate sequential allocation space for the bitmask layer
+            var mallocFunc = GetOrDeclareMalloc();
+            var selectionMaskAlloca = _builder.BuildCall2(_mallocType, mallocFunc, new[] { totalRows }, "selection_mask");
+
+            var matchCountAlloca = _builder.BuildAlloca(i64, "match_count");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), matchCountAlloca);
+
+            // SIMD Vector Pipeline Settings (Processes 4 elements per vector sweep pass)
+            uint vectorWidth = 4;
+            var vectorType = LLVMTypeRef.CreateVector(targetLoadType, vectorWidth);
+            var vectorPtrType = LLVMTypeRef.CreatePointer(vectorType, 0);
+
+            var indexAlloca = _builder.BuildAlloca(i64, "simd_idx_alloca");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), indexAlloca);
+
+            var vectorWidthVal = LLVMValueRef.CreateConstInt(i64, vectorWidth);
+            var remainder = _builder.BuildURem(totalRows, vectorWidthVal, "rem");
+            var endVectorIdx = _builder.BuildSub(totalRows, remainder, "end_vec_idx");
+
+            var func = _builder.InsertBlock.Parent;
+            var condBB = ctx.AppendBasicBlock(func, "simd_cond");
+            var bodyBB = ctx.AppendBasicBlock(func, "simd_body");
+            var tailBB = ctx.AppendBasicBlock(func, "scalar_tail");
+            var compactBB = ctx.AppendBasicBlock(func, "column_compact_phase");
+
+            _builder.BuildBr(condBB);
+
+            // SIMD Vector Conditions Checking Header
+            _builder.PositionAtEnd(condBB);
+            var currentIdx = _builder.BuildLoad2(i64, indexAlloca, "curr_idx");
+            var isVecLoopGo = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, currentIdx, endVectorIdx, "cmp_limit");
+            _builder.BuildCondBr(isVecLoopGo, bodyBB, tailBB);
+
+            // -------------------------------------------------------------------------
+            // PARALLEL SIMD LOOP SWEEP PHASE
+            // -------------------------------------------------------------------------
+            _builder.PositionAtEnd(bodyBB);
+            var scalarElementPtr = _builder.BuildGEP2(targetLoadType, typedFilterColumnData, new[] { currentIdx }, "scalar_gep");
+            var vectorizedElementPtr = _builder.BuildBitCast(scalarElementPtr, vectorPtrType, "vec_bitcast");
+            var loadedVectorChunk = _builder.BuildLoad2(vectorType, vectorizedElementPtr, "loaded_chunk");
+
+            var criteriaVector = LLVMValueRef.CreateConstVector(Enumerable.Repeat(compConstant, (int)vectorWidth).ToArray());
+
+            LLVMIntPredicate pred = op switch
+            {
+                ">" => LLVMIntPredicate.LLVMIntSGT,
+                "<" => LLVMIntPredicate.LLVMIntSLT,
+                "==" => LLVMIntPredicate.LLVMIntEQ,
+                _ => LLVMIntPredicate.LLVMIntSGT
+            };
+            var vectorComparisonMask = _builder.BuildICmp(pred, loadedVectorChunk, criteriaVector, "simd_icmp");
+
+            for (uint i = 0; i < vectorWidth; i++)
+            {
+                var laneBit = _builder.BuildExtractElement(vectorComparisonMask, LLVMValueRef.CreateConstInt(ctx.Int32Type, i), $"lane_{i}");
+                var laneByte = _builder.BuildZExt(laneBit, i8, "lane_byte");
+
+                var targetOffset = _builder.BuildAdd(currentIdx, LLVMValueRef.CreateConstInt(i64, i));
+                var maskStorePtr = _builder.BuildGEP2(i8, selectionMaskAlloca, new[] { targetOffset }, "mask_store_gep");
+                _builder.BuildStore(laneByte, maskStorePtr);
+
+                var currentMatchCount = _builder.BuildLoad2(i64, matchCountAlloca, "curr_match");
+                var addedMatch = _builder.BuildZExt(laneBit, i64, "added_match");
+                _builder.BuildStore(_builder.BuildAdd(currentMatchCount, addedMatch), matchCountAlloca);
+            }
+
+            _builder.BuildStore(_builder.BuildAdd(currentIdx, vectorWidthVal), indexAlloca);
+            _builder.BuildBr(condBB);
+
+            // -------------------------------------------------------------------------
+            // SCALAR TAIL FALLBACK LOOP (For non-multiples of 4 trailing rows)
+            // -------------------------------------------------------------------------
+            _builder.PositionAtEnd(tailBB);
+            var tailCondBB = ctx.AppendBasicBlock(func, "tail_cond");
+            var tailBodyBB = ctx.AppendBasicBlock(func, "tail_body");
+            _builder.BuildBr(tailCondBB);
+
+            _builder.PositionAtEnd(tailCondBB);
+            var tIdx = _builder.BuildLoad2(i64, indexAlloca, "tail_idx");
+            var isTailGo = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, tIdx, totalRows, "tail_limit");
+            _builder.BuildCondBr(isTailGo, tailBodyBB, compactBB);
+
+            _builder.PositionAtEnd(tailBodyBB);
+            var tailElemPtr = _builder.BuildGEP2(targetLoadType, typedFilterColumnData, new[] { tIdx }, "tail_gep");
+            var tailVal = _builder.BuildLoad2(targetLoadType, tailElemPtr, "tail_val");
+
+            var scalarBit = op switch
+            {
+                ">" => _builder.BuildICmp(pred, tailVal, compConstant, "sc_cmp"),
+                "<" => _builder.BuildICmp(pred, tailVal, compConstant, "sc_cmp"),
+                "==" => _builder.BuildICmp(pred, tailVal, compConstant, "sc_cmp"),
+                _ => _builder.BuildICmp(pred, tailVal, compConstant, "sc_cmp")
+            };
+            var tailByte = _builder.BuildZExt(scalarBit, i8, "tail_byte");
+            var tailMaskPtr = _builder.BuildGEP2(i8, selectionMaskAlloca, new[] { tIdx }, "tail_mask_gep");
+            _builder.BuildStore(tailByte, tailMaskPtr);
+
+            var tcMatch = _builder.BuildLoad2(i64, matchCountAlloca, "t_match");
+            _builder.BuildStore(_builder.BuildAdd(tcMatch, _builder.BuildZExt(scalarBit, i64)), matchCountAlloca);
+            _builder.BuildStore(_builder.BuildAdd(tIdx, LLVMValueRef.CreateConstInt(i64, 1)), indexAlloca);
+            _builder.BuildBr(tailCondBB);
+
+            // -------------------------------------------------------------------------
+            // COMPACTION STRATEGY SUBROUTINE JUMP
+            // -------------------------------------------------------------------------
+            _builder.PositionAtEnd(compactBB);
+            LLVMValueRef finalizedMatchCount = _builder.BuildLoad2(i64, matchCountAlloca, "final_matches");
+
+            var result = CompactColumnsUsingMask(dfPtr, dataframeType, arrayHeaderType, selectionMaskAlloca, finalizedMatchCount, totalRows, dfType);
+
+            // Clean up mask buffer memory allocations
+            var freeFunc = GetOrDeclareFree();
+            _builder.BuildCall2(ctx.VoidType, freeFunc, new[] { selectionMaskAlloca });
+
+            return result;
+        }
+
+        // --- FIXED SUBROUTINE REMOVING ALL INTERNAL CONDITIONAL REALLOC ROADBLOCKS ---
+        private LLVMValueRef CompactColumnsUsingMask(LLVMValueRef srcDfPtr, LLVMTypeRef dataframeType, LLVMTypeRef arrayHeaderType, LLVMValueRef selectionMaskPtr, LLVMValueRef matchCount, LLVMValueRef originalRowCount, DataframeType dfType)
+        {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8 = ctx.Int8Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
+            var mallocFunc = GetOrDeclareMalloc();
+            var reallocFunc = GetOrDeclareRealloc();
+
+            // 1. Setup Result Dataframe Object Instance Shell
+            var destDfPtr = _builder.BuildMalloc(dataframeType, "vector_dest_df");
+
+            var srcColsPtr = _builder.BuildStructGEP2(dataframeType, srcDfPtr, 0, "src_cols");
+            var destColsPtr = _builder.BuildStructGEP2(dataframeType, destDfPtr, 0, "dest_cols");
+            _builder.BuildStore(_builder.BuildLoad2(i8Ptr, srcColsPtr), destColsPtr);
+
+            var srcTypesPtr = _builder.BuildStructGEP2(dataframeType, srcDfPtr, 2, "src_types");
+            var destTypesPtr = _builder.BuildStructGEP2(dataframeType, destDfPtr, 2, "dest_types");
+            _builder.BuildStore(_builder.BuildLoad2(i8Ptr, srcTypesPtr), destTypesPtr);
+
+            var destRowCountPtr = _builder.BuildStructGEP2(dataframeType, destDfPtr, 3, "dest_row_count");
+            _builder.BuildStore(matchCount, destRowCountPtr);
+
+            int totalColumns = dfType.ColumnNames.Count;
+            var columnBuffersHeaderAlloca = _builder.BuildMalloc(LLVMTypeRef.CreateArray(arrayHeaderType, (uint)totalColumns), "dest_cols_headers");
+            var columnBuffersHeaderPtr = _builder.BuildBitCast(columnBuffersHeaderAlloca, LLVMTypeRef.CreatePointer(arrayHeaderType, 0));
+
+            var destDataHeaderPtr = _builder.BuildMalloc(arrayHeaderType, "dest_data_header");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)totalColumns), _builder.BuildStructGEP2(arrayHeaderType, destDataHeaderPtr, 0));
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)totalColumns), _builder.BuildStructGEP2(arrayHeaderType, destDataHeaderPtr, 1));
+            _builder.BuildStore(_builder.BuildBitCast(columnBuffersHeaderPtr, i8Ptr), _builder.BuildStructGEP2(arrayHeaderType, destDataHeaderPtr, 2));
+
+            var destDataFieldPtr = _builder.BuildStructGEP2(dataframeType, destDfPtr, 1, "dest_data_field");
+            _builder.BuildStore(destDataHeaderPtr, destDataFieldPtr);
+
+            var srcDataPtrsPtr = _builder.BuildStructGEP2(dataframeType, srcDfPtr, 1, "src_data_ptrs");
+            var srcColumnHeaderArrayPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), srcDataPtrsPtr, "src_header_ptr");
+            var srcDataPtrsDataPtr = _builder.BuildStructGEP2(arrayHeaderType, srcColumnHeaderArrayPtr, 2, "src_data_ptrs_data");
+            var srcColumnBuffersArrayRaw = _builder.BuildLoad2(i8Ptr, srcDataPtrsDataPtr, "src_ptrs_raw");
+            var srcColumnBuffersArray = _builder.BuildBitCast(srcColumnBuffersArrayRaw, LLVMTypeRef.CreatePointer(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), 0));
+
+            // 2. Loop Through and Compact Every Dataframe Vector Column Separately
+            for (int colIdx = 0; colIdx < totalColumns; colIdx++)
+            {
+                var colIndexVal = LLVMValueRef.CreateConstInt(i64, (ulong)colIdx);
+                var srcColHeaderPtrPtr = _builder.BuildGEP2(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), srcColumnBuffersArray, new[] { colIndexVal }, "src_col_ptr_ptr");
+                var srcColHeaderPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(arrayHeaderType, 0), srcColHeaderPtrPtr, "src_col_header");
+
+                var srcColDataPtrPtr = _builder.BuildStructGEP2(arrayHeaderType, srcColHeaderPtr, 2, "src_col_data_ptr_ptr");
+                var srcColDataRaw = _builder.BuildLoad2(i8Ptr, srcColDataPtrPtr, "src_col_data_raw");
+
+                // Determine target stride data sizes matching types
+                var currentType = dfType.DataTypes[colIdx];
+                var elementSize = (ulong)(currentType is IntType || currentType is FloatType ? 8 : 1);
+                var elementSizeVal = LLVMValueRef.CreateConstInt(i64, elementSize);
+                var itemLLVMType = currentType is IntType || currentType is FloatType ? i64 : i8;
+
+                // --- STRATEGY 2: INITIAL MAX-CAPACITY PRE-ALLOCATION PHASE ---
+                // Pre-allocate matching bounds to worst-case original row size lengths up front
+                var preAllocByteSize = _builder.BuildMul(originalRowCount, elementSizeVal, "pre_alloc_size");
+                var destColDataRaw = _builder.BuildCall2(_mallocType, mallocFunc, new[] { preAllocByteSize }, "dest_col_raw_init");
+
+                // Track independent target layout write positions using scalar counters
+                var writeIdxAlloca = _builder.BuildAlloca(i64, $"write_idx_col_{colIdx}");
+                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), writeIdxAlloca);
+
+                var compLoopIdxAlloca = _builder.BuildAlloca(i64, $"comp_loop_idx_{colIdx}");
+                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), compLoopIdxAlloca);
+
+                var func = _builder.InsertBlock.Parent;
+                var compCondBB = ctx.AppendBasicBlock(func, $"comp_cond_{colIdx}");
+                var compBodyBB = ctx.AppendBasicBlock(func, $"comp_body_{colIdx}");
+                var compStoreBB = ctx.AppendBasicBlock(func, $"comp_store_{colIdx}");
+                var compStepBB = ctx.AppendBasicBlock(func, $"comp_step_{colIdx}");
+                var compEndBB = ctx.AppendBasicBlock(func, $"comp_end_{colIdx}");
+
+                _builder.BuildBr(compCondBB);
+
+                // Check iteration condition ranges
+                _builder.PositionAtEnd(compCondBB);
+                var cIdx = _builder.BuildLoad2(i64, compLoopIdxAlloca, "c_idx");
+                var isCompGo = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, cIdx, originalRowCount, "is_comp_go");
+                _builder.BuildCondBr(isCompGo, compBodyBB, compEndBB);
+
+                // Verify item mask parameters match criteria requirements
+                _builder.PositionAtEnd(compBodyBB);
+                var maskElemPtr = _builder.BuildGEP2(i8, selectionMaskPtr, new[] { cIdx }, "mask_elem_gep");
+                var maskVal = _builder.BuildLoad2(i8, maskElemPtr, "mask_val");
+                var isRowMatched = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE, maskVal, LLVMValueRef.CreateConstInt(i8, 0), "is_matched");
+                _builder.BuildCondBr(isRowMatched, compStoreBB, compStepBB);
+
+                // --- STREAMLINED TARGET ELEMENT WRITE ---
+                // Fully clean and linearly structured vector storage
+                _builder.PositionAtEnd(compStoreBB);
+                var wIdx = _builder.BuildLoad2(i64, writeIdxAlloca, "w_idx");
+
+                var srcElementGEP = _builder.BuildGEP2(itemLLVMType, srcColDataRaw, new[] { cIdx }, "src_el_gep");
+                var loadedElementValue = _builder.BuildLoad2(itemLLVMType, srcElementGEP, "el_val");
+
+                var destElementGEP = _builder.BuildGEP2(itemLLVMType, destColDataRaw, new[] { wIdx }, "dest_el_gep");
+                _builder.BuildStore(loadedElementValue, destElementGEP);
+
+                var nextWIdx = _builder.BuildAdd(wIdx, LLVMValueRef.CreateConstInt(i64, 1), "next_w_idx");
+                _builder.BuildStore(nextWIdx, writeIdxAlloca);
+                _builder.BuildBr(compStepBB);
+
+                // Increment tracker indices
+                _builder.PositionAtEnd(compStepBB);
+                var nextCIdx = _builder.BuildAdd(cIdx, LLVMValueRef.CreateConstInt(i64, 1), "next_c_idx");
+                _builder.BuildStore(nextCIdx, compLoopIdxAlloca);
+                _builder.BuildBr(compCondBB);
+
+                // --- STRATEGY 2: FINAL POST-LOOP REALLOC TRUNCATION PHASE ---
+                _builder.PositionAtEnd(compEndBB);
+                var finalColumnBytesCount = _builder.BuildMul(matchCount, elementSizeVal, "final_bytes");
+
+                // Truncate memory allocations down to the actual tracked length of matching rows found
+                var truncatedColDataRaw = _builder.BuildCall2(_reallocType, reallocFunc, new[] { destColDataRaw, finalColumnBytesCount }, "truncated_col_raw");
+
+                // Assign details to the destination column headers
+                var destHeaderGEP = _builder.BuildGEP2(arrayHeaderType, columnBuffersHeaderPtr, new[] { colIndexVal }, "dest_head_gep");
+                _builder.BuildStore(matchCount, _builder.BuildStructGEP2(arrayHeaderType, destHeaderGEP, 0, "len"));
+                _builder.BuildStore(matchCount, _builder.BuildStructGEP2(arrayHeaderType, destHeaderGEP, 1, "cap"));
+                _builder.BuildStore(truncatedColDataRaw, _builder.BuildStructGEP2(arrayHeaderType, destHeaderGEP, 2, "data"));
+            }
+
+            return destDfPtr;
+        }
+
+        private LLVMValueRef GetOrDeclareFree()
+        {
+            var ctx = _module.Context;
+            var freeFunc = _module.GetNamedFunction("free");
+            if (freeFunc.Handle == IntPtr.Zero)
+            {
+                var freeType = LLVMTypeRef.CreateFunction(ctx.VoidType, new[] { LLVMTypeRef.CreatePointer(ctx.Int8Type, 0) }, false);
+                freeFunc = _module.AddFunction("free", freeType);
+            }
+            return freeFunc;
+        }
+
+
+
 
         private SequenceNode BuildWhereDataframe(WhereNode expr, DataframeType dfType, string iVar, string resultVar)
         {
@@ -4762,6 +5149,36 @@ namespace MyCompiler
 
         public LLVMValueRef VisitSum(SumNode expr)
         {
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+
+            // --- OPTIMIZED PATH: EXPLICIT SIMD VECTORIZATION FOR FLOAT ARRAYS ---
+            if (expr.ArrayExpression.Type is ArrayType arrType && arrType.ElementType is FloatType)
+            {
+                // 1. Visit the array expression to get the headerRaw pointer structure address
+                LLVMValueRef headerRaw = Visit(expr.ArrayExpression);
+
+                // 2. Extract length and the raw pointer out of your unmanaged ArrayObject fields
+                // Field index 0 = length, Field index 2 = data pointer
+                var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0, "len_ptr");
+                var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2, "data_ptr_ptr");
+
+                LLVMValueRef arrayLength = _builder.BuildLoad2(i64, lenPtr, "array_len");
+                LLVMValueRef dataRaw = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), dataPtrPtr, "data_raw");
+
+                // 3. Cast data pointer from i8* to a typed double* pointer
+                var typedDataPtr = _builder.BuildBitCast(
+                    dataRaw,
+                    LLVMTypeRef.CreatePointer(ctx.DoubleType, 0),
+                    "typed_double_data_ptr"
+                );
+
+                // 4. Generate the optimized SIMD basic block logic loops
+                return EmitVectorizedArraySum(typedDataPtr, arrayLength);
+            }
+
+            // --- FALLBACK PATH: YOUR ORIGINAL SCALAR MACRO REWRITE ---
+            // (Kept cleanly intact for Int arrays or any other non-float types)
             var arrayVar = "__sum_array";
             var indexVar = "__sum_i";
             var sumVar = "__sum_val";
@@ -4779,7 +5196,6 @@ namespace MyCompiler
             var loopStep = new IncrementNode(new IdNode(indexVar));
             var currentElement = new IndexNode(new IdNode(arrayVar), new IdNode(indexVar));
 
-            // sum += currentElement
             var addAssign = new AssignNode(sumVar,
                 new BinaryOpNode(new IdNode(sumVar), "+", currentElement)
             );
@@ -4799,6 +5215,117 @@ namespace MyCompiler
 
             return VisitSequence(program);
         }
+
+        public LLVMValueRef EmitVectorizedArraySum(LLVMValueRef typedDataPtr, LLVMValueRef length)
+        {
+            var ctx = _module.Context;
+            var doubleType = ctx.DoubleType;
+            var i64 = ctx.Int64Type;
+            var i32 = ctx.Int32Type;
+
+            // Vector size configured to 4 elements (Matches a 256-bit wide AVX hardware register)
+            uint vectorWidth = 4;
+            var vectorType = LLVMTypeRef.CreateVector(doubleType, vectorWidth);
+            var vectorPtrType = LLVMTypeRef.CreatePointer(vectorType, 0);
+
+            // 1. Alloca and initialize vector accumulator to zero vectors: [0.0, 0.0, 0.0, 0.0]
+            var vecAccumulatorAlloca = _builder.BuildAlloca(vectorType, "vec_accum_alloca");
+            var zeroScalar = LLVMValueRef.CreateConstReal(doubleType, 0.0);
+            var zeroVector = LLVMValueRef.CreateConstVector(Enumerable.Repeat(zeroScalar, (int)vectorWidth).ToArray());
+            _builder.BuildStore(zeroVector, vecAccumulatorAlloca);
+
+            // 2. Track index offset state on stack
+            var indexAlloca = _builder.BuildAlloca(i64, "loop_index_alloca");
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, 0), indexAlloca);
+
+            // 3. Compute vector limits boundary: endVectorIdx = length - (length % 4)
+            var vectorWidthVal = LLVMValueRef.CreateConstInt(i64, vectorWidth);
+            var remainder = _builder.BuildURem(length, vectorWidthVal, "vector_loop_rem");
+            var endVectorIdx = _builder.BuildSub(length, remainder, "end_vector_idx");
+
+            // 4. Declare our branch blocks
+            var func = _builder.InsertBlock.Parent;
+            var vecLoopCondBB = ctx.AppendBasicBlock(func, "vec_loop_cond");
+            var vecLoopBodyBB = ctx.AppendBasicBlock(func, "vec_loop_body");
+            var scalarTailCondBB = ctx.AppendBasicBlock(func, "scalar_tail_cond");
+            var scalarTailBodyBB = ctx.AppendBasicBlock(func, "scalar_tail_body");
+            var mergeBB = ctx.AppendBasicBlock(func, "reduction_merge");
+
+            _builder.BuildBr(vecLoopCondBB);
+
+            // --- A. VECTOR CONDITION ---
+            _builder.PositionAtEnd(vecLoopCondBB);
+            var currentIdx = _builder.BuildLoad2(i64, indexAlloca, "current_idx");
+            var isVecLoopGo = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, currentIdx, endVectorIdx, "cmp_vec_limit");
+            // FIXED: Changed from BuildBrCond to BuildCondBr
+            _builder.BuildCondBr(isVecLoopGo, vecLoopBodyBB, scalarTailCondBB);
+
+            // --- B. VECTOR LOOP BODY ---
+            _builder.PositionAtEnd(vecLoopBodyBB);
+
+            // GEP calculation gets us a scalar address offset pointer
+            var elementScalarPtr = _builder.BuildGEP2(doubleType, typedDataPtr, new[] { currentIdx }, "scalar_base_ptr");
+
+            // Bitcast pointer type from double* to vector-pointer chunk alignment (doubleX4*)
+            var vectorizedElementPtr = _builder.BuildBitCast(elementScalarPtr, vectorPtrType, "vector_bitcast_ptr");
+
+            // SIMD Load 4 items into processor registers in a single step
+            var loadedVectorChunk = _builder.BuildLoad2(vectorType, vectorizedElementPtr, "loaded_simd_chunk");
+
+            // Vector arithmetic parallel addition instruction
+            var pastVecAccum = _builder.BuildLoad2(vectorType, vecAccumulatorAlloca, "past_vec_accum");
+            var updatedVecAccum = _builder.BuildFAdd(pastVecAccum, loadedVectorChunk, "simd_fadd_result");
+            _builder.BuildStore(updatedVecAccum, vecAccumulatorAlloca);
+
+            // Increment index tracking offset forward by 4
+            var nextIdxVal = _builder.BuildAdd(currentIdx, vectorWidthVal, "advanced_idx");
+            _builder.BuildStore(nextIdxVal, indexAlloca);
+            _builder.BuildBr(vecLoopCondBB);
+
+            // --- C. HORIZONTAL REDUCTION & TAIL SETUP ---
+            _builder.PositionAtEnd(scalarTailCondBB);
+
+            var finalScalarSumAlloca = _builder.BuildAlloca(doubleType, "final_scalar_sum_alloca");
+            var compiledVectorResult = _builder.BuildLoad2(vectorType, vecAccumulatorAlloca, "compiled_vector_result");
+
+            // Flatten vector lanes out horizontally back into a scalar accumulator register sum
+            var horizontalSum = _builder.BuildExtractElement(compiledVectorResult, LLVMValueRef.CreateConstInt(i32, 0), "v_extract_0");
+            for (uint i = 1; i < vectorWidth; i++)
+            {
+                var extractedElement = _builder.BuildExtractElement(compiledVectorResult, LLVMValueRef.CreateConstInt(i32, i), $"v_extract_{i}");
+                horizontalSum = _builder.BuildFAdd(horizontalSum, extractedElement, $"h_sum_step_{i}");
+            }
+            _builder.BuildStore(horizontalSum, finalScalarSumAlloca);
+
+            var postVecIdx = _builder.BuildLoad2(i64, indexAlloca, "post_vec_idx");
+            var isTailLoopGo = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, postVecIdx, length, "cmp_tail_limit");
+            // FIXED: Changed from BuildBrCond to BuildCondBr
+            _builder.BuildCondBr(isTailLoopGo, scalarTailBodyBB, mergeBB);
+
+            // --- D. SCALAR TAIL LOOP (Processes any remainder array items step-by-step) ---
+            _builder.PositionAtEnd(scalarTailBodyBB);
+
+            var tailIdx = _builder.BuildLoad2(i64, indexAlloca, "tail_idx");
+            var tailScalarPtr = _builder.BuildGEP2(doubleType, typedDataPtr, new[] { tailIdx }, "tail_scalar_ptr");
+            var singleScalarElement = _builder.BuildLoad2(doubleType, tailScalarPtr, "single_scalar_element");
+
+            var activeScalarSum = _builder.BuildLoad2(doubleType, finalScalarSumAlloca, "active_scalar_sum");
+            var updatedScalarSum = _builder.BuildFAdd(activeScalarSum, singleScalarElement, "scalar_tail_fadd");
+            _builder.BuildStore(updatedScalarSum, finalScalarSumAlloca);
+
+            var nextTailIdx = _builder.BuildAdd(tailIdx, LLVMValueRef.CreateConstInt(i64, 1), "next_tail_idx");
+            _builder.BuildStore(nextTailIdx, indexAlloca);
+
+            var reCheckTailIdx = _builder.BuildLoad2(i64, indexAlloca, "recheck_tail_idx");
+            var isTailLoopStillGo = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, reCheckTailIdx, length, "cmp_tail_recheck");
+            // FIXED: Changed from BuildBrCond to BuildCondBr
+            _builder.BuildCondBr(isTailLoopStillGo, scalarTailBodyBB, mergeBB);
+
+            // --- E. MERGE OUTPUT BLOCK ---
+            _builder.PositionAtEnd(mergeBB);
+            return _builder.BuildLoad2(doubleType, finalScalarSumAlloca, "final_vectorized_sum");
+        }
+
 
         public LLVMValueRef VisitId(IdNode expr)
         {
@@ -5556,16 +6083,10 @@ namespace MyCompiler
 
             int colCount = columns.Elements.Count;
 
-            var columnArrayHeaders =
-                new List<LLVMValueRef>();
+            var columnArrayHeaders = new List<LLVMValueRef>();
 
-            // =====================================================
-            // TRANSPOSE ROWS -> COLUMNS
-            // =====================================================
-
-            var columnData =
-                new List<List<ExpressionNode>>();
-
+            // Transpose Rows to Columns
+            var columnData = new List<List<ExpressionNode>>();
             for (int c = 0; c < colCount; c++)
             {
                 columnData.Add(new List<ExpressionNode>());
@@ -5578,32 +6099,19 @@ namespace MyCompiler
 
                 for (int c = 0; c < colCount; c++)
                 {
-                    ExpressionNode value =
-                        c < row.Elements.Count
-                            ? row.Elements[c]
-                            : new NullNode();
-
+                    ExpressionNode value = c < row.Elements.Count ? row.Elements[c] : new NullNode();
                     columnData[c].Add(value);
                 }
             }
 
-            // =====================================================
-            // TYPE INFERENCE
-            // =====================================================
-
-            Type[] inferredTypes =
-                new Type[colCount];
-
+            // Type Inference
+            Type[] inferredTypes = new Type[colCount];
             for (int c = 0; c < colCount; c++)
             {
-                inferredTypes[c] =
-                    InferColumnType(columnData[c]);
+                inferredTypes[c] = InferColumnType(columnData[c]);
             }
 
-            // =====================================================
-            // BUILD COLUMN ARRAYS
-            // =====================================================
-
+            // Build Column Arrays
             for (int c = 0; c < colCount; c++)
             {
                 var colArray = new ArrayNode(columnData[c])
@@ -5611,218 +6119,63 @@ namespace MyCompiler
                     ElementType = inferredTypes[c]
                 };
 
-                columnArrayHeaders.Add(
-                    VisitArray(colArray)
-                );
+                columnArrayHeaders.Add(VisitArray(colArray));
             }
 
-            // =====================================================
-            // BUILD COLUMN POINTER ARRAY
-            // =====================================================
-
+            // Build Column Pointer Array
             ulong arrayHeaderSize = 24;
+            var dataHeader = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, arrayHeaderSize) }, "data_header");
 
-            var dataHeader =
-                _builder.BuildCall2(
-                    _mallocType,
-                    mallocFunc,
-                    new[]
-                    {
-                LLVMValueRef.CreateConstInt(
-                    i64,
-                    arrayHeaderSize
-                )
-                    },
-                    "data_header"
-                );
-
-            ulong ptrSize =
-                (ulong)IntPtr.Size;
-
-            ulong dataBufferSize =
-                (ulong)colCount * ptrSize;
-
-            var dataBuffer =
-                _builder.BuildCall2(
-                    _mallocType,
-                    mallocFunc,
-                    new[]
-                    {
-                LLVMValueRef.CreateConstInt(
-                    i64,
-                    dataBufferSize
-                )
-                    },
-                    "data_buffer"
-                );
+            ulong ptrSize = (ulong)IntPtr.Size;
+            ulong dataBufferSize = (ulong)colCount * ptrSize;
+            var dataBuffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, dataBufferSize) }, "data_buffer");
 
             // header.length
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(
-                    i64,
-                    (ulong)colCount
-                ),
-                _builder.BuildStructGEP2(
-                    _arrayStruct,
-                    dataHeader,
-                    0
-                )
-            );
-
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)colCount), _builder.BuildStructGEP2(_arrayStruct, dataHeader, 0));
             // header.capacity
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(
-                    i64,
-                    (ulong)colCount
-                ),
-                _builder.BuildStructGEP2(
-                    _arrayStruct,
-                    dataHeader,
-                    1
-                )
-            );
-
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)colCount), _builder.BuildStructGEP2(_arrayStruct, dataHeader, 1));
             // header.data
-            _builder.BuildStore(
-                dataBuffer,
-                _builder.BuildStructGEP2(
-                    _arrayStruct,
-                    dataHeader,
-                    2
-                )
-            );
+            _builder.BuildStore(dataBuffer, _builder.BuildStructGEP2(_arrayStruct, dataHeader, 2));
 
-            // =====================================================
-            // STORE COLUMN POINTERS
-            // =====================================================
-
-            var ptrArrayType =
-                LLVMTypeRef.CreatePointer(i8Ptr, 0);
-
-            var typedBuffer =
-                _builder.BuildBitCast(
-                    dataBuffer,
-                    ptrArrayType,
-                    "typed_buffer"
-                );
+            // Store Column Pointers
+            var ptrArrayType = LLVMTypeRef.CreatePointer(i8Ptr, 0);
+            var typedBuffer = _builder.BuildBitCast(dataBuffer, ptrArrayType, "typed_buffer");
 
             for (int i = 0; i < colCount; i++)
             {
-                var gep =
-                    _builder.BuildGEP2(
-                        i8Ptr,
-                        typedBuffer,
-                        new[]
-                        {
-                    LLVMValueRef.CreateConstInt(
-                        i64,
-                        (ulong)i
-                    )
-                        },
-                        "data_gep"
-                    );
-
-                _builder.BuildStore(
-                    _builder.BuildBitCast(
-                        columnArrayHeaders[i],
-                        i8Ptr,
-                        "col_cast"
-                    ),
-                    gep
-                );
+                var gep = _builder.BuildGEP2(i8Ptr, typedBuffer, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, "data_gep");
+                _builder.BuildStore(_builder.BuildBitCast(columnArrayHeaders[i], i8Ptr, "col_cast"), gep);
             }
 
-            // =====================================================
-            // FINAL DATAFRAME
-            // =====================================================
+            // Final Dataframe Instance
+            var columnsPtr = VisitArray(columns);
+            var typesPtr = VisitArray(types);
+            var dfType = GetOrCreateDataframeType();
+            var dfPtr = _builder.BuildMalloc(dfType, "df_instance");
 
-            var columnsPtr =
-                VisitArray(columns);
+            _builder.BuildStore(columnsPtr, _builder.BuildStructGEP2(dfType, dfPtr, 0));
+            _builder.BuildStore(dataHeader, _builder.BuildStructGEP2(dfType, dfPtr, 1));
+            _builder.BuildStore(typesPtr, _builder.BuildStructGEP2(dfType, dfPtr, 2));
 
-            var typesPtr =
-                VisitArray(types);
-
-            var dfType =
-                GetOrCreateDataframeType();
-
-            var dfPtr =
-                _builder.BuildMalloc(
-                    dfType,
-                    "df_instance"
-                );
-
-            // columns
-            _builder.BuildStore(
-                columnsPtr,
-                _builder.BuildStructGEP2(
-                    dfType,
-                    dfPtr,
-                    0
-                )
-            );
-
-            // data
-            _builder.BuildStore(
-                dataHeader,
-                _builder.BuildStructGEP2(
-                    dfType,
-                    dfPtr,
-                    1
-                )
-            );
-
-            // types
-            _builder.BuildStore(
-                typesPtr,
-                _builder.BuildStructGEP2(
-                    dfType,
-                    dfPtr,
-                    2
-                )
-            );
-
-            // row count
-            ulong rowCount =
-                (ulong)dataNode.Elements.Count;
-
-            _builder.BuildStore(
-                LLVMValueRef.CreateConstInt(
-                    i64,
-                    rowCount
-                ),
-                _builder.BuildStructGEP2(
-                    dfType,
-                    dfPtr,
-                    3
-                )
-            );
+            ulong rowCount = (ulong)dataNode.Elements.Count;
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, rowCount), _builder.BuildStructGEP2(dfType, dfPtr, 3));
 
             return dfPtr;
         }
-
 
         private Type InferColumnType(List<ExpressionNode> values)
         {
             foreach (var v in values)
             {
-                if (v is NumberNode)
-                    return new IntType();
-
-                if (v is FloatNode)
-                    return new FloatType();
-
-                if (v is BooleanNode)
-                    return new BoolType();
-
-                if (v is StringNode)
-                    return new StringType();
-
-                if (v is TypeLiteralNode tp)
-                    return InferTypeFromString(tp.TypeNode.Name);
+                if (v is NumberNode) return new IntType();
+                if (v is FloatNode) return new FloatType();
+                if (v is BooleanNode) return new BoolType();
+                if (v is StringNode) return new StringType();
+                if (v is TypeLiteralNode tp) return InferTypeFromString(tp.TypeNode.Name);
             }
-
-            return new StringType(); // fallback
+            return new StringType();
         }
+
 
         public LLVMValueRef VisitDataframe_works_but_cant_do_many_columns(DataframeNode expr)
         {
