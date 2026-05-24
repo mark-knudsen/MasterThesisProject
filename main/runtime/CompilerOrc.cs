@@ -120,7 +120,7 @@ namespace MyCompiler
                     else if (typeCode == 'B')
                     {
                         bool val = rawValue.ToLower() == "true" || rawValue == "1";
-                        Marshal.WriteInt64(recordBuffer, offset, val ? 1 : 0);
+                        Marshal.WriteByte(recordBuffer, offset, val ? (byte)1 : (byte)0);
                     }
                     else if (typeCode == 'S')
                     {
@@ -1060,7 +1060,7 @@ namespace MyCompiler
                 else if (fieldType is BoolType)
                 {
                     // We store bools as 64-bit 0 or 1 in ReadCsvInternal
-                    result.Add(Marshal.ReadInt64(recordPtr, offset) != 0);
+                    result.Add(Marshal.ReadByte(recordPtr, offset) != 0);
                 }
                 else if (fieldType is StringType)
                 {
@@ -2305,8 +2305,8 @@ namespace MyCompiler
         // syntax
         // r + {x: 5, y: 3}                          // should return a record with added fields x and y
         // x.map(d=> d.name + "Smith")               // should return an array
-        // x.map(d=> d + {x: 5, y: 3})               // should return a dataframe with added columns x and y
-        // x.map(d=> d + {name: d.name + "smith"})   // should return a dataframe with added columns x and y
+        // x.map(d=> d + {x= 5, y= 3, z= "hi", cool3= false})               // should return a dataframe with added columns x and y
+        // x.map(d=> d + {name= d.name + "smith"})   // should return a dataframe with added columns x and y
 
         // {x:5}+{y:4} = {x:5, y:4}
         // {x:5}+{x:4} = {x:4}
@@ -2319,7 +2319,7 @@ namespace MyCompiler
         // foreach(item in x) {print(item)} // but this works fine
         // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
 
-        public LLVMValueRef VisitPrint(PrintNode expr)
+        public LLVMValueRef VisitPrint(PrintNode expr) 
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
@@ -2327,10 +2327,15 @@ namespace MyCompiler
         // x=dataframe({name: string, age: int})
         // x=dataframe({name: string, age: int}, [{name= "dan", age= 30}, {name= "alice", age= 25}])
         // x=dataframe({name: string, age: int}, rows=[{name: "dan", age: 30}, {name: "alice", age: 25}])
+        // x=dataframe({name: string, age: int, cool: bool}, rows=[{name= "dan", age= 30, cool= true}, {name= "alice", age= 25, cool= false}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})
 
         // x.add({name: "Hary potter2", age: 201})
+        // x.add({name="bob",age=5,hasJob=true,savings=1.1})
+        // x.add({name="bob",age=5,hasJob=false,savings=1.1})
+        // x.add({name="bob",age=5,cool=false})
+        // x.add({name="bob",age=5,cool=true})
         // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
         // for(i=0; i<50; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
@@ -2340,10 +2345,12 @@ namespace MyCompiler
         // for(i=0; i<520000; i++) x.addRange([{name="voldemort", age=80}, {name="dumbledore", age=70}, {name="MERLIN", age=101}])
 
         // x.map(d => d.age + 100)
+        // x.map(d => d+ {power= d.age + 100}) // it creates a new column with the name item1
         // x.where(d=> d.age > 50)
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
+        // x.where(d=> d.age == 38 or d.age == 71)
 
         // x=read_csv("CSV/test.csv")
 
@@ -2552,42 +2559,26 @@ namespace MyCompiler
             var currentRowVar = "__current_row";
             var dfType = (DataframeType)expr.Type;
 
-            // 1. Assign Source Dataframe
+            // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
 
-            // 2. Capture source array length to prevent heap reallocations
+            // 2. Capture length
             var srcLength = new LengthNode(new IdNode(srcVar));
             srcLength.SetType(new IntType());
 
-            // 3. Rebuild Column Names as explicit Expression String nodes
+            // 3. Initialize Result Dataframe with Capacity
             var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
+            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
 
-            // 4. Rebuild explicit Type Literals to pass your Type Checker's 'columns' + 'type' verification
-            var typeLiterals = new List<ExpressionNode>();
-            foreach (var dataType in dfType.DataTypes)
-            {
-                ExpressionNode typeLit = dataType switch
-                {
-                    IntType => new TypeLiteralNode(new TypeNode("int")),
-                    FloatType => new TypeLiteralNode(new TypeNode("float")),
-                    BoolType => new TypeLiteralNode(new TypeNode("bool")),
-                    StringType => new TypeLiteralNode(new TypeNode("string")),
-                    _ => throw new Exception($"Unknown data type mapping for dataframe compilation: {dataType}")
-                };
-                typeLiterals.Add(typeLit);
-            }
-            var typesArrayNode = new ArrayNode(typeLiterals);
-
-            // This array acts as the raw backing data array for our accumulated rows
+            // Passing srcLength to ArrayNode is the key to stopping reallocs
             var rowsArray = new ArrayNode(new List<ExpressionNode>());
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
-            // 5. Construct DataframeNode providing BOTH parameters required by Step 2 of your Type Checker
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-        new NamedArgumentNode("columns", new ArrayNode(columns)),
-        new NamedArgumentNode("type", typesArrayNode), // Satisfies the Type Checker constraint!
-        new NamedArgumentNode("rows", rowsArray)       // Passes empty rows storage array
-    });
+                new NamedArgumentNode("columns", new ArrayNode(columns)),
+                new NamedArgumentNode("rows", rowsArray),
+                new NamedArgumentNode("type", new ArrayNode(dummyTypes))
+            });
             dfConstructor.SetType(dfType);
 
             program.Statements.Add(new AssignNode(resVar, dfConstructor));
@@ -2596,37 +2587,22 @@ namespace MyCompiler
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVar);
 
-            // 6. Fetch row loop variant: currentRowVar = srcVar[iVar]
+            // 4. Fetch row: currentRow = src[i]
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
             loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
 
-            // 7. Dynamic Transformation Replacement Logic
-            // If it's a select statement lowering, we need to make sure the target fields bind correctly
-            ExpressionNode transformTarget = expr.TransformExpr;
-            if (transformTarget is ArrayNode arrNode && expr.IteratorId.Name == "__show_x")
-            {
-                // For lowered select nodes, map raw identifiers (like 'age') to point to fields on our row variant
-                var mappedElements = arrNode.Elements.Select(element =>
-                {
-                    if (element is IdNode idNode)
-                    {
-                        return (ExpressionNode)new FieldNode(replacementNode, idNode.Name);
-                    }
-                    return element;
-                }).ToList();
-                transformTarget = new ArrayNode(mappedElements);
-            }
-
+            // 5. Transformation Logic
             ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
-                transformTarget,
+                expr.TransformExpr,
                 expr.IteratorId.Name,
                 replacementNode
             );
 
-            // 8. Append transformed element directly into the result reference
+            // Because we initialized 'rowsArray' with 'srcLength',
+            // the 'grow' block in the IR will exist but will NEVER be executed.
             loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
 
-            // 9. Loop Controls bound to structural conditions
+            // 7. Loop Setup
             var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
             var step = new IncrementNode(new IdNode(iVar));
             program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
@@ -2634,9 +2610,6 @@ namespace MyCompiler
             program.Statements.Add(new IdNode(resVar));
             return program;
         }
-
-
-
 
         // Helper to check if a node tree uses a specific variable
         private bool IsPure(Node node)
@@ -3042,7 +3015,7 @@ namespace MyCompiler
         private uint GetTypeSize(Type type)
         {
             if (type is IntType || type is FloatType) return 8;
-            if (type is BoolType) return 1;
+            if (type is BoolType) return 1; // We use 1 byte for bools to simplify memory management and alignment zzzzz
             if (type is StringType || type is ArrayType || type is RecordType || type is DataframeType) return 8; // pointer size
             throw new Exception("Unknown type for size calculation: " + type);
         }
@@ -3119,7 +3092,7 @@ namespace MyCompiler
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
                 var elementPtr = _builder.BuildGEP2(elementType, typedDataPtr, new[] { idx }, "elem_ptr");
-                _builder.BuildStore(val, elementPtr).SetAlignment(8);
+                _builder.BuildStore(val, elementPtr).SetAlignment(elementSize);
             }
 
             return headerRaw;
@@ -3391,6 +3364,7 @@ namespace MyCompiler
 
         private LLVMTypeRef GetLLVMType(Type type)
         {
+            System.Console.WriteLine("yo we getting the LLVM type for type: " + type);
             var ctx = _module.Context;
             return type switch
             {
@@ -3523,8 +3497,10 @@ namespace MyCompiler
                 valToStore = _builder.BuildBitCast(valueToAdd, llvmElementType, "ref_cast");
             }
 
+            var d = GetTypeSize(elementType);
+
             var store = _builder.BuildStore(valToStore, targetPtr);
-            store.SetAlignment(8);
+            store.SetAlignment(d);
 
             // 5. Increment length
             var newLen = _builder.BuildAdd(length, LLVMValueRef.CreateConstInt(i64, 1), "new_len");
@@ -4224,7 +4200,6 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i32 = ctx.Int32Type;
-            var i64 = ctx.Int64Type;
             var recordType = (RecordType)expr.Type;
 
             // 1. Get the struct definition for THIS module
@@ -4269,12 +4244,12 @@ namespace MyCompiler
                 return 8;
 
             if (type == ctx.Int8Type) // for bools, we store as i64 for simplicity, so alignment is 8
-                return 8;
+                return 1;
 
             if (type.Kind == LLVMTypeKind.LLVMPointerTypeKind)
                 return 8;
 
-            return 4;
+            return 8;
         }
 
         public LLVMValueRef VisitRecordFieldAssign(RecordFieldAssignNode expr)
@@ -4338,8 +4313,8 @@ namespace MyCompiler
                 if (expr.Type is BoolType)
                 {
                     // If you store bools as i64 in C#, load i64 and truncate to i1
-                    var i64Val = _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_bool_raw");
-                    return _builder.BuildIntCast(i64Val, ctx.Int8Type, $"val_{expr.IdField}");
+                    var i8Val = _builder.BuildLoad2(ctx.Int8Type, fieldSlotPtr, $"val_bool_raw");
+                    return _builder.BuildIntCast(i8Val, ctx.Int8Type, $"val_{expr.IdField}");
                 }
 
                 if (expr.Type is StringType)
@@ -5171,12 +5146,7 @@ namespace MyCompiler
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
         df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])
-  df5 = dataframe(
-            [{"Harry", 12},{"Lilly", 35}]
-            { name:string, age: int},
-        )
-df2 = dataframe( rows=[{"Alice", 25},{"Charlie", 22}], schema={name: string, age: int})
- df = dataframe({ name:sting, age: int}, [{"Harry", 12},{"Lilly", 35}]) 
+
         df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
         to_csv(df, "CSV/mytest.csv")
 
