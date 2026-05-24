@@ -885,24 +885,19 @@ namespace MyCompiler
 
         public Type VisitReadCsv(ReadCsvNode expr)
         {
-            Visit(expr.FileNameExpr);
+            // Typecheck the filename expression (must evaluate to a string)
+            Type nameType = Visit(expr.FileNameExpr);
+            if (nameType is not StringType)
+                throw new Exception("Typechecker Error: read_csv requires a string file path expression.");
 
-            if (expr.SchemaExpr == null)
-            {
-                System.Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
-                string path = (expr.FileNameExpr as StringNode).Value;
-                expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
-            }
-            else if (expr.SchemaExpr.Name != "schema")
-                throw new Exception("read_csv requires a 'schema' named argument");
 
-            Type schemaType = Visit(expr.SchemaExpr);
-
-            if (schemaType is RecordType recType)
+            Type schemaResult = Visit(expr.SchemaExpr);
+            if (schemaResult is RecordType recType)
             {
                 var names = recType.RecordFields.Select(f => f.Label).ToList();
                 var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
 
+                // Update field types
                 for (int i = 0; i < recType.RecordFields.Count; i++)
                 {
                     recType.RecordFields[i].Type = types[i];
@@ -913,8 +908,9 @@ namespace MyCompiler
                 return expr.Type;
             }
 
-            throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
+            throw new Exception($"read_csv requires a record template, but got {schemaResult?.GetType().Name}");
         }
+
 
         public Type VisitToCsv(ToCsvNode expr)
         {
