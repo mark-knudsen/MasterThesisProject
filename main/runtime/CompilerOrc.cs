@@ -73,7 +73,7 @@ namespace MyCompiler
             string path = Marshal.PtrToStringAnsi(pathPtr);
             if (!File.Exists(path))
             {
-                Console.WriteLine("no file in internale");
+                Console.WriteLine("no file in internal");
                 return IntPtr.Zero;
             }
 
