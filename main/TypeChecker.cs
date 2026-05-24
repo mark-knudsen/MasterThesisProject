@@ -734,7 +734,7 @@ namespace MyCompiler
                 Type transformType = Visit(expr.TransformExpr);
 
                 expr.TransformExpr.SetType(transformType);
-                System.Console.WriteLine("map transform type: " + transformType);
+                Console.WriteLine("map transform type: " + transformType);
 
                 // Record => Dataframe
                 if (transformType is RecordType rec)
@@ -889,7 +889,7 @@ namespace MyCompiler
 
             if (expr.SchemaExpr == null)
             {
-                System.Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
+                Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
                 string path = (expr.FileNameExpr as StringNode).Value;
                 expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
             }
@@ -1425,16 +1425,6 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        int IndexOf(IReadOnlyList<string> list, string value)
-        {
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (list[i] == value)
-                    return i;
-            }
-            return -1;
-        }
-
         public Type VisitColumns(ColumnsNode expr)
         {
             Visit(expr.DataframeExpression);
@@ -1468,6 +1458,17 @@ namespace MyCompiler
 
             node.SetType(sourceType); // df[start:end] returns a DataframeType
             return node.Type;
+        }
+
+        // NOT USED!
+        int IndexOf(IReadOnlyList<string> list, string value)
+        {
+            for (int i = 0; i < list.Count; i++)
+            {
+                if (list[i] == value)
+                    return i;
+            }
+            return -1;
         }
     }
 }

@@ -334,10 +334,11 @@ namespace MyCompiler
         {
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
-            System.Console.WriteLine("Creating MapNode with transform expression of type: " + transformExpr.GetType().Name);
+
+            //Console.WriteLine("Creating MapNode with transform expression of type: " + transformExpr.GetType().Name);
             if (transformExpr is ArrayNode arrayNode)
             {
-                System.Console.WriteLine("Map transform is an array with " + arrayNode.Elements.Count + " elements.");
+                //Console.WriteLine("Map transform is an array with " + arrayNode.Elements.Count + " elements.");
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
                 {

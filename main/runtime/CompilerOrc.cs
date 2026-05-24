@@ -1150,24 +1150,7 @@ namespace MyCompiler
             return objRaw;
         }
 
-        private ExpressionNode GetProgramResult(Node expr)
-        {
-            if (expr is SequenceNode seq)
-            {
-                foreach (var node in seq.Statements)
-                {
-                    if (node is ExpressionNode exp && !(node is PrintNode))
-                        return exp;
-                }
 
-                return null;
-            }
-
-            if (expr is ExpressionNode exp2 && !(expr is PrintNode))
-                return exp2;
-
-            return null;
-        }
 
         private Node GetLastExpression(Node expr)
         {
@@ -1286,7 +1269,7 @@ namespace MyCompiler
             // original body
             bodySeq.Statements.Add(expr.Body);
 
-            // 🔥 decide if we need write-back
+            // decide if we need write-back
             Type elementType = new NullType();
             if (expr.Source.Type is DataframeType df) elementType = df.RowType;
             else if (expr.Source.Type is ArrayType arr) elementType = arr.ElementType;
@@ -2319,7 +2302,7 @@ namespace MyCompiler
         // foreach(item in x) {print(item)} // but this works fine
         // for(i=0; i<50; i++) {print(i)} // BUG, this line can't run, it thinks it is a record node
 
-        public LLVMValueRef VisitPrint(PrintNode expr) 
+        public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
             return AddImplicitPrint(valueToPrint, expr.Expression.Type);
@@ -2405,8 +2388,8 @@ namespace MyCompiler
             var schemaRecord = new RecordNode(fields);
 
             var resultDf = new DataframeNode(new List<NamedArgumentNode> {
-        new NamedArgumentNode("schema", schemaRecord)
-    });
+                new NamedArgumentNode("schema", schemaRecord)
+            });
 
             var resultAssign = new AssignNode(resultVar, resultDf);
 
@@ -2418,14 +2401,14 @@ namespace MyCompiler
                 SkipBoundsCheck = true
             };
 
-            var predicate = ReplaceIterator(expr.Condition, expr.IteratorId.Name, current);
+            ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, current);
 
             var ifBody = new SequenceNode();
             ifBody.Statements.Add(new AddNode(new IdNode(resultVar), current));
 
             var loop = new ForLoopNode(indexInit, cond, step, new SequenceNode
             {
-                Statements = { new IfNode(predicate, ifBody) }
+                Statements = { new IfNode(ifCond, ifBody) }
             });
 
             return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVar) } };
@@ -3364,7 +3347,7 @@ namespace MyCompiler
 
         private LLVMTypeRef GetLLVMType(Type type)
         {
-            System.Console.WriteLine("yo we getting the LLVM type for type: " + type);
+            Console.WriteLine("yo we getting the LLVM type for type: " + type);
             var ctx = _module.Context;
             return type switch
             {
@@ -3725,25 +3708,6 @@ namespace MyCompiler
             return length;
         }
 
-        private LLVMValueRef GetArrayCapacity(LLVMValueRef arrayPtr)
-        {
-            var i64 = _module.Context.Int64Type;
-            // Capacity is index 1
-            var capacityGEP = _builder.BuildStructGEP2(GetOrCreateArrayType(), arrayPtr, 1, "cap_ptr");
-            var cap = _builder.BuildLoad2(i64, capacityGEP, "cap");
-            cap.SetAlignment(8);
-            return cap;
-        }
-
-        private LLVMValueRef GetArrayDataPtr(LLVMValueRef arrayPtr)
-        {
-            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
-            // Data pointer is index 2
-            var dataPtrGEP = _builder.BuildStructGEP2(GetOrCreateArrayType(), arrayPtr, 2, "data_ptr_ptr");
-            var data = _builder.BuildLoad2(i8Ptr, dataPtrGEP, "data_ptr");
-            data.SetAlignment(8);
-            return data;
-        }
 
         public LLVMValueRef VisitMin(MinNode expr)
         {
@@ -4579,6 +4543,25 @@ namespace MyCompiler
         }
 
         // Not used!
+        private ExpressionNode GetProgramResult(Node expr)
+        {
+            if (expr is SequenceNode seq)
+            {
+                foreach (var node in seq.Statements)
+                {
+                    if (node is ExpressionNode exp && !(node is PrintNode))
+                        return exp;
+                }
+
+                return null;
+            }
+
+            if (expr is ExpressionNode exp2 && !(expr is PrintNode))
+                return exp2;
+
+            return null;
+        }
+
         private LLVMTypeRef GetArrayPtrType()
         {
             return LLVMTypeRef.CreatePointer(GetOrCreateArrayType(), 0);
@@ -4649,76 +4632,6 @@ namespace MyCompiler
             // The name is used for semantic analysis and doesn't affect codegen directly.
             return Visit(expr.Value);
         }
-
-        // public LLVMValueRef VisitShowDataframe(ShowDataframeNode expr)
-        // {
-        //     var sourceType = expr.Source.Type as DataframeType;
-        //     var resultType = expr.Type as DataframeType;
-        //     var ctx = _module.Context;
-        //     var i64 = ctx.Int64Type;
-        //     var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-        //     // 1. Source Data
-        //     var sourceDfPtr = Visit(expr.Source);
-        //     var sourceRowsArrayHeader = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, sourceDfPtr, 1), "src_rows_ptr");
-        //     var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourceRowsArrayHeader, 0, "len_ptr");
-        //     var rowCount = _builder.BuildLoad2(i64, lenPtr, "row_count");
-
-        //     // 2. New Metadata (Cols and Types)
-        //     var newColsPtr = Visit(new ArrayNode(resultType.ColumnNames.Select(n => (ExpressionNode)new StringNode(n)).ToList()));
-        //     var datatypeNodes = resultType.DataTypes.Select(t => (ExpressionNode)new NumberNode(GetTypeByTag(t))).ToList();
-        //     var newDataTypesPtr = Visit(new ArrayNode(datatypeNodes));
-
-        //     // 3. Prepare Result Array
-        //     var resultArrayHeader = AllocateArrayHeader(rowCount);
-        //     var itSlot = _builder.BuildAlloca(i8Ptr, "$row_slot");
-
-        //     // 4. THE LOOP
-        //     BuildLoop(rowCount, (indexRef) =>
-        //     {
-        //         // Get source record
-        //         var sourceDataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_arrayStruct, sourceRowsArrayHeader, 2), "src_data");
-        //         var rowPtrPtr = _builder.BuildGEP2(i8Ptr, sourceDataPtr, new[] { indexRef });
-        //         var oldRecordPtr = _builder.BuildLoad2(i8Ptr, rowPtrPtr, "old_rec");
-
-        //         _builder.BuildStore(oldRecordPtr, itSlot);
-
-        //         // Update context so RecordFieldNode knows where to look
-        //         _context = _context.Add("$row", itSlot, null!, sourceType.RowType); // unsure again about the context.add in code gen
-        //         var rowId = new IdNode("$row");
-        //         rowId.SetType(sourceType.RowType);
-
-        //         // --- CRITICAL: Initialize list INSIDE the loop ---
-        //         var projectedValues = new List<LLVMValueRef>();
-
-        //         foreach (var colName in resultType.ColumnNames)
-        //         {
-        //             var fieldAccess = new FieldNode(rowId, colName);
-        //             var fType = sourceType.RowType.RecordFields.First(f => f.Label == colName).Type;
-        //             fieldAccess.SetType(fType);
-
-        //             // VisitRecordField now returns unboxed raw values (i64, double, or i8* for strings)
-        //             LLVMValueRef rawValue = VisitField(fieldAccess);
-        //             projectedValues.Add(rawValue);
-        //         }
-
-        //         // --- CRITICAL: Build record INSIDE the loop ---
-        //         // This ensures the malloc(size) is called with (3 * 8) = 24, not 0
-        //         var newRecordPtr = BuildRecordFromValues(resultType.RowType, projectedValues);
-
-        //         var resultDataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_arrayStruct, resultArrayHeader, 2), "res_data");
-        //         var resElemPtr = _builder.BuildGEP2(i8Ptr, resultDataPtr, new[] { indexRef });
-        //         _builder.BuildStore(newRecordPtr, resElemPtr);
-        //     });
-
-        //     // 5. Final Assembly
-        //     var dfPtr = _builder.BuildMalloc(_dataframeStruct, "df_show");
-        //     _builder.BuildStore(newColsPtr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 0));
-        //     _builder.BuildStore(resultArrayHeader, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1));
-        //     _builder.BuildStore(newDataTypesPtr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2));
-
-        //     return dfPtr;
-        // }
 
         private LLVMValueRef AllocateArrayHeader(LLVMValueRef count)
         {
@@ -5120,6 +5033,99 @@ namespace MyCompiler
 
             return newArrayPtr;
         }
+
+
+
+        // public LLVMValueRef VisitShowDataframe(ShowDataframeNode expr)
+        // {
+        //     var sourceType = expr.Source.Type as DataframeType;
+        //     var resultType = expr.Type as DataframeType;
+        //     var ctx = _module.Context;
+        //     var i64 = ctx.Int64Type;
+        //     var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+        //     // 1. Source Data
+        //     var sourceDfPtr = Visit(expr.Source);
+        //     var sourceRowsArrayHeader = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, sourceDfPtr, 1), "src_rows_ptr");
+        //     var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourceRowsArrayHeader, 0, "len_ptr");
+        //     var rowCount = _builder.BuildLoad2(i64, lenPtr, "row_count");
+
+        //     // 2. New Metadata (Cols and Types)
+        //     var newColsPtr = Visit(new ArrayNode(resultType.ColumnNames.Select(n => (ExpressionNode)new StringNode(n)).ToList()));
+        //     var datatypeNodes = resultType.DataTypes.Select(t => (ExpressionNode)new NumberNode(GetTypeByTag(t))).ToList();
+        //     var newDataTypesPtr = Visit(new ArrayNode(datatypeNodes));
+
+        //     // 3. Prepare Result Array
+        //     var resultArrayHeader = AllocateArrayHeader(rowCount);
+        //     var itSlot = _builder.BuildAlloca(i8Ptr, "$row_slot");
+
+        //     // 4. THE LOOP
+        //     BuildLoop(rowCount, (indexRef) =>
+        //     {
+        //         // Get source record
+        //         var sourceDataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_arrayStruct, sourceRowsArrayHeader, 2), "src_data");
+        //         var rowPtrPtr = _builder.BuildGEP2(i8Ptr, sourceDataPtr, new[] { indexRef });
+        //         var oldRecordPtr = _builder.BuildLoad2(i8Ptr, rowPtrPtr, "old_rec");
+
+        //         _builder.BuildStore(oldRecordPtr, itSlot);
+
+        //         // Update context so RecordFieldNode knows where to look
+        //         _context = _context.Add("$row", itSlot, null!, sourceType.RowType); // unsure again about the context.add in code gen
+        //         var rowId = new IdNode("$row");
+        //         rowId.SetType(sourceType.RowType);
+
+        //         // --- CRITICAL: Initialize list INSIDE the loop ---
+        //         var projectedValues = new List<LLVMValueRef>();
+
+        //         foreach (var colName in resultType.ColumnNames)
+        //         {
+        //             var fieldAccess = new FieldNode(rowId, colName);
+        //             var fType = sourceType.RowType.RecordFields.First(f => f.Label == colName).Type;
+        //             fieldAccess.SetType(fType);
+
+        //             // VisitRecordField now returns unboxed raw values (i64, double, or i8* for strings)
+        //             LLVMValueRef rawValue = VisitField(fieldAccess);
+        //             projectedValues.Add(rawValue);
+        //         }
+
+        //         // --- CRITICAL: Build record INSIDE the loop ---
+        //         // This ensures the malloc(size) is called with (3 * 8) = 24, not 0
+        //         var newRecordPtr = BuildRecordFromValues(resultType.RowType, projectedValues);
+
+        //         var resultDataPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_arrayStruct, resultArrayHeader, 2), "res_data");
+        //         var resElemPtr = _builder.BuildGEP2(i8Ptr, resultDataPtr, new[] { indexRef });
+        //         _builder.BuildStore(newRecordPtr, resElemPtr);
+        //     });
+
+        //     // 5. Final Assembly
+        //     var dfPtr = _builder.BuildMalloc(_dataframeStruct, "df_show");
+        //     _builder.BuildStore(newColsPtr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 0));
+        //     _builder.BuildStore(resultArrayHeader, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1));
+        //     _builder.BuildStore(newDataTypesPtr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2));
+
+        //     return dfPtr;
+        // }
+
+        private LLVMValueRef GetArrayCapacity(LLVMValueRef arrayPtr)
+        {
+            var i64 = _module.Context.Int64Type;
+            // Capacity is index 1
+            var capacityGEP = _builder.BuildStructGEP2(GetOrCreateArrayType(), arrayPtr, 1, "cap_ptr");
+            var cap = _builder.BuildLoad2(i64, capacityGEP, "cap");
+            cap.SetAlignment(8);
+            return cap;
+        }
+
+        private LLVMValueRef GetArrayDataPtr(LLVMValueRef arrayPtr)
+        {
+            var i8Ptr = LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0);
+            // Data pointer is index 2
+            var dataPtrGEP = _builder.BuildStructGEP2(GetOrCreateArrayType(), arrayPtr, 2, "data_ptr_ptr");
+            var data = _builder.BuildLoad2(i8Ptr, dataPtrGEP, "data_ptr");
+            data.SetAlignment(8);
+            return data;
+        }
+
         LLVMValueRef GetArrayElementRaw(LLVMValueRef arrayPtr, LLVMValueRef index, bool isBool)
         {
             var ctx = _module.Context;
@@ -5142,46 +5148,38 @@ namespace MyCompiler
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
+        # READ CSV:
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
 
+        # CREATE DATAFRAME:
         df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])
-
         df2 = dataframe(schema={name: string, age: int, hasJob: bool}, rows=[{"Alice", 25, true},{"Bob", 30, false},{"Charlie", 22, true}])
+        
+        # TO CSV
         to_csv(df, "CSV/mytest.csv")
 
-        df2 = dataframe(columns=["name", "age"],type=[string, int])
+        # RECORDS:
+        r = record({name: "Harry Potter", age: 9786, isCool: true, rating: 10.5585})        
+        r = {name: "Harry Potter", age: 9786, isCool: true, rating: 10.5585}
+ 
+        # SELELT COLUMNS:
+        df.select(latitude, longitude)
 
-        df2 = dataframe(columns=["name", "age", "hasJob", "savings"],data=[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])
-        df2 = dataframe(["name", "age", "hasJob", "savings"],[{name:"Bob", age: 23, hasJob: true, savings: 230500.00},{name:"Alice", age: 23, hasJob: true, savings: 100500.55},{name:"John", age: 87, hasJob: false, savings: 1209000.02},{name:"Mary", age: 29, hasJob: false, savings: 10700.25}])
+        # FOR EACH LOOP:
+        foreach(item in df) { item.age = item.age + 10 }
 
-        df3 = df2.map(x => { name: x.name, age: x.age-10, hasJob: x.hasJob, savings: x.savings })
-        df2.map(x => { age: x.age - 10, name: "Harry" })
-        df2.map(x => { age: 10, name: x.name + "_2" })
-        df2.map(x => x.age - 10)
-
-        record(["name", "age", "is cool", "rating"], ["Hary potter", 9786, true, 10.5585])
-
-        foreach(item in df3) { item.age = item.age + 10 }
-
-        x = dataframe(columns=["name", "age"],type=[string, int])
-        for(i=0; i < 500000; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
-
-
+        # FOR LOOP:
+        for(i=0; i < 500000; i++) { x.add({name: "Hary potter", age: 10 + random(1,100)}) }
         for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
-         for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude:  fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
+        for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude:  fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
 
-
-df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})
-
-for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
-
+        # MIX:
+        df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})
+        for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
         x.where(d=> d.age > 50)
-
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
-         for(i=0; i<49; i++) df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)})
-
-        df.select(["latitude", "longitude"])
+        for(i=0; i<49; i++) { df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)}) }
 
         # TEST: WHERE
         df.where(x => x.latitude > -18.0)
@@ -5190,9 +5188,9 @@ for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude
 
         # TEST: MAP
         df.map(x => x.latitude - 100.0)
-        df.map(x => x + {latitude: x.latitude - 100.0})
-        df.map(x => x + {latitude: x.latitude - 100.0}).map(x => x+{ longitude: 100.0})
-        df.map(x => x + {latitude: x.latitude - 100.0, longitude: 100.0})
+        df.map(x => x + {latitude= x.latitude - 100.0})
+        df.map(x => x + {latitude= x.latitude - 100.0}).map(x => x+{ longitude= 100.0})
+        df.map(x => x + {latitude= x.latitude - 100.0, longitude= 100.0})
 
 
         # TEST: MIN, MAX, MEAN & SUM
