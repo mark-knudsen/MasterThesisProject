@@ -365,23 +365,16 @@ namespace MyCompiler
 
     public class ReadCsvNode : ExpressionNode
     {
-        public ExpressionNode FileNameExpr { get; }
-        public NamedArgumentNode SchemaExpr { get; set; }
+        // The raw, positional arguments passed by the parser
+        public List<Node> Arguments { get; }
 
-        public ReadCsvNode(List<Node> args)
+        // Read-only helper properties that cleanly resolve positions
+        public ExpressionNode FileNameExpr => Arguments.Count > 0 ? Arguments[0] as ExpressionNode : null;
+        public NamedArgumentNode SchemaExpr => Arguments.Count > 1 ? Arguments[1] as NamedArgumentNode : null;
+
+        public ReadCsvNode(List<Node> arguments)
         {
-            // Find the actual string literal (e.g., "test.csv")
-            FileNameExpr = args.FirstOrDefault(a => a is StringNode) as ExpressionNode;
-
-            // Find the record/schema ([index: int...])
-            SchemaExpr = args.FirstOrDefault(a => a is NamedArgumentNode) as NamedArgumentNode;
-
-            // If the parser didn't find them by type, fallback to positions
-            if (FileNameExpr == null && args.Count >= 2)
-            {
-                FileNameExpr = args[1] as ExpressionNode;
-                SchemaExpr = args[0] as NamedArgumentNode;
-            }
+            Arguments = arguments ?? throw new ArgumentNullException(nameof(arguments));
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitReadCsv(this);
