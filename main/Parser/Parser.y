@@ -6,6 +6,8 @@
     public object obj; 
     public bool boolVal;
     public double fval;
+    public string strval;
+    public int intval;
     public MyCompiler.Node node; 
     public MyCompiler.ExpressionNode expr;
     public List<ExpressionNode> idList;
@@ -15,7 +17,9 @@
     /* public List<RecordNode> recordList; */
 }
 
-%token <obj> NUMBER ID NULL_LITERAL STRING_LITERAL
+%token <obj> NULL_LITERAL
+%token <intval> NUMBER
+%token <strval> STRING_LITERAL ID
 %token <boolVal> BOOL_LITERAL
 %token <fval> FLOAT_LITERAL
 %token PLUS MINUS MULT DIV ASSIGN SEMICOLON COMMA DOT
@@ -30,7 +34,8 @@
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
 %right ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULT_ASSIGN DIV_ASSIGN
-%nonassoc LOWEST UNARY
+%nonassoc LOWEST
+%nonassoc UNARY
 /* %nonassoc IF %nonassoc ELSE */
 
 %left LOGICAL_OR
@@ -39,8 +44,7 @@
 %left GT LT GE LE
 %left PLUS MINUS
 %left MULT DIV
-%left DOT
-%left LBRACKET 
+%left DOT LBRACKET 
 
 
 %type <node> prog statement statement_list assignment block dataframe_arg record_arg
@@ -94,7 +98,7 @@ statement
     }        
     | FOREACH LPAREN ID IN expr RPAREN opt_newlines block
     {
-        $$ = new ForEachLoopNode(new IdNode((string)$3), $5, $8 );
+        $$ = new ForEachLoopNode(new IdNode($3), $5, $8 );
     }
     ;
 
@@ -109,63 +113,63 @@ type
     ;
 
 assignment 
-    : ID ASSIGN expr      { $$ = new AssignNode((string)$1, $3); } 
+    : ID ASSIGN expr      { $$ = new AssignNode($1, $3); } 
     | ID PLUS_ASSIGN expr
     { 
-        var id = new IdNode((string)$1);
+        var id = new IdNode($1);
         var add = new BinaryOpNode(id, "+", $3);
-        $$ = new AssignNode((string)$1, add); 
+        $$ = new AssignNode($1, add); 
     }
     | expr DOT ID PLUS_ASSIGN expr
     {
-        var left = new FieldNode($1, (string)$3);
+        var left = new FieldNode($1, $3);
         var add = new BinaryOpNode(left, "+", $5);
-        $$ = new RecordFieldAssignNode($1, (string)$3, add);
+        $$ = new RecordFieldAssignNode($1, $3, add);
     }
     | ID MINUS_ASSIGN expr
     { 
-        var id = new IdNode((string)$1);
+        var id = new IdNode($1);
         var sub = new BinaryOpNode(id, "-", $3);
-        $$ = new AssignNode((string)$1, sub); 
+        $$ = new AssignNode($1, sub); 
     }
     | expr DOT ID MINUS_ASSIGN expr
     {
-        var left = new FieldNode($1, (string)$3);
+        var left = new FieldNode($1, $3);
         var sub = new BinaryOpNode(left, "-", $5);
-        $$ = new RecordFieldAssignNode($1, (string)$3, sub);
+        $$ = new RecordFieldAssignNode($1, $3, sub);
     }
     | ID MULT_ASSIGN expr
     {
-        var id = new IdNode((string)$1);
+        var id = new IdNode($1);
         var mul = new BinaryOpNode(id, "*", $3);
-        $$ = new AssignNode((string)$1, mul);
+        $$ = new AssignNode($1, mul);
     }
 
     | ID DIV_ASSIGN expr
     {
-        var id = new IdNode((string)$1);
+        var id = new IdNode($1);
         var div = new BinaryOpNode(id, "/", $3);
-        $$ = new AssignNode((string)$1, div);
+        $$ = new AssignNode($1, div);
     }
-    | ID INC              { $$ = new IncrementNode(new IdNode((string)$1)); }
-    | ID DECR             { $$ = new DecrementNode(new IdNode((string)$1)); }
+    | ID INC              { $$ = new IncrementNode(new IdNode($1)); }
+    | ID DECR             { $$ = new DecrementNode(new IdNode($1)); }
     | expr LBRACKET expr RBRACKET ASSIGN expr    
     { 
         $$ = new IndexAssignNode($1, $3, $6);
     }
     | expr DOT ID ASSIGN expr
     {
-        $$ = new RecordFieldAssignNode($1, (string)$3, $5);
+        $$ = new RecordFieldAssignNode($1, $3, $5);
     }
     ;
 
 expr
-    : BOOL_LITERAL                  { $$ = new BooleanNode((bool)$1); }
-    | NUMBER                        { $$ = new NumberNode((int)$1); }
+    : BOOL_LITERAL                  { $$ = new BooleanNode($1); }
+    | NUMBER                        { $$ = new NumberNode($1); }
     | FLOAT_LITERAL                 { $$ = new FloatNode($1); }
-    | STRING_LITERAL                { $$ = new StringNode((string)$1); }
+    | STRING_LITERAL                { $$ = new StringNode($1); }
     | NULL_LITERAL                  { $$ = new NullNode(); }      /* We currently do not use NULL_LITERAL! */
-    | ID                            { $$ = new IdNode((string)$1); }
+    | ID                            { $$ = new IdNode($1); }
     /* | type                       { $$ = new TypeLiteralNode($1 as TypeNode); } */
 
     | LPAREN expr RPAREN            { $$ = $2; }    /* ( 2+2 ) */
@@ -204,7 +208,7 @@ expr
 
     /* Accessors */
     | expr LBRACKET expr RBRACKET           { $$ = new IndexNode($1, $3); }
-    | expr DOT ID                           { $$ = new FieldNode($1, (string)$3); }
+    | expr DOT ID                           { $$ = new FieldNode($1, $3); }
     | expr DOT LENGTH                       { $$ = new LengthNode($1); }
     | expr DOT MIN                          { $$ = new MinNode($1); }
     | expr DOT MAX                          { $$ = new MaxNode($1); }
@@ -221,11 +225,11 @@ expr
     | expr DOT REMOVERANGE LPAREN expr RPAREN { $$ = new RemoveRangeNode($1, $5); }
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {
-        $$ = new WhereNode(new IdNode((string)$5), $1, $7); 
+        $$ = new WhereNode(new IdNode($5), $1, $7); 
     }
     | expr DOT MAP LPAREN ID LAMBDA expr RPAREN  
     {
-        $$ = new MapNode(new IdNode((string)$5), $1, $7);
+        $$ = new MapNode(new IdNode($5), $1, $7);
     }
     | expr DOT SELECT LPAREN id_list RPAREN
     {
@@ -244,12 +248,12 @@ id_list
     {
         $$ = new List<ExpressionNode>
         {
-            new IdNode((string)$1)
+            new IdNode($1)
         };
     }
     | id_list COMMA ID
     {
-        $1.Add(new IdNode((string)$3));
+        $1.Add(new IdNode($3));
         $$ = $1;
     }
     ;
@@ -266,7 +270,7 @@ dataframe_arg_list
     ;
 
 dataframe_arg
-    : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3); }
+    : ID ASSIGN expr         { $$ = new NamedArgumentNode($1, $3); }
     | expr                   { $$ = new NamedArgumentNode(null, $1); } 
     ;
 
@@ -277,8 +281,8 @@ record_arg_list
     ;
 
 record_arg
-    : ID ASSIGN expr         { $$ = new NamedArgumentNode((string)$1, $3); }
-    | ID COLON type          { $$ = new NamedArgumentNode((string)$1, new TypeLiteralNode($3 as TypeNode)); }
+    : ID ASSIGN expr         { $$ = new NamedArgumentNode($1, $3); }
+    | ID COLON type          { $$ = new NamedArgumentNode($1, new TypeLiteralNode($3 as TypeNode)); }
     | expr                   { $$ = new NamedArgumentNode(null, $1); } 
     ;
  
