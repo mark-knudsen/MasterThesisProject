@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 25-05-2026 14:10:33
-//  GPLEX input file <Lexer/Scanner.lex - 25-05-2026 14:06:34>
+//  DateTime: 25-05-2026 16:47:52
+//  GPLEX input file <Lexer/Scanner.lex - 25-05-2026 14:50:44>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize
@@ -1886,7 +1886,7 @@ return (int)Tokens.SQRT;
 return (int)Tokens.SELECT;
             break;
         case 81:
-yylval.obj = yytext; return (int)Tokens.ID;
+yylval.strval = yytext; return (int)Tokens.ID;
             break;
         case 87:
 return (int)Tokens.ROUND;
@@ -1973,7 +1973,7 @@ return (int)Tokens.CORR;
 return (int)Tokens.COPY;
             break;
         case 175:
-yylval.obj = yytext; return (int)Tokens.COLUMNS;
+return (int)Tokens.COLUMNS;
             break;
         case 178:
 return (int)Tokens.BOOL;

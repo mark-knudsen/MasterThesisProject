@@ -1,3 +1,97 @@
-// Parser Conflict Information for grammar file "Parser/Parser.y - 25-05-2026 14:10:29"
+// Parser Conflict Information for grammar file "Parser/Parser.y - 25-05-2026 16:47:00"
+
+Shift/Reduce conflict on symbol "LBRACKET", parser will shift
+ Reduce 12:	statement -> expr
+ Shift "LBRACKET":	State-198 -> State-207
+  Items for From-state State 198
+    27 assignment: expr . DOT ID PLUS_ASSIGN expr 
+    44 expr: expr . LBRACKET opt_expr COLON opt_expr RBRACKET 
+    56 expr: expr . LOGICAL_AND expr 
+    57 expr: expr . LOGICAL_OR expr 
+    59 expr: expr . PLUS expr 
+    60 expr: expr . MINUS expr 
+    61 expr: expr . MULT expr 
+    62 expr: expr . DIV expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    69 expr: expr . LBRACKET expr RBRACKET 
+    70 expr: expr . DOT ID 
+    71 expr: expr . DOT LENGTH 
+    72 expr: expr . DOT MIN 
+    73 expr: expr . DOT MAX 
+    74 expr: expr . DOT MEAN 
+    75 expr: expr . DOT SUM 
+    76 expr: expr . DOT COPY LPAREN RPAREN 
+    77 expr: expr . DOT COLUMNS 
+    78 expr: expr . DOT ADD LPAREN expr RPAREN 
+    79 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    80 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    81 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    82 expr: expr . DOT CORR LPAREN expr RPAREN 
+    83 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    84 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT SELECT LPAREN id_list RPAREN 
+    29 assignment: expr . DOT ID MINUS_ASSIGN expr 
+    34 assignment: expr . LBRACKET expr RBRACKET ASSIGN expr 
+    35 assignment: expr . DOT ID ASSIGN expr 
+    12 statement: expr .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
+                NULL_LITERAL, LPAREN, LBRACKET, RANDOM, ROUND, READCSV, TOCSV, 
+                DATAFRAME, RECORD, LBRACE, SQRT, EXP, POW, LOG, MINUS, IF, 
+                PRINT, FOR, FOREACH, SEMICOLON, NEWLINE, EOF, RBRACE
+  Items for Next-state State 207
+    44 expr: expr LBRACKET . opt_expr COLON opt_expr RBRACKET 
+    69 expr: expr LBRACKET . expr RBRACKET 
+    34 assignment: expr LBRACKET . expr RBRACKET ASSIGN expr 
+
+Shift/Reduce conflict on symbol "MINUS", parser will shift
+ Reduce 12:	statement -> expr
+ Shift "MINUS":	State-198 -> State-22
+  Items for From-state State 198
+    27 assignment: expr . DOT ID PLUS_ASSIGN expr 
+    44 expr: expr . LBRACKET opt_expr COLON opt_expr RBRACKET 
+    56 expr: expr . LOGICAL_AND expr 
+    57 expr: expr . LOGICAL_OR expr 
+    59 expr: expr . PLUS expr 
+    60 expr: expr . MINUS expr 
+    61 expr: expr . MULT expr 
+    62 expr: expr . DIV expr 
+    63 expr: expr . GE expr 
+    64 expr: expr . LE expr 
+    65 expr: expr . EQ expr 
+    66 expr: expr . NE expr 
+    67 expr: expr . GT expr 
+    68 expr: expr . LT expr 
+    69 expr: expr . LBRACKET expr RBRACKET 
+    70 expr: expr . DOT ID 
+    71 expr: expr . DOT LENGTH 
+    72 expr: expr . DOT MIN 
+    73 expr: expr . DOT MAX 
+    74 expr: expr . DOT MEAN 
+    75 expr: expr . DOT SUM 
+    76 expr: expr . DOT COPY LPAREN RPAREN 
+    77 expr: expr . DOT COLUMNS 
+    78 expr: expr . DOT ADD LPAREN expr RPAREN 
+    79 expr: expr . DOT ADDRANGE LPAREN expr RPAREN 
+    80 expr: expr . DOT REMOVE LPAREN expr RPAREN 
+    81 expr: expr . DOT REMOVERANGE LPAREN expr RPAREN 
+    82 expr: expr . DOT CORR LPAREN expr RPAREN 
+    83 expr: expr . DOT WHERE LPAREN ID LAMBDA expr RPAREN 
+    84 expr: expr . DOT MAP LPAREN ID LAMBDA expr RPAREN 
+    85 expr: expr . DOT SELECT LPAREN id_list RPAREN 
+    29 assignment: expr . DOT ID MINUS_ASSIGN expr 
+    34 assignment: expr . LBRACKET expr RBRACKET ASSIGN expr 
+    35 assignment: expr . DOT ID ASSIGN expr 
+    12 statement: expr .
+	-lookahead: ID, BOOL_LITERAL, NUMBER, FLOAT_LITERAL, STRING_LITERAL, 
+                NULL_LITERAL, LPAREN, LBRACKET, RANDOM, ROUND, READCSV, TOCSV, 
+                DATAFRAME, RECORD, LBRACE, SQRT, EXP, POW, LOG, MINUS, IF, 
+                PRINT, FOR, FOREACH, SEMICOLON, NEWLINE, EOF, RBRACE
+  Items for Next-state State 22
+    60 expr: expr MINUS . expr 
 
 // End conflict information for parser

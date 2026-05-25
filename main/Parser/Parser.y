@@ -3,7 +3,6 @@
 %visibility internal
 
 %union { 
-    public object obj; 
     public bool boolVal;
     public double fval;
     public string strval;
@@ -14,10 +13,11 @@
     public List<ExpressionNode> exprList;
     public List<NamedArgumentNode> dataframeArgList;
     public List<NamedArgumentNode> recordArgList; 
+    /* public MyCompiler.StatementNode statement; */
     /* public List<RecordNode> recordList; */
 }
 
-%token <obj> NULL_LITERAL
+%token NULL_LITERAL
 %token <intval> NUMBER
 %token <strval> STRING_LITERAL ID
 %token <boolVal> BOOL_LITERAL
@@ -44,7 +44,8 @@
 %left GT LT GE LE
 %left PLUS MINUS
 %left MULT DIV
-%left DOT LBRACKET 
+%left DOT
+%left LBRACKET
 
 
 %type <node> prog statement statement_list assignment block dataframe_arg record_arg
@@ -54,6 +55,7 @@
 %type <dataframeArgList> dataframe_arg_list
 %type <recordArgList> record_arg_list
 
+/* %type <statement> statement assignment */
 /* %type <recordList> record_list */
 
 %{
@@ -168,7 +170,7 @@ expr
     | NUMBER                        { $$ = new NumberNode($1); }
     | FLOAT_LITERAL                 { $$ = new FloatNode($1); }
     | STRING_LITERAL                { $$ = new StringNode($1); }
-    | NULL_LITERAL                  { $$ = new NullNode(); }      /* We currently do not use NULL_LITERAL! */
+    | NULL_LITERAL                  { $$ = new NullNode(); }   /* We currently do not use NULL_LITERAL! */
     | ID                            { $$ = new IdNode($1); }
     /* | type                       { $$ = new TypeLiteralNode($1 as TypeNode); } */
 
@@ -216,13 +218,13 @@ expr
     | expr DOT SUM                          { $$ = new SumNode($1); }
     | expr DOT COPY LPAREN RPAREN           { $$ = new CopyNode($1); }
     | expr DOT COLUMNS                      { $$ = new ColumnsNode($1); }
-    | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1, $5); }
 
     /* Functional methods */
     | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1, $5); }   
     | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNode($1, $5); }
     | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNode($1, $5); }
     | expr DOT REMOVERANGE LPAREN expr RPAREN { $$ = new RemoveRangeNode($1, $5); }
+    | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1, $5); }
     | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
     {
         $$ = new WhereNode(new IdNode($5), $1, $7); 

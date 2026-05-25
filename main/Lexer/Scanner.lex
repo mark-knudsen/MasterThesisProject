@@ -55,8 +55,8 @@
 
 "record"        { return (int)Tokens.RECORD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
-"columns"       { yylval.obj = yytext; return (int)Tokens.COLUMNS; }
-"schema"        { yylval.obj = yytext; return (int)Tokens.ID; }
+"columns"       { return (int)Tokens.COLUMNS; }
+"schema"        { yylval.strval = yytext; return (int)Tokens.ID; }
 "select"        { return (int)Tokens.SELECT; }  /* others: extract, derive, select  */
 
 ">="            { return (int)Tokens.GE; }
