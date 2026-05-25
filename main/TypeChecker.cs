@@ -564,7 +564,9 @@ namespace MyCompiler
             {
                 var entry = _context.Get(idNode.Name);
                 if (entry?.Type is ArrayType arrType)
+                {
                     inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
+                }
                 else if (entry?.Type is DataframeType dfType)
                 {
                     if (indexType is StringType)
@@ -580,6 +582,15 @@ namespace MyCompiler
                     else
                         inferred = dfType.RowType;
                 }
+            }
+            else if (expr.SourceExpression is DataframeNode dfNode)
+            {
+                inferred = (dfNode.Type as DataframeType).RowType;
+            }
+            else if (expr.SourceExpression is ArrayNode arrNode)
+            {
+
+                inferred = (arrNode.Type as ArrayType).ElementType;
             }
 
             expr.SetType(inferred);
