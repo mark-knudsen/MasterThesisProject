@@ -215,7 +215,7 @@ namespace MyCompiler
                                     break;
 
                                 case 3: // Bool
-                                    cellValue = Marshal.ReadInt64(recordPtr, offset) == 1 ? "true" : "false";
+                                    cellValue = Marshal.ReadByte(recordPtr, offset) == 1 ? "true" : "false";
                                     break;
 
                                 case 4: // String

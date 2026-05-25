@@ -96,9 +96,10 @@ namespace MyCompiler
             if (rowType == null) throw new Exception("ForEach requires a Dataframe or Array of Records");
 
             // it should use an assign node to assign the value instead of harcoding it here
+            var previousContext = _context;
             _context = _context.Add(statement.Iterator.Name, type: rowType);
-
             Visit(statement.Body);
+            _context = previousContext; // Safely restore outer scope
             statement.SetType(new VoidType());
             return statement.Type;
         }

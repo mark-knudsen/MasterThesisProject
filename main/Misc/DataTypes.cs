@@ -67,7 +67,7 @@ namespace MyCompiler
 
     public class DataframeType : Type
     {
-        public IReadOnlyList<string> ColumnNames { get; } 
+        public IReadOnlyList<string> ColumnNames { get; }
         public IReadOnlyList<Type> DataTypes { get; }
         public RecordType RowType { get; }
 
@@ -77,7 +77,22 @@ namespace MyCompiler
             DataTypes = types;
             RowType = rowType;
         }
-          public override string ToString() =>
-            $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
+        public override string ToString() =>
+          $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})";
+    }
+
+    public class NullableType : Type
+    {
+        public Type InnerType { get; }
+
+        public NullableType(Type innerType)
+        {
+            InnerType = innerType;
+        }
+
+        public override string ToString()
+        {
+            return $"{InnerType}?";
+        }
     }
 }
