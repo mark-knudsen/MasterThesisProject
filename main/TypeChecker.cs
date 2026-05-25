@@ -412,29 +412,14 @@ namespace MyCompiler
             return statement.Type;
         }
 
-        public sealed class ConstantStringType : StringType
-        {
-            public string Value { get; }
-            public ConstantStringType(string value) => Value = value;
-        }
+
 
         public Type VisitAssign(AssignNode statement)
         {
             Type valType = Visit(statement.Expression);
 
-            // If it's a string literal, wrap its compile-time value inside our custom Type wrapper
-            if (statement.Expression is StringNode stringNode)
-            {
-                valType = new ConstantStringType(stringNode.Value);
-            }
-
-            // Safely extract the target variable string name
-            // statement.Id is already the string key name!
-            string varName = statement.Id;
-
-            _context = _context.Add(varName, valType);
-
-            _context = _context.Add(varName, valType);
+            // Use 'default' for LLVMValueRef to avoid CS0246
+            _context = _context.Add(statement.Id, valType);
             statement.SetType(new VoidType());
             return valType;
         }
@@ -899,81 +884,38 @@ namespace MyCompiler
 
             return recordNode;
         }
+
         public Type VisitReadCsv(ReadCsvNode expr)
         {
-            if (expr.FileNameExpr == null)
-                throw new Exception("Type Checker Error: read_csv requires at least a file path argument.");
+            Visit(expr.FileNameExpr);
 
-            Type pathType = Visit(expr.FileNameExpr);
-            if (pathType is not StringType)
-                throw new Exception($"read_csv requires a string path, but got {pathType?.GetType().Name}");
-
-            // Look up the path value (whether literal or variable identifier)
-            string path = null;
-            if (expr.FileNameExpr is StringNode stringNode)
-            {
-                path = stringNode.Value;
-            }
-            else if (expr.FileNameExpr is IdNode idNode)
-            {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ConstantStringType constStrType)
-                {
-                    path = constStrType.Value;
-                }
-                else
-                {
-                    throw new Exception($"Semantic Error: Cannot infer CSV schema for variable '{idNode.Name}' because its path value is unknown at compile time.");
-                }
-            }
-            else
-            {
-                throw new Exception("read_csv path must be a string literal or an initialized string variable.");
-            }
-
-            RecordType recType;
-
-            // SCENARIO A: Schema is omitted -> Automatically infer all columns from the file
             if (expr.SchemaExpr == null)
             {
-                Console.WriteLine($"Inferring schema from CSV file: {path}");
-
-                // 1. Build the AST subtree for the schema dynamically from the file
-                RecordNode inferredRecordNode = BuildRecordNodeFromCsv(path);
-
-                // 2. Wrap it in a NamedArgumentNode and save it back into the AST so CodeGen can find it later!
-                // We can make the parser arguments list mutable or add a custom setter if needed
-                expr.Arguments.Add(new NamedArgumentNode("schema", inferredRecordNode));
-
-                // 3. Evaluate its type directly
-                Type schemaType = Visit(expr.SchemaExpr);
-                recType = schemaType as RecordType;
+                Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
+                string path = (expr.FileNameExpr as StringNode).Value;
+                expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
             }
-            // SCENARIO B: User explicitly provided a schema overriding template
-            else
+            else if (expr.SchemaExpr.Name != "schema")
+                throw new Exception("read_csv requires a 'schema' named argument");
+
+            Type schemaType = Visit(expr.SchemaExpr);
+
+            if (schemaType is RecordType recType)
             {
-                if (expr.SchemaExpr.Name != "schema")
-                    throw new Exception("read_csv requires a 'schema' named argument descriptor.");
+                var names = recType.RecordFields.Select(f => f.Label).ToList();
+                var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
 
-                Type schemaType = Visit(expr.SchemaExpr);
-                recType = schemaType as RecordType;
+                for (int i = 0; i < recType.RecordFields.Count; i++)
+                {
+                    recType.RecordFields[i].Type = types[i];
+                }
+
+                var dfType = new DataframeType(names, types, recType);
+                expr.SetType(dfType);
+                return expr.Type;
             }
 
-            if (recType == null)
-                throw new Exception($"read_csv requires a record template, but got {expr.SchemaExpr?.Value?.GetType().Name}");
-
-            // Extract names and concrete types for your DataFrame definition
-            var names = recType.RecordFields.Select(f => f.Label).ToList();
-            var types = recType.RecordFields.Select(f => f.Value?.Type ?? f.Type).ToList();
-
-            for (int i = 0; i < recType.RecordFields.Count; i++)
-            {
-                recType.RecordFields[i].Type = types[i];
-            }
-
-            var dfType = new DataframeType(names, types, recType);
-            expr.SetType(dfType);
-            return expr.Type;
+            throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
         }
 
         public Type VisitToCsv(ToCsvNode expr)
