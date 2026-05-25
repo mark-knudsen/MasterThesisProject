@@ -5447,7 +5447,21 @@ namespace MyCompiler
 
         private LLVMTypeRef GetArrayPtrType()
         {
+            // if(1==1) {    
+            //      if(2>1)
+            //      {
+            //         print("2 > 1")
+            //      }
+            //      else { 
+            //         print("no 2> 1")                  
+            //      }
+            // } 
+            // else { print("false") }
+
+
             return LLVMTypeRef.CreatePointer(GetOrCreateArrayType(), 0);
+
+
         }
 
         private LLVMTypeRef GetDataframePtrType()
