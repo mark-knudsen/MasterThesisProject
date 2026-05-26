@@ -555,8 +555,7 @@ namespace MyCompiler
 
     public class RecordNode : ExpressionNode
     {
-        public List<RecordField> Fields { get; set; } = new List<RecordField>();
-
+        public List<RecordField> Fields { get; set; }
         public RecordNode(List<NamedArgumentNode> valuesArray)
         {
             Fields = new List<RecordField>();
