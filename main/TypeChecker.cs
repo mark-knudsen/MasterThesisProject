@@ -134,7 +134,7 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
-            Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
+            if (_debug) Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -413,13 +413,10 @@ namespace MyCompiler
             return statement.Type;
         }
 
-
-
         public Type VisitAssign(AssignNode statement)
         {
             Type valType = Visit(statement.Expression);
 
-            // Use 'default' for LLVMValueRef to avoid CS0246
             _context = _context.Add(statement.Id, valType);
             statement.SetType(new VoidType());
             return valType;
@@ -968,7 +965,6 @@ namespace MyCompiler
                 if (dfColumns.Count != recType.RecordFields.Count)
                     throw new Exception("Record fields count must match the dataframe columns count");
 
-
                 for (int t = 0; t < dfType.DataTypes.Count; t++)
                 {
                     if (dfType.DataTypes[t].GetType() != recTypes[t].GetType())
@@ -977,7 +973,6 @@ namespace MyCompiler
 
                 // if (!dfColumns.All(col => recFields.Contains(col)))
                 //      throw new Exception("Record fields do not match dataframe columns");
-
 
             }
             else if (sourceType is ArrayType arrType)
@@ -1110,7 +1105,7 @@ namespace MyCompiler
 
             var recordType = new RecordType(expr.Fields);
             expr.SetType(recordType);
-            return recordType;
+            return expr.Type;
         }
 
         public Type VisitField(FieldNode expr)
@@ -1450,39 +1445,28 @@ namespace MyCompiler
             return ResolveType(expr); // Just return the wrapped type
         }
 
-        public Type VisitSlice(SliceNode node)
+        public Type VisitSlice(SliceNode expr)
         {
-            Type sourceType = Visit(node.Source);
+            Type sourceType = Visit(expr.Source);
 
             // Support both Arrays and Dataframes
             if (sourceType is not ArrayType && sourceType is not DataframeType)
                 throw new Exception($"Slicing is only supported on arrays or dataframes, got {sourceType}");
 
-            if (node.Start != null)
+            if (expr.Start != null)
             {
-                if (Visit(node.Start) is not IntType)
+                if (Visit(expr.Start) is not IntType)
                     throw new Exception("Slice start index must be an integer");
             }
 
-            if (node.End != null)
+            if (expr.End != null)
             {
-                if (Visit(node.End) is not IntType)
+                if (Visit(expr.End) is not IntType)
                     throw new Exception("Slice end index must be an integer");
             }
 
-            node.SetType(sourceType); // df[start:end] returns a DataframeType
-            return node.Type;
-        }
-
-        // NOT USED!
-        int IndexOf(IReadOnlyList<string> list, string value)
-        {
-            for (int i = 0; i < list.Count; i++)
-            {
-                if (list[i] == value)
-                    return i;
-            }
-            return -1;
+            expr.SetType(sourceType); // df[start:end] returns a DataframeType
+            return expr.Type;
         }
     }
 }

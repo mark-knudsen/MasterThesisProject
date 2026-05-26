@@ -207,18 +207,18 @@ namespace MyCompiler
         public ExpressionNode Condition { get; }
         public Node ThenPart { get; }
         public Node ElsePart { get; }
-        public IfNode(ExpressionNode cond, Node thenP, Node elseP = null)
+        public IfNode(ExpressionNode cond, Node thenPart, Node elsePart = null)
         {
             Condition = cond;
-            ThenPart = thenP;
-            ElsePart = elseP;
+            ThenPart = thenPart;
+            ElsePart = elsePart;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIf(this);
     }
 
     public class ForLoopNode : StatementNode
     {
-        public StatementNode Initialization { get; }   // for(x=0;x<5;x++)x
+        public StatementNode Initialization { get; }   // for(x=0;x<5;x++)
         public ExpressionNode Condition { get; }
         public StatementNode Step { get; }
         public Node Body; // Changed from ExpressionNode

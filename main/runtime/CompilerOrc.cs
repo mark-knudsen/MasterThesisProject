@@ -1149,7 +1149,7 @@ namespace MyCompiler
                 // 2. FIX: Use 'mallocFuncType' instead of '_mallocType'
                 var mem = _builder.BuildCall2(_mallocType, mallocFunc,
                     new[] { LLVMValueRef.CreateConstInt(i64, (ulong)size) }, "value_mem");
-                //mem.SetAlignment((uint)size);
+
                 var castType = type switch
                 {
                     IntType => LLVMTypeRef.CreatePointer(i64, 0),
@@ -1172,9 +1172,7 @@ namespace MyCompiler
                 dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
             }
             else
-            {
                 throw new Exception($"Unsupported type in BoxValue: {type}");
-            }
 
             // 3. FIX: Use 'mallocFuncType' instead of '_mallocType' here too
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
@@ -1190,8 +1188,6 @@ namespace MyCompiler
 
             return objRaw;
         }
-
-
 
         private Node GetLastExpression(Node expr)
         {
@@ -1356,10 +1352,9 @@ namespace MyCompiler
                     variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
                     variablePtr.SetAlignment(8);
                 }
-                else
-                {
+                else                
                     throw new Exception($"Variable {varName} not defined.");
-                }
+
             }
 
             // 2. LOAD the current value manually using the pointer
@@ -1370,13 +1365,9 @@ namespace MyCompiler
             // 3. MATH
             LLVMValueRef newValue;
             if (llvmType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
-            {
                 newValue = _builder.BuildFAdd(currentValue, LLVMValueRef.CreateConstReal(llvmType, 1.0), "inc_add");
-            }
             else
-            {
                 newValue = _builder.BuildAdd(currentValue, LLVMValueRef.CreateConstInt(llvmType, 1, false), "inc_add");
-            }
 
             // 4. STORE back into the POINTER
             _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
@@ -1403,9 +1394,7 @@ namespace MyCompiler
                     variablePtr.SetAlignment(8);
                 }
                 else
-                {
                     throw new Exception($"Variable {varName} not defined.");
-                }
             }
 
             // 2. LOAD the current value manually using the pointer
@@ -1415,13 +1404,9 @@ namespace MyCompiler
 
             LLVMValueRef newValue;
             if (llvmType.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
-            {
                 newValue = _builder.BuildFSub(currentValue, LLVMValueRef.CreateConstReal(llvmType, 1.0), "dec_sub");
-            }
             else
-            {
                 newValue = _builder.BuildSub(currentValue, LLVMValueRef.CreateConstInt(llvmType, 1, false), "dec_sub");
-            }
 
             _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
             return newValue;
@@ -2565,7 +2550,6 @@ namespace MyCompiler
             return null;
         }
 
-
         public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
@@ -2773,11 +2757,8 @@ namespace MyCompiler
                 {
                     copiedValue = EmitDeepCopy(val, fieldInfo.Type);
                 }
-                else
-                {
-                    // For primitives (Double, Int), we just store the loaded value
-                    copiedValue = val;
-                }
+                else 
+                    copiedValue = val; // For primitives (Double, Int), we just store the loaded value
 
                 var storeInstr = _builder.BuildStore(copiedValue, dstFieldPtr);
                 storeInstr.SetAlignment(8);
@@ -3206,13 +3187,9 @@ namespace MyCompiler
 
                 // Enforce rigid alignment patterns based on primitives
                 if (llvmElementType == i64 || llvmElementType == ctx.DoubleType || llvmElementType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-                {
                     loadedValue.SetAlignment(8);
-                }
                 else if (llvmElementType == ctx.Int32Type || llvmElementType == ctx.FloatType)
-                {
                     loadedValue.SetAlignment(4);
-                }
 
                 return arrayType.ElementType switch
                 {
@@ -3514,7 +3491,6 @@ namespace MyCompiler
                 _builder.BuildMul(capacity, i64Two),
                 "new_cap");
 
-
             uint elemSize = isPrimitive ? GetTypeSize(elementType) : 8;
 
             var byteSize = _builder.BuildMul(
@@ -3657,8 +3633,6 @@ namespace MyCompiler
             return targetArrayPtr;
         }
 
-
-
         private LLVMValueRef AddRangeToDataframe(LLVMValueRef dfPtr, LLVMValueRef arrayPtr, Type rowType)
         {
             var ctx = _module.Context;
@@ -3763,9 +3737,7 @@ namespace MyCompiler
                 lenPtr = _builder.BuildStructGEP2(arrayHeaderType, rowsHeaderPtr, 0, "rows_len_ptr");
             }
             else
-            {
                 throw new Exception("Remove operation is only supported on arrays and dataframes");
-            }
 
             // --- 2. UNIFIED BOUNDS CHECKING ---
             var len = _builder.BuildLoad2(i64, lenPtr, "len");
@@ -3800,20 +3772,15 @@ namespace MyCompiler
             // --- SAFE PATH: Execute raw memory shifts ---
             _builder.PositionAtEnd(safeBlock);
             if (sourceType is ArrayType arrayType)
-            {
                 RemoveFromArrayRaw(sourcePtr, indexVal, arrayType);
-            }
             else if (sourceType is DataframeType)
-            {
                 RemoveFromDataframeRaw(sourcePtr, indexVal);
-            }
+
             _builder.BuildBr(continueBlock);
 
             _builder.PositionAtEnd(continueBlock);
             return sourcePtr;
         }
-
-
 
         public LLVMValueRef RemoveFromArrayRaw(LLVMValueRef arrayPtr, LLVMValueRef removeIdx, ArrayType arrayType)
         {
@@ -3967,7 +3934,6 @@ namespace MyCompiler
             var storeInstruction = _builder.BuildStore(newLen, lenPtr);
             storeInstruction.Alignment = 8; // Ensure 8-byte alignment
 
-
             return dfPtr;
         }
         public LLVMValueRef VisitRemoveRange(RemoveRangeNode expr)
@@ -4014,9 +3980,7 @@ namespace MyCompiler
                 elemType = i8Ptr;
             }
             else
-            {
                 throw new Exception("Unsupported removeRange target type.");
-            }
 
             // --- GENERATE UNIFIED FILTER LOOP IR ---
             var entryBlock = _builder.InsertBlock;
@@ -4101,7 +4065,6 @@ namespace MyCompiler
             return sourceVal;
         }
 
-
         public LLVMValueRef VisitLength(LengthNode expr)
         {
             var ctx = _module.Context;
@@ -4163,7 +4126,6 @@ namespace MyCompiler
             length.SetAlignment(8); // Optimization
             return length;
         }
-
 
         public LLVMValueRef VisitMin(MinNode expr)
         {
@@ -4754,20 +4716,15 @@ namespace MyCompiler
 
                 return _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), fieldSlotPtr, "val_ptr");
             }
-            else if (expr.SourceExpression.Type is DataframeType dfType)
+            else if (expr.SourceExpression.Type is DataframeType)
             {
-
                 var d = ColumnAccessForDataframe(expr);
                 PerformSemanticAnalysis(d);
                 return Visit(d);
-
             }
             else
                 throw new Exception("Field access is only supported on records");
         }
-
-
-
 
         public LLVMValueRef VisitToCsv(ToCsvNode expr)
         {
@@ -5162,16 +5119,10 @@ namespace MyCompiler
                         pointerToStore = valMem;
                     }
                     else
-                    {
-                        // Already a pointer (already boxed)
-                        pointerToStore = values[i];
-                    }
+                        pointerToStore = values[i]; // Already a pointer (already boxed)
                 }
                 else
-                {
-                    // Strings, Records, etc., are already pointers
-                    pointerToStore = values[i];
-                }
+                    pointerToStore = values[i]; // Strings, Records, etc., are already pointers
 
                 // 3. THE CRITICAL FIX:
                 // Use ptrType (8 bytes) so the index 'i' multiplies correctly.
@@ -5217,9 +5168,7 @@ namespace MyCompiler
 
             // 2. Promotion: If it's an int, convert to double
             if (expr.Value.Type is IntType)
-            {
                 val = _builder.BuildSIToFP(val, _module.Context.DoubleType, "int2double");
-            }
 
             // 3. Define the Intrinsic.
             // LLVM intrinsics are named "llvm.<name>.<type>"
@@ -5231,9 +5180,7 @@ namespace MyCompiler
             // 4. Register the intrinsic in the module if not already present
             var sqrtFunc = _module.GetNamedFunction(intrinsicName);
             if (sqrtFunc.Handle == IntPtr.Zero)
-            {
                 sqrtFunc = _module.AddFunction(intrinsicName, sqrtType);
-            }
 
             // 5. Call it
             return _builder.BuildCall2(sqrtType, sqrtFunc, new[] { val }, "sqrttmp");
@@ -5246,9 +5193,7 @@ namespace MyCompiler
 
             // 2. Promote int → double if needed
             if (expr.Value.Type is IntType)
-            {
                 val = _builder.BuildSIToFP(val, _module.Context.DoubleType, "int2double");
-            }
 
             var doubleType = _module.Context.DoubleType;
 
@@ -5259,9 +5204,7 @@ namespace MyCompiler
 
             var logFunc = _module.GetNamedFunction(intrinsicName);
             if (logFunc.Handle == IntPtr.Zero)
-            {
                 logFunc = _module.AddFunction(intrinsicName, logType);
-            }
 
             // 4. Call intrinsic
             return _builder.BuildCall2(
@@ -5297,9 +5240,7 @@ namespace MyCompiler
 
             var powFunc = _module.GetNamedFunction(intrinsicName);
             if (powFunc.Handle == IntPtr.Zero)
-            {
                 powFunc = _module.AddFunction(intrinsicName, powType);
-            }
 
             return _builder.BuildCall2(
                 powType,
@@ -5329,9 +5270,7 @@ namespace MyCompiler
             var expFunc = _module.GetNamedFunction(intrinsicName);
 
             if (expFunc.Handle == IntPtr.Zero)
-            {
                 expFunc = _module.AddFunction(intrinsicName, expType);
-            }
 
             return _builder.BuildCall2(expType, expFunc, new[] { val }, "exptmp");
         }
@@ -5356,7 +5295,7 @@ namespace MyCompiler
             }
 
             // 2. If it's a dataframe: df[5:10]
-            if (sourceType is DataframeType dfType)
+            if (sourceType is DataframeType)
             {
                 var colsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 0, "cols_ptr_ptr");
                 var rowsPtrPtr = _builder.BuildStructGEP2(_dataframeStruct, sourceVal, 1, "rows_ptr_ptr");
@@ -5472,8 +5411,6 @@ namespace MyCompiler
             return newArrayPtr;
         }
 
-
-
         // CURRENTLY NOT USED FUNCTIONS!
         private ExpressionNode GetProgramResult(Node expr)
         {
@@ -5496,21 +5433,7 @@ namespace MyCompiler
 
         private LLVMTypeRef GetArrayPtrType()
         {
-            // if(1==1) {    
-            //      if(2>1)
-            //      {
-            //         print("2 > 1")
-            //      }
-            //      else { 
-            //         print("no 2> 1")                  
-            //      }
-            // } 
-            // else { print("false") }
-
-
             return LLVMTypeRef.CreatePointer(GetOrCreateArrayType(), 0);
-
-
         }
 
         private LLVMTypeRef GetDataframePtrType()
