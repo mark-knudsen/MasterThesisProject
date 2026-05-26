@@ -108,7 +108,19 @@ namespace MyCompiler
 
                     if (typeCode == 'I')
                     {
-                        long.TryParse(rawValue, out long val);
+                        // FIX: If integer parsing fails due to unexpected decimals in saved files,
+                        // fallback to float parsing to preserve the data safely instead of producing silent 0s.
+                        if (!long.TryParse(rawValue, out long val))
+                        {
+                            if (double.TryParse(rawValue, System.Globalization.CultureInfo.InvariantCulture, out double dblVal))
+                            {
+                                val = (long)Math.Round(dblVal);
+                            }
+                            else
+                            {
+                                val = 0; // Absolute fallback if it's completely non-numeric
+                            }
+                        }
                         Marshal.WriteInt64(recordBuffer, offset, val);
                     }
                     else if (typeCode == 'F')
@@ -210,8 +222,17 @@ namespace MyCompiler
 
                                 case 2: // Float
                                     long floatBits = Marshal.ReadInt64(recordPtr, offset);
-                                    cellValue = BitConverter.Int64BitsToDouble(floatBits)
-                                                .ToString(System.Globalization.CultureInfo.InvariantCulture);
+                                    double doubleVal = BitConverter.Int64BitsToDouble(floatBits);
+
+                                    // Format using InvariantCulture to ensure a dot '.' is used as a decimal separator
+                                    cellValue = doubleVal.ToString(System.Globalization.CultureInfo.InvariantCulture);
+
+                                    // CRITICAL: If the float is a whole number (e.g., "-18"), force a decimal suffix so 
+                                    // downstream parsers or type inferrers know it is structurally a float!
+                                    if (!cellValue.Contains(".") && !cellValue.Contains("E") && !cellValue.Contains("e"))
+                                    {
+                                        cellValue += ".0";
+                                    }
                                     break;
 
                                 case 3: // Bool
@@ -5296,7 +5317,8 @@ namespace MyCompiler
 
             // Fix: Fall back to a raw AST node instead of an LLVM value if it's null
             var startNode = node.Start ?? new NumberNode(0);
-            var endNode = node.End ?? new NumberNode(0);
+            //var endNode = node.End ?? new NumberNode(0);
+            var endNode = node.End;
 
             // 1. If it's a regular array: [1, 2, 3][0:2]
             if (sourceType is ArrayType arrayType)
