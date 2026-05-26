@@ -1261,7 +1261,7 @@ namespace MyCompiler
         }
 
         public Type VisitDataframe(DataframeNode expr)
-        {// 1. Unpack raw parser arguments into their semantic properties in the Typechecker
+        {
             foreach (var arg in expr.Arguments)
             {
                 var argName = arg.Name?.ToLowerInvariant();
@@ -1304,7 +1304,6 @@ namespace MyCompiler
                     expr.Rows = arr;
                 }
                 else if (arg.Type is not ArrayType)
-
                     throw new Exception("Typechecker Error: Unnamed dataframe argument must be an array literal (assumed to be 'rows' data).");
             }
 

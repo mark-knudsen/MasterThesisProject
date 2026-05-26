@@ -4450,8 +4450,6 @@ namespace MyCompiler
         public LLVMValueRef VisitId(IdNode expr)
         {
             var entry = _context.Get(expr.Name);
-            if (entry == null) throw new Exception($"Variable {expr.Name} not found in context.");
-
             var llvmType = GetLLVMType(entry.Type);
             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {llvmType})");
 
