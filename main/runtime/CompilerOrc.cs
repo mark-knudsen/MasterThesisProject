@@ -1149,7 +1149,7 @@ namespace MyCompiler
                 // 2. FIX: Use 'mallocFuncType' instead of '_mallocType'
                 var mem = _builder.BuildCall2(_mallocType, mallocFunc,
                     new[] { LLVMValueRef.CreateConstInt(i64, (ulong)size) }, "value_mem");
-
+                //mem.SetAlignment((uint)size);
                 var castType = type switch
                 {
                     IntType => LLVMTypeRef.CreatePointer(i64, 0),
@@ -1159,7 +1159,7 @@ namespace MyCompiler
                 };
 
                 var cast = _builder.BuildBitCast(mem, castType, "value_cast");
-                _builder.BuildStore(value, cast);
+                _builder.BuildStore(value, cast).SetAlignment((uint)size);
                 dataPtr = mem;
             }
             else if (IsReferenceType(type))
