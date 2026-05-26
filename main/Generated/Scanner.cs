@@ -5,8 +5,8 @@
 //  See accompanying file GPLEXcopyright.rtf.
 //
 //  GPLEX Version:  1.2.3
-//  DateTime: 26-05-2026 15:28:16
-//  GPLEX input file <Lexer/Scanner.lex - 26-05-2026 13:41:48>
+//  DateTime: 26-05-2026 22:32:50
+//  GPLEX input file <Lexer/Scanner.lex - 26-05-2026 21:55:57>
 //  GPLEX frame file <embedded resource>
 //
 //  Option settings: parser, minimize

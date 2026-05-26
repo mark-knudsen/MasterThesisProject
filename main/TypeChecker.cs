@@ -543,8 +543,15 @@ namespace MyCompiler
 
         public Type VisitCopy(CopyNode expr)
         {
-            Visit(expr.SourceExpression);
-            expr.SetType(expr.SourceExpression.Type);
+            Type sourceType = Visit(expr.SourceExpression);
+
+            // Confirming it accepts Dataframes, Records, and Arrays smoothly now
+            if (sourceType is not ArrayType && sourceType is not RecordType && sourceType is not DataframeType)
+            {
+                throw new Exception($"Copying is only supported on arrays, records, or dataframes, got {sourceType}");
+            }
+
+            expr.SetType(sourceType);
             return expr.Type;
         }
 

@@ -1348,7 +1348,7 @@ namespace MyCompiler
                     variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
                     variablePtr.SetAlignment(8);
                 }
-                else                
+                else
                     throw new Exception($"Variable {varName} not defined.");
             }
 
@@ -2669,45 +2669,76 @@ namespace MyCompiler
 
         private LLVMValueRef EmitDeepCopy(LLVMValueRef sourceVal, Type type)
         {
-            if (type is ArrayType at)
-                return CopyArray(sourceVal, at);
-
-            if (type is RecordType rt)
-                return CopyRecord(sourceVal, rt);
-
-            // 3. Dataframes
-            if (type is DataframeType dt)
-                return CopyDataframe(sourceVal, dt);
+            if (type is IntType || type is FloatType || type is BoolType || type is StringType)
+            {
+                // Primitives and Immutable Strings can be copied by value/pointer value safely
+                return sourceVal;
+            }
+            else if (type is ArrayType arrayType)
+            {
+                return CopyArray(sourceVal, arrayType);
+            }
+            else if (type is RecordType recordType)
+            {
+                return CopyRecord(sourceVal, recordType);
+            }
+            else if (type is DataframeType dataframeType)
+            {
+                return CopyDataframe(sourceVal, dataframeType);
+            }
 
             throw new Exception($"Deep copy not supported for type: {type}");
         }
-
         private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
         {
             var ctx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+            var mallocFunc = GetOrDeclareMalloc();
 
-            // 1. Allocate the NEW Dataframe header container
-            var newDfPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
-                new[] { LLVMValueRef.CreateConstInt(ctx.Int64Type, 24) }, "df_copy_header");
+            // 1. Allocate a fresh Dataframe Object header container (24 bytes for 3 pointers)
+            var sizeOfDf = LLVMValueRef.CreateConstInt(ctx.Int64Type, 24);
+            var newDfPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeOfDf }, "df_copy_mem");
 
-            // 2. Deep Copy Columns (Array of Strings)
-            var colsPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 0), "ld_cols");
-            var columnArrayType = new ArrayType(new StringType()); // Columns are always strings
-            var newCols = CopyArray(colsPtr, columnArrayType);
-            _builder.BuildStore(newCols, _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 0));
+            // Define structural pointer type signatures for extraction
+            var arrayType = GetOrCreateArrayType();
+            var arrayPtrType = LLVMTypeRef.CreatePointer(arrayType, 0);
 
-            // 3. Deep Copy Rows (Array of Records)
-            var rowsPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1), "ld_rows");
-            var rowArrayType = new ArrayType(dfType.RowType); // Uses the RowType from your DataframeType
-            var newRows = CopyArray(rowsPtr, rowArrayType);
-            _builder.BuildStore(newRows, _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 1));
+            // CRITICAL: Ensure _dataframeStruct is the literal layout description block type, not 'ptr'
+            LLVMTypeRef dfLayoutType = _dataframeStruct;
+            if (dfLayoutType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+            {
+                dfLayoutType = _module.GetTypeByName("dataframe");
+            }
 
-            // 4. Deep Copy DataTypes (Array of Integers)
-            var typesPtr = _builder.BuildLoad2(i8Ptr, _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2), "ld_types");
-            var typeArrayType = new ArrayType(new IntType()); // Metadata array is always ints
-            var newTypes = CopyArray(typesPtr, typeArrayType);
-            _builder.BuildStore(newTypes, _builder.BuildStructGEP2(_dataframeStruct, newDfPtr, 2));
+            // 2. Extract pointers from source dataframe with explicit alignment constraints
+            var srcColsGep = _builder.BuildStructGEP2(dfLayoutType, dfPtr, 0, "src_cols_gep");
+            var srcColsPtr = _builder.BuildLoad2(arrayPtrType, srcColsGep, "src_cols");
+            srcColsPtr.SetAlignment(8); // <-- CRITICAL FIX: Ensure safe aligned tracking on load
+
+            var srcRowsGep = _builder.BuildStructGEP2(dfLayoutType, dfPtr, 1, "src_rows_gep");
+            var srcRowsPtr = _builder.BuildLoad2(arrayPtrType, srcRowsGep, "src_rows");
+            srcRowsPtr.SetAlignment(8); // <-- CRITICAL FIX
+
+            var srcTypesGep = _builder.BuildStructGEP2(dfLayoutType, dfPtr, 2, "src_types_gep");
+            var srcTypesPtr = _builder.BuildLoad2(arrayPtrType, srcTypesGep, "src_types");
+            srcTypesPtr.SetAlignment(8); // <-- CRITICAL FIX
+
+            // 3. Deep copy individual sub-arrays mapping internal data records down recursively
+            var columnArrayType = new ArrayType(new StringType());
+            var rowArrayType = new ArrayType(dfType.RowType); // Maps your underlying records down to EmitArrayLoopCopy
+            var typeArrayType = new ArrayType(new IntType());
+
+            var newCols = CopyArray(srcColsPtr, columnArrayType);
+            var newRows = CopyArray(srcRowsPtr, rowArrayType);
+            var newTypes = CopyArray(srcTypesPtr, typeArrayType);
+
+            // 4. Store newly deep-copied components into the new Dataframe destination structure offsets
+            var dstColsGep = _builder.BuildStructGEP2(dfLayoutType, newDfPtr, 0);
+            var dstRowsGep = _builder.BuildStructGEP2(dfLayoutType, newDfPtr, 1);
+            var dstTypesGep = _builder.BuildStructGEP2(dfLayoutType, newDfPtr, 2);
+
+            _builder.BuildStore(newCols, dstColsGep).SetAlignment(8);
+            _builder.BuildStore(newRows, dstRowsGep).SetAlignment(8);
+            _builder.BuildStore(newTypes, dstTypesGep).SetAlignment(8);
 
             return newDfPtr;
         }
@@ -2716,47 +2747,37 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-
-            // 1. Get the actual LLVM Struct Type for this record
-            var recordStructType = GetLLVMType(recordType);
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 2. Calculate size using LLVM's offsetof logic to ensure alignment/padding is correct
+            // 1. CORRECT FIX: Fetch the exact un-pointed structural layout directly using your existing helper
+            LLVMTypeRef recordStructType = GetOrCreateRecordStructType(recordType);
+
+            // 2. Fetch total byte size calculated for this structural configuration
             var sizeOfRecord = LLVMValueRef.CreateConstInt(i64, GetStructSize(recordType));
 
-            // 3. Allocate the new record
-            var newRecordBuffer = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { sizeOfRecord },
-                "record_copy_mem"
-            );
+            // 3. Allocate clean sequential memory alignment block
+            var newRecordBuffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeOfRecord }, "record_copy_mem");
 
-            // No need for generic i8** casts; we work with the struct pointers directly
+            // 4. Iterate and deep copy every field slot explicitly
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var fieldInfo = recordType.RecordFields[i];
-                var fieldLLVMType = GetLLVMType(fieldInfo.Type);
+                LLVMTypeRef fieldLLVMType = GetLLVMType(fieldInfo.Type);
 
-                // 4. Use BuildStructGEP2 to get the exact field address
+                // 5. Use the correct structural layout type to safely compute member pointer offsets
                 var srcFieldPtr = _builder.BuildStructGEP2(recordStructType, recordPtr, (uint)i, $"src_f{i}_ptr");
                 var dstFieldPtr = _builder.BuildStructGEP2(recordStructType, newRecordBuffer, (uint)i, $"dst_f{i}_ptr");
 
-                // 5. Load the actual value (could be a double, i64, or ptr)
+                // 6. Perform the load operation from the source structure pointer
                 var val = _builder.BuildLoad2(fieldLLVMType, srcFieldPtr, $"f{i}_val");
                 val.SetAlignment(8);
 
-                // 6. Deep copy if it's a reference type; otherwise store the primitive
-                LLVMValueRef copiedValue;
-                if (fieldInfo.Type is ArrayType || fieldInfo.Type is RecordType || fieldInfo.Type is DataframeType)
-                {
-                    copiedValue = EmitDeepCopy(val, fieldInfo.Type);
-                }
-                else 
-                    copiedValue = val; // For primitives (Double, Int), we just store the loaded value
+                // 7. Process nested properties or clone arrays down recursively if present
+                LLVMValueRef copiedValue = EmitDeepCopy(val, fieldInfo.Type);
 
-                var storeInstr = _builder.BuildStore(copiedValue, dstFieldPtr);
-                storeInstr.SetAlignment(8);
+                // 8. Safely commit value store into targeted destination structural memory block offset
+                var storeInst = _builder.BuildStore(copiedValue, dstFieldPtr);
+                storeInst.SetAlignment(8);
             }
 
             return newRecordBuffer;
@@ -4466,8 +4487,8 @@ namespace MyCompiler
             // 3. Perform the Load
             LLVMValueRef loadInstruction;
 
-             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
-                loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
+            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
+            loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
 
             // 4. Set the Alignment explicitly
             loadInstruction.SetAlignment(alignment);
