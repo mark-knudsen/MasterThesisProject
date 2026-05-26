@@ -335,10 +335,8 @@ namespace MyCompiler
             IteratorId = iteratorId;
             SourceExpr = sourceExpr;
 
-            //Console.WriteLine("Creating MapNode with transform expression of type: " + transformExpr.GetType().Name);
             if (transformExpr is ArrayNode arrayNode)
             {
-                //Console.WriteLine("Map transform is an array with " + arrayNode.Elements.Count + " elements.");
                 List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
                 foreach (var arr in arrayNode.Elements)
                 {
@@ -650,7 +648,7 @@ namespace MyCompiler
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            Arguments = args ?? new List<NamedArgumentNode>();
+            Arguments = args;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);

@@ -134,7 +134,7 @@ namespace MyCompiler
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
 
-            if (_debug) Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
+            // if (_debug) Console.WriteLine("found entry for " + expr.Name + " with type " + entry.Type);
 
             expr.SetType(entry.Type);
             return entry.Type;
@@ -743,9 +743,7 @@ namespace MyCompiler
             try
             {
                 Type transformType = Visit(expr.TransformExpr);
-
                 expr.TransformExpr.SetType(transformType);
-                Console.WriteLine("map transform type: " + transformType);
 
                 // Record => Dataframe
                 if (transformType is RecordType rec)
@@ -900,7 +898,7 @@ namespace MyCompiler
 
             if (expr.SchemaExpr == null)
             {
-                Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
+                if (_debug) Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
                 string path = (expr.FileNameExpr as StringNode).Value;
                 expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
             }

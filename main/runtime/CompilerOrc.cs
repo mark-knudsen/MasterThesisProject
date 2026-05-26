@@ -615,7 +615,6 @@ namespace MyCompiler
                 compilerTestList = new List<double>();
                 IRTestList = new List<double>();
                 RuntimeTestList = new List<double>();
-
             }
             if (_stopwatch) StartStopWatch();
             LLVMValueRef resultValue = Visit(expr);
@@ -765,7 +764,6 @@ namespace MyCompiler
             int fieldSize = 8;
 
             if (_debug) Console.WriteLine("Record type: " + record);
-            //if (_debug) Console.WriteLine("Record type count: " + record.RecordFields?.Count);
 
             for (int i = 0; i < record.RecordFields?.Count; i++)
             {
@@ -777,7 +775,6 @@ namespace MyCompiler
 
                 IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
                 IntPtr ptr = fieldLocation;
-                //IntPtr ptr = Marshal.ReadIntPtr(fieldLocation); // the old and bad
 
                 switch (recType)
                 {
@@ -791,7 +788,6 @@ namespace MyCompiler
                         result[label] = Marshal.ReadByte(ptr) != 0;
                         break;
                     case StringType:
-                        //result[label] = ptr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(ptr);
                         IntPtr strPtr = Marshal.ReadIntPtr(fieldLocation);
                         result[label] = strPtr == IntPtr.Zero ? "null" : Marshal.PtrToStringAnsi(strPtr);
                         break;
@@ -1354,7 +1350,6 @@ namespace MyCompiler
                 }
                 else                
                     throw new Exception($"Variable {varName} not defined.");
-
             }
 
             // 2. LOAD the current value manually using the pointer
@@ -2336,7 +2331,7 @@ namespace MyCompiler
         // x=dataframe({name: string, age: int})
         // x=dataframe({name: string, age: int}, [{name= "dan", age= 30}, {name= "alice", age= 25}])
         // x=dataframe({name: string, age: int}, rows=[{name: "dan", age: 30}, {name: "alice", age: 25}])
-        // x=dataframe({name: string, age: int, cool: bool}, rows=[{name= "dan", age= 30, cool= true}, {name= "alice", age= 25, cool= false}])
+        // x=dataframe({name: string, age: int, cool: bool}, rows=[{name="dan", age=30, cool=true}, {name="alice", age=25, cool=false}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})
 
@@ -3368,7 +3363,7 @@ namespace MyCompiler
 
         private LLVMTypeRef GetLLVMType(Type type)
         {
-            Console.WriteLine("yo we getting the LLVM type for type: " + type);
+            //if (_debug) Console.WriteLine("We getting the LLVM type for type: " + type);
             var ctx = _module.Context;
             return type switch
             {
@@ -3394,7 +3389,6 @@ namespace MyCompiler
                 StringType => new TypeLiteralNode(new TypeNode("string")),
                 _ => throw new Exception("Unknown type mapping")
             };
-
         }
 
         public LLVMValueRef VisitAdd(AddNode expr)
@@ -4472,19 +4466,8 @@ namespace MyCompiler
             // 3. Perform the Load
             LLVMValueRef loadInstruction;
 
-            if (entry.Type is ArrayType || entry.Type is StringType)
-            {
-                loadInstruction = _builder.BuildLoad2(
-                    LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0),
-                    ptrToLoad,
-                    expr.Name + "_load"
-                );
-            }
-            else
-            {
-                if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
+             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
                 loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
-            }
 
             // 4. Set the Alignment explicitly
             loadInstruction.SetAlignment(alignment);

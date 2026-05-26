@@ -13,8 +13,6 @@
     public List<ExpressionNode> exprList;
     public List<NamedArgumentNode> dataframeArgList;
     public List<NamedArgumentNode> recordArgList; 
-    /* public MyCompiler.StatementNode statement; */
-    /* public List<RecordNode> recordList; */
 }
 
 %token NULL_LITERAL
@@ -46,7 +44,6 @@
 %left MULT DIV
 %left DOT
 %left LBRACKET
-
 
 %type <node> prog statement statement_list assignment block dataframe_arg record_arg
 %type <expr> expr record_struct type opt_expr 
@@ -91,7 +88,7 @@ statement_list
 statement
     : assignment                                { $$ = $1; }
     | expr %prec LOWEST                         { $$ = $1; } 
-    | IF LPAREN expr RPAREN block IF            { $$ = new IfNode($3, $5); }  /* %prec used if no block! */
+    | IF LPAREN expr RPAREN block %prec IF      { $$ = new IfNode($3, $5); }  
     | IF LPAREN expr RPAREN block ELSE block    { $$ = new IfNode($3, $5, $7); }
     | PRINT LPAREN expr RPAREN                  { $$ = new PrintNode($3); }
     | FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block
@@ -155,14 +152,9 @@ assignment
     }
     | ID INC              { $$ = new IncrementNode(new IdNode($1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode($1)); }
-    | expr LBRACKET expr RBRACKET ASSIGN expr    
-    { 
-        $$ = new IndexAssignNode($1, $3, $6);
-    }
-    | expr DOT ID ASSIGN expr
-    {
-        $$ = new RecordFieldAssignNode($1, $3, $5);
-    }
+
+    | expr LBRACKET expr RBRACKET ASSIGN expr    { $$ = new IndexAssignNode($1, $3, $6); }
+    | expr DOT ID ASSIGN expr                    { $$ = new RecordFieldAssignNode($1, $3, $5); }
     ;
 
 expr
@@ -172,13 +164,11 @@ expr
     | STRING_LITERAL                { $$ = new StringNode($1); }
     | NULL_LITERAL                  { $$ = new NullNode(); }   /* We currently do not use NULL_LITERAL! */
     | ID                            { $$ = new IdNode($1); }
-    /* | type                       { $$ = new TypeLiteralNode($1 as TypeNode); } */
 
     | LPAREN expr RPAREN            { $$ = $2; }    /* ( 2+2 ) */
     | LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($2); } /*[1,2,3] */    
 
-    /* Under your expr rules */
-    | expr LBRACKET opt_expr COLON opt_expr RBRACKET { $$ = new SliceNode($1, $3, $5); }
+    | expr LBRACKET opt_expr COLON opt_expr RBRACKET    { $$ = new SliceNode($1, $3, $5); }
 
     /* Built-ins */
     | RANDOM LPAREN expr_list RPAREN                    { $$ = new RandomNode($3); }
@@ -220,19 +210,14 @@ expr
     | expr DOT COLUMNS                      { $$ = new ColumnsNode($1); }
 
     /* Functional methods */
-    | expr DOT ADD LPAREN expr RPAREN       { $$ = new AddNode($1, $5); }   
-    | expr DOT ADDRANGE LPAREN expr RPAREN  { $$ = new AddRangeNode($1, $5); }
-    | expr DOT REMOVE LPAREN expr RPAREN    { $$ = new RemoveNode($1, $5); }
-    | expr DOT REMOVERANGE LPAREN expr RPAREN { $$ = new RemoveRangeNode($1, $5); }
-    | expr DOT CORR LPAREN expr RPAREN      { $$ = new CorrelationNode($1, $5); }
-    | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN
-    {
-        $$ = new WhereNode(new IdNode($5), $1, $7); 
-    }
-    | expr DOT MAP LPAREN ID LAMBDA expr RPAREN  
-    {
-        $$ = new MapNode(new IdNode($5), $1, $7);
-    }
+    | expr DOT ADD LPAREN expr RPAREN             { $$ = new AddNode($1, $5); }   
+    | expr DOT ADDRANGE LPAREN expr RPAREN        { $$ = new AddRangeNode($1, $5); }
+    | expr DOT REMOVE LPAREN expr RPAREN          { $$ = new RemoveNode($1, $5); }
+    | expr DOT REMOVERANGE LPAREN expr RPAREN     { $$ = new RemoveRangeNode($1, $5); }
+    | expr DOT CORR LPAREN expr RPAREN            { $$ = new CorrelationNode($1, $5); }
+
+    | expr DOT WHERE LPAREN ID LAMBDA expr RPAREN { $$ = new WhereNode(new IdNode($5), $1, $7); }
+    | expr DOT MAP LPAREN ID LAMBDA expr RPAREN   { $$ = new MapNode(new IdNode($5), $1, $7); }
     | expr DOT SELECT LPAREN id_list RPAREN
     {
         $$ = new MapNode(
@@ -246,18 +231,8 @@ expr
     ;
 
 id_list
-    : ID
-    {
-        $$ = new List<ExpressionNode>
-        {
-            new IdNode($1)
-        };
-    }
-    | id_list COMMA ID
-    {
-        $1.Add(new IdNode($3));
-        $$ = $1;
-    }
+    : ID                { $$ = new List<ExpressionNode>{ new IdNode($1) }; }
+    | id_list COMMA ID  { $1.Add(new IdNode($3)); $$ = $1; }
     ;
 
 record_struct
