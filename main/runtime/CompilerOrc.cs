@@ -2415,16 +2415,7 @@ namespace MyCompiler
                 var name = dfType.ColumnNames[i];
                 var item = dfType.DataTypes[i];
 
-                ExpressionNode typeLit = item switch
-                {
-                    IntType => new TypeLiteralNode(new TypeNode("int")),
-                    FloatType => new TypeLiteralNode(new TypeNode("float")),
-                    BoolType => new TypeLiteralNode(new TypeNode("bool")),
-                    StringType => new TypeLiteralNode(new TypeNode("string")),
-                    _ => throw new Exception("Unknown type mapping")
-                };
-
-                fields.Add(new NamedArgumentNode(name, typeLit));
+                fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
             }
             var schemaRecord = new RecordNode(fields);
 
@@ -2574,6 +2565,7 @@ namespace MyCompiler
             return null;
         }
 
+
         public SequenceNode MapForDataframe(MapNode expr)
         {
             var program = new SequenceNode();
@@ -2592,16 +2584,27 @@ namespace MyCompiler
 
             // 3. Initialize Result Dataframe with Capacity
             var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-            var dummyTypes = dfType.DataTypes.Select(t => (ExpressionNode)new StringNode("")).ToList();
 
             // Passing srcLength to ArrayNode is the key to stopping reallocs
             var rowsArray = new ArrayNode(new List<ExpressionNode>());
             rowsArray.SetType(new ArrayType(dfType.RowType));
 
+            // --- CLEAN REWRITE: Pass the schema structure directly ---
+            // If dfType stores the original RecordNode, pass it. 
+            // If it only stores the RecordType, we reconstruct the matching literal fields.
+            var fields = new List<NamedArgumentNode>();
+            for (int i = 0; i < dfType.ColumnNames.Count; i++)
+            {
+                var name = dfType.ColumnNames[i];
+                var item = dfType.DataTypes[i];
+
+                fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
+            }
+            var schemaRecord = new RecordNode(fields);
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
                 new NamedArgumentNode("columns", new ArrayNode(columns)),
                 new NamedArgumentNode("rows", rowsArray),
-                new NamedArgumentNode("type", new ArrayNode(dummyTypes))
+                new NamedArgumentNode("schema", schemaRecord)
             });
             dfConstructor.SetType(dfType);
 
@@ -3404,6 +3407,19 @@ namespace MyCompiler
             };
         }
 
+        public TypeLiteralNode GetTypeLiteralNodeFromTypeNode(Type type)
+        {
+            return type switch
+            {
+                IntType => new TypeLiteralNode(new TypeNode("int")),
+                FloatType => new TypeLiteralNode(new TypeNode("float")),
+                BoolType => new TypeLiteralNode(new TypeNode("bool")),
+                StringType => new TypeLiteralNode(new TypeNode("string")),
+                _ => throw new Exception("Unknown type mapping")
+            };
+
+        }
+
         public LLVMValueRef VisitAdd(AddNode expr)
         {
             var sourceType = expr.SourceExpression.Type;
@@ -3465,7 +3481,9 @@ namespace MyCompiler
             var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_ptr_ptr");
 
             var length = _builder.BuildLoad2(i64, lenPtr, "len");
+            length.SetAlignment(8);
             var capacity = _builder.BuildLoad2(i64, capPtr, "cap");
+            capacity.SetAlignment(8);
             var rawData = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
 
             // ===== BLOCKS =====
@@ -3496,6 +3514,7 @@ namespace MyCompiler
                 _builder.BuildMul(capacity, i64Two),
                 "new_cap");
 
+
             uint elemSize = isPrimitive ? GetTypeSize(elementType) : 8;
 
             var byteSize = _builder.BuildMul(
@@ -3511,7 +3530,7 @@ namespace MyCompiler
                 new[] { rawData, byteSize },
                 "realloc");
 
-            _builder.BuildStore(newCap, capPtr);
+            _builder.BuildStore(newCap, capPtr).SetAlignment(8);
             _builder.BuildStore(newData, dataPtrPtr);
 
             _builder.BuildBr(contBlock);
@@ -3540,14 +3559,14 @@ namespace MyCompiler
             if (!isPrimitive)
                 storeVal = _builder.BuildBitCast(valueToAdd, llvmElementType, "cast");
 
-            _builder.BuildStore(storeVal, indexPtr);
+            _builder.BuildStore(storeVal, indexPtr).SetAlignment(8);
 
             var newLen = _builder.BuildAdd(
                 length,
                 LLVMValueRef.CreateConstInt(i64, 1),
                 "new_len");
 
-            _builder.BuildStore(newLen, lenPtr);
+            _builder.BuildStore(newLen, lenPtr).SetAlignment(8);
         }
 
         public LLVMValueRef VisitAddRange(AddRangeNode expr)
@@ -4706,18 +4725,26 @@ namespace MyCompiler
 
                 // Perform a SINGLE load based on the type
                 if (expr.Type is IntType)
-                    return _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_{expr.IdField}");
+                {
+                    var result = _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_{expr.IdField}");
+                    result.SetAlignment(8);
+                    return result;
+                }
 
                 if (expr.Type is FloatType)
-                    return _builder.BuildLoad2(ctx.DoubleType, fieldSlotPtr, $"val_{expr.IdField}");
+                {
+                    var result = _builder.BuildLoad2(ctx.DoubleType, fieldSlotPtr, $"val_{expr.IdField}");
+                    result.SetAlignment(8);
+                    return result;
+                }
 
                 if (expr.Type is BoolType)
                 {
                     // If you store bools as i64 in C#, load i64 and truncate to i1
                     var i8Val = _builder.BuildLoad2(ctx.Int8Type, fieldSlotPtr, $"val_bool_raw");
+                    i8Val.SetAlignment(1);
                     return _builder.BuildIntCast(i8Val, ctx.Int8Type, $"val_{expr.IdField}");
                 }
-
                 if (expr.Type is StringType)
                 {
                     // For strings, the value IN the slot IS the pointer to the characters
