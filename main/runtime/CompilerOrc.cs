@@ -1236,7 +1236,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-            if (condition.TypeOf == ctx.DoubleType)
+            if (condition.TypeOf == ctx.FloatType)
             {
                 condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
                     condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
@@ -1346,7 +1346,7 @@ namespace MyCompiler
                 {
                     variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
                     variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                    variablePtr.SetAlignment(8);
+                    variablePtr.SetAlignment(4);
                 }
                 else
                     throw new Exception($"Variable {varName} not defined.");
@@ -1355,7 +1355,7 @@ namespace MyCompiler
             // 2. LOAD the current value manually using the pointer
             var llvmType = GetLLVMType(expr.Id.Type);
             var currentValue = _builder.BuildLoad2(llvmType, variablePtr, "x_load");
-            currentValue.SetAlignment(8);
+            currentValue.SetAlignment(4);
 
             // 3. MATH
             LLVMValueRef newValue;
@@ -1365,7 +1365,7 @@ namespace MyCompiler
                 newValue = _builder.BuildAdd(currentValue, LLVMValueRef.CreateConstInt(llvmType, 1, false), "inc_add");
 
             // 4. STORE back into the POINTER
-            _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
+            _builder.BuildStore(newValue, variablePtr).SetAlignment(4);
 
             return newValue;
         }
@@ -1739,7 +1739,7 @@ namespace MyCompiler
             var slotPtr = _builder.BuildGEP2(
                 i8Ptr,
                 recordPtr,
-                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)index) }
+                new[] { LLVMValueRef.CreateConstInt(_module.Context.Int32Type, (uint)index) }
             );
 
             // load pointer stored in slot
@@ -1816,7 +1816,7 @@ namespace MyCompiler
 
             var type = LLVMTypeRef.CreateFunction(
                 i8ptr,
-                new[] { i8ptr, ctx.Int64Type },
+                new[] { i8ptr, ctx.Int32Type },
                 false
             );
 
@@ -1905,7 +1905,7 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitNumber(NumberNode expr)
         {
-            return LLVMValueRef.CreateConstInt(_module.Context.Int64Type, (ulong)expr.Value);
+            return LLVMValueRef.CreateConstInt(_module.Context.Int32Type, (uint)expr.Value);
         }
         public LLVMValueRef VisitFloat(FloatNode expr)
         {
@@ -3036,16 +3036,17 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
+            var i32 = ctx.Int32Type;
             uint count = (uint)expr.Elements.Count;
 
             bool isPrimitive = IsValueType(expr.ElementType);
 
             // --- NEW: Handle Dynamic vs Static Capacity ---
-            LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i64, count);
+            LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i32, count);
             uint capacity = count > 0 ? Math.Min(count, 100) : 100;
             if (expr.Capacity != null)
                 capacity = Math.Min(count, 100);
-            LLVMValueRef capacityVal = LLVMValueRef.CreateConstInt(i64, capacity);
+            LLVMValueRef capacityVal = LLVMValueRef.CreateConstInt(i32, capacity);
 
             var elementType = GetLLVMType(expr.ElementType);
             uint elementSize = isPrimitive ? GetTypeSize(expr.ElementType) : 8;
@@ -3053,24 +3054,24 @@ namespace MyCompiler
             // --- NEW: Dynamic Size Calculation ---
             // Instead of C# math: (elementSize * capacity)
             // We do LLVM IR math: BuildMul(elementSize, capacityVal)
-            var llvmElementSize = LLVMValueRef.CreateConstInt(i64, (ulong)elementSize);
+            var llvmElementSize = LLVMValueRef.CreateConstInt(i32, (uint)elementSize);
             var totalCapacity = _builder.BuildMul(llvmElementSize, capacityVal, "total_size");
 
             // Align to 32 bytes (totalSize + 31) & ~31
-            var thirtyOne = LLVMValueRef.CreateConstInt(i64, 31);
-            var mask = LLVMValueRef.CreateConstInt(i64, unchecked((ulong)~31));
+            var thirtyOne = LLVMValueRef.CreateConstInt(i32, 31);
+            var mask = LLVMValueRef.CreateConstInt(i32, unchecked((uint)~31));
             var padded = _builder.BuildAdd(totalCapacity, thirtyOne, "padded_size");
             var alignedSizeVal = _builder.BuildAnd(padded, mask, "aligned_size");
 
             // Ensure at least 8 bytes to avoid malloc(0)
-            var eight = LLVMValueRef.CreateConstInt(i64, 8);
-            var isZero = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, alignedSizeVal, LLVMValueRef.CreateConstInt(i64, 0), "is_zero");
+            var eight = LLVMValueRef.CreateConstInt(i32, 4);
+            var isZero = _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, alignedSizeVal, LLVMValueRef.CreateConstInt(i32, 0), "is_zero");
             alignedSizeVal = _builder.BuildSelect(isZero, eight, alignedSizeVal, "final_malloc_size");
 
             // 3. Allocate
             var mallocFn = GetOrDeclareMalloc();
             var headerRaw = _builder.BuildCall2(_mallocType, mallocFn,
-                new[] { LLVMValueRef.CreateConstInt(i64, GetStructSize(expr.Type)) }, "arr_header");
+                new[] { LLVMValueRef.CreateConstInt(i32, GetStructSize(expr.Type)) }, "arr_header");
 
             // Pass the DYNAMIC alignedSizeVal to malloc
             var rawDataPtr = _builder.BuildCall2(_mallocType, mallocFn,
@@ -3094,7 +3095,7 @@ namespace MyCompiler
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
-                var idx = LLVMValueRef.CreateConstInt(i64, (uint)i);
+                var idx = LLVMValueRef.CreateConstInt(i32, (uint)i);
                 var elementPtr = _builder.BuildGEP2(elementType, typedDataPtr, new[] { idx }, "elem_ptr");
                 _builder.BuildStore(val, elementPtr).SetAlignment(elementSize);
             }
@@ -3369,8 +3370,8 @@ namespace MyCompiler
             var ctx = _module.Context;
             return type switch
             {
-                FloatType => ctx.DoubleType,
-                IntType => ctx.Int64Type,
+                FloatType => ctx.FloatType,
+                IntType => ctx.Int32Type,
                 BoolType => ctx.Int8Type,
                 NullType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Represent Null as i8*
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
@@ -3441,6 +3442,8 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
+            
+            var i32 = ctx.Int32Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             var llvmElementType = GetLLVMType(elementType);
@@ -3455,10 +3458,10 @@ namespace MyCompiler
 
             var length32 = _builder.BuildLoad2(ctx.Int32Type, lenPtr, "len32");
             length32.SetAlignment(4);
-            var length = _builder.BuildZExt(length32, i64, "len");
+            var length = _builder.BuildZExt(length32, i32, "len");
             var capacity32 = _builder.BuildLoad2(ctx.Int32Type, capPtr, "cap32");
             capacity32.SetAlignment(4);
-            var capacity = _builder.BuildZExt(capacity32, i64, "cap");
+            var capacity = _builder.BuildZExt(capacity32, i32, "cap");
             var rawData = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
 
             // ===== BLOCKS =====
@@ -3479,21 +3482,21 @@ namespace MyCompiler
             // ===== GROW =====
             _builder.PositionAtEnd(growBlock);
 
-            var i64Zero = LLVMValueRef.CreateConstInt(i64, 0);
-            var i64Two = LLVMValueRef.CreateConstInt(i64, 2);
-            var i64Four = LLVMValueRef.CreateConstInt(i64, 4);
+            var i32Zero = LLVMValueRef.CreateConstInt(i32, 0);
+            var i32Two = LLVMValueRef.CreateConstInt(i32, 2);
+            var i32Four = LLVMValueRef.CreateConstInt(i32, 4);
 
             var newCap = _builder.BuildSelect(
-                _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, i64Zero),
-                i64Four,
-                _builder.BuildMul(capacity, i64Two),
+                _builder.BuildICmp(LLVMIntPredicate.LLVMIntEQ, capacity, i32Zero),
+                i32Four,
+                _builder.BuildMul(capacity, i32Two),
                 "new_cap");
 
             uint elemSize = isPrimitive ? GetTypeSize(elementType) : 8;
 
             var byteSize = _builder.BuildMul(
                 newCap,
-                LLVMValueRef.CreateConstInt(i64, elemSize),
+                LLVMValueRef.CreateConstInt(i32, elemSize),
                 "bytes");
 
             var reallocFunc = GetOrDeclareRealloc();
@@ -3534,11 +3537,11 @@ namespace MyCompiler
             if (!isPrimitive)
                 storeVal = _builder.BuildBitCast(valueToAdd, llvmElementType, "cast");
 
-            _builder.BuildStore(storeVal, indexPtr).SetAlignment(8);
+            _builder.BuildStore(storeVal, indexPtr).SetAlignment(4);
 
             var newLen = _builder.BuildAdd(
                 length,
-                LLVMValueRef.CreateConstInt(i64, 1),
+                LLVMValueRef.CreateConstInt(i32, 1),
                 "new_len");
 
             var newLen32 = _builder.BuildTrunc(newLen, ctx.Int32Type, "new_len32");
