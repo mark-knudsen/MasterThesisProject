@@ -463,16 +463,6 @@ namespace MyCompiler
             return _dataframeStruct;
         }
 
-        // private void DeclarePrintf()
-        // {
-        //     var llvmCtx = _module.Context;
-        //     _printfType = LLVMTypeRef.CreateFunction(
-        //           llvmCtx.Int32Type,
-        //         new[] { LLVMTypeRef.CreatePointer(llvmCtx.DoubleType, 0) }, // should this be a double?
-        //         true); // varargs
-
-        //     _printf = _module.AddFunction("printf", _printfType);
-        // }
         private void DeclarePrintf()
         {
             var llvmCtx = _module.Context;
@@ -489,9 +479,7 @@ namespace MyCompiler
             // Guard to ensure we don't accidentally redefine it if called multiple times
             _printf = _module.GetNamedFunction("printf");
             if (_printf.Handle == IntPtr.Zero)
-            {
                 _printf = _module.AddFunction("printf", _printfType);
-            }
         }
 
         private void DeclareBoolStrings()
@@ -550,19 +538,15 @@ namespace MyCompiler
         // TODO:
         // none atm
 
-        // Problems
-        // add range can only take an array, not an id or an expr, only an array
-        // z.addRange(x.select(age)) doesn't work
-        // z.addRange(arr)           doesn't work
-
         // TODO: fix the problems
 
         // BROKEN FUNCTIONALITY
         // can't use existing variables inside where and map
         // can't use random inside addRange
-        // we do not handle wrong index
+        // we do not handle index ot of bounds
         // can't have array of arrays with different types
         // can't do x.columns[0]
+        // can't do x=x.age on dataframe   or x=x.where or map
 
         // UNIT TESTING
         // create a orc unit test
@@ -2330,7 +2314,6 @@ namespace MyCompiler
         }
         // x=dataframe({name: string, age: int})
         // x=dataframe({name: string, age: int}, [{name= "dan", age= 30}, {name= "alice", age= 25}])
-        // x=dataframe({name: string, age: int}, rows=[{name: "dan", age: 30}, {name: "alice", age: 25}])
         // x=dataframe({name: string, age: int, cool: bool}, rows=[{name="dan", age=30, cool=true}, {name="alice", age=25, cool=false}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})
@@ -2342,9 +2325,8 @@ namespace MyCompiler
         // x.add({name="bob",age=5,cool=true})
         // x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}])
 
-        // for(i=0; i<50; i++) x.add({name: "Hary potter", age: 10 + random(1,100)})
+        // for(i=0; i<50; i++) {x.add({name="Hary potter", age=10 + random(1,100), cool=true})}
         // for(i=0; i<5200000; i++) {x.add({name="Hary potter", age= 10 + random(1,100)}) }
-        // for(i=0; i<5000000; i++) x.add({name="Hary potter", age= 10 + random(1,100)}) // 5 million
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) x.addRange([{name="voldemort", age=80}, {name="dumbledore", age=70}, {name="MERLIN", age=101}])
 
@@ -2374,21 +2356,46 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
+        public SequenceNode WhereForArray(Type sourceType, WhereNode expr)
+        {
+            var srcVarName = "__where_src";
+            var resultVarName = "__where_result";
+            var indexVarName = "__where_i";
+
+            var arrType = (ArrayType)sourceType;
+            var elementType = arrType.ElementType;
+
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+            var resultArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = elementType };
+
+            var resultAssign = new AssignNode(resultVarName, resultArray);
+            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
+
+            var indexNode = new IdNode(indexVarName);
+            var loopCond = new ComparisonNode(indexNode, "<", new LengthNode(new IdNode(srcVarName)));
+            var loopStep = new IncrementNode(indexNode);
+            var currentElement = new IndexNode(new IdNode(srcVarName), indexNode) { SkipBoundsCheck = true };
+
+            ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
+
+            var ifBody = new SequenceNode();
+            ifBody.Statements.Add(new AddNode(new IdNode(resultVarName), currentElement));
+            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, new IfNode(ifCond, ifBody));
+
+            return new SequenceNode { Statements = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
+        }
+
         public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         {
-            var srcVar = "__where_src";
-            var resultVar = "__where_result";
-            var iVar = "__where_i";
+            var srcVarName = "__where_src";
+            var resultVarName = "__where_result";
+            var iVarName = "__where_i";
 
-            if (sourceType is not DataframeType dfType)
-                throw new Exception("Where only supports dataframe");
+            var dfType = sourceType as DataframeType;
 
-            var srcAssign = new AssignNode(srcVar, expr.SourceExpr);
-            var indexInit = new AssignNode(iVar, new NumberNode(0));
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+            var indexInit = new AssignNode(iVarName, new NumberNode(0));
 
-            // --- CLEAN REWRITE: Pass the schema structure directly ---
-            // If dfType stores the original RecordNode, pass it. 
-            // If it only stores the RecordType, we reconstruct the matching literal fields.
             var fields = new List<NamedArgumentNode>();
             for (int i = 0; i < dfType.ColumnNames.Count; i++)
             {
@@ -2398,63 +2405,24 @@ namespace MyCompiler
                 fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
             }
             var schemaRecord = new RecordNode(fields);
-
             var resultDf = new DataframeNode(new List<NamedArgumentNode> {
                 new NamedArgumentNode("schema", schemaRecord)
             });
 
-            var resultAssign = new AssignNode(resultVar, resultDf);
+            var resultAssign = new AssignNode(resultVarName, resultDf);
 
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
-            var step = new IncrementNode(new IdNode(iVar));
-
-            var current = new IndexNode(new IdNode(srcVar), new IdNode(iVar))
-            {
-                SkipBoundsCheck = true
-            };
-
-            ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, current);
-
-            var ifBody = new SequenceNode();
-            ifBody.Statements.Add(new AddNode(new IdNode(resultVar), current));
-
-            var loop = new ForLoopNode(indexInit, cond, step, new SequenceNode
-            {
-                Statements = { new IfNode(ifCond, ifBody) }
-            });
-
-            return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVar) } };
-        }
-
-        public SequenceNode WhereForArray(Type sourceType, WhereNode expr)
-        {
-            var arrType = (ArrayType)sourceType;
-            var elementType = arrType.ElementType;
-
-            var srcVarName = "__where_src";
-            var resultVarName = "__where_result";
-            var indexVarName = "__where_i";
-
-            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
-
-            var resultArray = new ArrayNode(new List<ExpressionNode>())
-            {
-                ElementType = elementType
-            };
-
-            var resultAssign = new AssignNode(resultVarName, resultArray);
-            var indexInit = new AssignNode(indexVarName, new NumberNode(0));
-
-            var loopCond = new ComparisonNode(new IdNode(indexVarName), "<", new LengthNode(new IdNode(srcVarName)));
-            var loopStep = new IncrementNode(new IdNode(indexVarName));
-            var currentElement = new IndexNode(new IdNode(srcVarName), new IdNode(indexVarName));
+            var idNode = new IdNode(iVarName);
+            var cond = new ComparisonNode(idNode, "<", new LengthNode(new IdNode(srcVarName)));
+            var step = new IncrementNode(idNode);
+            var currentElement = new IndexNode(new IdNode(srcVarName), idNode) { SkipBoundsCheck = true };
 
             ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
-            var ifBody = new SequenceNode { Statements = { new AddNode(new IdNode(resultVarName), currentElement) } };
 
-            var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, new SequenceNode { Statements = { new IfNode(ifCond, ifBody) } });
+            var ifBody = new SequenceNode();
+            ifBody.Statements.Add(new AddNode(new IdNode(resultVarName), currentElement));
+            var loop = new ForLoopNode(indexInit, cond, step, new IfNode(ifCond, ifBody));
 
-            return new SequenceNode { Statements = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
+            return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVarName) } };
         }
 
         public LLVMValueRef VisitMap(MapNode expr)
@@ -2476,48 +2444,101 @@ namespace MyCompiler
         public SequenceNode MapForArray(MapNode expr)
         {
             var program = new SequenceNode();
-            var srcVar = "__map_src";
-            var resVar = "__map_result";
-            var iVar = "__map_i";
+            var srcVarName = "__map_src";
+            var resultVarName = "__map_result";
+            var iVarName = "__map_i";
 
-            // 1. Get the correct element type from the MapNode's result type
-            Type resultElementType = null;
-            if (expr.Type is ArrayType at) resultElementType = at.ElementType;
-            else if (expr.Type is DataframeType df) resultElementType = df.RowType;
+            Type resultElementType = (expr.Type as ArrayType).ElementType;
+            var indexInit = new AssignNode(iVarName, new NumberNode(0));
 
             // 2. Setup
-            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
+            program.Statements.Add(new AssignNode(srcVarName, expr.SourceExpr));
 
             // Initialize empty array with the correct ElementType
-            var emptyArray = new ArrayNode(new List<ExpressionNode>());
-            emptyArray.ElementType = resultElementType;
+            var emptyArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = resultElementType };
 
-            program.Statements.Add(new AssignNode(resVar, emptyArray));
-            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
+            program.Statements.Add(new AssignNode(resultVarName, emptyArray));
+            program.Statements.Add(indexInit);
 
             var loopBody = new SequenceNode();
 
             // --- OPTIMIZATION: Index with SkipBoundsCheck ---
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
-            rowAccess.SkipBoundsCheck = true;
+            var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
 
             // 3. Transform the lambda body
-            var lastExpr =
-            (ExpressionNode)ReplaceIteratorInNode(
+            ExpressionNode lastExpr = (ExpressionNode)ReplaceIteratorInNode(
                 expr.TransformExpr,
                 expr.IteratorId.Name,
                 rowAccess
             );
 
             // 4. Add to the result list
-            loopBody.Statements.Add(new AddNode(new IdNode(resVar), lastExpr));
+            loopBody.Statements.Add(new AddNode(new IdNode(resultVarName), lastExpr));
 
             // 5. Loop Logic
-            var cond = new ComparisonNode(new IdNode(iVar), "<", new LengthNode(new IdNode(srcVar)));
-            var step = new IncrementNode(new IdNode(iVar));
-            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
+            var idvar = new IdNode(iVarName);
+            var cond = new ComparisonNode(idvar, "<", new LengthNode(new IdNode(srcVarName)));
+            var step = new IncrementNode(idvar);
+            program.Statements.Add(new ForLoopNode(indexInit, cond, step, loopBody));
 
-            program.Statements.Add(new IdNode(resVar));
+            program.Statements.Add(new IdNode(resultVarName));
+            return program;
+        }
+
+        public SequenceNode MapForDataframe(MapNode expr)
+        {
+            var program = new SequenceNode();
+            var srcVarName = "__map_src";
+            var resultVarName = "__map_result";
+            var iVarName = "__map_i";
+            var currentRowVarName = "__current_row";
+            var dfType = (DataframeType)expr.Type;
+
+            // 1. Assign Source
+            program.Statements.Add(new AssignNode(srcVarName, expr.SourceExpr));
+
+            var fields = new List<NamedArgumentNode>();
+            for (int i = 0; i < dfType.ColumnNames.Count; i++)
+            {
+                var name = dfType.ColumnNames[i];
+                var item = dfType.DataTypes[i];
+
+                fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
+            }
+            var schemaRecord = new RecordNode(fields);
+            var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
+                new NamedArgumentNode("schema", schemaRecord)
+            });
+            dfConstructor.SetType(dfType);
+
+            program.Statements.Add(new AssignNode(resultVarName, dfConstructor));
+            program.Statements.Add(new AssignNode(iVarName, new NumberNode(0)));
+
+            var loopBody = new SequenceNode();
+            var replacementNode = new IdNode(currentRowVarName);
+
+            // 4. Fetch row: currentRow = src[i]
+            var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
+            loopBody.Statements.Add(new AssignNode(currentRowVarName, rowAccess));
+
+            // 5. Transformation Logic
+            ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
+                expr.TransformExpr,
+                expr.IteratorId.Name,
+                replacementNode
+            );
+
+            // Because we initialized 'rowsArray' with 'srcLength',
+            // the 'grow' block in the IR will exist but will NEVER be executed.
+            loopBody.Statements.Add(new AddNode(new IdNode(resultVarName), finalRowExpr));
+
+            // 7. Loop Setup
+            var idvar = new IdNode(iVarName);
+            var cond = new ComparisonNode(idvar, "<", new LengthNode(new IdNode(srcVarName)));
+            var step = new IncrementNode(idvar);
+            program.Statements.Add(new ForLoopNode(new AssignNode(iVarName, new NumberNode(0)), cond, step, loopBody));
+
+            program.Statements.Add(new IdNode(resultVarName));
             return program;
         }
 
@@ -2543,78 +2564,6 @@ namespace MyCompiler
                 return id.Name;
 
             return null;
-        }
-
-        public SequenceNode MapForDataframe(MapNode expr)
-        {
-            var program = new SequenceNode();
-            var srcVar = "__map_src";
-            var resVar = "__map_result";
-            var iVar = "__map_i";
-            var currentRowVar = "__current_row";
-            var dfType = (DataframeType)expr.Type;
-
-            // 1. Assign Source
-            program.Statements.Add(new AssignNode(srcVar, expr.SourceExpr));
-
-            // 2. Capture length
-            var srcLength = new LengthNode(new IdNode(srcVar));
-            srcLength.SetType(new IntType());
-
-            // 3. Initialize Result Dataframe with Capacity
-            var columns = dfType.ColumnNames.Select(c => (ExpressionNode)new StringNode(c)).ToList();
-
-            // Passing srcLength to ArrayNode is the key to stopping reallocs
-            var rowsArray = new ArrayNode(new List<ExpressionNode>());
-            rowsArray.SetType(new ArrayType(dfType.RowType));
-
-            // --- CLEAN REWRITE: Pass the schema structure directly ---
-            // If dfType stores the original RecordNode, pass it. 
-            // If it only stores the RecordType, we reconstruct the matching literal fields.
-            var fields = new List<NamedArgumentNode>();
-            for (int i = 0; i < dfType.ColumnNames.Count; i++)
-            {
-                var name = dfType.ColumnNames[i];
-                var item = dfType.DataTypes[i];
-
-                fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
-            }
-            var schemaRecord = new RecordNode(fields);
-            var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
-                new NamedArgumentNode("columns", new ArrayNode(columns)),
-                new NamedArgumentNode("rows", rowsArray),
-                new NamedArgumentNode("schema", schemaRecord)
-            });
-            dfConstructor.SetType(dfType);
-
-            program.Statements.Add(new AssignNode(resVar, dfConstructor));
-            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
-
-            var loopBody = new SequenceNode();
-            var replacementNode = new IdNode(currentRowVar);
-
-            // 4. Fetch row: currentRow = src[i]
-            var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar)) { SkipBoundsCheck = true };
-            loopBody.Statements.Add(new AssignNode(currentRowVar, rowAccess));
-
-            // 5. Transformation Logic
-            ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
-                expr.TransformExpr,
-                expr.IteratorId.Name,
-                replacementNode
-            );
-
-            // Because we initialized 'rowsArray' with 'srcLength',
-            // the 'grow' block in the IR will exist but will NEVER be executed.
-            loopBody.Statements.Add(new AddNode(new IdNode(resVar), finalRowExpr));
-
-            // 7. Loop Setup
-            var cond = new ComparisonNode(new IdNode(iVar), "<", srcLength);
-            var step = new IncrementNode(new IdNode(iVar));
-            program.Statements.Add(new ForLoopNode(null, cond, step, loopBody));
-
-            program.Statements.Add(new IdNode(resVar));
-            return program;
         }
 
         // Helper to check if a node tree uses a specific variable
@@ -4097,16 +4046,7 @@ namespace MyCompiler
 
                 // Step 2: load the pointer to the ArrayObject
                 var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsFieldPtr, "rows_ptr");
-
-                // Step 3: cast to ArrayObject*
-                var rowsArrayPtr = _builder.BuildBitCast(rowsPtr, LLVMTypeRef.CreatePointer(_arrayStruct, 0), "rows_array_ptr");
-
-                // Step 4: get the 'length' field
-                var lenPtr = _builder.BuildStructGEP2(_arrayStruct, rowsArrayPtr, 0, "rows_length_ptr");
-                var length = _builder.BuildLoad2(ctx.Int64Type, lenPtr, "rows_length");
-                length.SetAlignment(8);
-
-                return length;
+                return GetArrayLength(rowsPtr);
             }
             else
                 throw new Exception("Length operator is only supported on arrays and dataframes");

@@ -482,18 +482,17 @@ namespace MyCompiler
 
         public Type VisitForLoop(ForLoopNode statement)
         {
-            if (statement.Initialization != null) Visit(statement.Initialization);
-
-            if (statement.Step is not IncrementNode && statement.Step is not DecrementNode)
-                throw new Exception("For loop step must be increament or decrement");
-
+            Visit(statement.Initialization);
             var condType = Visit(statement.Condition);
+            
             // Optimization: Allow Float as condition (0.0 is false)
             if (condType is not BoolType && condType is not FloatType)
                 throw new Exception("For loop condition must be Bool or Number");
 
-            Visit(statement.Step);
+            if (statement.Step is not IncrementNode && statement.Step is not DecrementNode)
+                throw new Exception("For loop step must be increament or decrement");
 
+            Visit(statement.Step);
             Visit(statement.Body);
             statement.SetType(new VoidType());
             return statement.Type;
