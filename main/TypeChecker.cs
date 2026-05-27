@@ -483,8 +483,9 @@ namespace MyCompiler
         public Type VisitForLoop(ForLoopNode statement)
         {
             Visit(statement.Initialization);
+
             var condType = Visit(statement.Condition);
-            
+
             // Optimization: Allow Float as condition (0.0 is false)
             if (condType is not BoolType && condType is not FloatType)
                 throw new Exception("For loop condition must be Bool or Number");
@@ -511,9 +512,14 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNode expr)
         {
+
             if (expr.Elements.Count > 0)
             {
-                expr.ElementType = Visit(expr.Elements[0]);
+                if (expr.ElementType is not null)
+                {
+                    if (expr.ElementType != Visit(expr.Elements[0]))
+                        throw new Exception("Array type does not match element type!");
+                }
 
                 for (int i = 1; i < expr.Elements.Count; i++)
                 {
@@ -533,9 +539,11 @@ namespace MyCompiler
                         throw new Exception("Not all elements are of the same type, which is not allowed in an array");
                 }
             }
-            else if (expr.ElementType == null)
+            else
             {
-                throw new Exception("Cannot infer type of empty array. Provide a typed array or schema metadata.");
+                if (expr.ElementType is null)
+                    throw new Exception("Empty arrays need a type!");
+
             }
 
             var arrayType = new ArrayType(expr.ElementType);

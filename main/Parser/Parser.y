@@ -167,7 +167,7 @@ expr
 
     | LPAREN expr RPAREN            { $$ = $2; }    /* ( 2+2 ) */
     | LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($2); } /*[1,2,3] */    
-
+    | type LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($3, $1 as TypeNode); } /*[1,2,3] */    
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET    { $$ = new SliceNode($1, $3, $5); }
 
     /* Built-ins */

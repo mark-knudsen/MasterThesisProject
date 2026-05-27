@@ -269,9 +269,10 @@ namespace MyCompiler
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
         public ulong? Capacity;
-        public ArrayNode(List<ExpressionNode> elements)
+        public ArrayNode(List<ExpressionNode> elements, TypeNode typeNode = null)
         {
             Elements = elements;
+            ElementType = typeNode.Type;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
