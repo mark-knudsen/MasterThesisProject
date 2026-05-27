@@ -272,7 +272,7 @@ namespace MyCompiler
         public ArrayNode(List<ExpressionNode> elements, TypeNode typeNode = null)
         {
             Elements = elements;
-            ElementType = typeNode.Type;
+            ElementType = TypeChecker.ResolveTypeNode(typeNode);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);

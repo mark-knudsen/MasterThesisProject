@@ -512,14 +512,15 @@ namespace MyCompiler
         // Handle [1, 2, 3]
         public Type VisitArray(ArrayNode expr)
         {
-
             if (expr.Elements.Count > 0)
             {
                 if (expr.ElementType is not null)
                 {
-                    if (expr.ElementType != Visit(expr.Elements[0]))
+                    if (expr.ElementType.GetType() != Visit(expr.Elements[0]).GetType())
                         throw new Exception("Array type does not match element type!");
                 }
+                else
+                    expr.ElementType = Visit(expr.Elements[0]);
 
                 for (int i = 1; i < expr.Elements.Count; i++)
                 {
@@ -531,6 +532,7 @@ namespace MyCompiler
                     }
 
                     Type indexType = Visit(expr.Elements[i]);
+
                     if (indexType is ArrayType) continue;
 
                     if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
@@ -543,7 +545,6 @@ namespace MyCompiler
             {
                 if (expr.ElementType is null)
                     throw new Exception("Empty arrays need a type!");
-
             }
 
             var arrayType = new ArrayType(expr.ElementType);
@@ -664,7 +665,7 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public ExpressionNode ResolveDataType(Type type)
+        private ExpressionNode ResolveDataType(Type type)
         {
             return type switch
             {
@@ -1396,6 +1397,20 @@ namespace MyCompiler
             return expr.Type;
         }
 
+        public static Type ResolveTypeNode(TypeNode typeNode)
+        {
+            if (typeNode == null) return null;
+              return typeNode.Name switch
+                {
+                    "int" => new IntType(),
+                    "float" => new FloatType(),
+                    "bool" => new BoolType(),
+                    "string" => new StringType(),
+                    "array" => new ArrayType(null), 
+                    _ => throw new Exception($"Unknown type node '{typeNode.Name}'")
+                };
+        }
+
         private Type ResolveType(ExpressionNode expr)
         {
             if (expr == null) throw new Exception("Cannot resolve type of a null expression.");
@@ -1420,14 +1435,7 @@ namespace MyCompiler
             // 2. Handle TypeNodes directly
             if (expr is TypeNode typeNode)
             {
-                return typeNode.Name switch
-                {
-                    "int" => new IntType(),
-                    "float" => new FloatType(),
-                    "bool" => new BoolType(),
-                    "string" => new StringType(),
-                    _ => throw new Exception($"Unknown type node '{typeNode.Name}'")
-                };
+                return ResolveTypeNode(typeNode);
             }
 
             // 3. IMPORTANT: If it's a value (like "Alice" or 25), visit it to get its type
