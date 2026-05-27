@@ -1144,12 +1144,12 @@ namespace MyCompiler
 
                 // 2. FIX: Use 'mallocFuncType' instead of '_mallocType'
                 var mem = _builder.BuildCall2(_mallocType, mallocFunc,
-                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)size) }, "value_mem");
+                    new[] { LLVMValueRef.CreateConstInt(ctx.Int32Type, (uint)size) }, "value_mem");
 
                 var castType = type switch
                 {
-                    IntType => LLVMTypeRef.CreatePointer(i64, 0),
-                    FloatType => LLVMTypeRef.CreatePointer(ctx.DoubleType, 0),
+                    IntType => LLVMTypeRef.CreatePointer(ctx.Int32Type, 0),
+                    FloatType => LLVMTypeRef.CreatePointer(ctx.FloatType, 0),
                     BoolType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                     _ => LLVMTypeRef.CreatePointer(i64, 0)
                 };
@@ -1739,7 +1739,7 @@ namespace MyCompiler
             var slotPtr = _builder.BuildGEP2(
                 i8Ptr,
                 recordPtr,
-                new[] { LLVMValueRef.CreateConstInt(_module.Context.Int32Type, (uint)index) }
+                new[] { LLVMValueRef.CreateConstInt(i64, (uint)index) }
             );
 
             // load pointer stored in slot
@@ -3442,7 +3442,7 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            
+
             var i32 = ctx.Int32Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
@@ -4682,15 +4682,15 @@ namespace MyCompiler
                 // Perform a SINGLE load based on the type
                 if (expr.Type is IntType)
                 {
-                    var result = _builder.BuildLoad2(ctx.Int64Type, fieldSlotPtr, $"val_{expr.IdField}");
-                    result.SetAlignment(8);
+                    var result = _builder.BuildLoad2(ctx.Int32Type, fieldSlotPtr, $"val_{expr.IdField}");
+                    result.SetAlignment(4);
                     return result;
                 }
 
                 if (expr.Type is FloatType)
                 {
-                    var result = _builder.BuildLoad2(ctx.DoubleType, fieldSlotPtr, $"val_{expr.IdField}");
-                    result.SetAlignment(8);
+                    var result = _builder.BuildLoad2(ctx.FloatType, fieldSlotPtr, $"val_{expr.IdField}");
+                    result.SetAlignment(4);
                     return result;
                 }
 

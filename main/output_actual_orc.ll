@@ -11,7 +11,7 @@ source_filename = "repl_module"
 @__map_i = global i32 0, align 8
 @df_lat = global ptr null, align 8
 
-define ptr @main_1() {
+define ptr @main_2() {
 entry:
   %df_load = load ptr, ptr @df, align 8
   store ptr %df_load, ptr @__map_src, align 8
@@ -52,7 +52,7 @@ for.body:                                         ; preds = %for.cond
   %elem_ptr = getelementptr ptr, ptr %data, i64 %idx_cast
   %record = load ptr, ptr %elem_ptr, align 8
   %ptr_latitude = getelementptr %struct_date_latitude_longitude_wind-speed-min_wind-speed-max_wind-speed-mean_wind-direction-min_wind-direction-max_wind-direction-mean_surface-air-temperature-min_surface-air-temperature-max_surface-air-temperature-mean_total-rainfall-sum_surface-humidity-min_surface-humidity-max_surface-humidity-mean_ndvi_elevation_slope_aspect_fire_label_land_cover_class_1_land_cover_class_2_land_cover_class_4_land_cover_class_5_land_cover_class_6_land_cover_class_7_land_cover_class_8_land_cover_class_9_land_cover_class_10_land_cover_class_11_land_cover_class_12_land_cover_class_13_land_cover_class_14_land_cover_class_15_land_cover_class_16_land_cover_class_17, ptr %record, i32 0, i32 1
-  %val_latitude = load double, ptr %ptr_latitude, align 8
+  %val_latitude = load float, ptr %ptr_latitude, align 4
   %len_ptr4 = getelementptr inbounds nuw { i32, i32, ptr }, ptr %__map_result_load, i32 0, i32 0
   %cap_ptr5 = getelementptr inbounds nuw { i32, i32, ptr }, ptr %__map_result_load, i32 0, i32 1
   %data_ptr_ptr6 = getelementptr inbounds nuw { i32, i32, ptr }, ptr %__map_result_load, i32 0, i32 2
@@ -91,7 +91,7 @@ grow:                                             ; preds = %for.body
 cont:                                             ; preds = %grow, %for.body
   %data_phi = phi ptr [ %data7, %for.body ], [ %realloc, %grow ]
   %slot = getelementptr float, ptr %data_phi, i32 %len32
-  store double %val_latitude, ptr %slot, align 4
+  store float %val_latitude, ptr %slot, align 4
   %new_len = add i32 %len32, 1
   store i32 %new_len, ptr %len_ptr4, align 4
   br label %for.step
