@@ -1221,7 +1221,7 @@ namespace MyCompiler
             var func = _builder.InsertBlock.Parent;
 
             // 1. Initialization
-            if (expr.Initialization != null) Visit(expr.Initialization);
+            Visit(expr.Initialization);
 
             // 2. Define the Basic Blocks
             var condBlock = func.AppendBasicBlock("for.cond");
@@ -1256,7 +1256,7 @@ namespace MyCompiler
 
             // 5. Step Block (Increment)
             _builder.PositionAtEnd(stepBlock);
-            if (expr.Step != null) Visit(expr.Step);
+            Visit(expr.Step);
 
             // --- VECTORIZATION HINT START ---
             // 1. Create the attribute: !{!"llvm.loop.vectorize.enable", i1 1}

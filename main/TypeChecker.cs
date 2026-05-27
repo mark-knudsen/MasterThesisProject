@@ -484,14 +484,17 @@ namespace MyCompiler
         {
             if (statement.Initialization != null) Visit(statement.Initialization);
 
+            if (statement.Step is not IncrementNode && statement.Step is not DecrementNode)
+                throw new Exception("For loop step must be increament or decrement");
+
             var condType = Visit(statement.Condition);
             // Optimization: Allow Float as condition (0.0 is false)
             if (condType is not BoolType && condType is not FloatType)
                 throw new Exception("For loop condition must be Bool or Number");
 
-            if (statement.Step != null) Visit(statement.Step);
+            Visit(statement.Step);
 
-            Visit(statement.Body); // Now visits the sequence/block
+            Visit(statement.Body);
             statement.SetType(new VoidType());
             return statement.Type;
         }
