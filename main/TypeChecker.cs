@@ -514,37 +514,40 @@ namespace MyCompiler
         {
             if (expr.Elements.Count > 0)
             {
+                Type expectedElementStaticType = null;
+
                 if (expr.ElementType is not null)
                 {
-                    if (expr.ElementType.GetType() != Visit(expr.Elements[0]).GetType())
-                        throw new Exception("Array type does not match element type!");
+                    expectedElementStaticType = expr.ElementType;
+                    Type firstElementActualType = Visit(expr.Elements[0]);
+
+                    // Fix structural matching check instead of basic GetType comparison
+                    if (expectedElementStaticType.ToString() != firstElementActualType.ToString())
+                        throw new Exception($"Array explicit type '{expectedElementStaticType}' does not match element type '{firstElementActualType}'!");
                 }
                 else
-                    expr.ElementType = Visit(expr.Elements[0]);
-
-                for (int i = 1; i < expr.Elements.Count; i++)
                 {
-                    if (expr.ElementType is RecordType recordType)
-                    {
-                        RecordType record = Visit(expr.Elements[i]) as RecordType;
-                        if (recordType.ToString() != record.ToString())
-                            throw new Exception("Not all records have the same field names, which is not allowed in an array");
-                    }
+                    expectedElementStaticType = Visit(expr.Elements[0]);
+                    expr.ElementType = expectedElementStaticType;
+                }
 
+                for (int i = 0; i < expr.Elements.Count; i++)
+                {
                     Type indexType = Visit(expr.Elements[i]);
 
-                    if (indexType is ArrayType) continue;
+                    // Fix: Check multi-dimensional arrays or nested records accurately by their structural definitions
+                    if (expectedElementStaticType.ToString() != indexType.ToString())
+                    {
+                        if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
 
-                    if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
-
-                    if (expr.ElementType.GetType() != indexType.GetType())
-                        throw new Exception("Not all elements are of the same type, which is not allowed in an array");
+                        throw new Exception($"Not all elements are of the same type in the array. Expected '{expectedElementStaticType}', got '{indexType}'");
+                    }
                 }
             }
             else
             {
                 if (expr.ElementType is null)
-                    throw new Exception("Empty arrays need a type!");
+                    throw new Exception("Empty arrays need a type! Example: arr = array<int>[]");
             }
 
             var arrayType = new ArrayType(expr.ElementType);
@@ -570,48 +573,60 @@ namespace MyCompiler
         // Inside TypeChecker.cs
         public Type VisitIndex(IndexNode expr)
         {
-            // 1. Visit children first to resolve their types
-            Visit(expr.SourceExpression);
+            // 1. Visit children first to resolve their types down the tree
+            Type sourceType = Visit(expr.SourceExpression);
             Type indexType = Visit(expr.IndexExpression);
 
-            Type inferred = new IntType(); // Default
+            Type inferred = new IntType(); // Default fallback
 
-            if (expr.SourceExpression is IdNode idNode)
+            // 2. Drive type inference cleanly by looking at structural TYPE definitions, not node syntax shapes
+            if (sourceType is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
+                if (indexType is not IntType)
+                    throw new Exception($"Array index must be an integer, got {indexType}");
+
+                inferred = arrType.ElementType;
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                if (indexType is StringType)
                 {
-                    inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
-                }
-                else if (entry?.Type is DataframeType dfType)
-                {
-                    if (indexType is StringType)
+                    // Column slicing: arr["column_name"] -> returns array<ColumnType>
+                    Type columnType = new IntType();
+
+                    // Safe extraction check if the indexing uses a raw string literal
+                    if (expr.IndexExpression is StringNode stringNode)
                     {
-                        Type columnType = new IntType();
                         for (int i = 0; i < dfType.ColumnNames.Count; i++)
                         {
-                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
+                            if (dfType.ColumnNames[i] == stringNode.Value)
+                            {
+                                columnType = dfType.DataTypes[i];
+                                break;
+                            }
                         }
-
-                        inferred = new ArrayType(columnType);
                     }
-                    else
-                        inferred = dfType.RowType;
+                    inferred = new ArrayType(columnType);
+                }
+                else if (indexType is IntType)
+                {
+                    // Row access: arr[0] -> returns a single Record matching the schema row layout
+                    inferred = dfType.RowType;
+                }
+                else
+                {
+                    throw new Exception($"Dataframe indexing must be string (column) or int (row), got {indexType}");
                 }
             }
-            else if (expr.SourceExpression is DataframeNode dfNode)
+            else
             {
-                inferred = (dfNode.Type as DataframeType).RowType;
-            }
-            else if (expr.SourceExpression is ArrayNode arrNode)
-            {
-
-                inferred = (arrNode.Type as ArrayType).ElementType;
+                throw new Exception($"Cannot apply indexing target expressions on a source of type '{sourceType}'");
             }
 
             expr.SetType(inferred);
             return expr.Type;
         }
+
         public Type VisitIndexAssign(IndexAssignNode expr)
         {
             // 1. Visit children to ensure their .Type properties are populated
@@ -1395,53 +1410,58 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public static Type ResolveTypeNode(TypeNode typeNode)
-        {
-            if (typeNode == null) return null;
-              return typeNode.Name switch
-                {
-                    "int" => new IntType(),
-                    "float" => new FloatType(),
-                    "bool" => new BoolType(),
-                    "string" => new StringType(),
-                    "array" => new ArrayType(null), 
-                    _ => throw new Exception($"Unknown type node '{typeNode.Name}'")
-                };
-        }
+
 
         private Type ResolveType(ExpressionNode expr)
         {
             if (expr == null) throw new Exception("Cannot resolve type of a null expression.");
 
-            // Unwrap NamedArguments automatically
             if (expr is NamedArgumentNode named) return ResolveType(named.Value);
 
-            // 1. Handle TypeLiterals (the 'string' in {name: string})
             if (expr is TypeLiteralNode typeLit)
             {
-                return typeLit.TypeNode.Name switch
-                {
-                    "int" => new IntType(),
-                    "float" => new FloatType(),
-                    "bool" => new BoolType(),
-                    "string" => new StringType(),
-                    "void" => new VoidType(),
-                    _ => throw new Exception($"Unknown type literal '{typeLit.TypeNode.Name}'")
-                };
+                // Redirect TypeLiteral matching to look at its underlying TypeNode recursively
+                return ResolveTypeNode(typeLit.TypeNode);
             }
 
-            // 2. Handle TypeNodes directly
             if (expr is TypeNode typeNode)
             {
                 return ResolveTypeNode(typeNode);
             }
 
-            // 3. IMPORTANT: If it's a value (like "Alice" or 25), visit it to get its type
-            // This prevents the NullReference when validating rows.
             var resultType = Visit(expr);
             if (resultType != null) return resultType;
 
             throw new Exception($"Expected a type or value, but found: {expr.GetType().Name}");
+        }
+
+        // Add or upgrade your helper to handle inner types recursively
+        public static Type ResolveTypeNode(TypeNode typeNode)
+        {
+            if (typeNode == null) return null;
+
+            return typeNode.Name switch
+            {
+                "int" => new IntType(),
+                "float" => new FloatType(),
+                "bool" => new BoolType(),
+                "string" => new StringType(),
+                "void" => new VoidType(),
+                "array" => HandleNestedArrayType(typeNode),
+                _ => throw new Exception($"Unknown type literal '{typeNode.Name}'")
+            };
+        }
+
+        private static Type HandleNestedArrayType(TypeNode arrayTypeNode)
+        {
+            if (arrayTypeNode.ElementTypeNode == null)
+            {
+                throw new Exception("Array types must specify an element type (e.g., array<int>).");
+            }
+
+            // Recursively resolve the inner element type
+            Type innerType = ResolveTypeNode(arrayTypeNode.ElementTypeNode);
+            return new ArrayType(innerType);
         }
 
         public Type VisitNamedArgument(NamedArgumentNode expr)

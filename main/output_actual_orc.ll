@@ -1,16 +1,16 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@z = external global ptr
+@arr = external global ptr
 
-define ptr @main_9() {
+define ptr @main_7() {
 entry:
-  %z_load = load ptr, ptr @z, align 8
+  %arr_load = load ptr, ptr @arr, align 8
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 0
-  store i64 6, ptr %tag_ptr, align 8
+  store i64 5, ptr %tag_ptr, align 8
   %data_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 1
-  store ptr %z_load, ptr %data_ptr, align 8
+  store ptr %arr_load, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
 

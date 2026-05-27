@@ -668,9 +668,16 @@ namespace MyCompiler
     public class TypeNode : ExpressionNode
     {
         public string Name { get; }
-        public TypeNode(string name) => Name = name;
+        // Add a property to track generic type parameters (e.g., the 'int' or 'array<int>' inside array<...>)
+        public TypeNode ElementTypeNode { get; }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException(); // not used in codegen
+        public TypeNode(string name, TypeNode elementTypeNode = null)
+        {
+            Name = name;
+            ElementTypeNode = elementTypeNode;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => throw new NotImplementedException();
     }
 
     public class TypeLiteralNode : ExpressionNode

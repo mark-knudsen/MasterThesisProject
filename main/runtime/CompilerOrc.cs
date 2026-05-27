@@ -2441,6 +2441,7 @@ namespace MyCompiler
             return VisitSequence(program);
         }
 
+
         public SequenceNode MapForArray(MapNode expr)
         {
             var program = new SequenceNode();
@@ -2620,7 +2621,6 @@ namespace MyCompiler
         {
             if (type is IntType || type is FloatType || type is BoolType || type is StringType)
             {
-                // Primitives and Immutable Strings can be copied by value/pointer value safely
                 return sourceVal;
             }
             else if (type is ArrayType arrayType)
@@ -2638,49 +2638,42 @@ namespace MyCompiler
 
             throw new Exception($"Deep copy not supported for type: {type}");
         }
+
         private LLVMValueRef CopyDataframe(LLVMValueRef dfPtr, DataframeType dfType)
         {
             var ctx = _module.Context;
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 1. Allocate a fresh Dataframe Object header container (24 bytes for 3 pointers)
             var sizeOfDf = LLVMValueRef.CreateConstInt(ctx.Int64Type, 24);
             var newDfPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeOfDf }, "df_copy_mem");
 
-            // Define structural pointer type signatures for extraction
             var arrayType = GetOrCreateArrayType();
             var arrayPtrType = LLVMTypeRef.CreatePointer(arrayType, 0);
 
-            // CRITICAL: Ensure _dataframeStruct is the literal layout description block type, not 'ptr'
-            LLVMTypeRef dfLayoutType = _dataframeStruct;
-            if (dfLayoutType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
-            {
-                dfLayoutType = _module.GetTypeByName("dataframe");
-            }
+            LLVMTypeRef dfLayoutType = _dataframeStruct.Kind == LLVMTypeKind.LLVMPointerTypeKind
+                ? _module.GetTypeByName("dataframe")
+                : _dataframeStruct;
 
-            // 2. Extract pointers from source dataframe with explicit alignment constraints
             var srcColsGep = _builder.BuildStructGEP2(dfLayoutType, dfPtr, 0, "src_cols_gep");
             var srcColsPtr = _builder.BuildLoad2(arrayPtrType, srcColsGep, "src_cols");
-            srcColsPtr.SetAlignment(8); // <-- CRITICAL FIX: Ensure safe aligned tracking on load
+            srcColsPtr.SetAlignment(8);
 
             var srcRowsGep = _builder.BuildStructGEP2(dfLayoutType, dfPtr, 1, "src_rows_gep");
             var srcRowsPtr = _builder.BuildLoad2(arrayPtrType, srcRowsGep, "src_rows");
-            srcRowsPtr.SetAlignment(8); // <-- CRITICAL FIX
+            srcRowsPtr.SetAlignment(8);
 
             var srcTypesGep = _builder.BuildStructGEP2(dfLayoutType, dfPtr, 2, "src_types_gep");
             var srcTypesPtr = _builder.BuildLoad2(arrayPtrType, srcTypesGep, "src_types");
-            srcTypesPtr.SetAlignment(8); // <-- CRITICAL FIX
+            srcTypesPtr.SetAlignment(8);
 
-            // 3. Deep copy individual sub-arrays mapping internal data records down recursively
             var columnArrayType = new ArrayType(new StringType());
-            var rowArrayType = new ArrayType(dfType.RowType); // Maps your underlying records down to EmitArrayLoopCopy
+            var rowArrayType = new ArrayType(dfType.RowType);
             var typeArrayType = new ArrayType(new IntType());
 
             var newCols = CopyArray(srcColsPtr, columnArrayType);
             var newRows = CopyArray(srcRowsPtr, rowArrayType);
             var newTypes = CopyArray(srcTypesPtr, typeArrayType);
 
-            // 4. Store newly deep-copied components into the new Dataframe destination structure offsets
             var dstColsGep = _builder.BuildStructGEP2(dfLayoutType, newDfPtr, 0);
             var dstRowsGep = _builder.BuildStructGEP2(dfLayoutType, newDfPtr, 1);
             var dstTypesGep = _builder.BuildStructGEP2(dfLayoutType, newDfPtr, 2);
@@ -2698,33 +2691,24 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             var mallocFunc = GetOrDeclareMalloc();
 
-            // 1. CORRECT FIX: Fetch the exact un-pointed structural layout directly using your existing helper
             LLVMTypeRef recordStructType = GetOrCreateRecordStructType(recordType);
+            var sizeOfRecord = LLVMValueRef.CreateConstInt(i64, (ulong)GetStructSize(recordType));
 
-            // 2. Fetch total byte size calculated for this structural configuration
-            var sizeOfRecord = LLVMValueRef.CreateConstInt(i64, GetStructSize(recordType));
-
-            // 3. Allocate clean sequential memory alignment block
             var newRecordBuffer = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeOfRecord }, "record_copy_mem");
 
-            // 4. Iterate and deep copy every field slot explicitly
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var fieldInfo = recordType.RecordFields[i];
                 LLVMTypeRef fieldLLVMType = GetLLVMType(fieldInfo.Type);
 
-                // 5. Use the correct structural layout type to safely compute member pointer offsets
                 var srcFieldPtr = _builder.BuildStructGEP2(recordStructType, recordPtr, (uint)i, $"src_f{i}_ptr");
                 var dstFieldPtr = _builder.BuildStructGEP2(recordStructType, newRecordBuffer, (uint)i, $"dst_f{i}_ptr");
 
-                // 6. Perform the load operation from the source structure pointer
                 var val = _builder.BuildLoad2(fieldLLVMType, srcFieldPtr, $"f{i}_val");
                 val.SetAlignment(8);
 
-                // 7. Process nested properties or clone arrays down recursively if present
                 LLVMValueRef copiedValue = EmitDeepCopy(val, fieldInfo.Type);
 
-                // 8. Safely commit value store into targeted destination structural memory block offset
                 var storeInst = _builder.BuildStore(copiedValue, dstFieldPtr);
                 storeInst.SetAlignment(8);
             }
@@ -2739,21 +2723,28 @@ namespace MyCompiler
             var i8 = ctx.Int8Type;
             var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
             var elementType = arrayType.ElementType;
-
             var mallocFunc = GetOrDeclareMalloc();
 
+            LLVMTypeRef arrayLayoutType = _arrayStruct.Kind == LLVMTypeKind.LLVMPointerTypeKind
+                ? _module.GetTypeByName("array")
+                : _arrayStruct;
+
             // 1. Load Length and Data Pointer
-            var srcLenPtr = _builder.BuildStructGEP2(_arrayStruct, srcHeaderPtr, 0, "src_len_ptr");
-            var srcDataPtrField = _builder.BuildStructGEP2(_arrayStruct, srcHeaderPtr, 2, "src_data_ptr_field");
+            var srcLenPtr = _builder.BuildStructGEP2(arrayLayoutType, srcHeaderPtr, 0, "src_len_ptr");
+            var srcDataPtrField = _builder.BuildStructGEP2(arrayLayoutType, srcHeaderPtr, 2, "src_data_ptr_field");
             var length = _builder.BuildLoad2(i64, srcLenPtr, "length");
             var srcDataPtr = _builder.BuildLoad2(i8Ptr, srcDataPtrField, "src_data_ptr");
 
-            // 2. Allocate New Header
+            // 2. Allocate New Header (24 bytes for len, cap, data fields)
             var newHeaderPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { LLVMValueRef.CreateConstInt(i64, 24) }, "new_header");
 
-            // 3. Determine Stride
-            bool isComplex = elementType is RecordType || elementType is ArrayType;
-            var stride = (elementType is BoolType) ? 1 : 8;
+            // 3. Determine Stride (Fixing dataframes + custom record sizes)
+            bool isComplex = elementType is RecordType || elementType is ArrayType || elementType is DataframeType;
+
+            int stride = 8;
+            if (elementType is BoolType) stride = 1;
+            else if (elementType is RecordType rec) stride = (int)GetStructSize(rec);
+
             var byteCount = _builder.BuildMul(length, LLVMValueRef.CreateConstInt(i64, (ulong)stride), "byte_count");
 
             // 4. Allocate New Data Buffer
@@ -2762,9 +2753,9 @@ namespace MyCompiler
             var newDataPtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { allocSize }, "new_data");
 
             // 5. Initialize New Header
-            _builder.BuildStore(length, _builder.BuildStructGEP2(_arrayStruct, newHeaderPtr, 0));
-            _builder.BuildStore(length, _builder.BuildStructGEP2(_arrayStruct, newHeaderPtr, 1));
-            _builder.BuildStore(newDataPtr, _builder.BuildStructGEP2(_arrayStruct, newHeaderPtr, 2));
+            _builder.BuildStore(length, _builder.BuildStructGEP2(arrayLayoutType, newHeaderPtr, 0));
+            _builder.BuildStore(length, _builder.BuildStructGEP2(arrayLayoutType, newHeaderPtr, 1));
+            _builder.BuildStore(newDataPtr, _builder.BuildStructGEP2(arrayLayoutType, newHeaderPtr, 2));
 
             // 6. Branching for Copy Logic
             var hasElements = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, length, LLVMValueRef.CreateConstInt(i64, 0));
@@ -2776,13 +2767,11 @@ namespace MyCompiler
 
             if (!isComplex)
             {
-                // Simple bitwise copy for primitives
                 var memcpyFunc = GetOrDeclareMemmove();
                 _builder.BuildCall2(_memmoveType, memcpyFunc, new[] { newDataPtr, srcDataPtr, byteCount }, "");
             }
             else
             {
-                // Recursive loop for Records/Arrays/Dataframes
                 EmitArrayLoopCopy(length, newDataPtr, srcDataPtr, elementType);
             }
 
@@ -3095,17 +3084,23 @@ namespace MyCompiler
 
             var headerPtr = Visit(expr.SourceExpression);
             var indexVal = Visit(expr.IndexExpression);
+
+            // Now safely retrieves the correct unwrapped static type from TypeChecker
             var sourceType = expr.SourceExpression.Type;
 
             if (sourceType is ArrayType arrayType)
             {
-                // Ensure index is an integer
+                // Resolve underlying layout dynamically if using Opaque Pointer architectures
+                LLVMTypeRef arrayLayoutType = _arrayStruct.Kind == LLVMTypeKind.LLVMPointerTypeKind
+                    ? _module.GetTypeByName("array")
+                    : _arrayStruct;
+
                 if (indexVal.TypeOf == ctx.DoubleType)
                     indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-                // Load Metadata fields
-                var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
-                var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
+                // Load Metadata fields using structural descriptions safely
+                var lenFieldPtr = _builder.BuildStructGEP2(arrayLayoutType, headerPtr, 0, "len_field_ptr");
+                var dataFieldPtr = _builder.BuildStructGEP2(arrayLayoutType, headerPtr, 2, "data_field_ptr");
 
                 var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
                 rawDataPtr.SetAlignment(8);
@@ -3114,15 +3109,12 @@ namespace MyCompiler
                 arrayLen.SetAlignment(8);
 
                 // --- PYTHON-STYLE NEGATIVE INDEX RESOLUTION ---
-                // if indexVal < 0 then indexVal + arrayLen else indexVal
                 var indexIsNeg = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0), "index_is_neg");
                 var indexRegulated = _builder.BuildAdd(indexVal, arrayLen, "index_rel");
                 var resolvedIndex = _builder.BuildSelect(indexIsNeg, indexRegulated, indexVal, "resolved_index");
 
-                // --- OPTIMIZATION: Conditional Bounds Check ---
                 if (!expr.SkipBoundsCheck)
                 {
-                    // Bounds Check Logic using the resolved index value
                     var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, resolvedIndex, LLVMValueRef.CreateConstInt(i64, 0), "is_neg");
                     var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, resolvedIndex, arrayLen, "is_too_big");
                     var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
@@ -3131,7 +3123,6 @@ namespace MyCompiler
                     var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
                     _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
 
-                    // --- FAIL BLOCK ---
                     _builder.PositionAtEnd(failBlock);
                     var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
                     _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
@@ -3139,18 +3130,16 @@ namespace MyCompiler
                     var runtimeObjPtrType = LLVMTypeRef.CreatePointer(GetRuntimeObjType(), 0);
                     _builder.BuildRet(LLVMValueRef.CreateConstNull(runtimeObjPtrType));
 
-                    // --- CONTINUE IN SAFE BLOCK ---
                     _builder.PositionAtEnd(safeBlock);
                 }
 
-                // 2. DATA ACCESS (Using resolvedIndex instead of raw indexVal)
+                // 2. DATA ACCESS
                 var llvmElementType = GetLLVMType(arrayType.ElementType);
                 var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(llvmElementType, 0), "typed_data_ptr");
 
                 var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { resolvedIndex }, "elem_ptr");
                 var loadedValue = _builder.BuildLoad2(llvmElementType, elementPtr, "loaded_val");
 
-                // Enforce rigid alignment patterns based on primitives
                 if (llvmElementType == i64 || llvmElementType == ctx.DoubleType || llvmElementType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
                     loadedValue.SetAlignment(8);
                 else if (llvmElementType == ctx.Int32Type || llvmElementType == ctx.FloatType)
@@ -3171,7 +3160,7 @@ namespace MyCompiler
                 }
             }
 
-            return default;
+            throw new Exception($"Codegen Error: Indexing operation failed for source type: {sourceType}");
         }
 
         public SequenceNode ColumnAccessForDataframe(FieldNode indexNode)
