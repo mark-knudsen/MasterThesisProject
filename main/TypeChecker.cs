@@ -1115,8 +1115,6 @@ namespace MyCompiler
 
                 if (field.Type == null)
                     throw new Exception($"Could not resolve type for record field '{field.Label}'");
-
-                field.Value.SetType(field.Type);
             }
 
             var recordType = new RecordType(expr.Fields);
