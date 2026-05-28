@@ -108,7 +108,7 @@ type
     | STRING              { $$ = new TypeNode("string"); }   
     | VOID                { $$ = new TypeNode("void"); }    /* We currently do not use VOID! */
     | NULL                { $$ = new TypeNode("null"); }    /* We currently do not use NULL! */
-  | ARRAY LT type GT    { $$ = new TypeNode("array", $3 as TypeNode); }   /* We currently do not use typed array! */
+    | ARRAY LT type GT    { $$ = new TypeNode("array", $3 as TypeNode); }   /* We currently do not use typed array! */
     ;
 
 assignment 

@@ -514,40 +514,37 @@ namespace MyCompiler
         {
             if (expr.Elements.Count > 0)
             {
-                Type expectedElementStaticType = null;
-
                 if (expr.ElementType is not null)
                 {
-                    expectedElementStaticType = expr.ElementType;
-                    Type firstElementActualType = Visit(expr.Elements[0]);
-
-                    // Fix structural matching check instead of basic GetType comparison
-                    if (expectedElementStaticType.ToString() != firstElementActualType.ToString())
-                        throw new Exception($"Array explicit type '{expectedElementStaticType}' does not match element type '{firstElementActualType}'!");
+                    if (expr.ElementType.GetType() != Visit(expr.Elements[0]).GetType())
+                        throw new Exception("Array type does not match element type!");
                 }
                 else
-                {
-                    expectedElementStaticType = Visit(expr.Elements[0]);
-                    expr.ElementType = expectedElementStaticType;
-                }
+                    expr.ElementType = Visit(expr.Elements[0]);
 
-                for (int i = 0; i < expr.Elements.Count; i++)
+                for (int i = 1; i < expr.Elements.Count; i++)
                 {
+                    if (expr.ElementType is RecordType recordType)
+                    {
+                        RecordType record = Visit(expr.Elements[i]) as RecordType;
+                        if (recordType.ToString() != record.ToString())
+                            throw new Exception("Not all records have the same field names, which is not allowed in an array");
+                    }
+
                     Type indexType = Visit(expr.Elements[i]);
 
-                    // Fix: Check multi-dimensional arrays or nested records accurately by their structural definitions
-                    if (expectedElementStaticType.ToString() != indexType.ToString())
-                    {
-                        if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
+                    if (indexType is ArrayType) continue;
 
-                        throw new Exception($"Not all elements are of the same type in the array. Expected '{expectedElementStaticType}', got '{indexType}'");
-                    }
+                    if (expr.Elements[i] is TypeLiteralNode && expr.Elements[0] is TypeLiteralNode) continue;
+
+                    if (expr.ElementType.GetType() != indexType.GetType())
+                        throw new Exception("Not all elements are of the same type, which is not allowed in an array");
                 }
             }
             else
             {
                 if (expr.ElementType is null)
-                    throw new Exception("Empty arrays need a type! Example: arr = array<int>[]");
+                    throw new Exception("Empty arrays need a type!");
             }
 
             var arrayType = new ArrayType(expr.ElementType);
@@ -589,33 +586,14 @@ namespace MyCompiler
             }
             else if (sourceType is DataframeType dfType)
             {
-                if (indexType is StringType)
+                if (indexType is not IntType)
                 {
-                    // Column slicing: arr["column_name"] -> returns array<ColumnType>
-                    Type columnType = new IntType();
-
-                    // Safe extraction check if the indexing uses a raw string literal
-                    if (expr.IndexExpression is StringNode stringNode)
-                    {
-                        for (int i = 0; i < dfType.ColumnNames.Count; i++)
-                        {
-                            if (dfType.ColumnNames[i] == stringNode.Value)
-                            {
-                                columnType = dfType.DataTypes[i];
-                                break;
-                            }
-                        }
-                    }
-                    inferred = new ArrayType(columnType);
-                }
-                else if (indexType is IntType)
-                {
-                    // Row access: arr[0] -> returns a single Record matching the schema row layout
-                    inferred = dfType.RowType;
+                    throw new Exception($"Dataframe indexing must be string (column) or int (row), got {indexType}");
                 }
                 else
                 {
-                    throw new Exception($"Dataframe indexing must be string (column) or int (row), got {indexType}");
+                    // Row access: arr[0] -> returns a single Record matching the schema row layout
+                    inferred = dfType.RowType;
                 }
             }
             else
