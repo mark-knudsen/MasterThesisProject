@@ -1167,6 +1167,7 @@ namespace MyCompiler
             return objRaw;
         }
 
+
         private Node GetLastExpression(Node expr)
         {
             if (expr is SequenceNode seq)
@@ -1189,6 +1190,7 @@ namespace MyCompiler
                         if (nestedLast != null) return nestedLast;
                     }
                 }
+
                 // No expression found
                 return null;
             }
@@ -1311,7 +1313,8 @@ namespace MyCompiler
             var lowered = new ForLoopNode(init, cond, step, bodySeq);
 
             PerformSemanticAnalysis(lowered);
-            return Visit(lowered);
+            Visit(lowered);
+            return default;
         }
 
         public LLVMValueRef VisitIncrement(IncrementNode expr)
@@ -1520,34 +1523,21 @@ namespace MyCompiler
 
             // THEN
             _builder.PositionAtEnd(thenBlock);
-            var thenValue = Visit(node.ThenPart);
+            Visit(node.ThenPart);
             _builder.BuildBr(mergeBlock);
-            thenBlock = _builder.InsertBlock;
 
             // ELSE
             _builder.PositionAtEnd(elseBlock);
 
-            LLVMValueRef elseValue;
-
             if (node.ElsePart != null)
-                elseValue = Visit(node.ElsePart);
-            else
-                elseValue = LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0);
+                Visit(node.ElsePart);
 
             _builder.BuildBr(mergeBlock);
-            elseBlock = _builder.InsertBlock;
 
             // MERGE
             _builder.PositionAtEnd(mergeBlock);
 
-            var phi = _builder.BuildPhi(thenValue.TypeOf, "iftmp");
-
-            phi.AddIncoming(
-                new[] { thenValue, elseValue },
-                new[] { thenBlock, elseBlock },
-                2);
-
-            return phi;
+            return default;
         }
 
         private LLVMValueRef EnsureFloat(LLVMValueRef value, Type currentType)
@@ -1960,7 +1950,7 @@ namespace MyCompiler
             var store = _builder.BuildStore(value, global);
             store.SetAlignment(alignment);
 
-            return value;
+            return default;
         }
 
         public LLVMValueRef VisitRandom(RandomNode expr)
@@ -2308,7 +2298,8 @@ namespace MyCompiler
         public LLVMValueRef VisitPrint(PrintNode expr)
         {
             var valueToPrint = Visit(expr.Expression);
-            return AddImplicitPrint(valueToPrint, expr.Expression.Type);
+            AddImplicitPrint(valueToPrint, expr.Expression.Type);
+            return default;
         }
         // x=dataframe({name: string, age: int})
         // x=dataframe({name: string, age: int}, [{name= "dan", age= 30}, {name= "alice", age= 25}])
@@ -2340,14 +2331,16 @@ namespace MyCompiler
 
         public LLVMValueRef VisitWhere(WhereNode expr)
         {
-            var sourceType = expr.SourceExpr.Type;
-            var program = new SequenceNode();
+            Type sourceType = expr.SourceExpr.Type;
+            SequenceNode program;
 
             // Handle source array type and different element types
             if (sourceType is ArrayType)
                 program = WhereForArray(sourceType, expr);
             else if (sourceType is DataframeType)
                 program = WhereForDataframe(sourceType, expr);
+            else
+                throw new Exception("");
 
             PerformSemanticAnalysis(program);
 
@@ -2376,8 +2369,7 @@ namespace MyCompiler
 
             ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
 
-            var ifBody = new SequenceNode();
-            ifBody.Statements.Add(new AddNode(new IdNode(resultVarName), currentElement));
+            var ifBody = new AddNode(new IdNode(resultVarName), currentElement);
             var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, new IfNode(ifCond, ifBody));
 
             return new SequenceNode { Statements = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
@@ -2397,9 +2389,8 @@ namespace MyCompiler
             var fields = new List<NamedArgumentNode>();
             for (int i = 0; i < dfType.ColumnNames.Count; i++)
             {
-                var name = dfType.ColumnNames[i];
-                var item = dfType.DataTypes[i];
-
+                string name = dfType.ColumnNames[i];
+                Type item = dfType.DataTypes[i];
                 fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
             }
             var schemaRecord = new RecordNode(fields);
@@ -2416,8 +2407,7 @@ namespace MyCompiler
 
             ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
 
-            var ifBody = new SequenceNode();
-            ifBody.Statements.Add(new AddNode(new IdNode(resultVarName), currentElement));
+            var ifBody = new AddNode(new IdNode(resultVarName), currentElement);
             var loop = new ForLoopNode(indexInit, cond, step, new IfNode(ifCond, ifBody));
 
             return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVarName) } };
@@ -2458,7 +2448,6 @@ namespace MyCompiler
             program.Statements.Add(new AssignNode(resultVarName, emptyArray));
             program.Statements.Add(indexInit);
 
-            var loopBody = new SequenceNode();
 
             // --- OPTIMIZATION: Index with SkipBoundsCheck ---
             var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
@@ -2469,11 +2458,9 @@ namespace MyCompiler
                 expr.IteratorId.Name,
                 rowAccess
             );
+            var loopBody = new AddNode(new IdNode(resultVarName), lastExpr);
 
-            // 4. Add to the result list
-            loopBody.Statements.Add(new AddNode(new IdNode(resultVarName), lastExpr));
-
-            // 5. Loop Logic
+            // 4. Loop Logic
             var idvar = new IdNode(iVarName);
             var cond = new ComparisonNode(idvar, "<", new LengthNode(new IdNode(srcVarName)));
             var step = new IncrementNode(idvar);
@@ -2535,8 +2522,8 @@ namespace MyCompiler
             var cond = new ComparisonNode(idvar, "<", new LengthNode(new IdNode(srcVarName)));
             var step = new IncrementNode(idvar);
             program.Statements.Add(new ForLoopNode(new AssignNode(iVarName, new NumberNode(0)), cond, step, loopBody));
-
             program.Statements.Add(new IdNode(resultVarName));
+
             return program;
         }
 
@@ -4441,6 +4428,7 @@ namespace MyCompiler
             // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
             // MapLLVMTypeToMyType from throwing for pointer types.
             var lastExpr = GetLastExpression(expr) as ExpressionNode;
+
             if (lastExpr != null && lastExpr.Type is not BoolType)
             {
                 //AddImplicitPrint(last, lastExpr.Type);
