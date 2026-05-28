@@ -1173,6 +1173,8 @@ namespace MyCompiler
         {
             if (expr is SequenceNode seq)
             {
+                if (seq.Statements[seq.Statements.Count - 1] is not ExpressionNode) return null;
+
                 // iterate from last to first
                 for (int i = seq.Statements.Count - 1; i >= 0; i--)
                 {
