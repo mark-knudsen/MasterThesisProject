@@ -568,45 +568,37 @@ namespace MyCompiler
 
         // Handle arr[0]
         // Inside TypeChecker.cs
-        public Type VisitIndex(IndexNode expr)
+          public Type VisitIndex(IndexNode expr)
         {
-            // 1. Visit children first to resolve their types
-            Visit(expr.SourceExpression);
+            // 1. Visit children first to resolve their types down the tree
+            Type sourceType = Visit(expr.SourceExpression);
             Type indexType = Visit(expr.IndexExpression);
 
-            Type inferred = new IntType(); // Default
+            Type inferred = new IntType(); // Default fallback
 
-            if (expr.SourceExpression is IdNode idNode)
+            // 2. Drive type inference cleanly by looking at structural TYPE definitions, not node syntax shapes
+            if (sourceType is ArrayType arrType)
             {
-                var entry = _context.Get(idNode.Name);
-                if (entry?.Type is ArrayType arrType)
-                {
-                    inferred = arrType.ElementType ?? arrType.ElementType ?? new IntType();
-                }
-                else if (entry?.Type is DataframeType dfType)
-                {
-                    if (indexType is StringType)
-                    {
-                        Type columnType = new IntType();
-                        for (int i = 0; i < dfType.ColumnNames.Count; i++)
-                        {
-                            if (dfType.ColumnNames[i] == (expr.IndexExpression as StringNode).Value) columnType = dfType.DataTypes[i];
-                        }
+                if (indexType is not IntType)
+                    throw new Exception($"Array index must be an integer, got {indexType}");
 
-                        inferred = new ArrayType(columnType);
-                    }
-                    else
-                        inferred = dfType.RowType;
+                inferred = arrType.ElementType;
+            }
+            else if (sourceType is DataframeType dfType)
+            {
+                if (indexType is not IntType)
+                {
+                    throw new Exception($"Dataframe indexing must be string (column) or int (row), got {indexType}");
+                }
+                else
+                {
+                    // Row access: arr[0] -> returns a single Record matching the schema row layout
+                    inferred = dfType.RowType;
                 }
             }
-            else if (expr.SourceExpression is DataframeNode dfNode)
+            else
             {
-                inferred = (dfNode.Type as DataframeType).RowType;
-            }
-            else if (expr.SourceExpression is ArrayNode arrNode)
-            {
-
-                inferred = (arrNode.Type as ArrayType).ElementType;
+                throw new Exception($"Cannot apply indexing target expressions on a source of type '{sourceType}'");
             }
 
             expr.SetType(inferred);
