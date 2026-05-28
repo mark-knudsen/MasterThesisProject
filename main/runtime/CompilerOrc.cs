@@ -542,11 +542,9 @@ namespace MyCompiler
 
         // BROKEN FUNCTIONALITY
         // can't use existing variables inside where and map
-        // can't use random inside addRange
         // we do not handle index ot of bounds
         // can't have array of arrays with different types
-        // can't do x.columns[0]
-        // can't do x=x.age on dataframe   or x=x.where or map
+        // can't do x=x.age on dataframe   or x=x.where or map  it can work sometimes after you make a copy from x  
 
         // UNIT TESTING
         // create a orc unit test
@@ -1960,8 +1958,6 @@ namespace MyCompiler
 
             // Perform the store
             var store = _builder.BuildStore(value, global);
-
-            // Set explicit alignment on the store instruction
             store.SetAlignment(alignment);
 
             return value;
@@ -2330,7 +2326,7 @@ namespace MyCompiler
         // for(i=0; i<50; i++) {x.add({name="Hary potter", age=10 + random(1,100), cool=true})}
         // for(i=0; i<5200000; i++) {x.add({name="Hary potter", age= 10 + random(1,100)}) }
         // this below can't do random inside addRange "Cannot perform + on int and"
-        // for(i=0; i<520000; i++) x.addRange([{name="voldemort", age=80}, {name="dumbledore", age=70}, {name="MERLIN", age=101}])
+        // for(i=0; i<520000; i++) {x.addRange([{name="voldemort", age=random(1,100), cool=true}, {name="dumbledore", age=70, cool=false}])}
 
         // x.map(d => d.age + 100)
         // x.map(d => d+ {power= d.age + 100}) // it creates a new column with the name item1
@@ -3017,8 +3013,7 @@ namespace MyCompiler
             // --- NEW: Handle Dynamic vs Static Capacity ---
             LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i64, count);
             uint capacity = count > 0 ? Math.Min(count, 100) : 100;
-            if (expr.Capacity != null)
-                capacity = Math.Min(count, 100);
+            if (expr.Capacity != null) capacity = Math.Min(count, 100);
             LLVMValueRef capacityVal = LLVMValueRef.CreateConstInt(i64, capacity);
 
             var elementType = GetLLVMType(expr.ElementType);
@@ -3061,12 +3056,12 @@ namespace MyCompiler
             _builder.BuildStore(rawDataPtr, dataFieldPtr).SetAlignment(8);
 
             // 5. Populate Elements (Static elements only)
-            var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(elementType, 0), "typed_ptr");
+            //var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(elementType, 0), "typed_ptr");
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-                var elementPtr = _builder.BuildGEP2(elementType, typedDataPtr, new[] { idx }, "elem_ptr");
+                var elementPtr = _builder.BuildGEP2(elementType, rawDataPtr, new[] { idx }, "elem_ptr");
                 _builder.BuildStore(val, elementPtr).SetAlignment(elementSize);
             }
 
@@ -4423,16 +4418,11 @@ namespace MyCompiler
 
             // 2. Determine Alignment
             // i64 (Int) and double (Float) need 8. Bools need 1. Others (pointers) usually 8 on 64-bit.
-            uint alignment = 8;
-            if (entry.Type is BoolType) alignment = 1;
+            uint alignment = GetTypeSize(entry.Type);
 
             // 3. Perform the Load
-            LLVMValueRef loadInstruction;
-
             if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {entry.Type}, Ptr: {ptrToLoad})");
-            loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
-
-            // 4. Set the Alignment explicitly
+            LLVMValueRef loadInstruction = _builder.BuildLoad2(llvmType, ptrToLoad, expr.Name + "_load");
             loadInstruction.SetAlignment(alignment);
 
             return loadInstruction;

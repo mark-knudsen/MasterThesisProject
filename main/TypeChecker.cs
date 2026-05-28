@@ -568,7 +568,7 @@ namespace MyCompiler
 
         // Handle arr[0]
         // Inside TypeChecker.cs
-          public Type VisitIndex(IndexNode expr)
+        public Type VisitIndex(IndexNode expr)
         {
             // 1. Visit children first to resolve their types down the tree
             Type sourceType = Visit(expr.SourceExpression);
@@ -1107,6 +1107,8 @@ namespace MyCompiler
 
                 if (field.Type == null)
                     throw new Exception($"Could not resolve type for record field '{field.Label}'");
+
+                field.Value.SetType(field.Type);
             }
 
             var recordType = new RecordType(expr.Fields);
@@ -1390,15 +1392,15 @@ namespace MyCompiler
         public static Type ResolveTypeNode(TypeNode typeNode)
         {
             if (typeNode == null) return null;
-              return typeNode.Name switch
-                {
-                    "int" => new IntType(),
-                    "float" => new FloatType(),
-                    "bool" => new BoolType(),
-                    "string" => new StringType(),
-                    "array" => new ArrayType(null), 
-                    _ => throw new Exception($"Unknown type node '{typeNode.Name}'")
-                };
+            return typeNode.Name switch
+            {
+                "int" => new IntType(),
+                "float" => new FloatType(),
+                "bool" => new BoolType(),
+                "string" => new StringType(),
+                "array" => new ArrayType(null),
+                _ => throw new Exception($"Unknown type node '{typeNode.Name}'")
+            };
         }
 
         private Type ResolveType(ExpressionNode expr)
