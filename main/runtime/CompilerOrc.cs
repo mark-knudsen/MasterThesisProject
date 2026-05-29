@@ -1167,12 +1167,11 @@ namespace MyCompiler
             return objRaw;
         }
 
-
         private Node GetLastExpression(Node expr)
         {
             if (expr is SequenceNode seq)
             {
-                if (seq.Statements[seq.Statements.Count - 1] is not ExpressionNode) return null;
+                if (seq.Statements.LastOrDefault() is not ExpressionNode) return null;
 
                 // iterate from last to first
                 for (int i = seq.Statements.Count - 1; i >= 0; i--)
@@ -1190,7 +1189,6 @@ namespace MyCompiler
                         if (nestedLast != null) return nestedLast;
                     }
                 }
-
                 // No expression found
                 return null;
             }
@@ -1263,7 +1261,6 @@ namespace MyCompiler
 
             // 6. End Block
             _builder.PositionAtEnd(endBlock);
-
             return default;
         }
 
@@ -1353,8 +1350,7 @@ namespace MyCompiler
 
             // 4. STORE back into the POINTER
             _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
-
-            return newValue;
+            return default;
         }
 
         public LLVMValueRef VisitDecrement(DecrementNode expr)
@@ -1391,7 +1387,7 @@ namespace MyCompiler
                 newValue = _builder.BuildSub(currentValue, LLVMValueRef.CreateConstInt(llvmType, 1, false), "dec_sub");
 
             _builder.BuildStore(newValue, variablePtr).SetAlignment(8);
-            return newValue;
+            return default;
         }
 
         public LLVMValueRef VisitComparison(ComparisonNode expr)
@@ -2332,15 +2328,13 @@ namespace MyCompiler
         public LLVMValueRef VisitWhere(WhereNode expr)
         {
             Type sourceType = expr.SourceExpr.Type;
-            SequenceNode program;
+            var program = new SequenceNode();
 
             // Handle source array type and different element types
             if (sourceType is ArrayType)
                 program = WhereForArray(sourceType, expr);
             else if (sourceType is DataframeType)
                 program = WhereForDataframe(sourceType, expr);
-            else
-                throw new Exception("");
 
             PerformSemanticAnalysis(program);
 
@@ -2369,7 +2363,8 @@ namespace MyCompiler
 
             ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
 
-            var ifBody = new AddNode(new IdNode(resultVarName), currentElement);
+            var ifBody = new SequenceNode();
+            ifBody.Statements.Add(new AddNode(new IdNode(resultVarName), currentElement));
             var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, new IfNode(ifCond, ifBody));
 
             return new SequenceNode { Statements = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
@@ -2447,7 +2442,6 @@ namespace MyCompiler
 
             program.Statements.Add(new AssignNode(resultVarName, emptyArray));
             program.Statements.Add(indexInit);
-
 
             // --- OPTIMIZATION: Index with SkipBoundsCheck ---
             var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
@@ -2995,16 +2989,14 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
             uint count = (uint)expr.Elements.Count;
 
-            bool isPrimitive = IsValueType(expr.ElementType);
-
             // --- NEW: Handle Dynamic vs Static Capacity ---
             LLVMValueRef countVal = LLVMValueRef.CreateConstInt(i64, count);
-            uint capacity = count > 0 ? Math.Min(count, 100) : 100;
-            if (expr.Capacity != null) capacity = Math.Min(count, 100);
+            uint capacity = count > 0 ? count * 2 : 100;
+            if (expr.Capacity != null) capacity = (uint)expr.Capacity * 2;
             LLVMValueRef capacityVal = LLVMValueRef.CreateConstInt(i64, capacity);
 
             var elementType = GetLLVMType(expr.ElementType);
-            uint elementSize = isPrimitive ? GetTypeSize(expr.ElementType) : 8;
+            uint elementSize = GetTypeSize(expr.ElementType);
 
             // --- NEW: Dynamic Size Calculation ---
             // Instead of C# math: (elementSize * capacity)
@@ -4428,7 +4420,6 @@ namespace MyCompiler
             // This avoids misclassifying strings/arrays (both are i8* in LLVM) and prevents
             // MapLLVMTypeToMyType from throwing for pointer types.
             var lastExpr = GetLastExpression(expr) as ExpressionNode;
-
             if (lastExpr != null && lastExpr.Type is not BoolType)
             {
                 //AddImplicitPrint(last, lastExpr.Type);
@@ -4567,7 +4558,7 @@ namespace MyCompiler
             // Primitive stored inline
             _builder.BuildStore(newValue, fieldPtr);
 
-            return newValue;
+            return default;
         }
 
         private LLVMValueRef GetFieldPointer(ExpressionNode recordExpr, string fieldName)
