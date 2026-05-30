@@ -12,7 +12,7 @@
     public List<ExpressionNode> idList;
     public List<ExpressionNode> exprList;
     public List<NamedArgumentNode> dataframeArgList;
-    public List<NamedArgumentNode> recordArgList; 
+    public List<FieldNode> recordArgList; 
 }
 
 %token NULL_LITERAL
@@ -253,14 +253,14 @@ dataframe_arg
 
 /* --- Record Specific Arguments (Allows positional structural values) --- */
 record_arg_list
-    : record_arg                         { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
-    | record_arg_list COMMA record_arg   { $1.Add($3 as NamedArgumentNode); $$ = $1; }
+    : record_arg                         { $$ = new List<FieldNode> { $1 as FieldNode }; }
+    | record_arg_list COMMA record_arg   { $1.Add($3 as FieldNode); $$ = $1; }
     ;
 
 record_arg
-    : ID ASSIGN expr         { $$ = new NamedArgumentNode($1, $3); }
-    | ID COLON type          { $$ = new NamedArgumentNode($1, new TypeLiteralNode($3 as TypeNode)); }
-    | expr                   { $$ = new NamedArgumentNode(null, $1); } 
+    : ID ASSIGN expr         { $$ = new FieldNode($3, $1); }
+    | ID COLON type          { $$ = new FieldNode(new TypeLiteralNode($3 as TypeNode), $1); }
+    | expr                   { $$ = new FieldNode($1, null); } 
     ;
  
 /* Helper for optional expressions */

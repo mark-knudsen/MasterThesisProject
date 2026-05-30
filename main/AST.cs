@@ -338,15 +338,12 @@ namespace MyCompiler
 
             if (transformExpr is ArrayNode arrayNode)
             {
-                List<NamedArgumentNode> namedArguments = new List<NamedArgumentNode>();
+                List<FieldNode> namedArguments = new List<FieldNode>();
                 foreach (var arr in arrayNode.Elements)
                 {
                     if (arr is IdNode strNode)
                     {
-                        namedArguments.Add(new NamedArgumentNode(
-                            strNode.Name,
-                            new FieldNode(iteratorId, strNode.Name)
-                        ));
+                        namedArguments.Add(new FieldNode(iteratorId, strNode.Name));
                     }
                     else
                         throw new Exception("Map array elements must be identifiers");
@@ -557,7 +554,7 @@ namespace MyCompiler
     public class RecordNode : ExpressionNode
     {
         public List<RecordField> Fields { get; set; }
-        public RecordNode(List<NamedArgumentNode> valuesArray)
+        public RecordNode(List<FieldNode> valuesArray)
         {
             Fields = new List<RecordField>();
             if (valuesArray == null) return;
@@ -567,12 +564,12 @@ namespace MyCompiler
                 var arg = valuesArray[i];
                 // For rows like {"Alice", 25}, arg.Name is null.
                 // We assign a placeholder so the field object isn't broken.
-                string label = arg.Name ?? $"item{i + 1}";
+                string label = arg.IdField ?? $"item{i + 1}";
 
                 Fields.Add(new RecordField
                 {
                     Label = label,
-                    Value = arg.Value
+                    Value = arg.SourceExpression
                 });
             }
         }

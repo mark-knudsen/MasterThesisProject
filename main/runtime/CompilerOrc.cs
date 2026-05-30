@@ -2381,12 +2381,12 @@ namespace MyCompiler
             var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
             var indexInit = new AssignNode(iVarName, new NumberNode(0));
 
-            var fields = new List<NamedArgumentNode>();
+            var fields = new List<FieldNode>();
             for (int i = 0; i < dfType.ColumnNames.Count; i++)
             {
                 string name = dfType.ColumnNames[i];
                 Type item = dfType.DataTypes[i];
-                fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
+                fields.Add(new FieldNode(GetTypeLiteralNodeFromTypeNode(item), name));
             }
             var schemaRecord = new RecordNode(fields);
             var resultDf = new DataframeNode(new List<NamedArgumentNode> {
@@ -2476,13 +2476,13 @@ namespace MyCompiler
             // 1. Assign Source
             program.Statements.Add(new AssignNode(srcVarName, expr.SourceExpr));
 
-            var fields = new List<NamedArgumentNode>();
+            var fields = new List<FieldNode>();
             for (int i = 0; i < dfType.ColumnNames.Count; i++)
             {
                 var name = dfType.ColumnNames[i];
                 var item = dfType.DataTypes[i];
 
-                fields.Add(new NamedArgumentNode(name, GetTypeLiteralNodeFromTypeNode(item)));
+                fields.Add(new FieldNode(GetTypeLiteralNodeFromTypeNode(item), name));
             }
             var schemaRecord = new RecordNode(fields);
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
@@ -2882,7 +2882,7 @@ namespace MyCompiler
                 var newFields = rec.Fields.Select(f =>
                 {
                     var val = ReplaceIterator(f.Value, iteratorName, replacement);
-                    var argNode = new NamedArgumentNode(f.Label, val);
+                    var argNode = new FieldNode(val, f.Label);
                     argNode.SetType(f.Type);
                     return argNode;
                 }).ToList();

@@ -687,7 +687,7 @@ namespace MyCompiler
             else if (sourceType is DataframeType dfType)
             {
                 // Create a RecordNode matching the row type including 'index'
-                var rowFields = new List<NamedArgumentNode>();
+                var rowFields = new List<FieldNode>();
 
                 for (int i = 0; i < dfType.ColumnNames.Count; i++)
                 {
@@ -695,7 +695,7 @@ namespace MyCompiler
                     var colType = dfType.DataTypes[i];
 
                     ExpressionNode defaultVal = ResolveDataType(colType);
-                    rowFields.Add(new NamedArgumentNode(colName, defaultVal));
+                    rowFields.Add(new FieldNode(defaultVal, colName));
                 }
 
                 var rowRecord = new RecordNode(rowFields);
@@ -897,7 +897,7 @@ namespace MyCompiler
                 });
             }
 
-            var recordNode = new RecordNode(new List<NamedArgumentNode>()) { Fields = fields };
+            var recordNode = new RecordNode(new List<FieldNode>()) { Fields = fields };
 
             return recordNode;
         }
@@ -1212,7 +1212,7 @@ namespace MyCompiler
             if (columns.Elements.Count != types.Elements.Count)
                 throw new Exception("Dataframe 'columns' and 'type' arrays must have the same length.");
 
-            var fields = new List<NamedArgumentNode>();
+            var fields = new List<FieldNode>();
 
             for (int i = 0; i < columns.Elements.Count; i++)
             {
@@ -1225,7 +1225,7 @@ namespace MyCompiler
                     typeExpr = new TypeLiteralNode(new TypeNode(typeNameValue.Value));
                 }
 
-                fields.Add(new NamedArgumentNode(colName.Value, typeExpr));
+                fields.Add(new FieldNode(typeExpr, colName.Value));
             }
 
             return new RecordNode(fields);
