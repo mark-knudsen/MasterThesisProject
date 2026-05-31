@@ -563,7 +563,7 @@ namespace MyCompiler
             // 1 Create a fresh context + module for this command
             var context = LLVMContextRef.Create();
             _module = context.CreateModuleWithName("repl_module");
-            var builder = context.CreateBuilder();
+            _builder = context.CreateBuilder();
 
             // 2 Create:  define double @__anon_expr_X()
             var funcType = LLVMTypeRef.CreateFunction( // the integration test does not like that the return type is a struct, it cant run
@@ -573,9 +573,7 @@ namespace MyCompiler
 
             var function = _module.AddFunction(_funcName, funcType);
             var entry = function.AppendBasicBlock("entry");
-            builder.PositionAtEnd(entry);
-
-            _builder = builder;
+            _builder.PositionAtEnd(entry);
         }
 
         public object Run(Node expr, bool debug = false, bool useStopWatch = false, bool showAllColumns = false, bool showAllRows = false)
@@ -1124,7 +1122,6 @@ namespace MyCompiler
                     _ => 8
                 };
 
-                // 2. FIX: Use 'mallocFuncType' instead of '_mallocType'
                 var mem = _builder.BuildCall2(_mallocType, mallocFunc,
                     new[] { LLVMValueRef.CreateConstInt(i64, (ulong)size) }, "value_mem");
 
@@ -1149,10 +1146,14 @@ namespace MyCompiler
                 // For void, we point to null data
                 dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
             }
+            else if (type is NullType)
+            {
+                // For null, we also point to null data but with a different tag
+                dataPtr = LLVMValueRef.CreateConstPointerNull(i8Ptr);
+            }
             else
                 throw new Exception($"Unsupported type in BoxValue: {type}");
 
-            // 3. FIX: Use 'mallocFuncType' instead of '_mallocType' here too
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
                 new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
 
@@ -2285,7 +2286,7 @@ namespace MyCompiler
         // {x:5}+{x:4, y:2} = {x:4, y:2}
         // {x:5}+{x:4, y:2} + {y:3, z:1} + {x:1} = {x:1, y:3, z:1}
         // {x:5}+{y:2}+{z:1} = {x:5, y:2, z:1}
-        // {x:5}+{y:2}+{z:1}+{a:"bob", b: true, f:10.1} = { x: 5, y: 2, z: 1, a: bob, b: True, f: 10.1 }
+        // {x=5}+{y=2}+{z=1}+{a="bob", b=true, f=10.1, x=7} = { x: 5, y: 2, z: 1, a: bob, b: True, f: 10.1 }
 
         // for(i=0; i<50; i++) print(i)
         // foreach(item in x) {print(item)} // but this works fine
@@ -2298,7 +2299,8 @@ namespace MyCompiler
             return default;
         }
         // x=dataframe({name: string, age: int})
-        // x=dataframe({name: string, age: int}, [{name= "dan", age= 30}, {name= "alice", age= 25}])
+        // x=dataframe({name: string, age: int}, [{name="dan", age=30}, {name="alice", age=25}])
+        // x=dataframe({name: string, age: int}, [{name="dan", age=30}, {name=30, age=25}])
         // x=dataframe({name: string, age: int, cool: bool}, rows=[{name="dan", age=30, cool=true}, {name="alice", age=25, cool=false}])
 
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})
@@ -2316,11 +2318,11 @@ namespace MyCompiler
         // for(i=0; i<520000; i++) {x.addRange([{name="voldemort", age=random(1,100), cool=true}, {name="dumbledore", age=70, cool=false}])}
 
         // x.map(d => d.age + 100)
-        // x.map(d => d+ {power= d.age + 100}) // it creates a new column with the name item1
+        // x.map(d => d + {savings=0, future_savings=d.savings *1.5}) // it creates a new column with the name item1
         // x.where(d=> d.age > 50)
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
-        // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
+        // x.where(d=> d.savings > 448.47).where(z=> z.savings < 978440.3 & z.name=="John")
         // x.where(d=> d.age == 38 or d.age == 71)
 
         // x=read_csv("CSV/test.csv")
@@ -2498,7 +2500,7 @@ namespace MyCompiler
 
             // 4. Fetch row: currentRow = src[i]
             var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
-            loopBody.Statements.Add(new AssignNode(currentRowVarName, rowAccess));
+            loopBody.Statements.Add(new AssignNode(currentRowVarName, rowAccess)); // QUESTION, could this use an assignIndexNode instead?
 
             // 5. Transformation Logic
             ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
@@ -2969,6 +2971,7 @@ namespace MyCompiler
             if (type is IntType || type is FloatType) return 8;
             if (type is BoolType) return 1; // We use 1 byte for bools to simplify memory management and alignment zzzzz
             if (type is StringType || type is ArrayType || type is RecordType || type is DataframeType) return 8; // pointer size
+            if (type is NullType || type is VoidType) return 0; // No storage needed for null or void
             throw new Exception("Unknown type for size calculation: " + type);
         }
 

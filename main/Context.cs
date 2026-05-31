@@ -1,10 +1,8 @@
-#nullable enable
 using System.Collections.Immutable;
-using LLVMSharp.Interop;
 
 namespace MyCompiler
 {
-    public record ContextEntry(Type? Type); // really wished we would also save the actual value for easy use
+    public record ContextEntry(Type Type); // really wished we would also save the actual value for easy use
 
     public sealed class Context
     {
@@ -18,13 +16,13 @@ namespace MyCompiler
         private Context(ImmutableDictionary<string, ContextEntry> source)
             => _source = source;
 
-        public Context Add(string name, Type? type = null)
+        public Context Add(string name, Type type)
         {
             var newEntry = new ContextEntry(type);
             return new Context(_source.SetItem(name, newEntry));
         }
 
-        public ContextEntry? Get(string key)
+        public ContextEntry Get(string key)
         {
             return _source.TryGetValue(key, out var entry) ? entry : null;
         }
