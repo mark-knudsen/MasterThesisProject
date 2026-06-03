@@ -4713,7 +4713,7 @@ namespace MyCompiler
             var c3 = _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2, "types");
 
             _builder.BuildStore(colNamesArray, c1);
-            _builder.BuildStore(rowsPtr, c2); // Use the CSV rows or the Literal rows
+            _builder.BuildStore(rowsPtr, c2); 
             _builder.BuildStore(dataTypesArray, c3);
 
             return dfPtr;
@@ -4749,8 +4749,8 @@ namespace MyCompiler
             }
 
             // Initialize Header { len, cap, data }
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 0, "len"));
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 1, "cap"));
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 0, "len")).SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 1, "cap")).SetAlignment(8);
             _builder.BuildStore(data, _builder.BuildStructGEP2(_arrayStruct, header, 2, "data"));
 
             return header;
@@ -4773,12 +4773,12 @@ namespace MyCompiler
                 //Console.WriteLine($"Compiling Metadata: Column {i} ({schema.Fields[i].Label}) is Type {fieldType} -> ID {typeId}");
 
                 var target = _builder.BuildGEP2(i64, data, new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) }, "ptr");
-                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)typeId), target);
+                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)typeId), target).SetAlignment(8);
             }
 
             // Set len, cap, data
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 0, ""));
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 1, ""));
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 0, "")).SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)count), _builder.BuildStructGEP2(_arrayStruct, header, 1, "")).SetAlignment(8);
             _builder.BuildStore(data, _builder.BuildStructGEP2(_arrayStruct, header, 2, ""));
 
             return header;

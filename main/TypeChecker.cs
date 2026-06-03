@@ -186,11 +186,6 @@ namespace MyCompiler
                     rightType = Visit(expr.Right);
                 }
             }
-            // else
-            // {
-            //     leftType = Visit(expr.Left);
-            //     rightType = Visit(expr.Right);
-            // }
 
             // Helper to check if a type is numeric (Int or Float)
             bool isLeftNum = leftType is IntType || leftType is FloatType;
