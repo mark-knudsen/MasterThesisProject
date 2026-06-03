@@ -196,7 +196,7 @@ namespace MyCompiler
     // A list of statements (the whole program)
     public class SequenceNode : Node
     {
-        public List<Node> Statements { get; } = new List<Node>();
+        public List<Node> Nodes { get; } = new List<Node>();
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSequence(this);
     }

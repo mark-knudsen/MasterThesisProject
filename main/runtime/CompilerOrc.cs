@@ -1172,12 +1172,12 @@ namespace MyCompiler
         {
             if (expr is SequenceNode seq)
             {
-                if (seq.Statements.LastOrDefault() is not ExpressionNode) return null;
+                if (seq.Nodes.LastOrDefault() is not ExpressionNode) return null;
 
                 // iterate from last to first
-                for (int i = seq.Statements.Count - 1; i >= 0; i--)
+                for (int i = seq.Nodes.Count - 1; i >= 0; i--)
                 {
-                    var last = seq.Statements[i];
+                    var last = seq.Nodes[i];
 
                     // Only consider actual value expressions, skip statements like print
                     if (last is ExpressionNode && !(last is PrintNode))
@@ -1281,10 +1281,10 @@ namespace MyCompiler
             var assignItem = new AssignNode(expr.Iterator.Name, indexAccess);
 
             var bodySeq = new SequenceNode();
-            bodySeq.Statements.Add(assignItem);
+            bodySeq.Nodes.Add(assignItem);
 
             // original body
-            bodySeq.Statements.Add(expr.Body);
+            bodySeq.Nodes.Add(expr.Body);
 
             // decide if we need write-back
             Type elementType = new NullType();
@@ -1305,7 +1305,7 @@ namespace MyCompiler
                     new IdNode(expr.Iterator.Name)
                 );
 
-                bodySeq.Statements.Add(writeBack);
+                bodySeq.Nodes.Add(writeBack);
             }
 
             var lowered = new ForLoopNode(init, cond, step, bodySeq);
@@ -2366,10 +2366,10 @@ namespace MyCompiler
             ExpressionNode ifCond = ReplaceIterator(expr.Condition, expr.IteratorId.Name, currentElement);
 
             var ifBody = new SequenceNode();
-            ifBody.Statements.Add(new AddNode(new IdNode(resultVarName), currentElement));
+            ifBody.Nodes.Add(new AddNode(new IdNode(resultVarName), currentElement));
             var forLoop = new ForLoopNode(indexInit, loopCond, loopStep, new IfNode(ifCond, ifBody));
 
-            return new SequenceNode { Statements = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
+            return new SequenceNode { Nodes = { srcAssign, resultAssign, forLoop, new IdNode(resultVarName) } };
         }
 
         public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
@@ -2407,7 +2407,7 @@ namespace MyCompiler
             var ifBody = new AddNode(new IdNode(resultVarName), currentElement);
             var loop = new ForLoopNode(indexInit, cond, step, new IfNode(ifCond, ifBody));
 
-            return new SequenceNode { Statements = { srcAssign, resultAssign, loop, new IdNode(resultVarName) } };
+            return new SequenceNode { Nodes = { srcAssign, resultAssign, loop, new IdNode(resultVarName) } };
         }
 
         public LLVMValueRef VisitMap(MapNode expr)
@@ -2437,13 +2437,13 @@ namespace MyCompiler
             var indexInit = new AssignNode(iVarName, new NumberNode(0));
 
             // 2. Setup
-            program.Statements.Add(new AssignNode(srcVarName, expr.SourceExpr));
+            program.Nodes.Add(new AssignNode(srcVarName, expr.SourceExpr));
 
             // Initialize empty array with the correct ElementType
             var emptyArray = new ArrayNode(new List<ExpressionNode>()) { ElementType = resultElementType };
 
-            program.Statements.Add(new AssignNode(resultVarName, emptyArray));
-            program.Statements.Add(indexInit);
+            program.Nodes.Add(new AssignNode(resultVarName, emptyArray));
+            program.Nodes.Add(indexInit);
 
             // --- OPTIMIZATION: Index with SkipBoundsCheck ---
             var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
@@ -2460,9 +2460,9 @@ namespace MyCompiler
             var idvar = new IdNode(iVarName);
             var cond = new ComparisonNode(idvar, "<", new LengthNode(new IdNode(srcVarName)));
             var step = new IncrementNode(idvar);
-            program.Statements.Add(new ForLoopNode(indexInit, cond, step, loopBody));
+            program.Nodes.Add(new ForLoopNode(indexInit, cond, step, loopBody));
 
-            program.Statements.Add(new IdNode(resultVarName));
+            program.Nodes.Add(new IdNode(resultVarName));
             return program;
         }
 
@@ -2476,7 +2476,7 @@ namespace MyCompiler
             var dfType = (DataframeType)expr.Type;
 
             // 1. Assign Source
-            program.Statements.Add(new AssignNode(srcVarName, expr.SourceExpr));
+            program.Nodes.Add(new AssignNode(srcVarName, expr.SourceExpr));
 
             var fields = new List<FieldNode>();
             for (int i = 0; i < dfType.ColumnNames.Count; i++)
@@ -2492,15 +2492,15 @@ namespace MyCompiler
             });
             dfConstructor.SetType(dfType);
 
-            program.Statements.Add(new AssignNode(resultVarName, dfConstructor));
-            program.Statements.Add(new AssignNode(iVarName, new NumberNode(0)));
+            program.Nodes.Add(new AssignNode(resultVarName, dfConstructor));
+            program.Nodes.Add(new AssignNode(iVarName, new NumberNode(0)));
 
             var loopBody = new SequenceNode();
             var replacementNode = new IdNode(currentRowVarName);
 
             // 4. Fetch row: currentRow = src[i]
             var rowAccess = new IndexNode(new IdNode(srcVarName), new IdNode(iVarName)) { SkipBoundsCheck = true };
-            loopBody.Statements.Add(new AssignNode(currentRowVarName, rowAccess)); // QUESTION, could this use an assignIndexNode instead?
+            loopBody.Nodes.Add(new AssignNode(currentRowVarName, rowAccess));
 
             // 5. Transformation Logic
             ExpressionNode finalRowExpr = (ExpressionNode)ReplaceIteratorInNode(
@@ -2511,14 +2511,14 @@ namespace MyCompiler
 
             // Because we initialized 'rowsArray' with 'srcLength',
             // the 'grow' block in the IR will exist but will NEVER be executed.
-            loopBody.Statements.Add(new AddNode(new IdNode(resultVarName), finalRowExpr));
+            loopBody.Nodes.Add(new AddNode(new IdNode(resultVarName), finalRowExpr));
 
             // 7. Loop Setup
             var idvar = new IdNode(iVarName);
             var cond = new ComparisonNode(idvar, "<", new LengthNode(new IdNode(srcVarName)));
             var step = new IncrementNode(idvar);
-            program.Statements.Add(new ForLoopNode(new AssignNode(iVarName, new NumberNode(0)), cond, step, loopBody));
-            program.Statements.Add(new IdNode(resultVarName));
+            program.Nodes.Add(new ForLoopNode(new AssignNode(iVarName, new NumberNode(0)), cond, step, loopBody));
+            program.Nodes.Add(new IdNode(resultVarName));
 
             return program;
         }
@@ -3193,7 +3193,7 @@ namespace MyCompiler
             // row = src[i]
             var rowAccess = new IndexNode(new IdNode(srcVar), new IdNode(iVar));
             rowAccess.SetType(dfType.RowType);
-            loopBody.Statements.Add(new AssignNode(rowVar, rowAccess));
+            loopBody.Nodes.Add(new AssignNode(rowVar, rowAccess));
 
             // value = row.column (This returns the actual double/int value, not a pointer)
             var valueExpr = new FieldNode(new IdNode(rowVar), columnName);
@@ -3201,16 +3201,16 @@ namespace MyCompiler
 
             // result.add(value) -> This will now store the raw value contiguously
             var addNode = new AddNode(new IdNode(resultVar), valueExpr);
-            loopBody.Statements.Add(addNode);
+            loopBody.Nodes.Add(addNode);
 
             var loop = new ForLoopNode(indexInit, cond, step, loopBody);
 
             var program = new SequenceNode();
-            program.Statements.Add(srcAssign);
-            program.Statements.Add(lenAssign); // Length first
-            program.Statements.Add(resultAssign);
-            program.Statements.Add(loop);
-            program.Statements.Add(new IdNode(resultVar));
+            program.Nodes.Add(srcAssign);
+            program.Nodes.Add(lenAssign); // Length first
+            program.Nodes.Add(resultAssign);
+            program.Nodes.Add(loop);
+            program.Nodes.Add(new IdNode(resultVar));
 
             return program;
         }
@@ -4093,24 +4093,24 @@ namespace MyCompiler
             // Update min if current element < min
             var ifCond = new ComparisonNode(currentElement, "<", new IdNode(minVar));
             var ifBody = new SequenceNode();
-            ifBody.Statements.Add(new AssignNode(minVar, currentElement));
+            ifBody.Nodes.Add(new AssignNode(minVar, currentElement));
             var ifNode = new IfNode(ifCond, ifBody);
 
             // Loop body
             var loopBody = new SequenceNode();
-            loopBody.Statements.Add(ifNode);
+            loopBody.Nodes.Add(ifNode);
 
             // Build for loop
             var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
 
             // Sequence: array assign, min assign, loop
             var program = new SequenceNode();
-            program.Statements.Add(arrayAssign);
-            program.Statements.Add(minAssign);
-            program.Statements.Add(forLoop);
+            program.Nodes.Add(arrayAssign);
+            program.Nodes.Add(minAssign);
+            program.Nodes.Add(forLoop);
 
             // Return min value
-            program.Statements.Add(new IdNode(minVar));
+            program.Nodes.Add(new IdNode(minVar));
 
             // Semantic analysis (optional)
             PerformSemanticAnalysis(program);
@@ -4142,19 +4142,19 @@ namespace MyCompiler
             // Update max if current element > max
             var ifCond = new ComparisonNode(currentElement, ">", new IdNode(maxVar));
             var ifBody = new SequenceNode();
-            ifBody.Statements.Add(new AssignNode(maxVar, currentElement));
+            ifBody.Nodes.Add(new AssignNode(maxVar, currentElement));
             var ifNode = new IfNode(ifCond, ifBody);
 
             var loopBody = new SequenceNode();
-            loopBody.Statements.Add(ifNode);
+            loopBody.Nodes.Add(ifNode);
 
             var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
 
             var program = new SequenceNode();
-            program.Statements.Add(arrayAssign);
-            program.Statements.Add(maxAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(new IdNode(maxVar));
+            program.Nodes.Add(arrayAssign);
+            program.Nodes.Add(maxAssign);
+            program.Nodes.Add(forLoop);
+            program.Nodes.Add(new IdNode(maxVar));
 
             PerformSemanticAnalysis(program);
 
@@ -4187,7 +4187,7 @@ namespace MyCompiler
             );
 
             var loopBody = new SequenceNode();
-            loopBody.Statements.Add(addAssign);
+            loopBody.Nodes.Add(addAssign);
 
             var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
 
@@ -4197,11 +4197,11 @@ namespace MyCompiler
             );
 
             var program = new SequenceNode();
-            program.Statements.Add(arrayAssign);
-            program.Statements.Add(sumAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(meanAssign);
-            program.Statements.Add(new IdNode(meanVar));
+            program.Nodes.Add(arrayAssign);
+            program.Nodes.Add(sumAssign);
+            program.Nodes.Add(forLoop);
+            program.Nodes.Add(meanAssign);
+            program.Nodes.Add(new IdNode(meanVar));
 
             PerformSemanticAnalysis(program);
 
@@ -4233,15 +4233,15 @@ namespace MyCompiler
             );
 
             var loopBody = new SequenceNode();
-            loopBody.Statements.Add(addAssign);
+            loopBody.Nodes.Add(addAssign);
 
             var forLoop = new ForLoopNode(indexAssign, loopCond, loopStep, loopBody);
 
             var program = new SequenceNode();
-            program.Statements.Add(arrayAssign);
-            program.Statements.Add(sumAssign);
-            program.Statements.Add(forLoop);
-            program.Statements.Add(new IdNode(sumVar));
+            program.Nodes.Add(arrayAssign);
+            program.Nodes.Add(sumAssign);
+            program.Nodes.Add(forLoop);
+            program.Nodes.Add(new IdNode(sumVar));
 
             PerformSemanticAnalysis(program);
 
@@ -4290,8 +4290,8 @@ namespace MyCompiler
             );
 
             var loop1Body = new SequenceNode();
-            loop1Body.Statements.Add(addSumX);
-            loop1Body.Statements.Add(addSumY);
+            loop1Body.Nodes.Add(addSumX);
+            loop1Body.Nodes.Add(addSumY);
 
             var loop1 = new ForLoopNode(initI, cond1, step1, loop1Body);
 
@@ -4332,9 +4332,9 @@ namespace MyCompiler
             );
 
             var loop2Body = new SequenceNode();
-            loop2Body.Statements.Add(addNum);
-            loop2Body.Statements.Add(addDenomX);
-            loop2Body.Statements.Add(addDenomY);
+            loop2Body.Nodes.Add(addNum);
+            loop2Body.Nodes.Add(addDenomX);
+            loop2Body.Nodes.Add(addDenomY);
 
             var loop2 = new ForLoopNode(resetI, cond2, step2, loop2Body);
 
@@ -4354,27 +4354,27 @@ namespace MyCompiler
             );
 
             var program = new SequenceNode();
-            program.Statements.Add(assignX);
-            program.Statements.Add(assignY);
+            program.Nodes.Add(assignX);
+            program.Nodes.Add(assignY);
 
-            program.Statements.Add(initSumX);
-            program.Statements.Add(initSumY);
-            program.Statements.Add(initI);
-            program.Statements.Add(loop1);
+            program.Nodes.Add(initSumX);
+            program.Nodes.Add(initSumY);
+            program.Nodes.Add(initI);
+            program.Nodes.Add(loop1);
 
-            program.Statements.Add(meanAssignX);
-            program.Statements.Add(meanAssignY);
+            program.Nodes.Add(meanAssignX);
+            program.Nodes.Add(meanAssignY);
 
-            program.Statements.Add(new AssignNode(iVar, new NumberNode(0)));
+            program.Nodes.Add(new AssignNode(iVar, new NumberNode(0)));
 
-            program.Statements.Add(new AssignNode(num, new NumberNode(0)));
-            program.Statements.Add(new AssignNode(denomX, new NumberNode(0)));
-            program.Statements.Add(new AssignNode(denomY, new NumberNode(0)));
+            program.Nodes.Add(new AssignNode(num, new NumberNode(0)));
+            program.Nodes.Add(new AssignNode(denomX, new NumberNode(0)));
+            program.Nodes.Add(new AssignNode(denomY, new NumberNode(0)));
 
-            program.Statements.Add(loop2);
+            program.Nodes.Add(loop2);
 
-            program.Statements.Add(corr);
-            program.Statements.Add(new IdNode("__corr_result"));
+            program.Nodes.Add(corr);
+            program.Nodes.Add(new IdNode("__corr_result"));
 
             PerformSemanticAnalysis(program);
 
@@ -4414,7 +4414,7 @@ namespace MyCompiler
         {
             LLVMValueRef last = default;
 
-            foreach (var stmt in expr.Statements)
+            foreach (var stmt in expr.Nodes)
             {
                 last = Visit(stmt);
             }
@@ -5332,7 +5332,7 @@ namespace MyCompiler
         {
             if (expr is SequenceNode seq)
             {
-                foreach (var node in seq.Statements)
+                foreach (var node in seq.Nodes)
                 {
                     if (node is ExpressionNode exp && !(node is PrintNode))
                         return exp;

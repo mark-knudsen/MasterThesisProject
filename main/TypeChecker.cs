@@ -176,17 +176,21 @@ namespace MyCompiler
 
             if (expr.Operator == "/" || expr.Operator == "/=")
             {
-                expr.Left = InsertCast(expr.Left, Visit(expr.Left), new FloatType());
-                expr.Right = InsertCast(expr.Right, Visit(expr.Right), new FloatType());
+                if (leftType is IntType || rightType is IntType)
+                {
 
-                leftType = Visit(expr.Left);
-                rightType = Visit(expr.Right);
+                    expr.Left = InsertCast(expr.Left, leftType, new FloatType());
+                    expr.Right = InsertCast(expr.Right, rightType, new FloatType());
+
+                    leftType = Visit(expr.Left);
+                    rightType = Visit(expr.Right);
+                }
             }
-            else
-            {
-                leftType = Visit(expr.Left);
-                rightType = Visit(expr.Right);
-            }
+            // else
+            // {
+            //     leftType = Visit(expr.Left);
+            //     rightType = Visit(expr.Right);
+            // }
 
             // Helper to check if a type is numeric (Int or Float)
             bool isLeftNum = leftType is IntType || leftType is FloatType;
@@ -503,7 +507,7 @@ namespace MyCompiler
         {
             Type lastType = new VoidType();
 
-            foreach (var stmt in node.Statements)
+            foreach (var stmt in node.Nodes)
                 lastType = Visit(stmt);
 
             return lastType;

@@ -32,9 +32,6 @@
 %token GE LE EQ NE GT LT LOGICAL_AND LOGICAL_OR
 
 %right ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULT_ASSIGN DIV_ASSIGN
-%nonassoc LOWEST
-%nonassoc UNARY
-/* %nonassoc IF %nonassoc ELSE */
 
 %left LOGICAL_OR
 %left LOGICAL_AND
@@ -45,15 +42,16 @@
 %left DOT
 %left LBRACKET
 
-%type <node> prog statement statement_list assignment block dataframe_arg record_arg
+%nonassoc LOWEST
+%nonassoc UNARY
+
+%type <node> prog statement node_list assignment block dataframe_arg record_arg
 %type <expr> expr record_struct type opt_expr 
 %type <idList> id_list
 %type <exprList> expr_list 
 %type <dataframeArgList> dataframe_arg_list
 %type <recordArgList> record_arg_list
 
-/* %type <statement> statement assignment */
-/* %type <recordList> record_list */
 
 %{
     public MyCompiler.Node RootNode;
@@ -62,11 +60,11 @@
 %%
 
 prog
-    : statement_list { $$ = $1; RootNode = $$; }
+    : node_list { $$ = $1; RootNode = $$; }
     ;
 
 block
-    : LBRACE statement_list RBRACE { $$ = $2; }
+    : LBRACE node_list RBRACE { $$ = $2; }
     ;
 
 separator
@@ -79,15 +77,15 @@ opt_newlines
     | opt_newlines NEWLINE
     ;
 
-statement_list
+node_list
     : /* empty */               { $$ = new SequenceNode(); }
-    | statement_list statement  { ((SequenceNode)$1).Statements.Add($2); $$ = $1; }
-    | statement_list separator  { $$ = $1; }
+    | node_list statement  { ((SequenceNode)$1).Nodes.Add($2); $$ = $1; }    
+    | node_list expr %prec LOWEST { ((SequenceNode)$1).Nodes.Add($2); $$ = $1; }
+    | node_list separator  { $$ = $1; }
     ;
 
 statement
     : assignment                                { $$ = $1; }
-    | expr %prec LOWEST                         { $$ = $1; } 
     | IF LPAREN expr RPAREN block %prec IF      { $$ = new IfNode($3, $5); }  
     | IF LPAREN expr RPAREN block ELSE block    { $$ = new IfNode($3, $5, $7); }
     | PRINT LPAREN expr RPAREN                  { $$ = new PrintNode($3); }

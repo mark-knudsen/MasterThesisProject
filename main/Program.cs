@@ -394,7 +394,7 @@ namespace MyCompiler
             switch (node)
             {
                 case SequenceNode seq:
-                    foreach (var stmt in seq.Statements) PrintNode(stmt, indent);
+                    foreach (var stmt in seq.Nodes) PrintNode(stmt, indent);
                     break;
 
                 case AssignNode assign:
