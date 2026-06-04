@@ -882,117 +882,6 @@ namespace MyCompiler
             }
         }
 
-        // private string HandleDataframe(IntPtr dfPtr, DataframeType type)
-        // {
-        //     // If dfPtr comes from result.data in Run(), it is already the pointer to the DataframeObject.
-        //     if (dfPtr == IntPtr.Zero) return "dataframe(null)";
-
-        //     // =====================================================
-        //     // 1. Direct Field Access (No Tag Reading)
-        //     // =====================================================
-        //     // Layout: { IntPtr columns, IntPtr dataArrays, IntPtr types, long rowCount }
-        //     IntPtr columnsArrayPtr = Marshal.ReadIntPtr(dfPtr, 0);
-        //     IntPtr dataPointers = Marshal.ReadIntPtr(dfPtr, IntPtr.Size);
-        //     IntPtr typesArrayPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size * 2);
-        //     long rowCount = Marshal.ReadInt64(dfPtr, IntPtr.Size * 3);
-
-        //     int colCount = type.ColumnNames.Count;
-        //     int rowCountInt = (int)rowCount;
-
-        //     // =====================================================
-        //     // 2. Row selection
-        //     // =====================================================
-        //     int maxRows = 50;
-        //     var rowIndices = new List<int>();
-
-        //     if (rowCountInt <= maxRows)
-        //     {
-        //         for (int i = 0; i < rowCountInt; i++) rowIndices.Add(i);
-        //     }
-        //     else
-        //     {
-        //         for (int i = 0; i < 5; i++) rowIndices.Add(i);
-        //         rowIndices.Add(-1); // Indicator for "..."
-        //         for (int i = rowCountInt - 5; i < rowCountInt; i++) rowIndices.Add(i);
-        //     }
-
-        //     // =====================================================
-        //     // 3. Extract data (Reading from the dataPointers buffer)
-        //     // =====================================================
-        //     var columns = new List<Dictionary<int, object>>();
-
-        //     for (int c = 0; c < colCount; c++)
-        //     {
-        //         // Read the c-th column pointer from the dataPointers buffer
-        //         IntPtr colPtr = Marshal.ReadIntPtr(dataPointers, c * IntPtr.Size);
-
-        //         // Use a modified version of ExtractArrayIndexed that takes the raw buffer and rowCount
-        //         var sparse = ExtractRawColumnData(
-        //             colPtr,
-        //             type.DataTypes[c],
-        //             rowCountInt,
-        //             rowIndices
-        //         );
-
-        //         columns.Add(sparse);
-        //     }
-
-        //     // 6. Formatting Logic
-        //     var colWidths = new int[colCount];
-        //     for (int c = 0; c < colCount; c++)
-        //     {
-        //         colWidths[c] = type.ColumnNames[c].Length;
-        //         foreach (var r in rowIndices)
-        //         {
-        //             if (r < 0) continue;
-        //             if (columns[c].TryGetValue(r, out var valObj))
-        //             {
-        //                 var s = valObj?.ToString() ?? "null";
-        //                 if (s.Length > colWidths[c]) colWidths[c] = s.Length;
-        //             }
-        //         }
-        //     }
-
-        //     int indexWidth = Math.Max("index".Length, rowCountInt > 0 ? (rowCountInt - 1).ToString().Length : 1);
-
-        //     string FormatRow(string index, List<string> row)
-        //     {
-        //         var paddedIndex = index.PadRight(indexWidth);
-        //         var paddedCols = row.Select((val, i) => val.PadRight(colWidths[i]));
-        //         return paddedIndex + " | " + string.Join(" | ", paddedCols);
-        //     }
-
-        //     string separator = new string('-', indexWidth) + "-+-" +
-        //                        string.Join("-+-", colWidths.Select(w => new string('-', w)));
-
-        //     var lines = new List<string>();
-        //     lines.Add(FormatRow("index", type.ColumnNames.ToList()));
-        //     lines.Add(separator);
-
-        //     foreach (var r in rowIndices)
-        //     {
-        //         if (r == -1)
-        //         {
-        //             lines.Add("...".PadRight(indexWidth) + " | " +
-        //                       string.Join(" | ", colWidths.Select(w => "...".PadRight(w))));
-        //             continue;
-        //         }
-
-        //         var rowStrings = new List<string>();
-        //         for (int c = 0; c < colCount; c++)
-        //         {
-        //             if (columns[c].TryGetValue(r, out var valObj))
-        //                 rowStrings.Add(valObj?.ToString() ?? "null");
-        //             else
-        //                 rowStrings.Add("null");
-        //         }
-        //         lines.Add(FormatRow(r.ToString(), rowStrings));
-        //     }
-
-        //     return "Dataframe (" + rowCountInt + " rows):\n" + string.Join("\n", lines.Select(l => "  " + l));
-        // }
-
-
         private string HandleDataframe(IntPtr dfPtr, DataframeType type)
         {
             if (dfPtr == IntPtr.Zero) return "dataframe(null)";
@@ -1080,13 +969,15 @@ namespace MyCompiler
             }
             catch
             {
+                throw new Exception("FAILED TO RUN EXTRACT FROM BUFFER");
                 // If any read fails, fall back to using provided pointer as-is
             }
 
             foreach (var i in indices)
             {
                 if (i < 0 || i >= len) continue;
-                IntPtr ptr = IntPtr.Add(dataBuf, i * 8);
+                int stride = (elemType is BoolType) ? 1 : 8; // bools are 1 byte, everything else is 8 bytes
+                IntPtr ptr = IntPtr.Add(dataBuf, i * stride);  
 
                 if (elemType is IntType) result[i] = Marshal.ReadInt64(ptr);
                 else if (elemType is FloatType)
@@ -1113,36 +1004,6 @@ namespace MyCompiler
                 {
                     IntPtr s = Marshal.ReadIntPtr(ptr);
                     result[i] = (s == IntPtr.Zero) ? "null" : Marshal.PtrToStringAnsi(s);
-                }
-            }
-            return result;
-        }
-
-        private Dictionary<int, object> ExtractRawColumnData(IntPtr data, Type elementType, int length, List<int> indices)
-        {
-            var result = new Dictionary<int, object>();
-            if (data == IntPtr.Zero) return result;
-
-            foreach (var i in indices)
-            {
-                if (i < 0 || i >= length) continue;
-
-                // Every element in your ReadCsv logic is 8-byte aligned (i64, double, or ptr)
-                IntPtr elemPtr = IntPtr.Add(data, i * 8);
-
-                if (elementType is IntType) result[i] = Marshal.ReadInt64(elemPtr);
-                else if (elementType is FloatType)
-                {
-                    byte[] bytes = new byte[8];
-                    Marshal.Copy(elemPtr, bytes, 0, 8);
-                    result[i] = BitConverter.ToDouble(bytes, 0);
-                }
-                else if (elementType is BoolType) result[i] = Marshal.ReadInt64(elemPtr) != 0;
-                else if (elementType is StringType)
-                {
-                    IntPtr sPtr = Marshal.ReadIntPtr(elemPtr);
-                    // CRITICAL: Check for null pointer before converting to string
-                    result[i] = (sPtr == IntPtr.Zero) ? "null" : Marshal.PtrToStringAnsi(sPtr);
                 }
             }
             return result;
@@ -1298,7 +1159,7 @@ namespace MyCompiler
                 {
                     IntType => 8,
                     FloatType => 8,
-                    BoolType => 8,
+                    BoolType => 1,
                     _ => 8
                 };
 
@@ -1328,18 +1189,15 @@ namespace MyCompiler
             else
                 throw new Exception($"Unsupported type in BoxValue: {type}");
 
-            // Allocate RuntimeValue (struct { i16 tag, i8* data })
             var objRaw = _builder.BuildCall2(_mallocType, mallocFunc,
-                new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
-
-            var obj = _builder.BuildBitCast(objRaw, LLVMTypeRef.CreatePointer(_runtimeValueType, 0), "runtime_cast");
+             new[] { LLVMValueRef.CreateConstInt(i64, 16) }, "runtime_obj");
 
             // Store tag
-            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 0, "tag_ptr");
+            var tagPtr = _builder.BuildStructGEP2(_runtimeValueType, objRaw, 0, "tag_ptr");
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, (ulong)tag), tagPtr).SetAlignment(8);
 
             // Store data
-            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, obj, 1, "data_ptr");
+            var dataFieldPtr = _builder.BuildStructGEP2(_runtimeValueType, objRaw, 1, "data_ptr");
             _builder.BuildStore(dataPtr, dataFieldPtr).SetAlignment(8);
 
             return objRaw;
@@ -2398,7 +2256,7 @@ namespace MyCompiler
                                 }
                                 else if (field.Type is BoolType)
                                 {
-                                    fieldVal = _builder.BuildLoad2(ctx.Int1Type, storedPtr, "bool_val");
+                                    fieldVal = _builder.BuildLoad2(ctx.Int8Type, storedPtr, "bool_val");
 
                                     DeclareBoolStrings();
                                     var str = _builder.BuildSelect(fieldVal, _trueStr, _falseStr, "boolstr");
@@ -2541,36 +2399,41 @@ namespace MyCompiler
             columnName = null; op = null; literalNode = null;
             ExpressionNode left = null;
             ExpressionNode right = null;
+            return true;
 
-            if (condition is ComparisonNode cmp)
-            {
-                op = cmp.Operator; left = cmp.Left; right = cmp.Right;
-            }
-            else if (condition is BinaryOpNode bin && (bin.Operator == ">" || bin.Operator == "<" || bin.Operator == "=="))
-            {
-                op = bin.Operator; left = bin.Left; right = bin.Right;
-            }
+            // if (condition is ComparisonNode cmp)
+            // {
+            //     op = cmp.Operator; left = cmp.Left; right = cmp.Right;
+            // }
+            // else if (condition is BinaryOpNode bin && (bin.Operator == ">" || bin.Operator == "<" || bin.Operator == "=="))
+            // {
+            //     op = bin.Operator; left = bin.Left; right = bin.Right;
+            // }
 
-            if (left != null && right != null)
-            {
-                var leftType = left.GetType();
-                var recordProp = leftType.GetProperty("Expression") ?? leftType.GetProperty("Record");
-                var fieldProp = leftType.GetProperty("FieldName") ?? leftType.GetProperty("Name");
+            // if (left != null && right != null)
+            // {
+            //     System.Console.WriteLine("we have left and right");
+            //     var leftType = left.GetType();
+            //     var recordProp = leftType.GetProperty("Expression") ?? leftType.GetProperty("Record");
+            //     var fieldProp = leftType.GetProperty("FieldName") ?? leftType.GetProperty("Name");
 
-                if (recordProp != null && fieldProp != null)
-                {
-                    var recordValue = recordProp.GetValue(left) as IdNode;
-                    var fieldValue = fieldProp.GetValue(left) as string;
+            //     if (recordProp != null && fieldProp != null)
+            //     {
+            //         System.Console.WriteLine("we have record and field props");
+            //         var recordValue = recordProp.GetValue(left) as IdNode;
+            //         var fieldValue = fieldProp.GetValue(left) as string;
 
-                    if (recordValue != null && recordValue.Name == iteratorName && fieldValue != null)
-                    {
-                        columnName = fieldValue;
-                        literalNode = right;
-                        return true;
-                    }
-                }
-            }
-            return false;
+            //         if (recordValue != null && recordValue.Name == iteratorName && fieldValue != null)
+            //         {
+            //             System.Console.WriteLine("success");
+            //             columnName = fieldValue;
+            //             literalNode = right;
+            //             return true;
+            //         }
+            //     }
+            //     System.Console.WriteLine("fail");
+            // }
+            // return false;
         }
 
         private LLVMValueRef EmitVectorizedDataframeWhere(WhereNode expr, DataframeType dfType, string targetColumnName, string op, ExpressionNode literalNode)
@@ -2672,7 +2535,7 @@ namespace MyCompiler
 
             var criteriaVector = LLVMValueRef.CreateConstVector(Enumerable.Repeat(compConstant, (int)vectorWidth).ToArray());
 
-            LLVMIntPredicate pred = op switch
+            LLVMIntPredicate pred = (expr.Condition as ComparisonNode).Operator switch
             {
                 ">" => LLVMIntPredicate.LLVMIntSGT,
                 "<" => LLVMIntPredicate.LLVMIntSLT,
@@ -6034,6 +5897,7 @@ namespace MyCompiler
                 for (int c = 0; c < colCount; c++)
                 {
                     ExpressionNode value = c < row.Elements.Count ? row.Elements[c] : new NullNode();
+                    PerformSemanticAnalysis(value);
                     columnData[c].Add(value);
                 }
             }
@@ -6052,9 +5916,11 @@ namespace MyCompiler
                 {
                     ElementType = inferredTypes[c]
                 };
+                PerformSemanticAnalysis(colArray);
 
                 columnArrayHeaders.Add(VisitArray(colArray));
             }
+
 
             // Build Column Pointer Array
             ulong arrayHeaderSize = 24;
