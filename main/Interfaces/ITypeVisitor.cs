@@ -42,7 +42,6 @@ namespace MyCompiler
         Type VisitRecordFieldAssign(RecordFieldAssignNode expr);
         Type VisitCopy(CopyNode expr);
         Type VisitDataframe(DataframeNode expr);
-        Type VisitShowDataframe(ShowDataframeNode expr);
         Type VisitColumns(ColumnsNode expr);
         Type VisitNamedArgument(NamedArgumentNode expr);
         Type VisitTypeLiteral(TypeLiteralNode expr);
@@ -52,8 +51,8 @@ namespace MyCompiler
         Type VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         Type VisitCast(CastNode expr);
 
-        Type VisitAddField(AddFieldNode expr);
-        Type VisitRemoveField(RemoveFieldNode expr);
+        // Type VisitAddField(AddFieldNode expr);
+        // Type VisitRemoveField(RemoveFieldNode expr);
 
         // Type VisitFunctionDef(FunctionDefNode expr);
         // Type VisitFunctionCall(FunctionCallNode expr);

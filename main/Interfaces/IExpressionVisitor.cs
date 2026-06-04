@@ -50,7 +50,6 @@ namespace MyCompiler
         LLVMValueRef VisitCopy(CopyNode expr);
         LLVMValueRef VisitDataframe(DataframeNode expr);
         LLVMValueRef VisitColumns(ColumnsNode expr);
-        LLVMValueRef VisitShowDataframe(ShowDataframeNode expr);
         LLVMValueRef VisitNamedArgument(NamedArgumentNode expr);
         LLVMValueRef VisitTypeLiteral(TypeLiteralNode expr);
         LLVMValueRef VisitSqrt(SqrtNode expr);
@@ -59,8 +58,8 @@ namespace MyCompiler
         LLVMValueRef VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         LLVMValueRef VisitCast(CastNode expr);
 
-        LLVMValueRef VisitAddField(AddFieldNode expr);
-        LLVMValueRef VisitRemoveField(RemoveFieldNode expr);
+        // LLVMValueRef VisitAddField(AddFieldNode expr);
+        // LLVMValueRef VisitRemoveField(RemoveFieldNode expr);
 
         // // Visit for define and usage of created functions
         // LLVMValueRef VisitFunctionDef(FunctionDefNode node);

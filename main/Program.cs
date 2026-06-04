@@ -377,7 +377,7 @@ namespace MyCompiler
             switch (node)
             {
                 case SequenceNode seq:
-                    foreach (var stmt in seq.Statements) PrintNode(stmt, indent);
+                    foreach (var stmt in seq.Nodes) PrintNode(stmt, indent);
                     break;
 
                 case AssignNode assign:
@@ -391,7 +391,7 @@ namespace MyCompiler
                     Console.WriteLine($"{space}  Columns:");
                     PrintNode(df.Columns, indent + 2);
                     Console.WriteLine($"{space}  Rows:");
-                    PrintNode(df.Data, indent + 2);
+                    PrintNode(df.Rows, indent + 2);
                     break;
 
                 case RecordNode rec:
@@ -420,33 +420,33 @@ namespace MyCompiler
                 case ReadCsvNode csv:
                     Console.WriteLine($"{space}READ CSV:");
                     Console.WriteLine($"{space}  Path:");
-                    PrintNode(csv.FileNameExpression, indent + 2);
+                    PrintNode(csv.FileNameExpr, indent + 2);
                     Console.WriteLine($"{space}  Schema:");
-                    PrintNode(csv.SchemaExpression, indent + 2);
+                    PrintNode(csv.SchemaExpr, indent + 2);
                     break;
 
                 case ToCsvNode toCsv:
                     Console.WriteLine($"{space}TO CSV:");
                     Console.WriteLine($"{space}  Source:");
-                    PrintNode(toCsv.SourceExpression, indent + 2);
+                    PrintNode(toCsv.Expression, indent + 2);
                     Console.WriteLine($"{space}  Destination:");
-                    PrintNode(toCsv.FileNameExpression, indent + 2);
+                    PrintNode(toCsv.FileNameExpr, indent + 2);
                     break;
 
                 // --- Functional (Map / Where) ---
                 case MapNode map:
                     Console.WriteLine($"{space}MAP (Iterator: {map.IteratorId.Name}):");
                     Console.WriteLine($"{space}  Source:");
-                    PrintNode(map.SourceExpression, indent + 2);
+                    PrintNode(map.SourceExpr, indent + 2);
                     Console.WriteLine($"{space}  Transformation:");
-                    PrintNode(map.Assignment, indent + 2);
+                    PrintNode(map.TransformExpr, indent + 2);
 
                     break;
 
                 case WhereNode whe:
                     Console.WriteLine($"{space}WHERE (Iterator: {whe.IteratorId.Name}):");
                     Console.WriteLine($"{space}  Source:");
-                    PrintNode(whe.SourceExpression, indent + 2);
+                    PrintNode(whe.SourceExpr, indent + 2);
                     Console.WriteLine($"{space}  Predicate:");
                     PrintNode(whe.Condition, indent + 2);
                     break;

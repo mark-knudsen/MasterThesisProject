@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using LLVMSharp.Interop;
 using LLVMSharp;
+using System.Linq.Expressions;
 
 namespace MyCompiler
 {
@@ -62,10 +63,10 @@ namespace MyCompiler
         public ExpressionNode Value { get; }
         public ExpressionNode Decimals { get; }
 
-        public RoundNode(ExpressionNode value, ExpressionNode decimals)
+        public RoundNode(List<ExpressionNode> args)
         {
-            Value = value;
-            Decimals = decimals;
+            Value = args[0];
+            Decimals = args.Count > 1 ? args[1] : new NumberNode(0);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRound(this);
@@ -147,9 +148,9 @@ namespace MyCompiler
 
     public class LogicalOpNode : ExpressionNode
     {
-        public ExpressionNode Left { get; set; } // HACK, I would argue this should never be set again
+        public ExpressionNode Left { get; }
         public string Operator { get; }
-        public ExpressionNode Right { get; set; }
+        public ExpressionNode Right { get; }
         public LogicalOpNode(ExpressionNode left, string op, ExpressionNode right)
         {
             Left = left;
@@ -162,11 +163,12 @@ namespace MyCompiler
     // Represents an assignment (e.g., x = 10)
     public class AssignNode : StatementNode
     {
-        public string Id { get; }  // ID = expr  -->   x = 10 
-        public ExpressionNode Expression { get; }
+        public string Id { get; }  // ID = expr  -->   x = 10
+        public ExpressionNode Expression { get; set; }
         public AssignNode(string id, ExpressionNode expr)
         {
-            Id = id; Expression = expr;
+            Id = id;
+            Expression = expr;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAssign(this);
     }
@@ -194,7 +196,7 @@ namespace MyCompiler
     // A list of statements (the whole program)
     public class SequenceNode : Node
     {
-        public List<Node> Statements { get; } = new List<Node>();
+        public List<Node> Nodes { get; } = new List<Node>();
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSequence(this);
     }
@@ -205,18 +207,18 @@ namespace MyCompiler
         public ExpressionNode Condition { get; }
         public Node ThenPart { get; }
         public Node ElsePart { get; }
-        public IfNode(ExpressionNode cond, Node thenP, Node elseP = null)
+        public IfNode(ExpressionNode cond, Node thenPart, Node elsePart = null)
         {
             Condition = cond;
-            ThenPart = thenP;
-            ElsePart = elseP;
+            ThenPart = thenPart;
+            ElsePart = elsePart;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIf(this);
     }
 
     public class ForLoopNode : StatementNode
     {
-        public StatementNode Initialization { get; }   // for(x=0;x<5;x++)x
+        public StatementNode Initialization { get; }   // for(x=0;x<5;x++)
         public ExpressionNode Condition { get; }
         public StatementNode Step { get; }
         public Node Body; // Changed from ExpressionNode
@@ -234,13 +236,13 @@ namespace MyCompiler
     public class ForEachLoopNode : StatementNode
     {
         public IdNode Iterator { get; }      // e.g., "item"
-        public ExpressionNode SourceExpression { get; } // e.g., "arr"
+        public ExpressionNode Source { get; } // e.g., "arr"
         public Node Body { get; }
 
-        public ForEachLoopNode(IdNode iterator, ExpressionNode sourceExpression, Node body)
+        public ForEachLoopNode(IdNode iterator, ExpressionNode source, Node body)
         {
             Iterator = iterator;
-            SourceExpression = sourceExpression;
+            Source = source;
             Body = body;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitForEachLoop(this);
@@ -248,9 +250,9 @@ namespace MyCompiler
 
     public class ComparisonNode : ExpressionNode
     {
-        public ExpressionNode Left { get; set; } // HACK, I would argue this should never be set again
+        public ExpressionNode Left { get; }
         public string Operator { get; }
-        public ExpressionNode Right { get; set; }
+        public ExpressionNode Right { get; }
 
         public ComparisonNode(ExpressionNode left, string op, ExpressionNode right)
         {
@@ -266,31 +268,27 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-
-        public ArrayNode(List<ExpressionNode> elements)
+        public ulong? Capacity;
+        public ArrayNode(List<ExpressionNode> elements, TypeNode typeNode = null)
         {
             Elements = elements;
+            ElementType = TypeChecker.ResolveTypeNode(typeNode);
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
-    }
-
-    public class CopyArrayNode : CopyNode
-    {
-        public CopyArrayNode(ExpressionNode source) : base(source) { }
-
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCopy(this);
     }
 
     public class IndexNode : ExpressionNode
     {
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode IndexExpression { get; }
+        // NEW FLAG
+        public bool SkipBoundsCheck { get; set; } = false;
 
-        public IndexNode(ExpressionNode source, ExpressionNode index)
+        public IndexNode(ExpressionNode sourceExpr, ExpressionNode indexExpr)
         {
-            SourceExpression = source;
-            IndexExpression = index;
+            SourceExpression = sourceExpr;
+            IndexExpression = indexExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitIndex(this);
@@ -302,10 +300,10 @@ namespace MyCompiler
         public ExpressionNode IndexExpression { get; }
         public ExpressionNode AssignExpression { get; }
 
-        public IndexAssignNode(ExpressionNode array, ExpressionNode index, ExpressionNode assignExpression)
+        public IndexAssignNode(ExpressionNode arrayExpr, ExpressionNode indexExpr, ExpressionNode assignExpression)
         {
-            ArrayExpression = array;
-            IndexExpression = index;
+            ArrayExpression = arrayExpr;
+            IndexExpression = indexExpr;
             AssignExpression = assignExpression;
         }
 
@@ -314,55 +312,70 @@ namespace MyCompiler
 
     public class WhereNode : ExpressionNode
     {
-        public IdNode IteratorId;
-        public ExpressionNode SourceExpression;
-        public ExpressionNode Condition;
+        public IdNode IteratorId { get; }
+        public ExpressionNode SourceExpr { get; }
+        public ExpressionNode Condition { get; }
 
-        public WhereNode(IdNode iteratorId, ExpressionNode sourceExpression, ExpressionNode condition)
+        public WhereNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode condition)
         {
             IteratorId = iteratorId;
-            SourceExpression = sourceExpression;
+            SourceExpr = sourceExpr;
             Condition = condition;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhere(this);
     }
-
     public class MapNode : ExpressionNode
     {
-        public IdNode IteratorId;
+        public IdNode IteratorId { get; }
+        public ExpressionNode SourceExpr { get; }
+        public ExpressionNode TransformExpr { get; }
 
-        public ExpressionNode SourceExpression;
-        public ExpressionNode Assignment;
-
-        public MapNode(IdNode iteratorId, ExpressionNode sourceExpression, ExpressionNode assignment)
+        public MapNode(IdNode iteratorId, ExpressionNode sourceExpr, ExpressionNode transformExpr)
         {
             IteratorId = iteratorId;
-            SourceExpression = sourceExpression;
-            Assignment = assignment;
+            SourceExpr = sourceExpr;
+
+            if (transformExpr is ArrayNode arrayNode)
+            {
+                List<FieldNode> namedArguments = new List<FieldNode>();
+                foreach (var arr in arrayNode.Elements)
+                {
+                    if (arr is IdNode strNode)
+                    {
+                        namedArguments.Add(new FieldNode(iteratorId, strNode.Name));
+                    }
+                    else
+                        throw new Exception("Map array elements must be identifiers");
+                }
+
+                TransformExpr = new RecordNode(namedArguments);
+            }
+            else
+                TransformExpr = transformExpr;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor)
+            => visitor.VisitMap(this);
     }
-
     public class ReadCsvNode : ExpressionNode
     {
-        public ExpressionNode SchemaExpression { get; set; }
-        public ExpressionNode FileNameExpression { get; }
+        public ExpressionNode FileNameExpr { get; }
+        public NamedArgumentNode SchemaExpr { get; set; }
 
-        public ReadCsvNode(List<ExpressionNode> args)
+        public ReadCsvNode(List<Node> args)
         {
             // Find the actual string literal (e.g., "test.csv")
-            FileNameExpression = args.FirstOrDefault(a => a is StringNode);
+            FileNameExpr = args.FirstOrDefault(a => a is StringNode) as ExpressionNode;
 
             // Find the record/schema ([index: int...])
-            SchemaExpression = args.FirstOrDefault(a => a is RecordNode);
+            SchemaExpr = args.FirstOrDefault(a => a is NamedArgumentNode) as NamedArgumentNode;
 
             // If the parser didn't find them by type, fallback to positions
-            if (FileNameExpression == null && args.Count >= 2)
+            if (FileNameExpr == null && args.Count >= 2)
             {
-                FileNameExpression = args[1];
-                SchemaExpression = args[0];
+                FileNameExpr = args[1] as ExpressionNode;
+                SchemaExpr = args[0] as NamedArgumentNode;
             }
         }
 
@@ -371,13 +384,13 @@ namespace MyCompiler
 
     public class ToCsvNode : ExpressionNode
     {
-        public ExpressionNode SourceExpression { get; }   // e.g., variable or object
-        public ExpressionNode FileNameExpression { get; } // expression producing string
+        public ExpressionNode Expression { get; }   // e.g., variable or object
+        public ExpressionNode FileNameExpr { get; } // expression producing string
 
-        public ToCsvNode(ExpressionNode expr, ExpressionNode fileName)
+        public ToCsvNode(ExpressionNode expr, ExpressionNode fileNameExpr)
         {
-            SourceExpression = expr;
-            FileNameExpression = fileName;
+            Expression = expr;
+            FileNameExpr = fileNameExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitToCsv(this);
@@ -388,9 +401,9 @@ namespace MyCompiler
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode AddExpression { get; }
 
-        public AddNode(ExpressionNode source, ExpressionNode addExpression)
+        public AddNode(ExpressionNode sourceExpr, ExpressionNode addExpression)
         {
-            SourceExpression = source;
+            SourceExpression = sourceExpr;
             AddExpression = addExpression;
         }
 
@@ -402,9 +415,9 @@ namespace MyCompiler
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode AddRangeExpression { get; }
 
-        public AddRangeNode(ExpressionNode source, ExpressionNode addRangeExpression)
+        public AddRangeNode(ExpressionNode sourceExpr, ExpressionNode addRangeExpression)
         {
-            SourceExpression = source;
+            SourceExpression = sourceExpr;
             AddRangeExpression = addRangeExpression;
         }
 
@@ -416,9 +429,9 @@ namespace MyCompiler
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode RemoveExpression { get; }
 
-        public RemoveNode(ExpressionNode array, ExpressionNode removeExpression)
+        public RemoveNode(ExpressionNode arrayExpr, ExpressionNode removeExpression)
         {
-            SourceExpression = array;
+            SourceExpression = arrayExpr;
             RemoveExpression = removeExpression;
         }
 
@@ -430,9 +443,9 @@ namespace MyCompiler
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode RemoveRangeExpression { get; }
 
-        public RemoveRangeNode(ExpressionNode array, ExpressionNode removeRangeExpression)
+        public RemoveRangeNode(ExpressionNode arrayExpr, ExpressionNode removeRangeExpression)
         {
-            SourceExpression = array;
+            SourceExpression = arrayExpr;
             RemoveRangeExpression = removeRangeExpression;
         }
 
@@ -443,9 +456,9 @@ namespace MyCompiler
     {
         public ExpressionNode ArrayExpression { get; }
 
-        public LengthNode(ExpressionNode array)
+        public LengthNode(ExpressionNode arrayExpr)
         {
-            ArrayExpression = array;
+            ArrayExpression = arrayExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLength(this);
@@ -455,9 +468,9 @@ namespace MyCompiler
     {
         public ExpressionNode ArrayExpression { get; }
 
-        public MinNode(ExpressionNode array)
+        public MinNode(ExpressionNode arrayExpr)
         {
-            ArrayExpression = array;
+            ArrayExpression = arrayExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMin(this);
@@ -467,9 +480,9 @@ namespace MyCompiler
     {
         public ExpressionNode ArrayExpression { get; }
 
-        public MaxNode(ExpressionNode array)
+        public MaxNode(ExpressionNode arrayExpr)
         {
-            ArrayExpression = array;
+            ArrayExpression = arrayExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMax(this);
@@ -479,9 +492,9 @@ namespace MyCompiler
     {
         public ExpressionNode ArrayExpression { get; }
 
-        public MeanNode(ExpressionNode array)
+        public MeanNode(ExpressionNode arrayExpr)
         {
-            ArrayExpression = array;
+            ArrayExpression = arrayExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMean(this);
@@ -491,9 +504,9 @@ namespace MyCompiler
     {
         public ExpressionNode ArrayExpression { get; }
 
-        public SumNode(ExpressionNode array)
+        public SumNode(ExpressionNode arrayExpr)
         {
-            ArrayExpression = array;
+            ArrayExpression = arrayExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSum(this);
@@ -504,10 +517,10 @@ namespace MyCompiler
         public ExpressionNode SourceExpression { get; }
         public ExpressionNode TargetExpression { get; }
 
-        public CorrelationNode(ExpressionNode source, ExpressionNode target)
+        public CorrelationNode(ExpressionNode sourceExpr, ExpressionNode targetExpr)
         {
-            SourceExpression = source;
-            TargetExpression = target;
+            SourceExpression = sourceExpr;
+            TargetExpression = targetExpr;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCorrelation(this);
@@ -540,40 +553,27 @@ namespace MyCompiler
 
     public class RecordNode : ExpressionNode
     {
-        public List<RecordField> Fields { get; set; } = new List<RecordField>();
-        public List<Type> ElementTypes { get; } = new List<Type>();
-
-        public RecordNode(List<NamedArgumentNode> valuesArray)
+        public List<RecordField> Fields { get; set; }
+        public RecordNode(List<FieldNode> valuesArray)
         {
-            // 1. Cast the inputs to ArrayNode to get into their internal lists
-            var labelNodes = valuesArray.Select(v => new StringNode(v.Name)).ToList();
-            var valueNodes = valuesArray;
+            Fields = new List<RecordField>();
+            if (valuesArray == null) return;
 
-            if (labelNodes == null || valueNodes == null)
-                throw new Exception("Record requires two arrays: labels and values.");
-
-            if (labelNodes.Count != valueNodes.Count)
-                throw new Exception("Record labels and values count mismatch.");
-
-            // 2. Zip them together into the Fields list
-            for (int i = 0; i < labelNodes.Count; i++)
+            for (int i = 0; i < valuesArray.Count; i++)
             {
-                // Ensure the label is actually a StringNode
-                if (labelNodes[i] is StringNode strNode)
+                var arg = valuesArray[i];
+                // For rows like {"Alice", 25}, arg.Name is null.
+                // We assign a placeholder so the field object isn't broken.
+                string label = arg.IdField ?? $"item{i + 1}";
+
+                Fields.Add(new RecordField
                 {
-                    Fields.Add(new RecordField
-                    {
-                        Label = strNode.Value,
-                        Value = valueNodes[i]
-                    });
-                    ElementTypes.Add(valueNodes[i].Type);
-                }
-                else
-                {
-                    throw new Exception("Record labels must be string literals.");
-                }
+                    Label = label,
+                    Value = arg.SourceExpression
+                });
             }
         }
+
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRecord(this);
     }
 
@@ -632,21 +632,14 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitNamedArgument(this);
     }
 
-    public enum DataframeMode
-    {
-        SchemaOnly,   // columns + types
-        DataDriven    // columns + data (types inferred)
-    }
-
     public class DataframeNode : ExpressionNode
     {
         public ExpressionNode Columns { get; }
-        public ExpressionNode Data { get; set;}
-        public ExpressionNode DataTypes { get; set; }
+        public ExpressionNode Rows { get; set; }
+        public ExpressionNode Types { get; set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            //Data = new ArrayNode(new List<ExpressionNode>());
             var positional = new List<ExpressionNode>();
 
             foreach (var arg in args)
@@ -663,13 +656,13 @@ namespace MyCompiler
                         Columns = arg.Value;
                         break;
 
-                    case "data":
-                        Data = arg.Value;
+                    case "rows":
+                        Rows = arg.Value;
                         break;
 
                     case "type":
                     case "types":
-                        DataTypes = arg.Value;
+                        Types = arg.Value;
                         break;
 
                     default:
@@ -686,43 +679,31 @@ namespace MyCompiler
             if (positional.Count == 2)
             {
                 Columns = positional[0];
-                Data = positional[1];
+                Rows = positional[1];
             }
 
             if (positional.Count == 3)
             {
                 Columns = positional[0];
-                Data = positional[1];
-                DataTypes = positional[2];
+                Rows = positional[1];
+                Types = positional[2];
             }
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor)
             => visitor.VisitDataframe(this);
+
     }
 
     public class ColumnsNode : ExpressionNode
     {
         public ExpressionNode DataframeExpression { get; }
 
-        public ColumnsNode(ExpressionNode dataframe)
+        public ColumnsNode(ExpressionNode dataframeExpr)
         {
-            DataframeExpression = dataframe;
+            DataframeExpression = dataframeExpr;
         }
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitColumns(this);
-    }
-
-    public class ShowDataframeNode : ExpressionNode
-    {
-        public ExpressionNode Source { get; }
-        public List<ExpressionNode> Columns { get; }
-
-        public ShowDataframeNode(ExpressionNode source, List<ExpressionNode> columns)
-        {
-            Source = source;
-            Columns = columns;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitShowDataframe(this);
     }
 
     public class TypeNode : ExpressionNode
@@ -811,31 +792,19 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
     }
 
-    public class AddFieldNode : ExpressionNode
-    {
-        public ExpressionNode Record { get; }
-        public string FieldName { get; }
-        public ExpressionNode Value { get; }
+    // public class SliceNode : ExpressionNode
+    // {
+    //     public ExpressionNode Source { get; }
+    //     public ExpressionNode Start { get; } // Can be null for [:20]
+    //     public ExpressionNode End { get; }   // Can be null for [10:]
 
-        public AddFieldNode(ExpressionNode record, string fieldName, ExpressionNode value)
-        {
-            Record = record;
-            FieldName = fieldName;
-            Value = value;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitAddField(this);
-    }
+    //     public SliceNode(ExpressionNode source, ExpressionNode start, ExpressionNode end)
+    //     {
+    //         Source = source;
+    //         Start = start;
+    //         End = end;
+    //     }
 
-    public class RemoveFieldNode : ExpressionNode
-    {
-        public ExpressionNode Record { get; }
-        public string FieldName { get; }
-
-        public RemoveFieldNode(ExpressionNode record, string fieldName)
-        {
-            Record = record;
-            FieldName = fieldName;
-        }
-        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitRemoveField(this);
-    }
+    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSlice(this);
+    // }
 }

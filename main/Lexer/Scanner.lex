@@ -24,9 +24,8 @@
 "pow"           { return (int)Tokens.POW; }
 "log"           { return (int)Tokens.LOG; }
 "exp"           { return (int)Tokens.EXP; }
-"func"          { return (int)Tokens.FUNC; }
-"for"           { return (int)Tokens.FOR; }
 "foreach"       { return (int)Tokens.FOREACH; }
+"for"           { return (int)Tokens.FOR; }
 "in"            { return (int)Tokens.IN; }
 
 "int"           { return (int)Tokens.INT; }
@@ -57,6 +56,7 @@
 "record"        { return (int)Tokens.RECORD; }
 "dataframe"     { return (int)Tokens.DATAFRAME; }
 "columns"       { return (int)Tokens.COLUMNS; }
+"schema"        { yylval.strval = yytext; return (int)Tokens.ID; }
 "select"        { return (int)Tokens.SELECT; }  /* others: extract, derive, select  */
 
 ">="            { return (int)Tokens.GE; }
@@ -69,11 +69,15 @@
 "--"            { return (int)Tokens.DECR; }
 "+="            { return (int)Tokens.PLUS_ASSIGN; }
 "-="            { return (int)Tokens.MINUS_ASSIGN; }
+"*="            { return (int)Tokens.MULT_ASSIGN; }
+"/="            { return (int)Tokens.DIV_ASSIGN; }
 
-[0-9]+          { yylval.obj = int.Parse(yytext); return (int)Tokens.NUMBER; }
-[0-9]+\.[0-9]+  { yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL; }
-\"[^\"]*\"      { yylval.obj = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL; }
-[a-zA-Z_][a-zA-Z0-9_\-]* { yylval.obj = yytext; return (int)Tokens.ID; }    
+[0-9]+\.[0-9]+([eE][+\-]?[0-9]+)?   {  yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;}
+[0-9]+[eE][+\-]?[0-9]+  {  yylval.fval = double.Parse(yytext, CultureInfo.InvariantCulture); return (int)Tokens.FLOAT_LITERAL;}
+[0-9]+          { yylval.intval = int.Parse(yytext); return (int)Tokens.NUMBER; }
+
+\"[^\"]*\"      { yylval.strval = yytext.Trim('"'); return (int)Tokens.STRING_LITERAL; }
+[a-zA-Z_][a-zA-Z0-9_\-]* { yylval.strval = yytext; return (int)Tokens.ID; }   
 
 "+"             { return (int)Tokens.PLUS; }
 "-"             { return (int)Tokens.MINUS; }
