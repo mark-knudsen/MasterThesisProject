@@ -416,51 +416,21 @@ namespace MyCompiler
             return expr.Type;
         }
 
-        public Type VisitIf(IfNode expr)
+        public Type VisitIf(IfNode statement)
         {
-            var condType = Visit(expr.Condition);
+            var condType = Visit(statement.Condition);
 
             // 1. Condition Check
             if (condType is not BoolType)
                 throw new Exception("If condition must be Bool: " + condType);
 
-            // Use .Then and .Else to match your Node definition
-            Type thenType = Visit(expr.ThenPart);
+            Visit(statement.ThenPart);
 
-            Type elseType = new VoidType();
-            if (expr.ElsePart != null)
-                elseType = Visit(expr.ElsePart);
+            if (statement.ElsePart != null)
+                Visit(statement.ElsePart);
 
-            Type finalType;
-
-            // 2. Promotion Logic (Bool <-> Number)
-            if (thenType.GetType() != elseType.GetType())
-            {
-                // Allow mixing any Numeric type (Int/Float) with Booleans
-                bool isThenNumeric = (thenType is FloatType || thenType is IntType || thenType is BoolType);
-                bool isElseNumeric = (elseType is FloatType || elseType is IntType || elseType is BoolType);
-
-                // If we have mixed Numbers and Bools
-                if (isThenNumeric && isElseNumeric)
-                {
-                    // If either side is an Int, let's treat the result as an Int/Float 
-                    // so we see numbers instead of "True/False"
-                    finalType = new FloatType();
-                }
-                // Handle cases where one side is None (Void)
-                else if (thenType is VoidType)
-                    finalType = elseType;
-                else if (elseType is VoidType)
-                    finalType = thenType;
-                else
-                    throw new Exception($"Type Mismatch: Then branch is {thenType}, Else is {elseType}");
-            }
-            else
-                finalType = thenType;
-
-            // 3. Set the type and return
-            expr.SetType(finalType);
-            return expr.Type;
+            statement.SetType(new VoidType());
+            return statement.Type;
         }
 
         public Type VisitPrint(PrintNode expr)
@@ -1067,12 +1037,6 @@ namespace MyCompiler
             Visit(expr.Columns);
             Visit(expr.Data);
             Visit(expr.DataTypes);
-
-            // System.Console.WriteLine("hi");
-            // System.Console.WriteLine("hi" + dataframe);
-            // System.Console.WriteLine("YOOOOOOO we have this many rows: " + ((dataframe.DataTypes as ArrayNode).Elements[0] as ArrayNode).Elements.Count);
-
-
 
             expr.SetType(dataframe);
 

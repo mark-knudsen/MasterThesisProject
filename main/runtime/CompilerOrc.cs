@@ -110,7 +110,7 @@ namespace MyCompiler
                     else if (typeCode == 'B')
                     {
                         bool v = raw == "true" || raw == "1";
-                        Marshal.WriteInt64(columnBuffers[c], offset, v ? 1 : 0);
+                        Marshal.WriteByte(columnBuffers[c], offset, v ? (byte)1 : (byte)0);
                     }
                     else if (typeCode == 'S')
                     {
@@ -403,10 +403,10 @@ namespace MyCompiler
 
         private void DumpIR(LLVMModuleRef module)
         {
-            string llvmIR = module.PrintToString();
-            Console.WriteLine("Generated LLVM IR:\n");
-            Console.WriteLine(llvmIR);
-            File.WriteAllText("output_actual_orc.ll", llvmIR);
+            // string llvmIR = module.PrintToString();
+            // Console.WriteLine("Generated LLVM IR:\n");
+            // Console.WriteLine(llvmIR);
+            // File.WriteAllText("output_actual_orc.ll", llvmIR);
         }
 
         private Type PerformSemanticAnalysis(Node expr)
@@ -607,7 +607,7 @@ namespace MyCompiler
             var array = Marshal.PtrToStructure<ArrayObject>(arrayObjPtr);
             var elementType = ((ArrayType)type).ElementType;
             var elements = new List<object>();
-            var stride = 8;
+            var stride = (elementType is BoolType) ? 1 : 8;
 
             for (long i = 0; i < array.length; i++)
             {
@@ -1298,7 +1298,7 @@ namespace MyCompiler
                 {
                     IntType => 8,
                     FloatType => 8,
-                    BoolType => 1,
+                    BoolType => 8,
                     _ => 8
                 };
 
@@ -1309,12 +1309,12 @@ namespace MyCompiler
                 {
                     IntType => LLVMTypeRef.CreatePointer(i64, 0),
                     FloatType => LLVMTypeRef.CreatePointer(ctx.DoubleType, 0),
-                    BoolType => LLVMTypeRef.CreatePointer(ctx.Int1Type, 0),
+                    BoolType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
                     _ => LLVMTypeRef.CreatePointer(i64, 0)
                 };
 
                 var cast = _builder.BuildBitCast(mem, castType, "value_cast");
-                _builder.BuildStore(value, cast);
+                _builder.BuildStore(value, cast).SetAlignment(8);
                 dataPtr = mem;
             }
             else if (IsReferenceType(type))
@@ -1423,7 +1423,7 @@ namespace MyCompiler
                     condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
             }
             // If it's an i64 or i32, use ICmp
-            else if (condition.TypeOf != ctx.Int1Type)
+            else if (condition.TypeOf == ctx.Int8Type)
             {
                 condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
                     condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
@@ -1735,71 +1735,32 @@ namespace MyCompiler
         public LLVMValueRef VisitIf(IfNode node)
         {
             var condValue = Visit(node.Condition);
-            // LLVM requires i1 for branch conditions
-            if (condValue.TypeOf != _module.Context.Int1Type)
-            {
-                condValue = _builder.BuildTrunc(condValue, _module.Context.Int1Type, "boolcond");
-            }
 
             var function = _builder.InsertBlock.Parent;
+
             var thenBlock = function.AppendBasicBlock("then");
             var elseBlock = function.AppendBasicBlock("else");
             var mergeBlock = function.AppendBasicBlock("ifcont");
 
             _builder.BuildCondBr(condValue, thenBlock, elseBlock);
 
-            // --- THEN ---
+            // THEN
             _builder.PositionAtEnd(thenBlock);
-            var thenValue = Visit(node.ThenPart);
-            // If TypeChecker promoted this If to Float, but this branch is an Int/Bool, convert it
-            thenValue = EnsureTypeMatch(thenValue, node.Type);
+            Visit(node.ThenPart);
             _builder.BuildBr(mergeBlock);
-            thenBlock = _builder.InsertBlock;
 
-            // --- ELSE ---
+            // ELSE
             _builder.PositionAtEnd(elseBlock);
-            LLVMValueRef elseValue;
+
             if (node.ElsePart != null)
-            {
-                elseValue = Visit(node.ElsePart);
-            }
-            else
-            {
-                // Match the expected return type of the node
-                elseValue = CreateDefaultValue(node.Type);
-            }
-            elseValue = EnsureTypeMatch(elseValue, node.Type);
+                Visit(node.ElsePart);
+
             _builder.BuildBr(mergeBlock);
-            elseBlock = _builder.InsertBlock;
 
-            // --- MERGE ---
+            // MERGE
             _builder.PositionAtEnd(mergeBlock);
-            if (thenValue.TypeOf.Kind == LLVMTypeKind.LLVMVoidTypeKind) return thenValue;
 
-            var phi = _builder.BuildPhi(thenValue.TypeOf, "iftmp");
-            phi.AddIncoming(new[] { thenValue, elseValue }, new[] { thenBlock, elseBlock }, 2);
-            return phi;
-        }
-
-        // Helper to handle the Promotion Logic in your TypeChecker
-        private LLVMValueRef EnsureTypeMatch(LLVMValueRef value, Type targetType)
-        {
-            if (targetType is FloatType && value.TypeOf != _module.Context.DoubleType)
-            {
-                if (value.TypeOf == _module.Context.Int1Type)
-                    return _builder.BuildUIToFP(value, _module.Context.DoubleType, "promotetmp");
-                return _builder.BuildSIToFP(value, _module.Context.DoubleType, "promotetmp");
-            }
-            return value;
-        }
-
-        // Helper to create the correct "Null/Zero" for missing else branches
-        private LLVMValueRef CreateDefaultValue(Type type)
-        {
-            if (type is FloatType) return LLVMValueRef.CreateConstReal(_module.Context.DoubleType, 0);
-            if (type is IntType) return LLVMValueRef.CreateConstInt(_module.Context.Int64Type, 0);
-            if (type is BoolType) return LLVMValueRef.CreateConstInt(_module.Context.Int1Type, 0);
-            return LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_module.Context.Int8Type, 0));
+            return default;
         }
 
 
@@ -1934,13 +1895,6 @@ namespace MyCompiler
         {
             var lhs = Visit(expr.Left);
             var rhs = Visit(expr.Right);
-            var i1 = _module.Context.Int1Type;
-
-            // Safety: If the values are coming from a struct/array as i8/i64, truncate to i1
-            if (lhs.TypeOf != i1)
-                lhs = _builder.BuildTrunc(lhs, i1, "lhstrunc");
-            if (rhs.TypeOf != i1)
-                rhs = _builder.BuildTrunc(rhs, i1, "rhstrunc");
 
             return expr.Operator switch
             {
@@ -2070,7 +2024,7 @@ namespace MyCompiler
         }
         public LLVMValueRef VisitBoolean(BooleanNode expr)
         {
-            return LLVMValueRef.CreateConstInt(_module.Context.Int1Type, expr.Value ? 1UL : 0UL);
+            return LLVMValueRef.CreateConstInt(_module.Context.Int8Type, expr.Value ? 1UL : 0UL);
         }
         public LLVMValueRef VisitNull(NullNode expr)
         {
@@ -2571,6 +2525,7 @@ namespace MyCompiler
 
         private LLVMValueRef FallbackToMacroWhere(WhereNode expr, DataframeType dfType)
         {
+            System.Console.WriteLine("Condition is not vectorizable, falling back to macro expansion...");
             var uniqueId = Guid.NewGuid().ToString("N").Substring(0, 4);
             var iVar = $"__i_{uniqueId}";
             var resultVar = $"__result_{uniqueId}";
@@ -2582,6 +2537,7 @@ namespace MyCompiler
 
         private bool IsVectorizableColumnPredicate(ExpressionNode condition, string iteratorName, out string columnName, out string op, out ExpressionNode literalNode)
         {
+            System.Console.WriteLine("Checking if condition is vectorizable...");
             columnName = null; op = null; literalNode = null;
             ExpressionNode left = null;
             ExpressionNode right = null;
@@ -2619,6 +2575,7 @@ namespace MyCompiler
 
         private LLVMValueRef EmitVectorizedDataframeWhere(WhereNode expr, DataframeType dfType, string targetColumnName, string op, ExpressionNode literalNode)
         {
+            System.Console.WriteLine("Emitting vectorized where for column: " + targetColumnName + " with operator: " + op);
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
             var i8 = ctx.Int8Type;
@@ -3378,7 +3335,7 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
 
-            if (type == ctx.Int1Type) return 1;
+            if (type == ctx.Int8Type) return 1;
             if (type == ctx.Int64Type) return 8;
             if (type == ctx.DoubleType) return 8;
 
@@ -3408,9 +3365,7 @@ namespace MyCompiler
             );
 
             // 2. Compute element size
-            var elementSize = llvmElemType.Handle == ctx.Int1Type.Handle
-                ? 1UL
-                : GetSize(llvmElemType);
+            var elementSize = GetSize(llvmElemType);
 
             var capacity = count > 0 ? count : 100;
 
@@ -3431,42 +3386,19 @@ namespace MyCompiler
             var capPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 1);
             var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2);
 
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr);
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr).SetAlignment(8);
+            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr).SetAlignment(8);
 
             // IMPORTANT: store raw pointer (NOT i8*)
-            _builder.BuildStore(dataRaw, dataPtrPtr);
+            _builder.BuildStore(dataRaw, dataPtrPtr).SetAlignment(8);
 
             // 4. Populate
             for (int i = 0; i < expr.Elements.Count; i++)
             {
                 var val = Visit(expr.Elements[i]);
                 var idx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-
-                var elementPtr = _builder.BuildGEP2(
-                    llvmElemType,
-                    dataRaw,
-                    new[] { idx },
-                    "elem_ptr"
-                );
-
-                LLVMValueRef storedValue;
-
-                if (elemType is BoolType)
-                {
-                    storedValue = _builder.BuildZExt(val, llvmElemType, "bool_ext");
-                }
-                else if (elemType is IntType || elemType is FloatType)
-                {
-                    storedValue = val; // already correct scalar
-                }
-                else
-                {
-                    // string / record / dataframe etc → pointer types
-                    storedValue = _builder.BuildBitCast(val, llvmElemType, "ptr_cast");
-                }
-
-                _builder.BuildStore(storedValue, elementPtr);
+                var elementPtr = _builder.BuildGEP2(llvmElemType, dataRaw, new[] { idx }, "elem_ptr");
+                _builder.BuildStore(val, elementPtr).SetAlignment((uint)elementSize);
             }
 
             return headerRaw;
@@ -3770,7 +3702,7 @@ namespace MyCompiler
                     var typed = _builder.BuildBitCast(colDataRaw, LLVMTypeRef.CreatePointer(i8, 0), "bool_col");
                     var elemPtr = _builder.BuildGEP2(i8, typed, new[] { indexValue }, "elem_ptr");
                     var raw = _builder.BuildLoad2(i8, elemPtr, "raw");
-                    value = _builder.BuildTrunc(raw, ctx.Int1Type, "bool");
+                    value = _builder.BuildTrunc(raw, ctx.Int8Type, "bool");
                 }
                 else if (fieldType is StringType)
                 {
@@ -3819,7 +3751,7 @@ namespace MyCompiler
             {
                 FloatType => ctx.DoubleType,
                 IntType => ctx.Int64Type,
-                BoolType => ctx.Int1Type,
+                BoolType => ctx.Int8Type,
                 NullType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Represent Null as i8*
                 StringType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), // Strings are pointers
                 ArrayType => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),  // Arrays  are pointers
@@ -4158,7 +4090,7 @@ namespace MyCompiler
             var newCount =
                 _builder.BuildAdd(rowCount, one);
 
-            _builder.BuildStore(newCount, rowCountPtr);
+            _builder.BuildStore(newCount, rowCountPtr).SetAlignment(8);
 
             return df;
         }
@@ -4241,7 +4173,7 @@ namespace MyCompiler
                         break;
                 }
 
-                var fieldValue = _builder.BuildLoad2(fieldLLVMType, fieldPtr);
+                _builder.BuildLoad2(fieldLLVMType, fieldPtr);
 
                 // get column i pointer
                 var colIdx = LLVMValueRef.CreateConstInt(i64, (ulong)i);
@@ -4431,6 +4363,8 @@ namespace MyCompiler
 
             ulong elementSize = GetTypeSize(semanticType);
 
+
+
             var stride =
                 LLVMValueRef.CreateConstInt(
                     i64,
@@ -4461,8 +4395,8 @@ namespace MyCompiler
                     "reallocated_data"
                 );
 
-            _builder.BuildStore(newCap, capPtr);
-            _builder.BuildStore(newDataPtr, dataPtrPtr);
+            _builder.BuildStore(newCap, capPtr).SetAlignment(8);
+            _builder.BuildStore(newDataPtr, dataPtrPtr).SetAlignment(8);
 
             _builder.BuildBr(storeBB);
 
@@ -4508,7 +4442,7 @@ namespace MyCompiler
             _builder.BuildStore(
                 value,
                 typedElementPtr
-            );
+            ).SetAlignment(8);
 
             // =====================================================
             // INCREMENT LENGTH
@@ -4527,7 +4461,7 @@ namespace MyCompiler
             _builder.BuildStore(
                 newLen,
                 lenPtr
-            );
+            ).SetAlignment(8);
         }
 
         private void AppendToArrayWithGrow00(
@@ -5568,7 +5502,7 @@ namespace MyCompiler
                 }
                 else if (field.Type is BoolType)
                 {
-                    fieldValue = _builder.BuildLoad2(ctx.Int1Type, fieldPtr, "val");
+                    fieldValue = _builder.BuildLoad2(ctx.Int8Type, fieldPtr, "val");
                     var cast = _builder.BuildZExt(fieldValue, i8, "bool_cast");
 
                     var typed = _builder.BuildBitCast(colDataRaw, LLVMTypeRef.CreatePointer(i8, 0), "bool_col");
@@ -6729,6 +6663,7 @@ namespace MyCompiler
     }
     /*
     df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_10K.csv")
+    df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_FULL.csv")
     df.where(x => x.latitude > -18.0)
 
     df2 = dataframe(["name", "age", "isCool","savings"],[["Harry", 12, true,100.08],["Bob", 23, false, 1.0],["Harry", 34, false, 0.0]])
