@@ -634,66 +634,21 @@ namespace MyCompiler
 
     public class DataframeNode : ExpressionNode
     {
-        public ExpressionNode Columns { get; }
-        public ExpressionNode Rows { get; set; }
-        public ExpressionNode Types { get; set; }
+        // The raw arguments passed directly from the parser
+        public List<NamedArgumentNode> Arguments { get; }
+
+        // These become semantic metadata fields populated exclusively by the Typechecker
+        public RecordNode Schema { get; internal set; }
+        public ArrayNode Data { get; internal set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
-            var positional = new List<ExpressionNode>();
-
-            foreach (var arg in args)
-            {
-                if (arg.Name == null)
-                {
-                    positional.Add(arg.Value);
-                    continue;
-                }
-
-                switch (arg.Name)
-                {
-                    case "columns":
-                        Columns = arg.Value;
-                        break;
-
-                    case "rows":
-                        Rows = arg.Value;
-                        break;
-
-                    case "type":
-                    case "types":
-                        Types = arg.Value;
-                        break;
-
-                    default:
-                        throw new Exception($"Unknown dataframe argument '{arg.Name}'");
-                }
-            }
-
-            if (positional.Count > 2)
-                throw new Exception("Too many positional arguments for dataframe");
-
-            if (Columns == null && positional.Count > 0)
-                Columns = positional[0];
-
-            if (positional.Count == 2)
-            {
-                Columns = positional[0];
-                Rows = positional[1];
-            }
-
-            if (positional.Count == 3)
-            {
-                Columns = positional[0];
-                Rows = positional[1];
-                Types = positional[2];
-            }
+            Arguments = args;
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-            => visitor.VisitDataframe(this);
-
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
+
 
     public class ColumnsNode : ExpressionNode
     {

@@ -69,17 +69,17 @@ namespace MyCompiler
     {
         public IReadOnlyList<string> ColumnNames { get; }
         public IReadOnlyList<Type> DataTypes { get; }
-        public RecordType RowType { get; }
+        public RecordType SchemaType { get; }
 
         public DataframeType(IReadOnlyList<string> columns, IReadOnlyList<Type> types, RecordType rowType)
         {
             ColumnNames = columns;
             DataTypes = types;
-            RowType = rowType;
+            SchemaType = rowType;
         }
 
         public override string ToString() =>
            $"dataframe({string.Join(", ", ColumnNames.Select((n, i) => $"{n}: {DataTypes[i]}"))})" +
-           $"     the rowtype({string.Join(", ", RowType.RecordFields.Select((n, i) => $"{n.Type}: {n.Label}"))})";
+           $"     the rowtype({string.Join(", ", SchemaType.RecordFields.Select((n, i) => $"{n.Type}: {n.Label}"))})";
     }
 }

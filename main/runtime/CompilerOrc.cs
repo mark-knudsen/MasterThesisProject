@@ -3859,7 +3859,7 @@ namespace MyCompiler
 
             if (sourceType is DataframeType dfType)
             {
-                var result = DataframeIndex(headerPtr, indexVal, dfType.RowType);
+                var result = DataframeIndex(headerPtr, indexVal, dfType.SchemaType);
                 return result;
             }
 
@@ -5668,7 +5668,7 @@ namespace MyCompiler
 
             var dfLLVMType = GetOrCreateDataframeType();
             var arrayType = GetOrCreateArrayType();
-            var structType = GetOrCreateStructType(dfType.RowType);
+            var structType = GetOrCreateStructType(dfType.SchemaType);
 
             // =================================================
             // LOAD column pointer array
@@ -5686,9 +5686,9 @@ namespace MyCompiler
             // =================================================
             // LOOP OVER COLUMNS
             // =================================================
-            for (int i = 0; i < dfType.RowType.RecordFields.Count; i++)
+            for (int i = 0; i < dfType.SchemaType.RecordFields.Count; i++)
             {
-                var field = dfType.RowType.RecordFields[i];
+                var field = dfType.SchemaType.RecordFields[i];
                 var colIndex = LLVMValueRef.CreateConstInt(i64, (ulong)i);
 
                 // -------------------------
@@ -6055,52 +6055,94 @@ namespace MyCompiler
 
             var mallocFunc = GetOrDeclareMalloc();
 
-            var columns = (RecordNode)expr.Columns;
-            var dataNode = (ArrayNode)expr.Rows;
-            var types = (ArrayNode)expr.Types;
+            var schema = (RecordNode)expr.Schema;
+            var dataNode = (ArrayNode)expr.Data;
+            //var types = (ArrayNode)expr.DataTypes;
 
-            int colCount = columns.Fields.Count;
+            /*
+                1. For each field in schema create arraynode
+                2. For each row in dataNode add data
+                3. Visit each arrays
+                4. Create arrays with pointers for each arrays
+                5. From schema create columns and datatypes arrays
+                6. Create dataframe struct and save each values
+            */
+            List<ArrayNode> columnArrays = new List<ArrayNode>();
+            List<LLVMValueRef> columnArrayHeaders = new List<LLVMValueRef>();
 
-            var columnArrayHeaders = new List<LLVMValueRef>();
-
-            // Transpose Rows to Columns
-            var columnData = new List<List<ExpressionNode>>();
-            for (int c = 0; c < colCount; c++)
+            foreach (var field in schema.Fields)
             {
-                columnData.Add(new List<ExpressionNode>());
-            }
 
-            foreach (var rowNode in dataNode.Elements)
-            {
-                if (rowNode is not ArrayNode row)
-                    continue;
+                var colArray = new ArrayNode(
+                    dataNode.Elements
+                        .Select(row =>
+                        {
+                            if (row is RecordNode rec)
+                            {
+                                Console.WriteLine("Is record inside if in select: " + rec);
+                                Console.WriteLine("Looking for field: " + field.Label);
 
-                for (int c = 0; c < colCount; c++)
+                                for (int i = 0; i < rec.Fields.Count; i++)
+                                {
+                                    Console.WriteLine($"record field {i}: " + rec.Fields[i].Label);
+                                }
+
+                                var fieldNode = rec.Fields.FirstOrDefault(f => f.Label == field.Label);
+
+                                if (fieldNode != null)
+                                {
+                                    Console.WriteLine("fieldNode value: " + fieldNode.Value);
+                                    return fieldNode.Value;
+                                }
+                                return default;
+                            }
+                            else
+                                return default;
+
+                        })
+                        .ToList()
+                );
+                if (colArray.Elements.Count == 0)
                 {
-                    ExpressionNode value = c < row.Elements.Count ? row.Elements[c] : new NullNode();
-                    PerformSemanticAnalysis(value);
-                    columnData[c].Add(value);
+                    System.Console.WriteLine("Warning: Column '" + field.Label + "' has no data.");
+                    colArray.SetType(field.Type);
+
+                }
+                columnArrays.Add(colArray);
+            }
+            foreach (var c in columnArrays)
+            {
+                Console.WriteLine("column array: " + c);
+
+                foreach (var e in c.Elements)
+                {
+                    Console.WriteLine("element: " + e);
                 }
             }
 
-            // Type Inference
-            Type[] inferredTypes = new Type[colCount];
-            for (int c = 0; c < colCount; c++)
+            foreach (var col in columnArrays)
             {
-                inferredTypes[c] = InferColumnType(columnData[c]);
+                PerformSemanticAnalysis(col);
             }
 
-            // Build Column Arrays
-            for (int c = 0; c < colCount; c++)
+            foreach (var col in columnArrays)
             {
-                var colArray = new ArrayNode(columnData[c])
-                {
-                    ElementType = inferredTypes[c]
-                };
-                PerformSemanticAnalysis(colArray);
+                Console.WriteLine("Into foreach in columnArray: " + col);
+                var header = VisitArray(col);
+                columnArrayHeaders.Add(header);
 
-                columnArrayHeaders.Add(VisitArray(colArray));
             }
+
+            var columns = new ArrayNode(schema.Fields.Select(f => new StringNode(f.Label) as ExpressionNode).ToList());
+            PerformSemanticAnalysis(columns);
+            var types = new ArrayNode(schema.Fields.Select(f => new NumberNode(GetTypeByTag(f.Type)) as ExpressionNode).ToList());
+            PerformSemanticAnalysis(types);
+
+            LLVMValueRef columnArrayHeader = Visit(columns);
+            LLVMValueRef typeArrayHeader = Visit(types);
+
+
+            int colCount = schema.Fields.Count;
 
 
             // Build Column Pointer Array
@@ -6129,7 +6171,7 @@ namespace MyCompiler
             }
 
             // Final Dataframe Instance
-            var columnsPtr = Visit(columns);
+            var columnsPtr = Visit(schema);
             var typesPtr = VisitArray(types);
             var dfType = GetOrCreateDataframeType();
             var dfPtr = _builder.BuildMalloc(dfType, "df_instance");
@@ -6746,11 +6788,18 @@ namespace MyCompiler
     df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_FULL.csv")
     df.where(x => x.latitude > -18.0)
 
+    # NEW dataframe syntax:
+    df2 = dataframe({name: string, age: int, isCool: bool, savings: float}, [{"Harry", 12, true, 100.08}, {"Bob", 23, false, 1.0}, {"Harry", 34, false, 0.0}])
+    
+    # OLD dataframe syntax:
     df2 = dataframe(["name", "age", "isCool","savings"],[["Harry", 12, true,100.08],["Bob", 23, false, 1.0],["Harry", 34, false, 0.0]])
     df2 = dataframe(["name", "age", "isCool","savings"],[["Harry", 12, true,100.08],["Bob", 23, false, 1.0],["Harry", 34, false, 0.0],["Harry", 74, false, 0.0],["Harry", 24, true, 0.0],["Harry", 31, false, 0.0]])
 
+    # WHERE and MAP:
     df.where(x=> x.name == "Harry")
+    df.map(x=> x + { name = x.name + "_!"})
 
+    # ADD data to dataframe:
     df2.add({name: "Barry", age: 45, isCool: true, savings: 100.00})
     df2.add({name: "Harry", age: 39, isCool: true})
 
