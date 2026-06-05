@@ -1,3 +1,12 @@
+
+// ==========================================================================
+//  GPPG error listing for yacc source file <Parser/Parser.y - 05/06/2026 17:58:46>
+// ==========================================================================
+//  Version:  1.5.3
+//  DateTime: 05/06/2026 17:58:48
+// ==========================================================================
+
+
 %namespace MyCompiler
 %output=Parser.cs
 %visibility internal
@@ -58,6 +67,12 @@
 %}
 
 %%
+// Error: There are 1 non-terminating NonTerminal Symbols
+   //  {EXPR}
+// Warning: Terminating EXPR fixes the following size-1 NonTerminal set
+   // {EXPR}
+// Error: NonTerminal symbol "EXPR" has no productions
+// --------------------------------------------------------------------
 
 prog
     : node_list { $$ = $1; RootNode = $$; }
@@ -148,7 +163,7 @@ assignment
         var div = new BinaryOpNode(id, "/", $3);
         $$ = new AssignNode($1, div);
     }
-    | expr DOT CAPACITY ASSIGN expr    { $$ = new CapacityNode($1 as ExpressionNode, $5 as ExpressionNode); }
+    | expr DOT CAPACITY ASSIGN EXPR    { $$ = new CapacityNode($1 as ExpressionNode, $5 as ExpressionNode); }
 
     | ID INC              { $$ = new IncrementNode(new IdNode($1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode($1)); }
@@ -278,4 +293,5 @@ expr_list
 
 %%
 
-internal Parser(Scanner s) : base(s) { }
+internal Parser(Scanner s) : base(s) { }// ==========================================================================
+

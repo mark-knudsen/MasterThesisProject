@@ -78,6 +78,7 @@ namespace MyCompiler
                 ExponentialMathFuncNode exp => VisitExponentialMathFunc(exp),
                 CastNode cast => VisitCast(cast),
                 SliceNode slice => VisitSlice(slice),
+                CapacityNode capacity => VisitCapacity(capacity),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -129,9 +130,7 @@ namespace MyCompiler
 
         public Type VisitId(IdNode expr)
         {
-            System.Console.WriteLine("we in id befoer context get");
             var entry = _context.Get(expr.Name);
-            System.Console.WriteLine("we in id after context get");
 
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
@@ -1231,6 +1230,10 @@ namespace MyCompiler
                 {
                     expr.Data = arr;
                 }
+                else if (expr.Capacity == null && arg.Value is NumberNode n)
+                {
+                    expr.Capacity = n;
+                }
                 else if (arg.Type is not ArrayType)
                     throw new Exception("Typechecker Error: Unnamed dataframe argument must be an array literal (assumed to be 'rows' data).");
             }
@@ -1513,5 +1516,25 @@ namespace MyCompiler
             expr.SetType(sourceType); // df[start:end] returns a DataframeType
             return expr.Type;
         }
+
+        public Type VisitCapacity(CapacityNode expr)
+        {
+            Type returnType;
+            if (expr.CapacityValue != null)
+            {
+                Visit(expr.CapacityValue);
+                returnType = new VoidType();
+            }
+            else
+            {
+                returnType = new IntType();
+            }
+
+            Visit(expr.Source);
+
+            expr.SetType(returnType);
+            return expr.Type;
+        }
     }
+
 }

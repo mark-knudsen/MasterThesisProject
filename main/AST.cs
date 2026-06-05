@@ -640,6 +640,7 @@ namespace MyCompiler
         // These become semantic metadata fields populated exclusively by the Typechecker
         public RecordNode Schema { get; internal set; }
         public ArrayNode Data { get; internal set; }
+        public NumberNode Capacity { get; internal set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
@@ -760,5 +761,19 @@ namespace MyCompiler
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSlice(this);
+    }
+
+    public class CapacityNode : ExpressionNode
+    {
+        public ExpressionNode Source { get; }
+        public ExpressionNode CapacityValue { get; }
+
+        public CapacityNode(ExpressionNode source, ExpressionNode capacity = null)
+        {
+            Source = source;
+            CapacityValue = capacity;
+        }
+
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitCapacity(this);
     }
 }

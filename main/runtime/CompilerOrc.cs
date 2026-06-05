@@ -378,6 +378,22 @@ namespace MyCompiler
             return _dataframeStruct;
         }
 
+        private LLVMTypeRef GetRuntimeObjType()
+        {
+            var ctx = _module.Context;
+
+            // Check module for existing named type
+            var existing = _module.GetTypeByName("RuntimeObj");
+            if (existing.Handle != IntPtr.Zero) return existing;
+
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+
+            // Static overload: CreateStruct(LLVMTypeRef[] elementTypes, bool packed)
+            // No context argument here!
+            return LLVMTypeRef.CreateStruct(new[] { i64, i8Ptr }, false);
+        }
+
         private void DeclarePrintf()
         {
             var llvmCtx = _module.Context;
@@ -1332,7 +1348,8 @@ namespace MyCompiler
 
             return default;
         }
-        private bool _enableVectorizationHints = false;
+
+        private bool _enableVectorizationHints = true;
 
         private void AttachVectorizationMetadata(LLVMValueRef backBr)
         {
@@ -2394,9 +2411,7 @@ namespace MyCompiler
         //
         // retun x_age[]
 
-        public SequenceNode WhereForDataframe(
-    Type sourceType,
-    WhereNode expr)
+        public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         {
             var dfType = (DataframeType)sourceType;
 
@@ -2404,140 +2419,131 @@ namespace MyCompiler
             var resultVarName = "__where_result";
             var iVarName = "__where_i";
 
-            //
-            // src = dataframe
-            //
-            var srcAssign =
-                new AssignNode(
-                    srcVarName,
-                    expr.SourceExpr);
+            var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
 
-            //
-            // result dataframe
-            //
             var fields = new List<FieldNode>();
-
             for (int i = 0; i < dfType.ColumnNames.Count; i++)
-            {
-                fields.Add(
-                    new FieldNode(
-                        GetTypeLiteralNodeFromTypeNode(
-                            dfType.DataTypes[i]),
-                        dfType.ColumnNames[i]));
-            }
+                fields.Add(new FieldNode(GetTypeLiteralNodeFromTypeNode(dfType.DataTypes[i]), dfType.ColumnNames[i]));
 
-            var schema =
-                new RecordNode(fields);
+            var schema = new RecordNode(fields);
 
-            var resultDf =
-                new DataframeNode(
-                    new List<NamedArgumentNode>
-                    {
-                new NamedArgumentNode(
-                    "schema",
-                    schema)
-                    });
+            // Phase 1: mask
 
-            var resultAssign =
-                new AssignNode(
-                    resultVarName,
-                    resultDf);
+            var maskNode = new ArrayNode(new List<ExpressionNode>()) { Capacity = (uint)(expr.SourceExpr as DataframeNode).Data.Elements.Count };
+            maskNode.SetType(new ArrayType(new BoolType()));
 
-            //
-            // i = 0
-            //
-            var indexInit =
-                new AssignNode(
-                    iVarName,
-                    new NumberNode(0));
 
-            //
-            // i < len(df)
-            //
-            var cond =
-                new ComparisonNode(
-                    new IdNode(iVarName),
-                    "<",
-                    new LengthNode(
-                        new IdNode(srcVarName)));
+            //var rowRecord = new RecordNode(rowFields);
+            var indexInit = new AssignNode(iVarName, new NumberNode(0));
+            var cond = new ComparisonNode(new IdNode(iVarName), "<", new LengthNode(new IdNode(srcVarName)));
+            var step = new IncrementNode(new IdNode(iVarName));
 
-            //
-            // i++
-            //
-            var step =
-                new IncrementNode(
-                    new IdNode(iVarName));
+            // for(i=0; i< len(src); i++) {
+            var ifBody = new IndexAssignNode(maskNode, new IdNode(iVarName), expr.Condition);
+            var loop = new ForLoopNode(indexInit, cond, step, ifBody);
 
-            //
-            // Rewrite:
-            //
-            // x.age > 25
-            //
-            // =>
-            //
-            // src.age[i] > 25
-            //
-            ExpressionNode rewrittenCondition =
-                ReplaceDataframeIterator(
-                    expr.Condition,
-                    expr.IteratorId.Name,
-                    new IdNode(srcVarName),
-                    new IdNode(iVarName));
 
-            //
-            // Build row for add()
-            //
-            var rowFields = new List<FieldNode>();
+            var maskVarName = "__mask";
+            var maskCountName = "__mask_count";
+            var indexInit2 = new AssignNode(maskVarName, new NumberNode(0));
+            var mask_count = new AssignNode(maskCountName, new NumberNode(0));
+            var ifBody2 = new IncrementNode(new IdNode(maskCountName));
+            var ifMask = new IfNode(new IndexNode(maskNode, new IdNode(maskVarName)), ifBody2);
+            var loop_for_count = new ForLoopNode(indexInit2, cond, step, ifMask);
 
-            foreach (var columnName in dfType.ColumnNames)
-            {
-                var columnValue =
-                    new IndexNode(
-                        new FieldNode(
-                            new IdNode(srcVarName),
-                            columnName),
-                        new IdNode(iVarName))
-                    {
-                        SkipBoundsCheck = true
-                    };
 
-                rowFields.Add(
-                    new FieldNode(
-                        columnValue,
-                        columnName));
-            }
+            // phase 2
 
-            var rowRecord =
-                new RecordNode(rowFields);
 
-            //
-            // result.add(row)
-            //
-            var ifBody =
-                new AddNode(
-                    new IdNode(resultVarName),
-                    rowRecord);
+            var resultDf = new DataframeNode(new List<NamedArgumentNode> { new NamedArgumentNode("schema", schema) });
+            var assignCapacity = new AssignNode("capacity_name", resultDf.Capacity);
+            var resultAssign = new AssignNode(resultVarName, resultDf);
 
-            var loop =
-                new ForLoopNode(
-                    indexInit,
-                    cond,
-                    step,
-                    new IfNode(
-                        rewrittenCondition,
-                        ifBody));
+            return new SequenceNode { Nodes = { srcAssign, loop, mask_count, loop_for_count, resultAssign } };
+        }
 
-            return new SequenceNode
-            {
-                Nodes =
+        public LLVMValueRef VisitCapacity(CapacityNode expr)
         {
-            srcAssign,
-            resultAssign,
-            loop,
-            new IdNode(resultVarName)
+            // if expr.capacity then we assign the capacity on the df
+            // else we return the capacity 
+
+            var ctx = _module.Context;
+
+            var sourcePtr = Visit(expr.Source);
+
+            if (expr.CapacityValue != null) // we assign
+            {
+                var capacityHeader = Visit(expr.CapacityValue);
+
+                // Directly access index 1: the data pointer field
+                var rowCountPtr = _builder.BuildStructGEP2(_dataframeStruct, sourcePtr, 1, "rowCount_ptr");
+
+                var d = GetArrayCapacity(rowCountPtr);
+
+                var store = _builder.BuildStore(capacityHeader, d);
+                store.SetAlignment(8);
+
+                return default;
+            }
+            else // we return
+            {
+
+                // Directly access index 1: the data pointer field
+                var rowCountPtr = _builder.BuildStructGEP2(_dataframeStruct, sourcePtr, 1, "rowCount_ptr");
+
+                var d = GetArrayCapacity(rowCountPtr);
+
+                var dd = GetArrayDataPtr(d);
+
+
+                var ddd = GetArrayCapacity(dd);
+
+                // Load it as an i64
+                var length = _builder.BuildLoad2(ctx.Int64Type, dd, "rowCapacity");
+                length.SetAlignment(8);
+
+                return ddd;
+            }
         }
-            };
-        }
+
+        // public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
+        // {
+        //     var dfType = (DataframeType)sourceType;
+
+        //     var srcVarName = "__where_src";
+        //     var resultVarName = "__where_result";
+        //     var iVarName = "__where_i";
+
+        //     var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
+
+        //     var fields = new List<FieldNode>();
+        //     for (int i = 0; i < dfType.ColumnNames.Count; i++)
+        //         fields.Add(new FieldNode(GetTypeLiteralNodeFromTypeNode(dfType.DataTypes[i]), dfType.ColumnNames[i]));
+
+        //     var schema = new RecordNode(fields);
+
+        //     var resultDf = new DataframeNode(new List<NamedArgumentNode> { new NamedArgumentNode("schema", schema) });
+        //     var resultAssign = new AssignNode(resultVarName, resultDf);
+        //     var indexInit = new AssignNode(iVarName, new NumberNode(0));
+        //     var cond = new ComparisonNode(new IdNode(iVarName), "<", new LengthNode(new IdNode(srcVarName)));
+        //     var step = new IncrementNode(new IdNode(iVarName));
+
+        //     ExpressionNode rewrittenCondition = ReplaceDataframeIterator(expr.Condition, expr.IteratorId.Name, new IdNode(srcVarName), new IdNode(iVarName));
+
+        //     var rowFields = new List<FieldNode>();
+
+        //     foreach (var columnName in dfType.ColumnNames)
+        //     {
+        //         var columnValue = new IndexNode(new FieldNode(new IdNode(srcVarName), columnName), new IdNode(iVarName)) { SkipBoundsCheck = true };
+        //         rowFields.Add(new FieldNode(columnValue, columnName));
+        //     }
+
+        //     var rowRecord = new RecordNode(rowFields);
+        //     var ifBody = new AddNode(new IdNode(resultVarName), rowRecord);
+        //     var loop = new ForLoopNode(indexInit, cond, step, new IfNode(rewrittenCondition, ifBody));
+
+        //     return new SequenceNode { Nodes = { srcAssign, resultAssign, loop, new IdNode(resultVarName) } };
+        // }
 
         // public SequenceNode WhereForDataframe2(Type sourceType, WhereNode expr)
         // {
@@ -3708,6 +3714,8 @@ namespace MyCompiler
             var elementSize = GetSize(llvmElemType);
 
             var capacity = count > 0 ? count : 100;
+            if (expr.Capacity.HasValue)
+                capacity = (uint)expr.Capacity.Value;
 
             var dataSize = LLVMValueRef.CreateConstInt(
                 i64,
@@ -3746,117 +3754,90 @@ namespace MyCompiler
 
         public LLVMValueRef VisitIndex(IndexNode expr)
         {
-            Console.WriteLine("VISIT: " + expr.GetType().Name + " " + expr);
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
             var func = _builder.InsertBlock.Parent;
 
-            var sourceType = expr.SourceExpression.Type;
-            var indexVal = Visit(expr.IndexExpression);
-
-            // normalize index
-            if (indexVal.TypeOf != i64)
-                indexVal = _builder.BuildIntCast(indexVal, i64, "idx_cast");
-
             var headerPtr = Visit(expr.SourceExpression);
+            var indexVal = Visit(expr.IndexExpression);
+            var sourceType = expr.SourceExpression.Type;
 
-            // =========================
-            // ARRAY INDEXING
-            // =========================
-            if (sourceType is ArrayType arrType)
+            if (sourceType is ArrayType arrayType)
             {
-                var elemType = arrType.ElementType;
+                // Ensure index is an integer
+                if (indexVal.TypeOf == ctx.DoubleType)
+                    indexVal = _builder.BuildFPToSI(indexVal, i64, "idx_int");
 
-                var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0);
-                var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2);
+                // Load Metadata fields
+                var lenFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 0, "len_field_ptr");
+                var dataFieldPtr = _builder.BuildStructGEP2(_arrayStruct, headerPtr, 2, "data_field_ptr");
 
-                var len = _builder.BuildLoad2(ctx.Int64Type, lenPtr);
-                var dataPtr = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), dataPtrPtr);
+                var rawDataPtr = _builder.BuildLoad2(i8Ptr, dataFieldPtr, "data_ptr");
+                rawDataPtr.SetAlignment(8);
 
-                if (indexVal.TypeOf != ctx.Int64Type)
-                    indexVal = _builder.BuildIntCast(indexVal, ctx.Int64Type);
+                var arrayLen = _builder.BuildLoad2(i64, lenFieldPtr, "array_len");
+                arrayLen.SetAlignment(8);
 
-                // bounds check
-                var inBounds = _builder.BuildICmp(
-                    LLVMIntPredicate.LLVMIntULT,
-                    indexVal,
-                    len
-                );
+                // --- PYTHON-STYLE NEGATIVE INDEX RESOLUTION ---
+                // if indexVal < 0 then indexVal + arrayLen else indexVal
+                var indexIsNeg = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, indexVal, LLVMValueRef.CreateConstInt(i64, 0), "index_is_neg");
+                var indexRegulated = _builder.BuildAdd(indexVal, arrayLen, "index_rel");
+                var resolvedIndex = _builder.BuildSelect(indexIsNeg, indexRegulated, indexVal, "resolved_index");
 
-                var okBlock = ctx.AppendBasicBlock(func, "arr_ok");
-                var errBlock = ctx.AppendBasicBlock(func, "arr_err");
-                var mergeBlock = ctx.AppendBasicBlock(func, "arr_merge");
-
-                _builder.BuildCondBr(inBounds, okBlock, errBlock);
-
-                // ERROR
-                _builder.PositionAtEnd(errBlock);
-                _builder.BuildCall2(_printfType, _printf,
-                    new[] { _builder.BuildGlobalStringPtr("OOB\n") });
-                _builder.BuildBr(mergeBlock);
-
-                var errBB = _builder.InsertBlock;
-
-                // OK
-                _builder.PositionAtEnd(okBlock);
-
-                LLVMTypeRef elemLLVMType = elemType switch
+                // --- OPTIMIZATION: Conditional Bounds Check ---
+                if (!expr.SkipBoundsCheck)
                 {
-                    IntType => ctx.Int64Type,
-                    FloatType => ctx.DoubleType,
-                    BoolType => ctx.Int8Type,
-                    _ => LLVMTypeRef.CreatePointer(ctx.Int8Type, 0)
+                    // Bounds Check Logic using the resolved index value
+                    var isNegative = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSLT, resolvedIndex, LLVMValueRef.CreateConstInt(i64, 0), "is_neg");
+                    var isTooBig = _builder.BuildICmp(LLVMIntPredicate.LLVMIntSGE, resolvedIndex, arrayLen, "is_too_big");
+                    var isInvalid = _builder.BuildOr(isNegative, isTooBig, "is_invalid");
+
+                    var failBlock = ctx.AppendBasicBlock(func, "bounds.fail");
+                    var safeBlock = ctx.AppendBasicBlock(func, "bounds.ok");
+                    _builder.BuildCondBr(isInvalid, failBlock, safeBlock);
+
+                    // --- FAIL BLOCK ---
+                    _builder.PositionAtEnd(failBlock);
+                    var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
+                    _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
+
+                    var runtimeObjPtrType = LLVMTypeRef.CreatePointer(GetRuntimeObjType(), 0); // is this needed at all?
+                    _builder.BuildRet(LLVMValueRef.CreateConstNull(runtimeObjPtrType));
+
+                    // --- CONTINUE IN SAFE BLOCK ---
+                    _builder.PositionAtEnd(safeBlock);
+                }
+
+                // 2. DATA ACCESS (Using resolvedIndex instead of raw indexVal)
+                var llvmElementType = GetLLVMType(arrayType.ElementType);
+                var typedDataPtr = _builder.BuildBitCast(rawDataPtr, LLVMTypeRef.CreatePointer(llvmElementType, 0), "typed_data_ptr");
+
+                var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { resolvedIndex }, "elem_ptr");
+                var loadedValue = _builder.BuildLoad2(llvmElementType, elementPtr, "loaded_val");
+
+                // Enforce rigid alignment patterns based on primitives
+                if (llvmElementType == i64 || llvmElementType == ctx.DoubleType || llvmElementType.Kind == LLVMTypeKind.LLVMPointerTypeKind)
+                    loadedValue.SetAlignment(8);
+                else if (llvmElementType == ctx.Int32Type || llvmElementType == ctx.FloatType)
+                    loadedValue.SetAlignment(4);
+
+                return arrayType.ElementType switch
+                {
+                    BoolType => _builder.BuildZExt(loadedValue, ctx.Int8Type, "bool_val"),
+                    _ => loadedValue
                 };
-
-                var typedPtr = _builder.BuildBitCast(
-                    dataPtr,
-                    LLVMTypeRef.CreatePointer(elemLLVMType, 0)
-                );
-
-                var elemPtr = _builder.BuildGEP2(elemLLVMType, typedPtr, new[] { indexVal });
-
-                LLVMValueRef value;
-
-                if (elemType is IntType)
-                    value = _builder.BuildLoad2(ctx.Int64Type, elemPtr);
-
-                else if (elemType is FloatType)
-                    value = _builder.BuildLoad2(ctx.DoubleType, elemPtr);
-
-                else if (elemType is BoolType)
-                    value = _builder.BuildLoad2(ctx.Int8Type, elemPtr);
-
-                else
-                    value = _builder.BuildLoad2(i8Ptr, elemPtr);
-
-                _builder.BuildBr(mergeBlock);
-
-                var okBB = _builder.InsertBlock;
-
-                // MERGE
-                _builder.PositionAtEnd(mergeBlock);
-
-                var phi = _builder.BuildPhi(value.TypeOf, "arr_val");
-
-                phi.AddIncoming(
-                    new[] { LLVMValueRef.CreateConstNull(value.TypeOf), value },
-                    new[] { errBB, okBB },
-                    2
-                );
-
-                return phi;
             }
-
-            if (sourceType is DataframeType dfType)
+            else if (sourceType is DataframeType)
             {
-                var result = DataframeIndex(headerPtr, indexVal, dfType.SchemaType);
-                return result;
+                if (expr.IndexExpression.Type is IntType)
+                {
+                    var result = DataframeIndex(headerPtr, indexVal, expr.SkipBoundsCheck);
+                    return _builder.BuildBitCast(result, i8Ptr);
+                }
             }
 
-            return LLVMValueRef.CreateConstNull(i8Ptr);
+            return default;
         }
 
         // public SequenceNode ColumnAccessForDataframe(FieldNode indexNode)
@@ -3978,90 +3959,81 @@ namespace MyCompiler
             return arrayType;
         }
 
-        private LLVMValueRef DataframeIndex(LLVMValueRef dataframePtr, LLVMValueRef indexValue, RecordType rowType)
+        private LLVMValueRef DataframeIndex(LLVMValueRef dataframePtr, LLVMValueRef indexValue, bool skipBoundsCheck = false)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
-            var i8 = ctx.Int8Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(i8, 0);
-            var i8PtrPtr = LLVMTypeRef.CreatePointer(i8Ptr, 0); // Pointer to pointers
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             var dfType = GetOrCreateDataframeType();
-            var arrayType = _arrayStruct; // Use the global struct definition
-            var structType = GetOrCreateStructType(rowType);
+            var arrayType = GetOrCreateArrayType();
+            var func = _builder.InsertBlock.Parent;
 
-            // 1. Normalize index to i64
+            // 1. Load the 'rows' Array pointer from the Dataframe struct
+            var rowsPtrPtr = _builder.BuildStructGEP2(dfType, dataframePtr, 1, "rows_ptr_ptr");
+            var rowsPtr = _builder.BuildLoad2(i8Ptr, rowsPtrPtr, "rows");
+            rowsPtr.SetAlignment(8);
+
+            // 2. Load Data Buffer Pointer
+            var dataPtrPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 2, "data_ptr_ptr");
+            var dataPtr = _builder.BuildLoad2(i8Ptr, dataPtrPtr, "data");
+            dataPtr.SetAlignment(8);
+
+            // Ensure index is i64
             if (indexValue.TypeOf != i64)
                 indexValue = _builder.BuildIntCast(indexValue, i64, "idx_cast");
 
-            // 2. Load the data_ptrs array (the array containing pointers to column data)
-            // In DataframeObject: index 1 is dataPointersData
-            var dataPtrsPtr = _builder.BuildStructGEP2(dfType, dataframePtr, 1, "data_ptrs_ptr");
-            var dataPtrsArrayHeader = _builder.BuildLoad2(i8Ptr, dataPtrsPtr, "header_ptr");
-
-            // 3. Access the raw buffer inside the ArrayObject (index 2 is data)
-            var dataPtrsDataPtr = _builder.BuildStructGEP2(arrayType, dataPtrsArrayHeader, 2, "data_ptrs_data_ptr");
-            var dataPtrsRaw = _builder.BuildLoad2(i8Ptr, dataPtrsDataPtr, "data_ptrs_raw");
-
-            // CRITICAL FIX: Cast i8* to i8** so GEP moves by 8 bytes, not 1 byte
-            var dataPtrs = _builder.BuildBitCast(dataPtrsRaw, i8PtrPtr, "data_ptrs_typed");
-
-            // 4. Allocate result row
-            var rowPtr = _builder.BuildMalloc(structType, "row");
-
-            for (int i = 0; i < rowType.RecordFields.Count; i++)
+            // --- OPTIMIZATION: Branchless path ---
+            if (skipBoundsCheck)
             {
-                var fieldType = rowType.RecordFields[i].Type;
-                var colIndex = LLVMValueRef.CreateConstInt(i64, (ulong)i);
-
-                // Get the specific column's ArrayObject pointer
-                var colPtrPtr = _builder.BuildGEP2(i8Ptr, dataPtrs, new[] { colIndex }, "col_ptr_ptr");
-                var colArrayHeader = _builder.BuildLoad2(i8Ptr, colPtrPtr, "col_array_header");
-
-                // Load the actual data buffer from the column's ArrayObject
-                var colDataPtrPtr = _builder.BuildStructGEP2(arrayType, colArrayHeader, 2, "col_data_ptr_ptr");
-                var colDataRaw = _builder.BuildLoad2(i8Ptr, colDataPtrPtr, "col_data_raw");
-
-                LLVMValueRef value;
-
-                // 5. Type Dispatch and Loading
-                if (fieldType is IntType)
-                {
-                    var typed = _builder.BuildBitCast(colDataRaw, LLVMTypeRef.CreatePointer(i64, 0), "int_col");
-                    var elemPtr = _builder.BuildGEP2(i64, typed, new[] { indexValue }, "elem_ptr");
-                    value = _builder.BuildLoad2(i64, elemPtr, "val");
-                }
-                else if (fieldType is FloatType)
-                {
-                    var typed = _builder.BuildBitCast(colDataRaw, LLVMTypeRef.CreatePointer(ctx.DoubleType, 0), "dbl_col");
-                    var elemPtr = _builder.BuildGEP2(ctx.DoubleType, typed, new[] { indexValue }, "elem_ptr");
-                    value = _builder.BuildLoad2(ctx.DoubleType, elemPtr, "val");
-                }
-                else if (fieldType is BoolType)
-                {
-                    var typed = _builder.BuildBitCast(colDataRaw, LLVMTypeRef.CreatePointer(i8, 0), "bool_col");
-                    var elemPtr = _builder.BuildGEP2(i8, typed, new[] { indexValue }, "elem_ptr");
-                    var raw = _builder.BuildLoad2(i8, elemPtr, "raw");
-                    value = _builder.BuildTrunc(raw, ctx.Int8Type, "bool");
-                }
-                else if (fieldType is StringType)
-                {
-                    // Strings are i8**, so we cast buffer to i8***
-                    var typed = _builder.BuildBitCast(colDataRaw, i8PtrPtr, "str_col");
-                    var elemPtr = _builder.BuildGEP2(i8Ptr, typed, new[] { indexValue }, "elem_ptr");
-                    value = _builder.BuildLoad2(i8Ptr, elemPtr, "val");
-                }
-                else
-                {
-                    throw new Exception($"Unsupported type: {fieldType}");
-                }
-
-                // 6. Store into row struct
-                var fieldPtr = _builder.BuildStructGEP2(structType, rowPtr, (uint)i, "field_ptr");
-                _builder.BuildStore(value, fieldPtr);
+                // Direct GEP and Load without any safety checks or merge blocks
+                var elemPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { indexValue }, "elem_ptr");
+                var record = _builder.BuildLoad2(i8Ptr, elemPtr, "record");
+                record.SetAlignment(8);
+                return record;
             }
 
-            return rowPtr;
+            // --- STANDARD SAFE PATH (With Bounds Checking) ---
+            var lenPtr = _builder.BuildStructGEP2(arrayType, rowsPtr, 0, "len_ptr");
+            var len = _builder.BuildLoad2(i64, lenPtr, "len");
+            len.SetAlignment(8);
+
+            var inBounds = _builder.BuildICmp(LLVMIntPredicate.LLVMIntULT, indexValue, len, "in_bounds");
+
+            var okBlock = ctx.AppendBasicBlock(func, "df_idx_ok");
+            var errBlock = ctx.AppendBasicBlock(func, "df_idx_err");
+            var mergeBlock = ctx.AppendBasicBlock(func, "df_idx_merge");
+
+            _builder.BuildCondBr(inBounds, okBlock, errBlock);
+
+            // --- ERROR BLOCK ---
+            _builder.PositionAtEnd(errBlock);
+            var msg = _builder.BuildGlobalStringPtr(
+                "Runtime Error: Dataframe row index out of bounds\n",
+                "df_idx_err_msg"
+            );
+            _builder.BuildCall2(_printfType, _printf, new[] { msg }, "print_err");
+            var nullVal = LLVMValueRef.CreateConstNull(i8Ptr);
+            _builder.BuildBr(mergeBlock);
+            var errEndBlock = _builder.InsertBlock;
+
+            // --- OK BLOCK ---
+            _builder.PositionAtEnd(okBlock);
+            var okElemPtr = _builder.BuildGEP2(i8Ptr, dataPtr, new[] { indexValue }, "elem_ptr");
+
+            // FIX: Declare 'okVal' here by loading from the element pointer
+            var okVal = _builder.BuildLoad2(i8Ptr, okElemPtr, "record");
+            okVal.SetAlignment(8);
+
+            _builder.BuildBr(mergeBlock);
+            var okEndBlock = _builder.InsertBlock;
+
+            // --- MERGE BLOCK ---
+            _builder.PositionAtEnd(mergeBlock);
+            var phi = _builder.BuildPhi(i8Ptr, "df_idx_result");
+            phi.AddIncoming(new[] { nullVal, okVal }, new[] { errEndBlock, okEndBlock }, 2);
+
+            return phi;
         }
 
         private LLVMTypeRef GetOrCreateStructType(RecordType recordType)
@@ -4779,7 +4751,6 @@ namespace MyCompiler
         {
             var ctx = _module.Context;
             var sourcePtr = Visit(expr.ArrayExpression); // pointer to array or dataframe
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             if (expr.ArrayExpression.Type is ArrayType)
             {
@@ -5695,6 +5666,7 @@ namespace MyCompiler
             var schema = (RecordNode)expr.Schema;
             var dataNode = (ArrayNode)expr.Data;
             int colCount = schema.Fields.Count;
+            ulong capacity = expr.Capacity != null ? (ulong)((NumberNode)expr.Capacity).Value : 1000;
 
             /*
                 1. For each field in schema create arraynode
@@ -5743,6 +5715,7 @@ namespace MyCompiler
                     System.Console.WriteLine("Warning: Column '" + field.Label + "' has no data.");
                     colArray.ElementType = field.Type;
                 }
+                colArray.Capacity = capacity;
                 columnArrays.Add(colArray);
             }
 
@@ -6419,6 +6392,7 @@ namespace MyCompiler
     # NEW dataframe syntax:
     df = dataframe({name: string, age: int, isCool: bool, savings: float}, [{name="Harry", age= 12, isCool= true, savings= 100.08}])
     df = dataframe({name: string, age: int, isCool: bool, savings: float})
+    df.add({name="bob",age=5,isCool=true,savings=5.5})
 
 
     df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool}, [  { date = "2023-01-01", latitude = -18.0, longitude = -69.38, wind-speed-min = 1.59, wind-speed-max = 6.47, wind-speed-mean = 3.73, wind-direction-min = 20.86, wind-direction-max = 299.09, wind-direction-mean = 135.45, surface-air-temperature-min = 275.79, surface-air-temperature-max = 284.51, surface-air-temperature-mean = 279.01, total-rainfall-sum = 0.01, surface-humidity-min = 0.01, surface-humidity-max = 0.01, surface-humidity-mean = 0.01, ndvi = 0.15, elevation = 4578.83, slope = 90.0, aspect = 10.15, fire_label = 1, land_cover_class_1 = false, land_cover_class_2 = false, land_cover_class_4 = false, land_cover_class_5 = false, land_cover_class_6 = false, land_cover_class_7 = false, land_cover_class_8 = false, land_cover_class_9 = false, land_cover_class_10 = false, land_cover_class_11 = false, land_cover_class_12 = false, land_cover_class_13 = false, land_cover_class_14 = false, land_cover_class_15 = false, land_cover_class_16 = true, land_cover_class_17 = false } ])
@@ -6428,7 +6402,7 @@ namespace MyCompiler
 
     // has data
     df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool}, [  { date = "2023-01-01", latitude = -18.0, longitude = -69.38, wind-speed-min = 1.59, wind-speed-max = 6.47, wind-speed-mean = 3.73, wind-direction-min = 20.86, wind-direction-max = 299.09, wind-direction-mean = 135.45, surface-air-temperature-min = 275.79, surface-air-temperature-max = 284.51, surface-air-temperature-mean = 279.01, total-rainfall-sum = 0.01, surface-humidity-min = 0.01, surface-humidity-max = 0.01, surface-humidity-mean = 0.01, ndvi = 0.15, elevation = 4578.83, slope = 90.0, aspect = 10.15, fire_label = 1, land_cover_class_1 = false, land_cover_class_2 = false, land_cover_class_4 = false, land_cover_class_5 = false, land_cover_class_6 = false, land_cover_class_7 = false, land_cover_class_8 = false, land_cover_class_9 = false, land_cover_class_10 = false, land_cover_class_11 = false, land_cover_class_12 = false, land_cover_class_13 = false, land_cover_class_14 = false }])
-  
+
 
     # OLD dataframe syntax:
     df2 = dataframe(["name", "age", "isCool","savings"],[["Harry", 12, true,100.08],["Bob", 23, false, 1.0],["Harry", 34, false, 0.0]])

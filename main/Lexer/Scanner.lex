@@ -40,6 +40,7 @@
 "where"         { return (int)Tokens.WHERE; }
 "map"           { return (int)Tokens.MAP; }
 "=>"            { return (int)Tokens.LAMBDA; }
+"capacity"      { return (int)Tokens.CAPACITY; }
 "add"           { return (int)Tokens.ADD; }
 "addRange"      { return (int)Tokens.ADDRANGE; }
 "remove"        { return (int)Tokens.REMOVE; }

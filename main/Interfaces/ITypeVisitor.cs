@@ -51,6 +51,7 @@ namespace MyCompiler
         Type VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         Type VisitCast(CastNode expr);
         Type VisitSlice(SliceNode expr);
+        Type VisitCapacity(CapacityNode expr);
 
         // Type VisitAddField(AddFieldNode expr);
         // Type VisitRemoveField(RemoveFieldNode expr);
