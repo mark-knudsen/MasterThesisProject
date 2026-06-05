@@ -50,6 +50,7 @@ namespace MyCompiler
         Type VisitPow(PowNode expr);
         Type VisitExponentialMathFunc(ExponentialMathFuncNode expr);
         Type VisitCast(CastNode expr);
+        Type VisitSlice(SliceNode expr);
 
         // Type VisitAddField(AddFieldNode expr);
         // Type VisitRemoveField(RemoveFieldNode expr);

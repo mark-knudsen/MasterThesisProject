@@ -792,19 +792,19 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLog(this);
     }
 
-    // public class SliceNode : ExpressionNode
-    // {
-    //     public ExpressionNode Source { get; }
-    //     public ExpressionNode Start { get; } // Can be null for [:20]
-    //     public ExpressionNode End { get; }   // Can be null for [10:]
+    public class SliceNode : ExpressionNode
+    {
+        public ExpressionNode Source { get; }
+        public ExpressionNode Start { get; } // Can be null for [:20]
+        public ExpressionNode End { get; }   // Can be null for [10:]
 
-    //     public SliceNode(ExpressionNode source, ExpressionNode start, ExpressionNode end)
-    //     {
-    //         Source = source;
-    //         Start = start;
-    //         End = end;
-    //     }
+        public SliceNode(ExpressionNode source, ExpressionNode start, ExpressionNode end)
+        {
+            Source = source;
+            Start = start;
+            End = end;
+        }
 
-    //     public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSlice(this);
-    // }
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitSlice(this);
+    }
 }

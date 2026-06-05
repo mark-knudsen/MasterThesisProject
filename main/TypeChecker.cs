@@ -77,7 +77,7 @@ namespace MyCompiler
                 PowNode pow => VisitPow(pow),
                 ExponentialMathFuncNode exp => VisitExponentialMathFunc(exp),
                 CastNode cast => VisitCast(cast),
-                //SliceNode slice => VisitSlice(slice),
+                SliceNode slice => VisitSlice(slice),
 
                 _ => throw new NotSupportedException($"Type check not implemented for {node.GetType().Name}")
             };
@@ -1490,28 +1490,28 @@ namespace MyCompiler
             return ResolveType(expr); // Just return the wrapped type
         }
 
-        // public Type VisitSlice(SliceNode expr)
-        // {
-        //     Type sourceType = Visit(expr.Source);
+        public Type VisitSlice(SliceNode expr)
+        {
+            Type sourceType = Visit(expr.Source);
 
-        //     // Support both Arrays and Dataframes
-        //     if (sourceType is not ArrayType && sourceType is not DataframeType)
-        //         throw new Exception($"Slicing is only supported on arrays or dataframes, got {sourceType}");
+            // Support both Arrays and Dataframes
+            if (sourceType is not ArrayType && sourceType is not DataframeType)
+                throw new Exception($"Slicing is only supported on arrays or dataframes, got {sourceType}");
 
-        //     if (expr.Start != null)
-        //     {
-        //         if (Visit(expr.Start) is not IntType)
-        //             throw new Exception("Slice start index must be an integer");
-        //     }
+            if (expr.Start != null)
+            {
+                if (Visit(expr.Start) is not IntType)
+                    throw new Exception("Slice start index must be an integer");
+            }
 
-        //     if (expr.End != null)
-        //     {
-        //         if (Visit(expr.End) is not IntType)
-        //             throw new Exception("Slice end index must be an integer");
-        //     }
+            if (expr.End != null)
+            {
+                if (Visit(expr.End) is not IntType)
+                    throw new Exception("Slice end index must be an integer");
+            }
 
-        //     expr.SetType(sourceType); // df[start:end] returns a DataframeType
-        //     return expr.Type;
-        // }
+            expr.SetType(sourceType); // df[start:end] returns a DataframeType
+            return expr.Type;
+        }
     }
 }
