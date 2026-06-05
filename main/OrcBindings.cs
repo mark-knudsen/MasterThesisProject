@@ -13,7 +13,6 @@ namespace MyCompiler
         private const string LibLLVM = "libLLVM.dll";
 #endif
 
-
         [DllImport(LibLLVM)]
         public static extern IntPtr LLVMOrcCreateLLJIT(
             out IntPtr Result,

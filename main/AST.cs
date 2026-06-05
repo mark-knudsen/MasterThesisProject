@@ -649,7 +649,6 @@ namespace MyCompiler
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitDataframe(this);
     }
 
-
     public class ColumnsNode : ExpressionNode
     {
         public ExpressionNode DataframeExpression { get; }

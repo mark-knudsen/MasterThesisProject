@@ -129,7 +129,9 @@ namespace MyCompiler
 
         public Type VisitId(IdNode expr)
         {
+            System.Console.WriteLine("we in id befoer context get");
             var entry = _context.Get(expr.Name);
+            System.Console.WriteLine("we in id after context get");
 
             if (entry == null)
                 throw new Exception($"type check - Undefined variable '{expr.Name}'");
@@ -1186,10 +1188,6 @@ namespace MyCompiler
             return statement.Type;
         }
 
-
-
-
-
         public Type VisitDataframe(DataframeNode expr)
         {
             foreach (var arg in expr.Arguments)
@@ -1397,7 +1395,6 @@ namespace MyCompiler
             }
         }
 
-
         public static Type ResolveTypeNode(TypeNode typeNode)
         {
             if (typeNode == null) return null;
@@ -1447,8 +1444,6 @@ namespace MyCompiler
             throw new Exception($"Expected a type or value, but found: {expr.GetType().Name}");
         }
 
-
-
         private Type InferFromString(string value)
         {
             return value switch
@@ -1473,8 +1468,6 @@ namespace MyCompiler
                 _ => throw new Exception("Unsupported type for inference" + value.GetType().Name)
             };
         }
-
-
 
         public Type VisitNamedArgument(NamedArgumentNode expr)
         {
