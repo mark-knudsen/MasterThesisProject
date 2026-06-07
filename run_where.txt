@@ -1,1 +1,0 @@
-read_csv("main/CSV/mytest.csv").where(x => x.name == "Hary potter")
