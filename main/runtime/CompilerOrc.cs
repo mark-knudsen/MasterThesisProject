@@ -252,8 +252,9 @@ namespace MyCompiler
             DeclareArrayStruct();
             DeclareDataframeStruct();
             SetupCsvFunctions();
-            GetOrDeclareArrayStructPtr();
+            DeclarePrintf();
         }
+
         double StopStopWatch(string testName = null)
         {
             sw.Stop();
@@ -518,7 +519,6 @@ namespace MyCompiler
             var prediction = PerformSemanticAnalysis(expr);
 
             CreateMain();
-            DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
 
@@ -555,7 +555,6 @@ namespace MyCompiler
 
             // 7 Call it
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
-            System.Console.WriteLine("about to run the code");
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
             if (_stopwatch) IRTestList.Add(StopStopWatch("Ran IR codegen"));
 
@@ -564,7 +563,6 @@ namespace MyCompiler
 
             if (_stopwatch) StartStopWatch();
             var tempResult = delegateResult();
-            System.Console.WriteLine("ran the code");
             if (_stopwatch) RuntimeTestList.Add(StopStopWatch("Ran program"));
             if (_stopwatch)
             {
@@ -809,24 +807,35 @@ namespace MyCompiler
             return result;
         }
 
-        // public void DebugDataframe(IntPtr dfPtr)
-        // {
-        //     if (dfPtr == IntPtr.Zero)
-        //         return;
-
-        //     IntPtr columnsPtr = Marshal.ReadIntPtr(dfPtr, 0);
-        //     IntPtr dataPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size);
-        //     IntPtr typesPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size * 2);
-
-        //     var columns = Marshal.PtrToStructure<ArrayObject>(columnsPtr);
-        //     var data = Marshal.PtrToStructure<ArrayObject>(dataPtr);
-        //     var types = Marshal.PtrToStructure<ArrayObject>(typesPtr);
-
-        //     DebugArray(columns, "columns");
-        //     DebugArray(data, "data", true);
-        //     DebugArray(types, "dataTypes");
-        // }
         public void DebugDataframe(IntPtr dfPtr)
+        {
+            System.Console.WriteLine("1");
+            if (dfPtr == IntPtr.Zero)
+                return;
+            System.Console.WriteLine("2");
+
+            IntPtr columnsPtr = Marshal.ReadIntPtr(dfPtr, 0);
+            System.Console.WriteLine("3");
+            IntPtr dataPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size);
+            System.Console.WriteLine("4");
+            IntPtr typesPtr = Marshal.ReadIntPtr(dfPtr, IntPtr.Size * 2);
+            System.Console.WriteLine("5");
+
+            var columns = Marshal.PtrToStructure<ArrayObject>(columnsPtr);
+            System.Console.WriteLine("6");
+            var data = Marshal.PtrToStructure<ArrayObject>(dataPtr);
+            System.Console.WriteLine("7");
+            var types = Marshal.PtrToStructure<ArrayObject>(typesPtr);
+
+            System.Console.WriteLine("we about to debug df columns");
+
+            DebugArray(columns, "columns");
+            DebugArray(data, "data", true);
+            DebugArray(types, "dataTypes");
+        }
+
+
+        public void DebugDataframe2(IntPtr dfPtr)
         {
             if (dfPtr == IntPtr.Zero)
                 return;
@@ -938,13 +947,27 @@ namespace MyCompiler
             }
 
 
-            //Marshal.
-
-
             DataframeObject result = Marshal.PtrToStructure<DataframeObject>(dfPtr);
             ArrayObject result2 = Marshal.PtrToStructure<ArrayObject>(result.dataPointersData);
-            DebugArray(result2, "dataPointersData", true);
 
+            Console.WriteLine("Df pointer array capacity: " + result2.capacity);
+            Console.WriteLine("Df pointer array length: " + result2.length);
+
+            for (int i = 0; i < result2.length; i++)
+            {
+                IntPtr basePtr = result2.data;
+
+                IntPtr colPtr = Marshal.ReadIntPtr(
+                    basePtr + i * IntPtr.Size
+                );
+
+                if (colPtr == IntPtr.Zero)
+                    continue;
+
+                ArrayObject col = Marshal.PtrToStructure<ArrayObject>(colPtr);
+
+                DebugArray(col, "array" + i);
+            }
 
             // 3. Row Selection
             var rowIndices = new List<int>();
@@ -2389,7 +2412,8 @@ namespace MyCompiler
         // for(i=0; i<520000; i++) x.addRange([{name: "voldemort", age: 80}, {name: "dumbledore", age: 70}, {name: "MERLIN", age: 101}]) 
 
         // x.map(d => d.age + 10) // this should return the dataframe not the column
-        // x.where(d => d.age == 30)
+        // x.where(d => d.age == 30) // this doesn't work
+        // x.where(d => d.age < 30)
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
         // x.where(d=> d.savings > 693444.47).where(z=> z.savings < 6903444.47 & z.name=="John")
@@ -2437,7 +2461,10 @@ namespace MyCompiler
 
             // Phase 1: mask
 
-            var maskNode = new ArrayNode(new List<ExpressionNode>()) { Capacity = (uint)(expr.SourceExpr as DataframeNode).Data.Elements.Count };
+
+            var maskNode = new ArrayNode(new List<ExpressionNode>(), new TypeNode("bool"));
+            var settingCapForArray = new CapacityNode(maskNode, new NumberNode(0));
+            System.Console.WriteLine("we in where1.5");
             maskNode.SetType(new ArrayType(new BoolType()));
 
 
@@ -2462,15 +2489,14 @@ namespace MyCompiler
 
             // phase 2
 
-
-            var resultDf = new DataframeNode(new List<NamedArgumentNode> { new NamedArgumentNode("schema", schema) });
-            var assignCapacity = new AssignNode("capacity_name", resultDf.Capacity);
+            var resultDf = new DataframeNode(new List<NamedArgumentNode>
+            { new NamedArgumentNode("schema", schema), new NamedArgumentNode("capacity", new IdNode(maskCountName)) });
             var resultAssign = new AssignNode(resultVarName, resultDf);
 
-            return new SequenceNode { Nodes = { srcAssign, loop, mask_count, loop_for_count, resultAssign } };
+            return new SequenceNode { Nodes = { srcAssign, settingCapForArray, loop, mask_count, loop_for_count, resultAssign } };
         }
 
-        public LLVMValueRef VisitCapacity2(LLVMValueRef df, LLVMValueRef newCapacity)
+        public LLVMValueRef SetCapacity(LLVMValueRef df, LLVMValueRef newCapacity)
         {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
@@ -2478,20 +2504,16 @@ namespace MyCompiler
             var function = _builder.InsertBlock.Parent;
 
             // ============================================================
-            // 1. Load dataframe.dataPointersData (ArrayObject*)
+            // 1. df.dataPointersData (ArrayObject*)
             // ============================================================
             var colsFieldPtr =
                 _builder.BuildStructGEP2(_dataframeStruct, df, 1, "cols_field_ptr");
 
             var colsArray =
-                _builder.BuildLoad2(_arrayStructPtr, colsFieldPtr, "cols_array");
-
-            // columnCount
-            var lenPtr =
-                _builder.BuildStructGEP2(_arrayStruct, colsArray, 0, "len_ptr");
-
-            var columnCount =
-                _builder.BuildLoad2(i64, lenPtr, "column_count");
+                _builder.BuildLoad2(
+                    LLVMTypeRef.CreatePointer(_arrayStruct, 0),
+                    colsFieldPtr,
+                    "cols_array");
 
             // ============================================================
             // 2. columns.data -> ArrayObject**
@@ -2512,59 +2534,42 @@ namespace MyCompiler
                 _builder.BuildBitCast(colsRaw, colPtrType, "columns");
 
             // ============================================================
-            // 3. datatypesData (ValueTag*)
+            // 3. columnCount = colsArray.length
             // ============================================================
-            var typesFieldPtr =
-                _builder.BuildStructGEP2(_dataframeStruct, df, 2, "types_field_ptr");
+            var lenPtr =
+                _builder.BuildStructGEP2(_arrayStruct, colsArray, 0, "len_ptr");
 
-            var typesArray =
-                _builder.BuildLoad2(_arrayStructPtr, typesFieldPtr, "types_array");
-
-            var typesDataPtr =
-                _builder.BuildStructGEP2(_arrayStruct, typesArray, 2, "types_data_ptr");
-
-            var types =
-                _builder.BuildLoad2(
-                    LLVMTypeRef.CreatePointer(i64, 0),
-                    typesDataPtr,
-                    "types");
+            var columnCount =
+                _builder.BuildLoad2(i64, lenPtr, "column_count");
 
             // ============================================================
-            // 4. Blocks
+            // 4. loop blocks
             // ============================================================
             var loopBB = ctx.AppendBasicBlock(function, "loop");
             var bodyBB = ctx.AppendBasicBlock(function, "body");
             var exitBB = ctx.AppendBasicBlock(function, "exit");
 
-            var failBB = ctx.AppendBasicBlock(function, "fail");
-
-            var intBB = ctx.AppendBasicBlock(function, "int");
-            var floatBB = ctx.AppendBasicBlock(function, "float");
-            var boolBB = ctx.AppendBasicBlock(function, "bool");
-            var stringBB = ctx.AppendBasicBlock(function, "string");
-
             _builder.BuildBr(loopBB);
 
             // ============================================================
-            // 5. PHI (IMPORTANT FIX)
+            // 5. PHI
             // ============================================================
             _builder.PositionAtEnd(loopBB);
 
             var iPhi = _builder.BuildPhi(i64, "i");
 
-            var entryBB = function.EntryBasicBlock;
-
             iPhi.AddIncoming(
                 new[] { LLVMValueRef.CreateConstInt(i64, 0, false) },
-                new[] { entryBB },
-                1u);
+                new[] { function.EntryBasicBlock },
+                1u
+            );
 
             var cond =
                 _builder.BuildICmp(
                     LLVMIntPredicate.LLVMIntSLT,
                     iPhi,
                     columnCount,
-                    "loop_cond");
+                    "cond");
 
             _builder.BuildCondBr(cond, bodyBB, exitBB);
 
@@ -2573,222 +2578,134 @@ namespace MyCompiler
             // ============================================================
             _builder.PositionAtEnd(bodyBB);
 
-            // col = columns[i]
             var colPtrPtr =
                 _builder.BuildGEP2(colPtrType, columns, new[] { iPhi }, "col_ptr_ptr");
 
             var col =
                 _builder.BuildLoad2(colPtrType, colPtrPtr, "col");
 
-            // tag = types[i]
-            var typePtr =
-                _builder.BuildGEP2(i64, types, new[] { iPhi }, "type_ptr");
-
-            var tag =
-                _builder.BuildLoad2(i64, typePtr, "tag");
-
-            // ============================================================
-            // 7. SWITCH (LLVMSharp 20 correct)
-            // ============================================================
-            var switchInst =
-                _builder.BuildSwitch(tag, failBB, 4);
-
-            switchInst.AddCase(LLVMValueRef.CreateConstInt(i64, 1, false), intBB);
-            switchInst.AddCase(LLVMValueRef.CreateConstInt(i64, 2, false), floatBB);
-            switchInst.AddCase(LLVMValueRef.CreateConstInt(i64, 3, false), boolBB);
-            switchInst.AddCase(LLVMValueRef.CreateConstInt(i64, 4, false), stringBB);
-
-            // ============================================================
-            // 8. TYPE CASES
-            // ============================================================
-            EmitResizeCase(intBB, col, newCapacity, 8, loopBB, iPhi, i64, ctx);
-            EmitResizeCase(floatBB, col, newCapacity, 8, loopBB, iPhi, i64, ctx);
-            EmitResizeCase(boolBB, col, newCapacity, 1, loopBB, iPhi, i64, ctx);
-            EmitResizeCase(stringBB, col, newCapacity, IntPtr.Size, loopBB, iPhi, i64, ctx);
-
-            // ============================================================
-            // 9. EXIT
-            // ============================================================
-            _builder.PositionAtEnd(exitBB);
-            return LLVMValueRef.CreateConstInt(i64, 1, false);
-        }
-
-        LLVMTypeRef _arrayStructPtr;
-
-        public void GetOrDeclareArrayStructPtr()
-        {
-            _arrayStructPtr =
-    LLVMTypeRef.CreatePointer(_arrayStruct, 0);
-        }
-
-        private void EmitResizeCase(
-            LLVMBasicBlockRef block,
-            LLVMValueRef col,
-            LLVMValueRef newCapacity,
-            int elementSize,
-            LLVMBasicBlockRef loopBB,
-            LLVMValueRef iPhi,
-            LLVMTypeRef i64,
-            LLVMContextRef ctx)
-        {
-            _builder.PositionAtEnd(block);
-
-            // bytes = newCapacity * elementSize
-            var bytes =
-                _builder.BuildMul(
-                    newCapacity,
-                    LLVMValueRef.CreateConstInt(i64, (ulong)elementSize, false),
-                    "bytes");
-
-            // oldData = col.data
-            var dataPtr =
-                _builder.BuildStructGEP2(_arrayStruct, col, 2, "data_ptr");
-
-            var oldData =
-                _builder.BuildLoad2(
-                    LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                    dataPtr,
-                    "old_data");
-
-            // realloc(oldData, bytes)
-            var reallocFn = _module.GetNamedFunction("realloc");
-
-            var newData =
-                _builder.BuildCall2(
-                    LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                    reallocFn,
-                    new LLVMValueRef[] { oldData, bytes },
-                    "realloc_call");
-
-            _builder.BuildStore(newData, dataPtr);
-
-            // col.capacity = newCapacity
+            // capacity field
             var capPtr =
                 _builder.BuildStructGEP2(_arrayStruct, col, 1, "cap_ptr");
 
             _builder.BuildStore(newCapacity, capPtr);
 
-            // continue loop
+            // i++
+            var iNext =
+                _builder.BuildAdd(
+                    iPhi,
+                    LLVMValueRef.CreateConstInt(i64, 1, false),
+                    "i_next");
+
+            iPhi.AddIncoming(
+                new[] { iNext },
+                new[] { bodyBB },
+                1u
+            );
+
             _builder.BuildBr(loopBB);
+
+            // ============================================================
+            // 7. EXIT
+            // ============================================================
+            _builder.PositionAtEnd(exitBB);
+
+            return LLVMValueRef.CreateConstInt(i64, 1, false);
+        }
+
+        private LLVMTypeRef GetArrayPtrType()
+        {
+            return LLVMTypeRef.CreatePointer(_arrayStruct, 0);
         }
 
         public LLVMValueRef VisitCapacity(CapacityNode expr)
         {
+            var source = Visit(expr.Source);
+
+            // ASSIGN
+            if (expr.CapacityValue != null)
+            {
+                var value = Visit(expr.CapacityValue);
+
+                return SetCapacity(source, value);
+            }
+
+            // GET
+            return GetCapacity(source);
+        }
+
+        private LLVMValueRef GetCapacity(LLVMValueRef dfPtr)
+        {
             var ctx = _module.Context;
             var i64 = ctx.Int64Type;
 
-            var sourcePtr = Visit(expr.Source);
+            // df.dataPointersData
+            var fieldPtr =
+                _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1, "data_ptrs_ptr");
 
-            if (expr.CapacityValue != null)
-            {
-                return VisitCapacity2(sourcePtr, Visit(expr.CapacityValue));
-                //throw new NotImplementedException(
-                //  "Setting dataframe capacity is not currently supported.");
-            }
-
-            //
-            // dataframe.dataPointersData
-            //
-            var dataPointersFieldPtr =
-                _builder.BuildStructGEP2(
-                    _dataframeStruct,
-                    sourcePtr,
-                    1,
-                    "dataPointersData_field");
-
-            var arrayHeaderPtr =
+            var arrayHeader =
                 _builder.BuildLoad2(
                     LLVMTypeRef.CreatePointer(_arrayStruct, 0),
-                    dataPointersFieldPtr,
-                    "dataPointersData");
+                    fieldPtr,
+                    "cols_array");
 
-            //
-            // Check dataPointersData.length > 0
-            //
-            var length = GetArrayLength(arrayHeaderPtr);
+            // safety: length > 0
+            var lenPtr =
+                _builder.BuildStructGEP2(_arrayStruct, arrayHeader, 0, "len_ptr");
+
+            var length =
+                _builder.BuildLoad2(i64, lenPtr, "len");
+
+            var zero = LLVMValueRef.CreateConstInt(i64, 0, false);
 
             var hasColumns =
                 _builder.BuildICmp(
                     LLVMIntPredicate.LLVMIntUGT,
                     length,
-                    LLVMValueRef.CreateConstInt(i64, 0),
+                    zero,
                     "has_columns");
 
-            var currentFunction = _builder.InsertBlock.Parent;
+            var fn = _builder.InsertBlock.Parent;
 
-            var okBlock =
-                ctx.AppendBasicBlock(currentFunction, "capacity_ok");
+            var okBB = ctx.AppendBasicBlock(fn, "cap_ok");
+            var failBB = ctx.AppendBasicBlock(fn, "cap_fail");
 
-            var failBlock =
-                ctx.AppendBasicBlock(currentFunction, "capacity_fail");
+            _builder.BuildCondBr(hasColumns, okBB, failBB);
 
-            _builder.BuildCondBr(hasColumns, okBlock, failBlock);
-
-            //
-            // fail block
-            //
-            _builder.PositionAtEnd(failBlock);
-
-            // choose your runtime error mechanism
+            // FAIL
+            _builder.PositionAtEnd(failBB);
             _builder.BuildUnreachable();
 
-            //
-            // ok block
-            //
-            _builder.PositionAtEnd(okBlock);
+            // OK
+            _builder.PositionAtEnd(okBB);
 
-            //
-            // dataPointersData.data
-            //
-            var dataPtr = GetArrayDataPtr(arrayHeaderPtr);
+            // columns.data -> ArrayObject**
+            var dataPtr =
+                _builder.BuildStructGEP2(_arrayStruct, arrayHeader, 2, "data_ptr");
 
-            //
-            // Cast to ptr*
-            //
-            var ptrType =
-                LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            var ptrPtrType =
-                LLVMTypeRef.CreatePointer(ptrType, 0);
-
-            var typedData =
-                _builder.BuildBitCast(
-                    dataPtr,
-                    ptrPtrType,
-                    "typed_data");
-
-            //
-            // data[0]
-            //
-            var firstSlot =
-                _builder.BuildGEP2(
-                    ptrType,
-                    typedData,
-                    new[]
-                    {
-                LLVMValueRef.CreateConstInt(i64, 0)
-                    },
-                    "first_slot");
-
-            var firstColumnPtr =
+            var raw =
                 _builder.BuildLoad2(
-                    ptrType,
-                    firstSlot,
-                    "first_column");
+                    LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
+                    dataPtr,
+                    "raw");
 
-            //
-            // firstColumn is an ArrayObject*
-            //
-            var firstColumnArray =
-                _builder.BuildBitCast(
-                    firstColumnPtr,
-                    LLVMTypeRef.CreatePointer(_arrayStruct, 0),
-                    "first_column_array");
+            var colPtrType =
+                LLVMTypeRef.CreatePointer(_arrayStruct, 0);
 
-            //
-            // firstColumn.capacity
-            //
-            return GetArrayCapacity(firstColumnArray);
+            var columns =
+                _builder.BuildBitCast(raw, colPtrType, "columns");
+
+            // first column = columns[0]
+            var firstPtr =
+                _builder.BuildGEP2(colPtrType, columns,
+                    new[] { zero },
+                    "first_ptr");
+
+            var firstCol =
+                _builder.BuildLoad2(colPtrType, firstPtr, "first_col");
+
+            // return capacity
+            return GetArrayCapacity(firstCol);
         }
 
         // public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
@@ -3997,22 +3914,7 @@ namespace MyCompiler
 
             // 2. Compute element size
             var elementSize = GetSize(llvmElemType);
-
             var capacity = count > 0 ? count : 100;
-            if (expr.Capacity.HasValue)
-                capacity = (uint)expr.Capacity.Value;
-
-            var dataSize = LLVMValueRef.CreateConstInt(
-                i64,
-                capacity * elementSize
-            );
-
-            var dataRaw = _builder.BuildCall2(
-                _mallocType,
-                mallocFunc,
-                new[] { dataSize },
-                "arr_data"
-            );
 
             // 3. Store metadata
             var lenPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 0);
@@ -4020,7 +3922,40 @@ namespace MyCompiler
             var dataPtrPtr = _builder.BuildStructGEP2(_arrayStruct, headerRaw, 2);
 
             _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, count), lenPtr).SetAlignment(8);
-            _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr).SetAlignment(8);
+
+            LLVMValueRef dataRaw;
+
+            if (expr.Capacity is not null)
+            {
+                var d = Visit(expr.Capacity);
+
+                var dataSize = _builder.BuildMul(d, Visit(new NumberNode((int)elementSize)), "multmp");
+
+                dataRaw = _builder.BuildCall2(
+                _mallocType,
+                mallocFunc,
+                new[] { dataSize },
+                "arr_data"
+            );
+
+                _builder.BuildStore(d, capPtr).SetAlignment(8);
+            }
+            else
+            {
+                var dataSize = LLVMValueRef.CreateConstInt(
+                    i64,
+                    capacity * elementSize
+                );
+
+                dataRaw = _builder.BuildCall2(
+                    _mallocType,
+                    mallocFunc,
+                    new[] { dataSize },
+                    "arr_data"
+                );
+                _builder.BuildStore(LLVMValueRef.CreateConstInt(i64, capacity), capPtr).SetAlignment(8);
+            }
+
 
             // IMPORTANT: store raw pointer (NOT i8*)
             _builder.BuildStore(dataRaw, dataPtrPtr).SetAlignment(8);
@@ -5954,10 +5889,10 @@ namespace MyCompiler
 
             var mallocFunc = GetOrDeclareMalloc();
 
-            var schema = (RecordNode)expr.Schema;
-            var dataNode = (ArrayNode)expr.Data;
+            RecordNode schema = expr.Schema;
+            ArrayNode dataNode = expr.Data;
             int colCount = schema.Fields.Count;
-            ulong capacity = expr.Capacity != null ? (ulong)((NumberNode)expr.Capacity).Value : 555;
+            ulong capacity = 555;
 
             /*
                 1. For each field in schema create arraynode
@@ -5978,19 +5913,19 @@ namespace MyCompiler
                         {
                             if (row is RecordNode rec)
                             {
-                                Console.WriteLine("Is record inside if in select: " + rec);
+                                //Console.WriteLine("Is record inside if in select: " + rec);
                                 Console.WriteLine("Looking for field: " + field.Label);
 
-                                for (int i = 0; i < rec.Fields.Count; i++)
-                                {
-                                    Console.WriteLine($"record field {i}: " + rec.Fields[i].Label);
-                                }
+                                // for (int i = 0; i < rec.Fields.Count; i++)
+                                // {
+                                //     Console.WriteLine($"record field {i}: " + rec.Fields[i].Label);
+                                // }
 
                                 var fieldNode = rec.Fields.FirstOrDefault(f => f.Label == field.Label);
 
                                 if (fieldNode != null)
                                 {
-                                    Console.WriteLine("fieldNode value: " + fieldNode.Value);
+                                    //Console.WriteLine("fieldNode value: " + fieldNode.Value);
                                     return fieldNode.Value;
                                 }
                                 return default;
@@ -6002,11 +5937,11 @@ namespace MyCompiler
                         .ToList()
                 );
                 if (colArray.Elements.Count == 0)
-                {
-                    System.Console.WriteLine("Warning: Column '" + field.Label + "' has no data.");
                     colArray.ElementType = field.Type;
-                }
-                colArray.Capacity = capacity;
+                if (expr.Capacity is not null)
+                    colArray.Capacity = expr.Capacity;
+                else
+                    colArray.Capacity = new NumberNode((int)capacity);
                 columnArrays.Add(colArray);
             }
 

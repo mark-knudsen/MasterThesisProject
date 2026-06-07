@@ -1216,6 +1216,12 @@ namespace MyCompiler
                     if (arg.Value is ArrayNode a) expr.Data = a;
                     else throw new Exception("Typechecker Error: 'rows'/'data' parameter must be an array literal.");
                 }
+                else if (argName == "capacity")
+                {
+                    // if (arg.Value is NumberNode a) expr.Capacity = a;
+                    expr.Capacity = arg.Value;
+                   // else throw new Exception("Typechecker Error: 'capacity' parameter must be a number");
+                }
                 else if (argName != null)
                 {
                     // --- CRITICAL FIX: Explicitly reject invalid parameter names like 'ha' or 'haha' ---

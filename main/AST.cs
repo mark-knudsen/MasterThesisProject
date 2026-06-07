@@ -268,11 +268,12 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public ulong? Capacity;
-        public ArrayNode(List<ExpressionNode> elements, TypeNode typeNode = null)
+        public ExpressionNode Capacity { get; set; }
+        public ArrayNode(List<ExpressionNode> elements, TypeNode typeNode = null, NumberNode capacityNode = null)
         {
             Elements = elements;
             ElementType = TypeChecker.ResolveTypeNode(typeNode);
+            Capacity = capacityNode;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitArray(this);
@@ -640,7 +641,7 @@ namespace MyCompiler
         // These become semantic metadata fields populated exclusively by the Typechecker
         public RecordNode Schema { get; internal set; }
         public ArrayNode Data { get; internal set; }
-        public NumberNode Capacity { get; internal set; }
+        public ExpressionNode Capacity { get; internal set; }
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
