@@ -456,10 +456,22 @@ namespace MyCompiler
     public class LengthNode : ExpressionNode
     {
         public ExpressionNode ArrayExpression { get; }
+        public ExpressionNode NewLength { get; } // Will be null if used as a Getter
 
+        public bool IsSetter => NewLength != null;
+
+        // Getter Constructor (1 argument)
         public LengthNode(ExpressionNode arrayExpr)
         {
             ArrayExpression = arrayExpr;
+            NewLength = null;
+        }
+
+        // Setter Constructor (2 arguments) - Fixes CS1729
+        public LengthNode(ExpressionNode arrayExpr, ExpressionNode newLength)
+        {
+            ArrayExpression = arrayExpr;
+            NewLength = newLength;
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitLength(this);

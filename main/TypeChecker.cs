@@ -1023,8 +1023,23 @@ namespace MyCompiler
 
         public Type VisitLength(LengthNode expr)
         {
+            // Typecheck the targeted collection/array expression
             Visit(expr.ArrayExpression);
-            expr.SetType(new IntType());
+
+            if (expr.IsSetter)
+            {
+                // Validate that the assigned value is an integer type
+                Type newLenType = Visit(expr.NewLength);
+                if (newLenType is not IntType)
+                    throw new Exception($"Typechecker Error: Cannot set length using type {newLenType}. Expected an integer.");
+
+                expr.SetType(new VoidType()); // Setters act as statements returning void
+            }
+            else
+            {
+                expr.SetType(new IntType()); // Getters return an integer length value
+            }
+
             return expr.Type;
         }
 
@@ -1220,7 +1235,7 @@ namespace MyCompiler
                 {
                     // if (arg.Value is NumberNode a) expr.Capacity = a;
                     expr.Capacity = arg.Value;
-                   // else throw new Exception("Typechecker Error: 'capacity' parameter must be a number");
+                    // else throw new Exception("Typechecker Error: 'capacity' parameter must be a number");
                 }
                 else if (argName != null)
                 {

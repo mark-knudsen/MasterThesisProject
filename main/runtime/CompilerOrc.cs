@@ -400,9 +400,9 @@ namespace MyCompiler
         {
             var llvmCtx = _module.Context;
             _printfType = LLVMTypeRef.CreateFunction(
-                  llvmCtx.Int32Type,
-                new[] { LLVMTypeRef.CreatePointer(llvmCtx.DoubleType, 0) }, // should this be a double?
-                true); // varargs
+                llvmCtx.Int32Type,
+                new[] { LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0) },
+                true);
 
             _printf = _module.AddFunction("printf", _printfType);
         }
@@ -569,6 +569,14 @@ namespace MyCompiler
                 Console.WriteLine($"\ncompiler list: \n{string.Join(", ", compilerTestList)}");
                 Console.WriteLine($"\nIR list: \n{string.Join(", ", IRTestList)}");
                 Console.WriteLine($"\nRuntime list: \n{string.Join(", ", RuntimeTestList)}");
+            }
+
+
+            // --- FIX: Protect against Null Reference Exceptions when bounds checks fail ---
+            if (tempResult == IntPtr.Zero)
+            {
+                Console.WriteLine("Execution halted due to a runtime error.");
+                return null;
             }
 
             RuntimeValue result = Marshal.PtrToStructure<RuntimeValue>(tempResult);
@@ -2443,13 +2451,21 @@ namespace MyCompiler
         //
         // retun x_age[]
 
+        // Keep a counter to ensure fully unique variable naming across multiple filters
+        private static int _whereCounter = 0;
+
         public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         {
             var dfType = (DataframeType)sourceType;
 
-            var srcVarName = "__where_src";
-            var resultVarName = "__where_result";
-            var iVarName = "__where_i";
+            // 1. Generate unique variable names per invocation to completely isolate scope and types
+            int id = _whereCounter++;
+            var srcVarName = $"__where_src_{id}";
+            var maskVarName = $"__where_mask_{id}";
+            var resultVarName = $"__where_result_{id}";
+            var iVarName = $"__where_i_{id}";
+            var maskCountName = $"__mask_count_{id}";
+            var resIVarName = $"__where_res_i_{id}";
 
             var srcAssign = new AssignNode(srcVarName, expr.SourceExpr);
 
@@ -2459,42 +2475,111 @@ namespace MyCompiler
 
             var schema = new RecordNode(fields);
 
-            // Phase 1: mask
+            // Allocate mask array
+            var maskAlloc = new AssignNode(maskVarName, new ArrayNode(new List<ExpressionNode>(), new TypeNode("bool")));
 
+            var settingLenForArray = new LengthNode(new IdNode(maskVarName), new LengthNode(new IdNode(srcVarName)));
 
-            var maskNode = new ArrayNode(new List<ExpressionNode>(), new TypeNode("bool"));
-            var settingCapForArray = new CapacityNode(maskNode, new NumberNode(0));
-            System.Console.WriteLine("we in where1.5");
-            maskNode.SetType(new ArrayType(new BoolType()));
+            // Reconstruct current row record
+            var rowFields = new List<FieldNode>();
+            for (int i = 0; i < dfType.ColumnNames.Count; i++)
+            {
+                var colAccess = new FieldNode(new IdNode(srcVarName), dfType.ColumnNames[i]);
+                var colIndex = new IndexNode(colAccess, new IdNode(iVarName));
+                rowFields.Add(new FieldNode(colIndex, dfType.ColumnNames[i]));
+            }
+            var currentRowRecord = new RecordNode(rowFields);
+            var assignX = new AssignNode("x", currentRowRecord);
 
-
-            //var rowRecord = new RecordNode(rowFields);
+            // Phase 1: Populate mask
             var indexInit = new AssignNode(iVarName, new NumberNode(0));
-            var cond = new ComparisonNode(new IdNode(iVarName), "<", new LengthNode(new IdNode(srcVarName)));
-            var step = new IncrementNode(new IdNode(iVarName));
+            var loopBody = new SequenceNode();
+            loopBody.Nodes.Add(assignX);
+            loopBody.Nodes.Add(new IndexAssignNode(new IdNode(maskVarName), new IdNode(iVarName), expr.Condition));
 
-            // for(i=0; i< len(src); i++) {
-            var ifBody = new IndexAssignNode(maskNode, new IdNode(iVarName), expr.Condition);
-            var loop = new ForLoopNode(indexInit, cond, step, ifBody);
+            // Use fresh node instances for Loop 1 to prevent control-flow corruption
+            var cond1 = new ComparisonNode(new IdNode(iVarName), "<", new LengthNode(new IdNode(srcVarName)));
+            var step1 = new IncrementNode(new IdNode(iVarName));
+            var loop = new ForLoopNode(indexInit, cond1, step1, loopBody);
 
-
-            var maskVarName = "__mask";
-            var maskCountName = "__mask_count";
-            var indexInit2 = new AssignNode(maskVarName, new NumberNode(0));
+            // Phase 2: Count matches
+            var indexInit2 = new AssignNode(iVarName, new NumberNode(0));
             var mask_count = new AssignNode(maskCountName, new NumberNode(0));
             var ifBody2 = new IncrementNode(new IdNode(maskCountName));
-            var ifMask = new IfNode(new IndexNode(maskNode, new IdNode(maskVarName)), ifBody2);
-            var loop_for_count = new ForLoopNode(indexInit2, cond, step, ifMask);
+            var ifMask = new IfNode(new IndexNode(new IdNode(maskVarName), new IdNode(iVarName)), ifBody2);
 
+            // Use fresh node instances for Loop 2
+            var cond2 = new ComparisonNode(new IdNode(iVarName), "<", new LengthNode(new IdNode(srcVarName)));
+            var step2 = new IncrementNode(new IdNode(iVarName));
+            var loop_for_count = new ForLoopNode(indexInit2, cond2, step2, ifMask);
 
-            // phase 2
-
-            var resultDf = new DataframeNode(new List<NamedArgumentNode>
-            { new NamedArgumentNode("schema", schema), new NamedArgumentNode("capacity", new IdNode(maskCountName)) });
+            // Allocate destination dataframe
+            var resultDf = new DataframeNode(new List<NamedArgumentNode> {
+                new NamedArgumentNode("schema", schema),
+                new NamedArgumentNode("capacity", new IdNode(maskCountName))
+            });
             var resultAssign = new AssignNode(resultVarName, resultDf);
 
-            return new SequenceNode { Nodes = { srcAssign, settingCapForArray, loop, mask_count, loop_for_count, resultAssign } };
+            var setDfLength = new LengthNode(new IdNode(resultVarName), new IdNode(maskCountName));
+
+            var setColLengths = new List<Node>();
+            for (int i = 0; i < dfType.ColumnNames.Count; i++)
+            {
+                var colAccess = new FieldNode(new IdNode(resultVarName), dfType.ColumnNames[i]);
+                var setColLen = new LengthNode(colAccess, new IdNode(maskCountName));
+                setColLengths.Add(setColLen);
+            }
+
+            // Phase 3 - Actually copy data for matching indices
+            var indexInit3 = new AssignNode(iVarName, new NumberNode(0));
+            var resIndexInit = new AssignNode(resIVarName, new NumberNode(0));
+
+            var copyNodes = new List<Node>();
+            for (int i = 0; i < dfType.ColumnNames.Count; i++)
+            {
+                var srcCol = new FieldNode(new IdNode(srcVarName), dfType.ColumnNames[i]);
+                var srcVal = new IndexNode(srcCol, new IdNode(iVarName));
+                var destCol = new FieldNode(new IdNode(resultVarName), dfType.ColumnNames[i]);
+                var copyAssign = new IndexAssignNode(destCol, new IdNode(resIVarName), srcVal);
+                copyNodes.Add(copyAssign);
+            }
+
+            copyNodes.Add(new IncrementNode(new IdNode(resIVarName)));
+
+            var copyBody = new SequenceNode();
+            copyBody.Nodes.AddRange(copyNodes);
+
+            var ifMaskCopy = new IfNode(new IndexNode(new IdNode(maskVarName), new IdNode(iVarName)), copyBody);
+
+            // Use fresh node instances for Loop 3
+            var cond3 = new ComparisonNode(new IdNode(iVarName), "<", new LengthNode(new IdNode(srcVarName)));
+            var step3 = new IncrementNode(new IdNode(iVarName));
+            var loop_copy = new ForLoopNode(indexInit3, cond3, step3, ifMaskCopy);
+
+            // --- Combine all nodes into the final ordered execution sequence ---
+            var finalNodes = new List<Node>
+            {
+                srcAssign,
+                maskAlloc,
+                settingLenForArray,
+                loop,
+                mask_count,
+                loop_for_count,
+                resultAssign,
+                setDfLength
+            };
+
+            finalNodes.AddRange(setColLengths);
+            finalNodes.Add(resIndexInit);
+            finalNodes.Add(loop_copy);
+            finalNodes.Add(new IdNode(resultVarName));
+
+            var finalSequence = new SequenceNode();
+            finalSequence.Nodes.AddRange(finalNodes);
+            return finalSequence;
         }
+
+
 
         public LLVMValueRef SetCapacity(LLVMValueRef df, LLVMValueRef newCapacity)
         {
@@ -2528,10 +2613,14 @@ namespace MyCompiler
                     "cols_raw");
 
             var colPtrType =
-                LLVMTypeRef.CreatePointer(_arrayStruct, 0);
+                LLVMTypeRef.CreatePointer(_arrayStruct, 0); // ArrayObject*
+
+            // --- FIX 2: Correctly type columns array to ArrayObject** ---
+            var colPtrPtrType =
+                LLVMTypeRef.CreatePointer(colPtrType, 0);   // ArrayObject**
 
             var columns =
-                _builder.BuildBitCast(colsRaw, colPtrType, "columns");
+                _builder.BuildBitCast(colsRaw, colPtrPtrType, "columns");
 
             // ============================================================
             // 3. columnCount = colsArray.length
@@ -2549,6 +2638,8 @@ namespace MyCompiler
             var bodyBB = ctx.AppendBasicBlock(function, "body");
             var exitBB = ctx.AppendBasicBlock(function, "exit");
 
+            // --- FIX 1: Safely track the block we are branching FROM ---
+            var preLoopBB = _builder.InsertBlock;
             _builder.BuildBr(loopBB);
 
             // ============================================================
@@ -2558,9 +2649,10 @@ namespace MyCompiler
 
             var iPhi = _builder.BuildPhi(i64, "i");
 
+            // Pass preLoopBB instead of function.EntryBasicBlock
             iPhi.AddIncoming(
                 new[] { LLVMValueRef.CreateConstInt(i64, 0, false) },
-                new[] { function.EntryBasicBlock },
+                new[] { preLoopBB },
                 1u
             );
 
@@ -2578,6 +2670,7 @@ namespace MyCompiler
             // ============================================================
             _builder.PositionAtEnd(bodyBB);
 
+            // Element type is ArrayObject* (colPtrType), indexing out of columns (ArrayObject**)
             var colPtrPtr =
                 _builder.BuildGEP2(colPtrType, columns, new[] { iPhi }, "col_ptr_ptr");
 
@@ -2613,6 +2706,7 @@ namespace MyCompiler
             return LLVMValueRef.CreateConstInt(i64, 1, false);
         }
 
+
         private LLVMTypeRef GetArrayPtrType()
         {
             return LLVMTypeRef.CreatePointer(_arrayStruct, 0);
@@ -2640,36 +2734,23 @@ namespace MyCompiler
             var i64 = ctx.Int64Type;
 
             // df.dataPointersData
-            var fieldPtr =
-                _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1, "data_ptrs_ptr");
+            var fieldPtr = _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 1, "data_ptrs_ptr");
 
-            var arrayHeader =
-                _builder.BuildLoad2(
-                    LLVMTypeRef.CreatePointer(_arrayStruct, 0),
-                    fieldPtr,
-                    "cols_array");
+            var arrayHeader = _builder.BuildLoad2(
+                LLVMTypeRef.CreatePointer(_arrayStruct, 0),
+                fieldPtr,
+                "cols_array");
 
             // safety: length > 0
-            var lenPtr =
-                _builder.BuildStructGEP2(_arrayStruct, arrayHeader, 0, "len_ptr");
-
-            var length =
-                _builder.BuildLoad2(i64, lenPtr, "len");
-
+            var lenPtr = _builder.BuildStructGEP2(_arrayStruct, arrayHeader, 0, "len_ptr");
+            var length = _builder.BuildLoad2(i64, lenPtr, "len");
             var zero = LLVMValueRef.CreateConstInt(i64, 0, false);
 
-            var hasColumns =
-                _builder.BuildICmp(
-                    LLVMIntPredicate.LLVMIntUGT,
-                    length,
-                    zero,
-                    "has_columns");
-
+            var hasColumns = _builder.BuildICmp(LLVMIntPredicate.LLVMIntUGT, length, zero, "has_columns");
             var fn = _builder.InsertBlock.Parent;
 
             var okBB = ctx.AppendBasicBlock(fn, "cap_ok");
             var failBB = ctx.AppendBasicBlock(fn, "cap_fail");
-
             _builder.BuildCondBr(hasColumns, okBB, failBB);
 
             // FAIL
@@ -2680,33 +2761,23 @@ namespace MyCompiler
             _builder.PositionAtEnd(okBB);
 
             // columns.data -> ArrayObject**
-            var dataPtr =
-                _builder.BuildStructGEP2(_arrayStruct, arrayHeader, 2, "data_ptr");
+            var dataPtr = _builder.BuildStructGEP2(_arrayStruct, arrayHeader, 2, "data_ptr");
+            var raw = _builder.BuildLoad2(LLVMTypeRef.CreatePointer(ctx.Int8Type, 0), dataPtr, "raw");
 
-            var raw =
-                _builder.BuildLoad2(
-                    LLVMTypeRef.CreatePointer(ctx.Int8Type, 0),
-                    dataPtr,
-                    "raw");
+            // --- FIX APPLIED HERE ---
+            var colPtrType = LLVMTypeRef.CreatePointer(_arrayStruct, 0);       // ArrayObject*
+            var colPtrPtrType = LLVMTypeRef.CreatePointer(colPtrType, 0);     // ArrayObject**
 
-            var colPtrType =
-                LLVMTypeRef.CreatePointer(_arrayStruct, 0);
+            // Cast raw data to ArrayObject**
+            var columns = _builder.BuildBitCast(raw, colPtrPtrType, "columns");
 
-            var columns =
-                _builder.BuildBitCast(raw, colPtrType, "columns");
+            // Index into the pointer array (element type is ArrayObject*)
+            var firstPtr = _builder.BuildGEP2(colPtrType, columns, new[] { zero }, "first_ptr");
+            var firstCol = _builder.BuildLoad2(colPtrType, firstPtr, "first_col");
 
-            // first column = columns[0]
-            var firstPtr =
-                _builder.BuildGEP2(colPtrType, columns,
-                    new[] { zero },
-                    "first_ptr");
-
-            var firstCol =
-                _builder.BuildLoad2(colPtrType, firstPtr, "first_col");
-
-            // return capacity
             return GetArrayCapacity(firstCol);
         }
+
 
         // public SequenceNode WhereForDataframe(Type sourceType, WhereNode expr)
         // {
@@ -4966,30 +5037,48 @@ namespace MyCompiler
 
             return Visit(fullSequence);
         }
-
         public LLVMValueRef VisitLength(LengthNode expr)
         {
             var ctx = _module.Context;
             var sourcePtr = Visit(expr.ArrayExpression); // pointer to array or dataframe
 
+            // 1. Handle GETTER operations
+            if (!expr.IsSetter)
+            {
+                if (expr.ArrayExpression.Type is ArrayType)
+                {
+                    return GetArrayLength(sourcePtr);
+                }
+                else if (expr.ArrayExpression.Type is DataframeType)
+                {
+                    var rowCountPtr = _builder.BuildStructGEP2(_dataframeStruct, sourcePtr, 3, "rowCount_ptr");
+                    var length = _builder.BuildLoad2(ctx.Int64Type, rowCountPtr, "rowCount");
+                    length.SetAlignment(8);
+                    return length;
+                }
+                else
+                    throw new Exception("Length operator is only supported on arrays and dataframes");
+            }
+
+            // 2. Handle SETTER operations
+            var newLengthVal = Visit(expr.NewLength);
+
             if (expr.ArrayExpression.Type is ArrayType)
             {
-                return GetArrayLength(sourcePtr);
+                var lenPtr = _builder.BuildStructGEP2(_arrayStruct, sourcePtr, 0, "len_ptr");
+                _builder.BuildStore(newLengthVal, lenPtr).SetAlignment(8);
+                return newLengthVal;
             }
             else if (expr.ArrayExpression.Type is DataframeType)
             {
-                // Directly access index 3: the i64 rowCount field
                 var rowCountPtr = _builder.BuildStructGEP2(_dataframeStruct, sourcePtr, 3, "rowCount_ptr");
-
-                // Load it as an i64
-                var length = _builder.BuildLoad2(ctx.Int64Type, rowCountPtr, "rowCount");
-                length.SetAlignment(8);
-
-                return length;
+                _builder.BuildStore(newLengthVal, rowCountPtr).SetAlignment(8);
+                return newLengthVal;
             }
-            else
-                throw new Exception("Length operator is only supported on arrays and dataframes");
+
+            throw new Exception("Length SET is only supported on arrays and dataframes");
         }
+
 
         private LLVMValueRef GetArrayDataPtr(LLVMValueRef arrayPtr)
         {
@@ -5426,7 +5515,7 @@ namespace MyCompiler
 
         public LLVMValueRef VisitIndexAssign(IndexAssignNode expr)
         {
-            if (expr.ArrayExpression.Type is ArrayType)
+            if (expr.ArrayExpression.Type is ArrayType arrayType)
             {
                 var ctx = _module.Context;
                 var i64 = ctx.Int64Type;
@@ -5461,26 +5550,29 @@ namespace MyCompiler
                 _builder.PositionAtEnd(failBlock);
                 var errorMsg = _builder.BuildGlobalStringPtr("Runtime Error: Index Out of Bounds!\n", "err_msg");
                 _builder.BuildCall2(_printfType, _printf, new[] { errorMsg }, "print_err");
-                _builder.BuildRet(LLVMValueRef.CreateConstNull(i8Ptr));
+                _builder.BuildRet(LLVMValueRef.CreateConstNull(LLVMTypeRef.CreatePointer(_runtimeValueType, 0)));
 
                 // --- SAFE ---
                 _builder.PositionAtEnd(safeBlock);
 
                 // 4. Stride-Aware Value Preparation
                 var valueToAssign = Visit(expr.AssignExpression);
+                bool isBool = arrayType.ElementType is BoolType;
 
-                // Check if it's a bool array to determine stride and storage type
-                bool isBool = ((ArrayType)expr.ArrayExpression.Type).ElementType is BoolType;
-                var gepType = isBool ? i8 : i8Ptr;
+                // --- FIX: Get the true element type instead of assuming i8Ptr ---
+                var llvmElementType = GetLLVMType(arrayType.ElementType);
 
                 LLVMValueRef finalValueToStore;
-                if (isBool) // Convert i1 to i8 (1 byte)
+                if (isBool)
                     finalValueToStore = _builder.BuildZExt(valueToAssign, i8, "bool_to_i8");
                 else
-                    finalValueToStore = _builder.BuildBitCast(valueToAssign, i8Ptr, "val_to_ptr");
+                    finalValueToStore = valueToAssign; // Direct pass, type already matches!
 
-                // 5. GEP into the separate Data Buffer (No +2 offset)
-                var elementPtr = _builder.BuildGEP2(gepType, dataPtr, new[] { indexVal }, "elem_ptr");
+                // Cast the raw data array pointer (i8*) to the correctly typed pointer (e.g. double* or i64*)
+                var typedDataPtr = _builder.BuildBitCast(dataPtr, LLVMTypeRef.CreatePointer(llvmElementType, 0), "typed_data_ptr");
+
+                // 5. GEP into the properly typed Data Buffer
+                var elementPtr = _builder.BuildGEP2(llvmElementType, typedDataPtr, new[] { indexVal }, "elem_ptr");
 
                 // 6. Store
                 _builder.BuildStore(finalValueToStore, elementPtr);
@@ -5945,15 +6037,7 @@ namespace MyCompiler
                 columnArrays.Add(colArray);
             }
 
-            // foreach (var c in columnArrays)
-            // {
-            //     Console.WriteLine("column array: " + c);
 
-            //     foreach (var e in c.Elements)
-            //     {
-            //         Console.WriteLine("element: " + e);
-            //     }
-            // }
 
             foreach (var col in columnArrays)
             {
