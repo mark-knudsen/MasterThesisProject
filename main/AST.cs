@@ -268,7 +268,9 @@ namespace MyCompiler
     {
         public List<ExpressionNode> Elements { get; }
         public Type ElementType { get; set; }
-        public ulong? Capacity;
+        public ulong? Capacity;              // Keep for literal allocations
+        public ExpressionNode DynamicCapacity { get; set; } // ADD THIS for code-generated bounds
+
         public ArrayNode(List<ExpressionNode> elements, TypeNode typeNode = null)
         {
             Elements = elements;

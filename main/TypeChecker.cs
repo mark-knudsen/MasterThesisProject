@@ -668,6 +668,7 @@ namespace MyCompiler
             };
         }
 
+
         public Type VisitWhere(WhereNode expr)
         {
             // Visit source expression
@@ -680,7 +681,6 @@ namespace MyCompiler
             if (sourceType is ArrayType arrType)
             {
                 ExpressionNode defaultVal = ResolveDataType(arrType.ElementType);
-
                 Visit(new AssignNode(expr.IteratorId.Name, defaultVal));
             }
             else if (sourceType is DataframeType dfType)
@@ -703,25 +703,28 @@ namespace MyCompiler
                 if (dfType.ColumnNames.Count != dfType.ColumnNames.Distinct().Count())
                     throw new Exception("Dataframe has duplicate column names");
 
-                // --- Create empty result dataframe with same schema (no index duplication) ---
+                // --- Create empty result dataframe with same schema ---
                 var resultDf = new DataframeNode(new List<NamedArgumentNode>
-                {
-                    new NamedArgumentNode("columns",
-                        new ArrayNode(dfType.ColumnNames
-                            .Select(n => new StringNode(n) as ExpressionNode)
-                            .ToList())
-                    ),
+        {
+            new NamedArgumentNode("columns",
+                new ArrayNode(dfType.ColumnNames
+                    .Select(n => new StringNode(n) as ExpressionNode)
+                    .ToList())
+            ),
 
-                    new NamedArgumentNode("rows",
-                        new ArrayNode(new List<ExpressionNode>())
-                    ),
+            new NamedArgumentNode("rows",
+                new ArrayNode(new List<ExpressionNode>())
+            ),
 
-                    new NamedArgumentNode("type",
-                        new ArrayNode(dfType.DataTypes
-                            .Select(t => new StringNode(t.ToString()) as ExpressionNode)
-                            .ToList())
-                    )
-                });
+            new NamedArgumentNode("type",
+                new ArrayNode(dfType.DataTypes
+                    .Select(t => new StringNode(t.ToString()) as ExpressionNode)
+                    .ToList())
+            )
+        });
+
+                // --- FIX: Visit the generated node so internal expressions resolve types cleanly ---
+                Visit(resultDf);
             }
 
             var condType = Visit(expr.Condition);
@@ -732,6 +735,7 @@ namespace MyCompiler
             expr.SetType(expr.SourceExpr.Type);
             return expr.Type;
         }
+
 
         public Type VisitMap(MapNode expr)
         {
@@ -1139,6 +1143,12 @@ namespace MyCompiler
             {
                 switch (expr.IdField)
                 {
+                    // --- FIX: Add explicit metadata tracking for native length inquiries ---
+                    case "length":
+                    case "count":
+                        resolvedFieldType = new IntType();
+                        break;
+
                     case "columns":
                         resolvedFieldType = new ArrayType(new StringType());
                         break;
@@ -1172,6 +1182,7 @@ namespace MyCompiler
             expr.SetType(resolvedFieldType);
             return expr.Type;
         }
+
 
         public Type VisitRecordFieldAssign(RecordFieldAssignNode statement)
         {
