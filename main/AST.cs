@@ -360,22 +360,48 @@ namespace MyCompiler
     }
     public class ReadCsvNode : ExpressionNode
     {
-        public ExpressionNode FileNameExpr { get; }
+        public ExpressionNode FileNameExpr { get; set; }
         public NamedArgumentNode SchemaExpr { get; set; }
 
-        public ReadCsvNode(List<Node> args)
+        public ReadCsvNode(List<NamedArgumentNode> args)
         {
-            // Find the actual string literal (e.g., "test.csv")
-            FileNameExpr = args.FirstOrDefault(a => a is StringNode) as ExpressionNode;
-
-            // Find the record/schema ([index: int...])
-            SchemaExpr = args.FirstOrDefault(a => a is NamedArgumentNode) as NamedArgumentNode;
-
-            // If the parser didn't find them by type, fallback to positions
-            if (FileNameExpr == null && args.Count >= 2)
+            // 1. First Pass: Look for explicit parameter names (e.g., path="..." or schema=...)
+            foreach (var arg in args)
             {
-                FileNameExpr = args[1] as ExpressionNode;
-                SchemaExpr = args[0] as NamedArgumentNode;
+                if (arg.Name == "schema")
+                {
+                    SchemaExpr = arg;
+                }
+                else if (arg.Name == "path")
+                {
+                    FileNameExpr = arg.Value;
+                }
+            }
+
+            // 2. Second Pass: Resolve any unnamed arguments (arg.Name == null) by matching their type structures
+            foreach (var arg in args)
+            {
+                if (arg.Name == null)
+                {
+                    // If we haven't found a path yet, and this argument is a string or variable identifier
+                    if (FileNameExpr == null && (arg.Value is StringNode || arg.Value is IdNode))
+                    {
+                        FileNameExpr = arg.Value;
+                    }
+                    // If we haven't found a schema yet, and this argument is a record structure
+                    else if (SchemaExpr == null && (arg.Value is RecordNode || arg.Value is RecordNode))
+                    {
+                        // Wrap it up as a "schema" named argument node for the typechecker
+                        SchemaExpr = new NamedArgumentNode("schema", arg.Value);
+                    }
+                }
+            }
+
+            // 3. Ultimate Fallback: If things are still missing, try a blind positional assignment
+            if (FileNameExpr == null && SchemaExpr == null && args.Count >= 2)
+            {
+                FileNameExpr = args[0].Value;
+                SchemaExpr = args[1].Name == null ? new NamedArgumentNode("schema", args[1].Value) : args[1];
             }
         }
 

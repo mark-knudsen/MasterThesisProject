@@ -171,8 +171,7 @@ expr
     /* Built-ins */
     | RANDOM LPAREN expr_list RPAREN                    { $$ = new RandomNode($3); }
     | ROUND LPAREN expr_list RPAREN                     { $$ = new RoundNode($3); }
-    | READCSV LPAREN expr COMMA dataframe_arg RPAREN       { $$ = new ReadCsvNode(new List<Node>{$3, $5 as NamedArgumentNode}); }
-    | READCSV LPAREN expr RPAREN                        { $$ = new ReadCsvNode(new List<Node>{$3}); }
+    | READCSV LPAREN dataframe_arg_list RPAREN { $$ = new ReadCsvNode($3 as List<NamedArgumentNode>); }
     | TOCSV LPAREN expr COMMA expr RPAREN               { $$ = new ToCsvNode($3, $5); }
     | DATAFRAME LPAREN dataframe_arg_list RPAREN        { $$ = new DataframeNode($3); }
     | record_struct                                     { $$ = $1; }

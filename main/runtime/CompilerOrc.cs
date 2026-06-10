@@ -4713,7 +4713,7 @@ namespace MyCompiler
             var c3 = _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2, "types");
 
             _builder.BuildStore(colNamesArray, c1);
-            _builder.BuildStore(rowsPtr, c2); 
+            _builder.BuildStore(rowsPtr, c2);
             _builder.BuildStore(dataTypesArray, c3);
 
             return dfPtr;
@@ -5402,6 +5402,7 @@ namespace MyCompiler
         # READ CSV:
         df = read_csv([index: int, name: string, age: int, hasJob: bool, savings: float], "CSV/mytest.csv")
         df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv")
+        df = read_csv(path="CSV/test.csv", schema={name:string, age:int, hasJob:bool, savings:float})
 
         # CREATE DATAFRAME:
         df2 = dataframe(schema={name: string, age: int}, rows=[{"Alice", 25},{"Charlie", 22}])

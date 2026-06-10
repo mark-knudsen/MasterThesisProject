@@ -903,17 +903,36 @@ namespace MyCompiler
 
         public Type VisitReadCsv(ReadCsvNode expr)
         {
-            Visit(expr.FileNameExpr);
+            // Validate the path argument first
+            if (expr.FileNameExpr == null)
+                throw new Exception("read_csv missing required path/filename argument.");
 
+            Type pathType = Visit(expr.FileNameExpr);
+            // Assuming your language has a custom Type mapping for strings, adjust name accordingly
+            if (pathType == null || !pathType.ToString().Contains("string"))
+                throw new Exception($"read_csv path argument must resolve to a string, got {pathType}");
+
+            // Handle Schema Auto-inference 
             if (expr.SchemaExpr == null)
             {
-                if (_debug) Console.WriteLine("Inferring schema from CSV file: " + (expr.FileNameExpr as StringNode)?.Value);
-                string path = (expr.FileNameExpr as StringNode).Value;
-                expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
+                if (expr.FileNameExpr is StringNode stringLit)
+                {
+                    if (_debug) Console.WriteLine("Inferring schema from CSV file: " + stringLit.Value);
+                    string path = stringLit.Value;
+                    expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
+                }
+                else
+                {
+                    // If the path is a variable name (IdNode), we can't look it up on disk at compile-time!
+                    throw new Exception("Schema auto-inference requires a direct string literal file path. Please pass an explicit 'schema' argument.");
+                }
             }
             else if (expr.SchemaExpr.Name != null && expr.SchemaExpr.Name != "schema")
-                throw new Exception("read_csv requires a 'schema' named argument");
+            {
+                throw new Exception("read_csv requires a 'schema' named argument for its layout mapping.");
+            }
 
+            // Standard record-to-dataframe validation process
             Type schemaType = Visit(expr.SchemaExpr);
 
             if (schemaType is RecordType recType)
@@ -931,7 +950,7 @@ namespace MyCompiler
                 return expr.Type;
             }
 
-            throw new Exception($"read_csv requires a record template, but got {schemaType?.GetType().Name}");
+            throw new Exception($"read_csv requires a record template configuration, but processed {schemaType?.GetType().Name}");
         }
 
         public Type VisitToCsv(ToCsvNode expr)
