@@ -911,7 +911,7 @@ namespace MyCompiler
                 string path = (expr.FileNameExpr as StringNode).Value;
                 expr.SchemaExpr = new NamedArgumentNode("schema", BuildRecordNodeFromCsv(path));
             }
-            else if (expr.SchemaExpr.Name != "schema")
+            else if (expr.SchemaExpr.Name != null && expr.SchemaExpr.Name != "schema")
                 throw new Exception("read_csv requires a 'schema' named argument");
 
             Type schemaType = Visit(expr.SchemaExpr);

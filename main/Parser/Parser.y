@@ -39,11 +39,11 @@
 %left GT LT GE LE
 %left PLUS MINUS
 %left MULT DIV
-%left DOT
-%left LBRACKET
 
 %nonassoc LOWEST
 %nonassoc UNARY
+%left DOT
+%left LBRACKET
 
 %type <node> prog statement node_list assignment block dataframe_arg record_arg
 %type <expr> expr record_struct type opt_expr 
@@ -171,7 +171,7 @@ expr
     /* Built-ins */
     | RANDOM LPAREN expr_list RPAREN                    { $$ = new RandomNode($3); }
     | ROUND LPAREN expr_list RPAREN                     { $$ = new RoundNode($3); }
-    | READCSV LPAREN expr COMMA record_arg RPAREN       { $$ = new ReadCsvNode(new List<Node>{$3, $5 as NamedArgumentNode}); }
+    | READCSV LPAREN expr COMMA dataframe_arg RPAREN       { $$ = new ReadCsvNode(new List<Node>{$3, $5 as NamedArgumentNode}); }
     | READCSV LPAREN expr RPAREN                        { $$ = new ReadCsvNode(new List<Node>{$3}); }
     | TOCSV LPAREN expr COMMA expr RPAREN               { $$ = new ToCsvNode($3, $5); }
     | DATAFRAME LPAREN dataframe_arg_list RPAREN        { $$ = new DataframeNode($3); }
