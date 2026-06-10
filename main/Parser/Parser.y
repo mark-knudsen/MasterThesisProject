@@ -39,11 +39,11 @@
 %left GT LT GE LE
 %left PLUS MINUS
 %left MULT DIV
+%nonassoc LOWEST
+%nonassoc UNARY
 %left DOT
 %left LBRACKET
 
-%nonassoc LOWEST
-%nonassoc UNARY
 
 %type <node> prog statement node_list assignment block dataframe_arg record_arg
 %type <expr> expr record_struct type opt_expr 
