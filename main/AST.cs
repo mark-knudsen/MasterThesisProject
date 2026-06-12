@@ -46,7 +46,7 @@ namespace MyCompiler
         public List<ExpressionNode> Arguments { get; }
         public ExpressionNode MinValue { get; }
         public ExpressionNode MaxValue { get; }
-        public ExpressionNode Decimals { get; }
+        public ExpressionNode Decimals { get; set; }
         public RandomNode(List<ExpressionNode> args)
         {
             Arguments = args;
@@ -60,8 +60,8 @@ namespace MyCompiler
 
     public class RoundNode : ExpressionNode
     {
-        public ExpressionNode Value { get; }
-        public ExpressionNode Decimals { get; }
+        public ExpressionNode Value { get; set; }
+        public ExpressionNode Decimals { get; set; }
 
         public RoundNode(List<ExpressionNode> args)
         {
@@ -349,10 +349,11 @@ namespace MyCompiler
                         throw new Exception("Map array elements must be identifiers");
                 }
 
-                TransformExpr = new RecordNode(namedArguments);
+                TransformExpr = new RecordNode(namedArguments);   //  { name, age, iscool}
+
             }
             else
-                TransformExpr = transformExpr;
+                TransformExpr = transformExpr;                 //  {name= x.name, age= x.age, iscool= x.iscool}
         }
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor)

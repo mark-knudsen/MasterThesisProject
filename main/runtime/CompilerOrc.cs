@@ -349,6 +349,7 @@ namespace MyCompiler
             DeclareArrayStruct();
             DeclareDataframeStruct();
             SetupCsvFunctions();
+            DeclarePrintf();
         }
         double StopStopWatch(string testName = null)
         {
@@ -587,7 +588,6 @@ namespace MyCompiler
             var prediction = PerformSemanticAnalysis(expr);
 
             CreateMain();
-            DeclarePrintf();
 
             if (_debug) Console.WriteLine("we code gen");
             if (!_stopwatch)
@@ -1537,25 +1537,16 @@ namespace MyCompiler
             return default;
         }
 
-        private LLVMValueRef EnsureFloat(LLVMValueRef value, Type currentType)
-        {
-            if (currentType is FloatType) return value;
-            if (currentType is IntType)
-                return _builder.BuildSIToFP(value, _module.Context.DoubleType, "cast_tmp");
-
-            return value; // Hope for the best, or throw an error
-        }
 
         public LLVMValueRef VisitRound(RoundNode expr)
         {
-            var val = EnsureFloat(Visit(expr.Value), expr.Value.Type);
-            var decimals = EnsureFloat(Visit(expr.Decimals), expr.Decimals.Type);
+            var val = Visit(expr.Value);
+            var decimals = Visit(expr.Decimals);
 
             var doubleType = _module.Context.DoubleType;
             var powType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
             var roundType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
 
-            // FIX: Change GetFunction to GetNamedFunction
             var powFunc = _module.GetNamedFunction("pow");
             if (powFunc.Handle == IntPtr.Zero) // Check if it exists
                 powFunc = _module.AddFunction("pow", powType);
@@ -2071,7 +2062,7 @@ namespace MyCompiler
                 // APPLY DECIMALS IF PRESENT
                 if (expr.Decimals != null)
                 {
-                    var decimals = EnsureFloat(Visit(expr.Decimals), expr.Decimals.Type);
+                    var decimals = Visit(expr.Decimals);
 
                     var powType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType, doubleType });
                     var roundType = LLVMTypeRef.CreateFunction(doubleType, new[] { doubleType });
@@ -2474,6 +2465,8 @@ namespace MyCompiler
             var iVarName = "__map_i";
             var currentRowVarName = "__current_row";
             var dfType = (DataframeType)expr.Type;
+
+            Console.WriteLine("MAP DF RESULT TYPE: " + dfType);
 
             // 1. Assign Source
             program.Nodes.Add(new AssignNode(srcVarName, expr.SourceExpr));
@@ -3330,13 +3323,15 @@ namespace MyCompiler
 
         public TypeLiteralNode GetTypeLiteralNodeFromTypeNode(Type type)
         {
+            Console.WriteLine("Getting type literal node from type: " + type);
+
             return type switch
             {
                 IntType => new TypeLiteralNode(new TypeNode("int")),
                 FloatType => new TypeLiteralNode(new TypeNode("float")),
                 BoolType => new TypeLiteralNode(new TypeNode("bool")),
                 StringType => new TypeLiteralNode(new TypeNode("string")),
-                _ => throw new Exception("Unknown type mapping")
+                _ => throw new Exception("Unknown type mapping, type is: " + type)
             };
         }
 
@@ -4713,7 +4708,7 @@ namespace MyCompiler
             var c3 = _builder.BuildStructGEP2(_dataframeStruct, dfPtr, 2, "types");
 
             _builder.BuildStore(colNamesArray, c1);
-            _builder.BuildStore(rowsPtr, c2); 
+            _builder.BuildStore(rowsPtr, c2);
             _builder.BuildStore(dataTypesArray, c3);
 
             return dfPtr;

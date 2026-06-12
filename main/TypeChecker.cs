@@ -193,6 +193,9 @@ namespace MyCompiler
 
             if (expr.Operator == "+")
             {
+                if (leftType is BoolType || rightType is BoolType)
+                    throw new Exception($"Invalid operands type, cannot concatenate with bool value!");
+
                 // 1. Handle Numeric Addition (allow mixing Int and Float)
                 if (isLeftNum && isRightNum)
                 {
@@ -201,16 +204,14 @@ namespace MyCompiler
                     expr.SetType(resultType);
                     return expr.Type;
                 }
-                // 2. Handle String Concatenation (Updated to allow Mixed Types)
-                if (expr.Operator == "+")
+
+                // If either side is a string, the result is a string
+                if ((leftType is StringType || rightType is StringType))
                 {
-                    // If either side is a string, the result is a string
-                    if (leftType is StringType || rightType is StringType)
-                    {
-                        expr.SetType(new StringType());
-                        return expr.Type;
-                    }
+                    expr.SetType(new StringType());
+                    return expr.Type;
                 }
+
 
                 if (leftType is RecordType l && rightType is RecordType r)
                 {
@@ -433,14 +434,12 @@ namespace MyCompiler
             if (expr.Decimals != null)
             {
                 Type decType = Visit(expr.Decimals);
+                expr.Decimals = InsertCast(expr.Decimals, decType, new FloatType());
+                Visit(expr.Decimals);
 
-                if (!(decType is IntType || decType is FloatType))
-                    throw new Exception("random() decimals must be numeric");
-            }
+                if (decType is not IntType)
+                    throw new Exception("random() decimals must be integer value!");
 
-            // If decimals is present → ALWAYS float
-            if (expr.Decimals != null)
-            {
                 expr.SetType(new FloatType());
             }
             else
@@ -640,8 +639,19 @@ namespace MyCompiler
 
         public Type VisitRound(RoundNode expr)
         {
-            Visit(expr.Value);
+            Type valType = Visit(expr.Value);
             Type decType = Visit(expr.Decimals);
+
+            if (valType is IntType)
+            {
+                expr.Value = InsertCast(expr.Value, new IntType(), new FloatType());
+                Visit(expr.Value);
+            }
+            if (decType is IntType)
+            {
+                expr.Decimals = InsertCast(expr.Decimals, new IntType(), new FloatType());
+                Visit(expr.Decimals);
+            }
 
             if (!(decType is IntType || decType is FloatType))
                 throw new Exception("round() decimals must be numeric");
@@ -751,18 +761,30 @@ namespace MyCompiler
 
             try
             {
-                Type transformType = Visit(expr.TransformExpr);
+                Type transformType = Visit(expr.TransformExpr);   // {name, age,...}  {name = x.name, age = x.age,...} 
+                Console.WriteLine("1) transformType: " + transformType);
                 expr.TransformExpr.SetType(transformType);
+
 
                 // Record => Dataframe
                 if (transformType is RecordType rec)
                 {
+
+                    Console.WriteLine("Record fields:");
+
+                    foreach (var f in rec.RecordFields)
+                    {
+                        Console.WriteLine($"  Label={f.Label}");
+                        Console.WriteLine($"  Type ={f.Type}");
+                        Console.WriteLine($"  Value.Type={f.Value?.Type}");
+                    }
+
                     var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
                         rec.RecordFields.Select(f => f.Type).ToList(),
                         rec
                     );
-
+                    Console.WriteLine("2) resultType: " + resultType);
                     expr.SetType(resultType);
                     return resultType;
                 }
