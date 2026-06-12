@@ -343,7 +343,15 @@ namespace MyCompiler
                 {
                     if (arr is IdNode strNode)
                     {
-                        namedArguments.Add(new FieldNode(iteratorId, strNode.Name));
+                        namedArguments.Add(new FieldNode(
+                            new FieldNode(iteratorId, strNode.Name),
+                            strNode.Name));
+                        /* OLD way before changing to fieldnode!  
+                            namedArguments.Add(new NamedArgumentNode(
+                                strNode.Name,
+                                new FieldNode(iteratorId, strNode.Name)
+                            )); 
+                        */
                     }
                     else
                         throw new Exception("Map array elements must be identifiers");

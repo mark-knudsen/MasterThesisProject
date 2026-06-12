@@ -3,8 +3,8 @@
 // (see accompanying GPPGcopyright.rtf)
 
 // GPPG version 1.5.3
-// DateTime: 12-06-2026 14:51:46
-// Input file <Parser/Parser.y - 12-06-2026 14:51:17>
+// DateTime: 12-06-2026 15:33:33
+// Input file <Parser/Parser.y - 12-06-2026 15:04:18>
 
 // options: conflicts lines gplex conflicts
 
@@ -44,7 +44,7 @@ internal struct ValueType
     public List<ExpressionNode> idList;
     public List<ExpressionNode> exprList;
     public List<NamedArgumentNode> dataframeArgList;
-    public List<NamedArgumentNode> recordArgList; 
+    public List<FieldNode> recordArgList; 
 }
 #line default
 // Abstract base class for GPLEX scanners
@@ -69,11 +69,11 @@ internal class ScanObj {
 [GeneratedCodeAttribute( "Gardens Point Parser Generator", "1.5.3")]
 internal class Parser: ShiftReduceParser<ValueType, LexLocation>
 {
-  // Verbatim content from Parser/Parser.y - 12-06-2026 14:51:17
+  // Verbatim content from Parser/Parser.y - 12-06-2026 15:04:18
 #line 57 "Parser/Parser.y"
     public MyCompiler.Node RootNode;
 #line default
-  // End verbatim content from Parser/Parser.y - 12-06-2026 14:51:17
+  // End verbatim content from Parser/Parser.y - 12-06-2026 15:04:18
 
 #pragma warning disable 649
   private static Dictionary<int, string> aliases;
@@ -944,27 +944,27 @@ internal class Parser: ShiftReduceParser<ValueType, LexLocation>
         break;
       case 95: // record_arg_list -> record_arg
 #line 254 "Parser/Parser.y"
-                                         { CurrentSemanticValue.recordArgList = new List<NamedArgumentNode> { ValueStack[ValueStack.Depth-1].node as NamedArgumentNode }; }
+                                         { CurrentSemanticValue.recordArgList = new List<FieldNode> { ValueStack[ValueStack.Depth-1].node as FieldNode }; }
 #line default
         break;
       case 96: // record_arg_list -> record_arg_list, COMMA, record_arg
 #line 255 "Parser/Parser.y"
-                                         { ValueStack[ValueStack.Depth-3].recordArgList.Add(ValueStack[ValueStack.Depth-1].node as NamedArgumentNode); CurrentSemanticValue.recordArgList = ValueStack[ValueStack.Depth-3].recordArgList; }
+                                         { ValueStack[ValueStack.Depth-3].recordArgList.Add(ValueStack[ValueStack.Depth-1].node as FieldNode); CurrentSemanticValue.recordArgList = ValueStack[ValueStack.Depth-3].recordArgList; }
 #line default
         break;
       case 97: // record_arg -> ID, ASSIGN, expr
 #line 259 "Parser/Parser.y"
-                             { CurrentSemanticValue.node = new NamedArgumentNode(ValueStack[ValueStack.Depth-3].strval, ValueStack[ValueStack.Depth-1].expr); }
+                             { CurrentSemanticValue.node = new FieldNode(ValueStack[ValueStack.Depth-1].expr, ValueStack[ValueStack.Depth-3].strval); }
 #line default
         break;
       case 98: // record_arg -> ID, COLON, type
 #line 260 "Parser/Parser.y"
-                             { CurrentSemanticValue.node = new NamedArgumentNode(ValueStack[ValueStack.Depth-3].strval, new TypeLiteralNode(ValueStack[ValueStack.Depth-1].expr as TypeNode)); }
+                             { CurrentSemanticValue.node = new FieldNode(new TypeLiteralNode(ValueStack[ValueStack.Depth-1].expr as TypeNode), ValueStack[ValueStack.Depth-3].strval); }
 #line default
         break;
       case 99: // record_arg -> expr
 #line 261 "Parser/Parser.y"
-                             { CurrentSemanticValue.node = new NamedArgumentNode(null, ValueStack[ValueStack.Depth-1].expr); }
+                             { CurrentSemanticValue.node = new FieldNode(ValueStack[ValueStack.Depth-1].expr, null); }
 #line default
         break;
       case 100: // opt_expr -> /* empty */
