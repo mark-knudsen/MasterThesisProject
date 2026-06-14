@@ -89,7 +89,7 @@ statement
     | IF LPAREN expr RPAREN block %prec IF      { $$ = new IfNode($3, $5); }  
     | IF LPAREN expr RPAREN block ELSE block    { $$ = new IfNode($3, $5, $7); }
     | PRINT LPAREN expr RPAREN                  { $$ = new PrintNode($3); }
-    | FOR LPAREN assignment SEMICOLON expr SEMICOLON assignment RPAREN opt_newlines block
+    | FOR LPAREN assignment COMMA expr COMMA assignment RPAREN opt_newlines block  /* NOTE: Maybe change SEMICOLON to COMMA! */
     {
         $$ = new ForLoopNode($3 as StatementNode, $5, $7 as StatementNode, $10);
     }        
@@ -169,12 +169,12 @@ expr
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET    { $$ = new SliceNode($1, $3, $5); }
 
     /* Built-ins */
-    | RANDOM LPAREN expr_list RPAREN                    { $$ = new RandomNode($3); }
-    | ROUND LPAREN expr_list RPAREN                     { $$ = new RoundNode($3); }
-    | READCSV LPAREN dataframe_arg_list RPAREN { $$ = new ReadCsvNode($3 as List<NamedArgumentNode>); }
-    | TOCSV LPAREN expr COMMA expr RPAREN               { $$ = new ToCsvNode($3, $5); }
-    | DATAFRAME LPAREN dataframe_arg_list RPAREN        { $$ = new DataframeNode($3); }
-    | record_struct                                     { $$ = $1; }
+    | RANDOM LPAREN expr_list RPAREN                { $$ = new RandomNode($3); }
+    | ROUND LPAREN expr_list RPAREN                 { $$ = new RoundNode($3); }
+    | READCSV LPAREN dataframe_arg_list RPAREN      { $$ = new ReadCsvNode($3 as List<NamedArgumentNode>); }
+    | TOCSV LPAREN expr COMMA dataframe_arg RPAREN           { $$ = new ToCsvNode($3, $5 as ExpressionNode); }
+    | DATAFRAME LPAREN dataframe_arg_list RPAREN    { $$ = new DataframeNode($3); }
+    | record_struct                                 { $$ = $1; }
     
     /* Math & Logic */
     | SQRT LPAREN expr RPAREN               { $$ = new SqrtNode($3); }

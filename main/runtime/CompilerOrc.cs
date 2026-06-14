@@ -5433,6 +5433,9 @@ namespace MyCompiler
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
         for(i=0; i<49; i++) { df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)}) }
 
+        # TEST: round
+        round(df.map(x => x.latitude - 100.0).mean + 100, 1)
+
         # TEST: WHERE
         df.where(x => x.latitude > -18.0)
         df.where(x => x.latitude > -18.0).where(x => x.longitude < -69.0)
