@@ -5406,31 +5406,27 @@ namespace MyCompiler
         to_csv(df, "CSV/mytest.csv")
 
         # RECORDS:
-        r = record({name: "Harry Potter", age: 9786, isCool: true, rating: 10.5585})        
-        r = {name: "Harry Potter", age: 9786, isCool: true, rating: 10.5585}
+        r = record({name= "Harry Potter", age= 9786, isCool= true, rating= 10.5585})        
+        r = {name = "Harry Potter", age = 9786, isCool = true, rating = 10.5585}
         r1 = {name = "Harry", age = 12} + {hasJob= true}
         r2 = {name = "Barry", age = 14, hasJob = true}
         r3 = {name = "Lars", age = 44, hasJob = false}
         arr = [{name = "Barry", age = 14, hasJob = false},{name = "Lars", age = 44, hasJob = true}]
         arr = [r2,r3]
 
-        # SELELT COLUMNS:
+        # SELECT COLUMNS:
         df.select(latitude, longitude)
+        df.select(date, latitude, longitude)
 
         # FOR EACH LOOP:
         foreach(item in df) { item.age = item.age + 10 }
 
         # FOR LOOP:
-        for(i=0; i < 500000; i++) { x.add({name: "Hary potter", age: 10 + random(1,100)}) }
-        for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
-        for(i=0; i < 500; i++) df.add({ date: "2023-01-01", latitude: -18.0, longitude:  fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })
-
-        # MIX:
-        df = dataframe(schema={date: string, latitude: float, longitude: float, wind-speed-min: float, wind-speed-max: float, wind-speed-mean: float, wind-direction-min: float, wind-direction-max: float, wind-direction-mean: float, surface-air-temperature-min: float, surface-air-temperature-max: float, surface-air-temperature-mean: float, total-rainfall-sum: float, surface-humidity-min: float, surface-humidity-max: float, surface-humidity-mean: float, ndvi: float, elevation: float, slope: float, aspect: float, fire_label: int, land_cover_class_1: bool, land_cover_class_2: bool, land_cover_class_4: bool, land_cover_class_5: bool, land_cover_class_6: bool, land_cover_class_7: bool, land_cover_class_8: bool, land_cover_class_9: bool, land_cover_class_10: bool, land_cover_class_11: bool, land_cover_class_12: bool, land_cover_class_13: bool, land_cover_class_14: bool, land_cover_class_15: bool, land_cover_class_16: bool, land_cover_class_17: bool})
-        for(i=0; i < 100; i++) { df.add({ date: "2023-01-01", latitude: -18.0, longitude: -69.38, wind-speed-min: 1.59, wind-speed-max: 6.47, wind-speed-mean: 3.73, wind-direction-min: 20.86, wind-direction-max: 299.09, wind-direction-mean: 135.45, surface-air-temperature-min: 275.79, surface-air-temperature-max: 284.51, surface-air-temperature-mean: 279.01, total-rainfall-sum: 0.01, surface-humidity-min: 0.01, surface-humidity-max: 0.01, surface-humidity-mean: 0.01, ndvi: 0.15, elevation: 4578.83, slope: 90, aspect: 10.15, fire_label: 1, land_cover_class_1: false, land_cover_class_2: false, land_cover_class_4: false, land_cover_class_5: false, land_cover_class_6: false, land_cover_class_7: false, land_cover_class_8: false, land_cover_class_9: false, land_cover_class_10: false, land_cover_class_11: false, land_cover_class_12: false, land_cover_class_13: false, land_cover_class_14: false, land_cover_class_15: false, land_cover_class_16: true, land_cover_class_17: false })}
+        for(i=0; i < 500000; i++) { df.add({name= "Hary potter", age= 10 + random(1,100)}) }
+        for(i=0; i < 500; i++) df.add({ date= "2023-01-01", latitude= -18.0, longitude= -69.38, wind-speed-min= 1.59, wind-speed-max= 6.47, wind-speed-mean= 3.73, wind-direction-min= 20.86, wind-direction-max= 299.09, wind-direction-mean= 135.45, surface-air-temperature-min= 275.79, surface-air-temperature-max= 284.51, surface-air-temperature-mean= 279.01, total-rainfall-sum= 0.01, surface-humidity-min= 0.01, surface-humidity-max= 0.01, surface-humidity-mean= 0.01, ndvi= 0.15, elevation= 4578.83, slope= 90, aspect= 10.15, fire_label= 1, land_cover_class_1= false, land_cover_class_2= false, land_cover_class_4= false, land_cover_class_5= false, land_cover_class_6= false, land_cover_class_7= false, land_cover_class_8= false, land_cover_class_9= false, land_cover_class_10= false, land_cover_class_11= false, land_cover_class_12= false, land_cover_class_13= false, land_cover_class_14= false, land_cover_class_15= false, land_cover_class_16= true, land_cover_class_17= false })
         x.where(d=> d.age > 50)
         arrname = ["Harry", "Barry", "Mary", "Larry", "Carrie", "Terry", "Sherry", "Perry", "Garry", "Berry", "Narry", "Kerry", "Jerry", "Merry", "Larry", "Carry", "Tarry", "Sherry", "Perry", "Garry",]
-        for(i=0; i<49; i++) { df2.add({name: arrname[random(0, arrname.length)], age: random(10,99)}) }
+        for(i=0; i<49; i++) { df2.add({name= arrname[random(0, arrname.length)], age= random(10,99)}) }
 
         # TEST: WHERE
         df.where(x => x.latitude > -18.0)
@@ -5465,14 +5461,27 @@ namespace MyCompiler
         df.latitude.corr(df.wind-speed-max)
 
 
-        compiler list:
-        16.6333, 0.9592, 0.5678, 0.5073, 4.9772, 6.3993, 0.5997, 1.033, 0.5602
+        # CORR
+        mx = df["latitude"].mean
+        my = df["elevation"].mean
 
-        IR list:
-        12.6831, 11.2088, 6.7141, 7.0108, 10.1785, 14.9467, 19.4002, 13.9254, 9.777
 
-        Runtime list:
-        107.503, 108.0411, 60.8264, 59.0818, 64.1876, 1033.8113, 880.304, 1015.3324, 916.654
+        components = df.map(r => {
+            dx: r.latitude - mx,
+            dy: r.elevation - my,
+            dx2: (r.latitude - mx) * (r.latitude - mx),
+            dy2: (r.elevation - my) * (r.elevation - my),
+            prod: (r.latitude - mx) * (r.elevation - my)
+        })
+
+        numerator = components.map(x => x.prod).sum
+        sum_dx2 = components.map(x => x.dx2).sum
+        sum_dy2 = components.map(x => x.dy2).sum
+
+
+        correlation = numerator / sqrt(sum_dx2 * sum_dy2)
+
+        print(correlation)
 
 */
 
@@ -5508,28 +5517,6 @@ namespace MyCompiler
                     b) Two where's with one condition each: around 0.254 seconds -  [0.234 , 0.170, 0.130, 0.188, 0.121, 0.202, 0.160, 0.187, 0.177, 0.301 ] avg 0.187 seconds
                     C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
 
-
-
-mx = df["latitude"].mean
-my = df["elevation"].mean
-
-
-components = df.map(r => {
-    dx: r.latitude - mx,
-    dy: r.elevation - my,
-    dx2: (r.latitude - mx) * (r.latitude - mx),
-    dy2: (r.elevation - my) * (r.elevation - my),
-    prod: (r.latitude - mx) * (r.elevation - my)
-})
-
-numerator = components.map(x => x.prod).sum
-sum_dx2 = components.map(x => x.dx2).sum
-sum_dy2 = components.map(x => x.dy2).sum
-
-
-correlation = numerator / sqrt(sum_dx2 * sum_dy2)
-
-print(correlation)
 
         */
     }
