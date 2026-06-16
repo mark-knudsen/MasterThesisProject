@@ -337,7 +337,7 @@ namespace MyCompiler
 
             // Helper to check if a type is numeric (Int or Float)
             if (leftType is not BoolType || rightType is not BoolType)
-                throw new Exception($"Invalid operands type {leftType} and {rightType}");
+                throw new Exception($"Both operands must be booleans for logical AND/OR. Left type is {leftType} and right type is {rightType}.");
 
             if (expr.Operator is "&&" or "||")
             {
@@ -488,8 +488,8 @@ namespace MyCompiler
             if (condType is not BoolType && condType is not FloatType)
                 throw new Exception("For loop condition must be Bool or Number");
 
-            if (statement.Step is not IncrementNode && statement.Step is not DecrementNode)
-                throw new Exception("For loop step must be increament or decrement");
+            // if (statement.Step is not IncrementNode && statement.Step is not DecrementNode)
+            //     throw new Exception("For loop step must be increament or decrement");
 
             Visit(statement.Step);
             Visit(statement.Body);

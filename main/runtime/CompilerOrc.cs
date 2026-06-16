@@ -608,8 +608,8 @@ namespace MyCompiler
             var boxedPtr = BoxValue(resultValue, prediction);
             _builder.BuildRet(boxedPtr);
 
-            if (_debug) DumpIR(_module);
 
+            if (_debug) DumpIR(_module);
             // 5 Wrap in ThreadSafeModule
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
@@ -625,6 +625,7 @@ namespace MyCompiler
             var fnPtr = (IntPtr)addr; // the integration test fails here for some reason
             var delegateResult = Marshal.GetDelegateForFunctionPointer<MainDelegate>(fnPtr);
             if (_stopwatch) IRTestList.Add(StopStopWatch("Ran IR codegen"));
+
 
             if (_stopwatch) StartStopWatch();
             var tempResult = delegateResult();
@@ -870,10 +871,10 @@ namespace MyCompiler
             // 2. Get Tags (Optimized to read only what we need)
             var dataTypeHeader = Marshal.PtrToStructure<ArrayObject>(dfObj.dataTypes);
             List<Int16> colTags = new List<Int16>();
-            for (long i = 0; i < dataTypeHeader.length; i++)
+            for (int i = 0; i < dataTypeHeader.length; i++)
             {
                 // tags are stored as i64 in your memory layout, so we add i * 8
-                colTags.Add(Marshal.ReadInt16(IntPtr.Add(dataTypeHeader.data, (int)(i * 8))));
+                colTags.Add(Marshal.ReadInt16(IntPtr.Add(dataTypeHeader.data, i * 8)));
             }
 
             // 3. Optimized Row Extraction
@@ -1200,6 +1201,17 @@ namespace MyCompiler
 
             return null;
         }
+
+        private LLVMValueRef Visit(Node expr)
+        {
+            if (_debug)
+            {
+                var name = expr.GetType().Name;
+                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
+            }
+            return expr.Accept(this);
+        }
+
         public LLVMValueRef VisitForLoop(ForLoopNode expr)
         {
             var ctx = _module.Context;
@@ -1221,16 +1233,10 @@ namespace MyCompiler
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-            if (condition.TypeOf == ctx.DoubleType)
-            {
-                condition = _builder.BuildFCmp(LLVMRealPredicate.LLVMRealONE,
-                    condition, LLVMValueRef.CreateConstReal(ctx.DoubleType, 0.0), "fortest_dbl");
-            }
-            else if (condition.TypeOf != ctx.Int8Type) // If it's not already i8, treat it as an integer condition NOTE
-            {
-                condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
-                    condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
-            }
+
+            condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
+                condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
+
 
             _builder.BuildCondBr(condition, bodyBlock, endBlock);
 
@@ -1286,28 +1292,6 @@ namespace MyCompiler
             // original body
             bodySeq.Nodes.Add(expr.Body);
 
-            // decide if we need write-back
-            Type elementType = new NullType();
-            if (expr.Source.Type is DataframeType df) elementType = df.RowType;
-            else if (expr.Source.Type is ArrayType arr) elementType = arr.ElementType;
-
-            bool needsWriteBack =
-                elementType is IntType ||
-                elementType is FloatType ||
-                elementType is BoolType;
-
-            if (needsWriteBack)
-            {
-                // xs[i] = row
-                var writeBack = new IndexAssignNode(
-                    expr.Source,
-                    iVar,
-                    new IdNode(expr.Iterator.Name)
-                );
-
-                bodySeq.Nodes.Add(writeBack);
-            }
-
             var lowered = new ForLoopNode(init, cond, step, bodySeq);
 
             PerformSemanticAnalysis(lowered);
@@ -1327,14 +1311,11 @@ namespace MyCompiler
             // If it's not in the current module, declare it as extern (same as your VisitAssign logic)
             if (variablePtr.Handle == IntPtr.Zero)
             {
-                if (_definedGlobals.Contains(varName))
-                {
-                    variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
-                    variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                    variablePtr.SetAlignment(8);
-                }
-                else
-                    throw new Exception($"Variable {varName} not defined.");
+
+                variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
+                variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                variablePtr.SetAlignment(8);
+
             }
 
             // 2. LOAD the current value manually using the pointer
@@ -1366,14 +1347,9 @@ namespace MyCompiler
             // If it's not in the current module, declare it as extern (same as your VisitAssign logic)
             if (variablePtr.Handle == IntPtr.Zero)
             {
-                if (_definedGlobals.Contains(varName))
-                {
-                    variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
-                    variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
-                    variablePtr.SetAlignment(8);
-                }
-                else
-                    throw new Exception($"Variable {varName} not defined.");
+                variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
+                variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
+                variablePtr.SetAlignment(8);
             }
 
             // 2. LOAD the current value manually using the pointer
@@ -1410,10 +1386,6 @@ namespace MyCompiler
             // Case 1: logical AND (&&) or logical OR (||) - only valid if both operands are boolean
             if (expr.Operator == "&&" || expr.Operator == "||")
             {
-                if (!(lhsIsBool && rhsIsBool))
-                {
-                    throw new Exception("Both operands must be booleans for logical AND/OR.");
-                }
 
                 // Handle logical AND (&&)
                 if (expr.Operator == "&&")
@@ -1475,14 +1447,10 @@ namespace MyCompiler
                     strcmpFunc = _module.AddFunction("strcmp", strcmpType);
                 }
 
-                // 2. Ensure we are passing the data, not the address of the variable
-                // If 'left' is a local variable from BuildAlloca, you MUST load it:
-                // var leftPtr = _builder.BuildLoad2(i8Ptr, left, "left_val");
-
-                // 3. Call strcmp - Note the use of strcmpType (the Function Type)
+                // 2. Call strcmp - Note the use of strcmpType (the Function Type)
                 var strcmpResult = _builder.BuildCall2(strcmpType, strcmpFunc, new[] { leftPtr, rightPtr }, "strcmp_res");
 
-                // 4. Compare against 0
+                // 3. Compare against 0
                 var zero = LLVMValueRef.CreateConstInt(_module.Context.Int32Type, 0);
 
                 return expr.Operator switch
@@ -1493,7 +1461,7 @@ namespace MyCompiler
                 };
             }
 
-            // Case 5: both are doubles → FCmp
+            // Case 4: both are doubles → FCmp
             return expr.Operator switch
             {
                 "<" => _builder.BuildFCmp(LLVMRealPredicate.LLVMRealOLT, leftPtr, rightPtr, "fcmp_tmp"),
@@ -1505,7 +1473,7 @@ namespace MyCompiler
                 _ => throw new Exception("Unknown operator")
             };
         }
-
+    
         public LLVMValueRef VisitIf(IfNode node)
         {
             var condValue = Visit(node.Condition);
@@ -4426,15 +4394,7 @@ namespace MyCompiler
             return last;
         }
 
-        private LLVMValueRef Visit(Node expr)
-        {
-            if (_debug)
-            {
-                var name = expr.GetType().Name;
-                Console.WriteLine("visiting: " + name.Substring(0, name.Length - 4));
-            }
-            return expr.Accept(this);
-        }
+
 
         public LLVMValueRef VisitUnaryOp(UnaryOpNode expr)
         {
