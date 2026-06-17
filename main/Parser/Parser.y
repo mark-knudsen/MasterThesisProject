@@ -50,7 +50,6 @@
 %type <dataframeArgList> dataframe_arg_list
 %type <recordArgList> record_arg_list
 
-
 %{
     public MyCompiler.Node RootNode;
 %}
@@ -161,9 +160,9 @@ expr
     | NULL_LITERAL                  { $$ = new NullNode(); }   /* We currently do not use NULL_LITERAL! */
     | ID                            { $$ = new IdNode($1); }
 
-    | LPAREN expr RPAREN            { $$ = $2; }    /* ( 2+2 ) */
-    | LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($2); } /*[1,2,3] */    
-    | type LBRACKET expr_list RBRACKET   { $$ = new ArrayNode($3, $1 as TypeNode); } /*[1,2,3] */    
+    | LPAREN expr RPAREN                                { $$ = $2; }    /* ( 2+2 ) */
+    | LBRACKET expr_list RBRACKET                       { $$ = new ArrayNode($2); } /*[1,2,3] */    
+    | type LBRACKET expr_list RBRACKET                  { $$ = new ArrayNode($3, $1 as TypeNode); } /*[1,2,3] */    
     | expr LBRACKET opt_expr COLON opt_expr RBRACKET    { $$ = new SliceNode($1, $3, $5); }
 
     /* Built-ins */
@@ -233,7 +232,7 @@ id_list
 
 record_struct
     : RECORD LPAREN LBRACE record_arg_list RBRACE RPAREN   { $$ = new RecordNode($4); }    /* record({...})  */
-    | LBRACE record_arg_list RBRACE         { $$ = new RecordNode($2); }                   /* ID={...}   */
+    | LBRACE record_arg_list RBRACE                        { $$ = new RecordNode($2); }    /* ID={...}   */
     ;
 
 /* --- Dataframe Specific Arguments (Strictly Named mappings or columns) --- */

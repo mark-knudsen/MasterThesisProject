@@ -16,14 +16,12 @@ namespace MyCompiler
     public abstract class ExpressionNode : Node
     {
         public Type Type { get; protected set; }
-        // Add this setter helper
         public void SetType(Type type) => Type = type;
     }
 
     public abstract class StatementNode : Node
     {
         public Type Type { get; protected set; }
-        // Add this setter helper
         public void SetType(Type type) => Type = type;
     }
 
@@ -325,6 +323,7 @@ namespace MyCompiler
 
         public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitWhere(this);
     }
+
     public class MapNode : ExpressionNode
     {
         public IdNode IteratorId { get; }
@@ -343,30 +342,27 @@ namespace MyCompiler
                 {
                     if (arr is IdNode strNode)
                     {
-                        namedArguments.Add(new FieldNode(
-                            new FieldNode(iteratorId, strNode.Name),
-                            strNode.Name));
+                        var fieldNode = new FieldNode(iteratorId, strNode.Name);
+                        namedArguments.Add(new FieldNode(fieldNode, strNode.Name));
+
                         /* OLD way before changing to fieldnode!  
-                            namedArguments.Add(new NamedArgumentNode(
-                                strNode.Name,
-                                new FieldNode(iteratorId, strNode.Name)
-                            )); 
-                        */
+                        var fieldNode = new FieldNode(iteratorId, strNode.Name);
+                        namedArguments.Add(new NamedArgumentNode(strNode.Name, fieldNode)); 
+                       */
                     }
                     else
                         throw new Exception("Map array elements must be identifiers");
                 }
 
                 TransformExpr = new RecordNode(namedArguments);   //  { name, age, iscool}
-
             }
             else
                 TransformExpr = transformExpr;                 //  {name= x.name, age= x.age, iscool= x.iscool}
         }
 
-        public override LLVMValueRef Accept(IExpressionVisitor visitor)
-            => visitor.VisitMap(this);
+        public override LLVMValueRef Accept(IExpressionVisitor visitor) => visitor.VisitMap(this);
     }
+
     public class ReadCsvNode : ExpressionNode
     {
         public ExpressionNode FileNameExpr { get; }
@@ -558,6 +554,11 @@ namespace MyCompiler
 
         // Filled during typechecking
         public Type Type { get; set; }
+
+        public override string ToString()
+        {
+            return $"RecordField -> label: {Label}, Value: {Value}, Type: {Type}";
+        }
     }
 
     public class RecordNode : ExpressionNode

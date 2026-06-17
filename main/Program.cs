@@ -80,7 +80,6 @@ namespace MyCompiler
                 // Multi-line input loop with Shift + Enter detection
                 do
                 {
-
                     Console.ForegroundColor = ConsoleColor.Gray;
                     Console.Write("> "); // Prompt for input
 
@@ -207,6 +206,13 @@ namespace MyCompiler
                         continue;
                     }
 
+                    if (userInput.ToString() == "commands")
+                    {
+                        PrintCommandsList();
+                        userInput.Clear();
+                        continue;
+                    }
+
                     if (userInput.ToString() == "clearTable")
                     {
                         compiler.ClearContext();
@@ -290,6 +296,7 @@ namespace MyCompiler
                         Console.WriteLine("\nAvailable commands:\n");
 
                         Console.WriteLine("exit          - Exit the shell");
+                        Console.WriteLine("commands      - Shows all available commands");
                         Console.WriteLine("table         - Show variable table");
                         Console.WriteLine("clearTable    - Clear variable table");
                         Console.WriteLine("verbose       - Toggle verbose/debug mode");
@@ -593,6 +600,12 @@ namespace MyCompiler
             Console.WriteLine($"Execution Time: {sw.Elapsed.TotalMilliseconds} ms");
             Console.WriteLine($"Ticks: {sw.ElapsedTicks}");
             Console.WriteLine("------------------------\n");
+        }
+
+        static void PrintCommandsList()
+        {
+            System.Console.WriteLine("Commands");
+            System.Console.WriteLine("- print           - prints to the console");
         }
     }
 }

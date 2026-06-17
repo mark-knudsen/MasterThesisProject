@@ -9,7 +9,6 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Data;
-using System.Diagnostics.CodeAnalysis;
 
 namespace MyCompiler
 {
@@ -613,7 +612,6 @@ namespace MyCompiler
             // 5 Wrap in ThreadSafeModule
             var tsc = OrcBindings.LLVMOrcCreateNewThreadSafeContext();
             var tsm = OrcBindings.LLVMOrcCreateNewThreadSafeModule(_module.Handle, tsc);
-
             var dylib = OrcBindings.LLVMOrcLLJITGetMainJITDylib(_jit);
             ThrowIfError(OrcBindings.LLVMOrcLLJITAddLLVMIRModule(_jit, dylib, tsm));
 
@@ -1181,7 +1179,7 @@ namespace MyCompiler
                     var last = seq.Nodes[i];
 
                     // Only consider actual value expressions, skip statements like print
-                    if (last is ExpressionNode && !(last is PrintNode))
+                    if (last is ExpressionNode)
                         return last;
 
                     // If last is a sequence itself, recurse
@@ -1196,7 +1194,7 @@ namespace MyCompiler
             }
 
             // Single expression node
-            if (expr is ExpressionNode && !(expr is PrintNode))
+            if (expr is ExpressionNode)
                 return expr;
 
             return null;
@@ -1233,10 +1231,8 @@ namespace MyCompiler
             _builder.PositionAtEnd(condBlock);
             var condition = Visit(expr.Condition);
 
-
             condition = _builder.BuildICmp(LLVMIntPredicate.LLVMIntNE,
-                condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
-
+            condition, LLVMValueRef.CreateConstInt(condition.TypeOf, 0), "fortest_int");
 
             _builder.BuildCondBr(condition, bodyBlock, endBlock);
 
@@ -1311,11 +1307,9 @@ namespace MyCompiler
             // If it's not in the current module, declare it as extern (same as your VisitAssign logic)
             if (variablePtr.Handle == IntPtr.Zero)
             {
-
                 variablePtr = _module.AddGlobal(GetLLVMType(expr.Id.Type), varName);
                 variablePtr.Linkage = LLVMLinkage.LLVMExternalLinkage;
                 variablePtr.SetAlignment(8);
-
             }
 
             // 2. LOAD the current value manually using the pointer
@@ -1386,20 +1380,11 @@ namespace MyCompiler
             // Case 1: logical AND (&&) or logical OR (||) - only valid if both operands are boolean
             if (expr.Operator == "&&" || expr.Operator == "||")
             {
-
-                // Handle logical AND (&&)
                 if (expr.Operator == "&&")
-                {
-                    var and = _builder.BuildAnd(leftPtr, rightPtr, "and_tmp");
-                    return and;
-                }
+                    return _builder.BuildAnd(leftPtr, rightPtr, "and_tmp");
 
-                // Handle logical OR (||)
                 if (expr.Operator == "||")
-                {
-                    var or = _builder.BuildOr(leftPtr, rightPtr, "or_tmp");
-                    return or;
-                }
+                    return _builder.BuildOr(leftPtr, rightPtr, "or_tmp");
             }
 
             // Case 2: both integers → ICmp
@@ -1473,7 +1458,7 @@ namespace MyCompiler
                 _ => throw new Exception("Unknown operator")
             };
         }
-    
+
         public LLVMValueRef VisitIf(IfNode node)
         {
             var condValue = Visit(node.Condition);
@@ -1504,7 +1489,6 @@ namespace MyCompiler
 
             return default;
         }
-
 
         public LLVMValueRef VisitRound(RoundNode expr)
         {
@@ -2081,16 +2065,17 @@ namespace MyCompiler
 
             LLVMValueRef finalArg;
             LLVMValueRef formatStr;
-            var llvmCtx = _module.Context;
-            var i8Ptr = LLVMTypeRef.CreatePointer(llvmCtx.Int8Type, 0);
+            var ctx = _module.Context;
+            var i64 = ctx.Int64Type;
+            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
             // SAFETY: fallback on actual LLVM type if semantic type fails
-            if (valueToPrint.TypeOf == llvmCtx.Int64Type)
+            if (valueToPrint.TypeOf == i64)
             {
                 finalArg = valueToPrint;
                 formatStr = _builder.BuildGlobalStringPtr("%ld\n", "fmt_int_raw");
             }
-            else if (valueToPrint.TypeOf == llvmCtx.DoubleType)
+            else if (valueToPrint.TypeOf == ctx.DoubleType)
             {
                 finalArg = valueToPrint;
                 formatStr = _builder.BuildGlobalStringPtr("%f\n", "fmt_float_raw");
@@ -2130,10 +2115,10 @@ namespace MyCompiler
                         // Cast to i64* to read header
                         var arrPtr = _builder.BuildBitCast(
                             valueToPrint,
-                            LLVMTypeRef.CreatePointer(llvmCtx.Int64Type, 0),
+                            LLVMTypeRef.CreatePointer(i64, 0),
                             "arr_len_ptr");
 
-                        var arrLen = _builder.BuildLoad2(llvmCtx.Int64Type, arrPtr, "arr_len");
+                        var arrLen = _builder.BuildLoad2(i64, arrPtr, "arr_len");
                         arrLen.SetAlignment(8);
 
                         finalArg = arrLen;
@@ -2141,85 +2126,80 @@ namespace MyCompiler
                         break;
 
                     case RecordType recType:
+
+                        // Print "{ "
+                        var open = _builder.BuildGlobalStringPtr("{ ", "rec_open");
+                        _builder.BuildCall2(_printfType, _printf, new[] { open }, "");
+
+                        for (int i = 0; i < recType.RecordFields.Count; i++)
                         {
-                            var ctx = _module.Context;
-                            var i64 = ctx.Int64Type;
-                            //var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+                            var field = recType.RecordFields[i];
 
-                            // Print "{ "
-                            var open = _builder.BuildGlobalStringPtr("{ ", "rec_open");
-                            _builder.BuildCall2(_printfType, _printf, new[] { open }, "");
+                            // --- print field name ---
+                            var nameStr = _builder.BuildGlobalStringPtr(field.Label + ": ", $"field_{field.Label}");
+                            _builder.BuildCall2(_printfType, _printf, new[] { nameStr }, "");
 
-                            for (int i = 0; i < recType.RecordFields.Count; i++)
+                            // --- load field value ---
+                            var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+
+                            var slotPtr = _builder.BuildGEP2(
+                                i8Ptr,
+                                valueToPrint,
+                                new[] { index },
+                                "field_ptr"
+                            );
+
+                            var storedPtr = _builder.BuildLoad2(i8Ptr, slotPtr, "field_val_ptr");
+
+                            LLVMValueRef fieldVal;
+
+                            if (field.Type is IntType)
                             {
-                                var field = recType.RecordFields[i];
+                                fieldVal = _builder.BuildLoad2(i64, storedPtr, "int_val");
 
-                                // --- print field name ---
-                                var nameStr = _builder.BuildGlobalStringPtr(field.Label + ": ", $"field_{field.Label}");
-                                _builder.BuildCall2(_printfType, _printf, new[] { nameStr }, "");
+                                var fmt = _builder.BuildGlobalStringPtr("%ld", "fmt_int");
+                                _builder.BuildCall2(_printfType, _printf, new[] { fmt, fieldVal }, "");
+                            }
+                            else if (field.Type is FloatType)
+                            {
+                                fieldVal = _builder.BuildLoad2(ctx.DoubleType, storedPtr, "float_val");
 
-                                // --- load field value ---
-                                var index = LLVMValueRef.CreateConstInt(i64, (ulong)i);
+                                var fmt = _builder.BuildGlobalStringPtr("%f", "fmt_float");
+                                _builder.BuildCall2(_printfType, _printf, new[] { fmt, fieldVal }, "");
+                            }
+                            else if (field.Type is BoolType)
+                            {
+                                fieldVal = _builder.BuildLoad2(ctx.Int8Type, storedPtr, "bool_val");
 
-                                var slotPtr = _builder.BuildGEP2(
-                                    i8Ptr,
-                                    valueToPrint,
-                                    new[] { index },
-                                    "field_ptr"
-                                );
+                                DeclareBoolStrings();
+                                var str = _builder.BuildSelect(fieldVal, _trueStr, _falseStr, "boolstr");
 
-                                var storedPtr = _builder.BuildLoad2(i8Ptr, slotPtr, "field_val_ptr");
+                                _builder.BuildCall2(_printfType, _printf, new[] { str }, "");
+                            }
+                            else if (field.Type is StringType)
+                            {
+                                fieldVal = storedPtr;
 
-                                LLVMValueRef fieldVal;
-
-                                if (field.Type is IntType)
-                                {
-                                    fieldVal = _builder.BuildLoad2(i64, storedPtr, "int_val");
-
-                                    var fmt = _builder.BuildGlobalStringPtr("%ld", "fmt_int");
-                                    _builder.BuildCall2(_printfType, _printf, new[] { fmt, fieldVal }, "");
-                                }
-                                else if (field.Type is FloatType)
-                                {
-                                    fieldVal = _builder.BuildLoad2(ctx.DoubleType, storedPtr, "float_val");
-
-                                    var fmt = _builder.BuildGlobalStringPtr("%f", "fmt_float");
-                                    _builder.BuildCall2(_printfType, _printf, new[] { fmt, fieldVal }, "");
-                                }
-                                else if (field.Type is BoolType)
-                                {
-                                    fieldVal = _builder.BuildLoad2(ctx.Int8Type, storedPtr, "bool_val");
-
-                                    DeclareBoolStrings();
-                                    var str = _builder.BuildSelect(fieldVal, _trueStr, _falseStr, "boolstr");
-
-                                    _builder.BuildCall2(_printfType, _printf, new[] { str }, "");
-                                }
-                                else if (field.Type is StringType)
-                                {
-                                    fieldVal = storedPtr;
-
-                                    var fmt = _builder.BuildGlobalStringPtr("%s", "fmt_str");
-                                    _builder.BuildCall2(_printfType, _printf, new[] { fmt, fieldVal }, "");
-                                }
-                                else
-                                {
-                                    // nested record / array → recurse
-                                    AddImplicitPrint(storedPtr, field.Type);
-                                }
-
-                                // --- comma between fields ---
-                                if (i < recType.RecordFields.Count - 1)
-                                {
-                                    var comma = _builder.BuildGlobalStringPtr(", ", "comma");
-                                    _builder.BuildCall2(_printfType, _printf, new[] { comma }, "");
-                                }
+                                var fmt = _builder.BuildGlobalStringPtr("%s", "fmt_str");
+                                _builder.BuildCall2(_printfType, _printf, new[] { fmt, fieldVal }, "");
+                            }
+                            else
+                            {
+                                // nested record / array → recurse
+                                AddImplicitPrint(storedPtr, field.Type);
                             }
 
-                            // Print " }\n"
-                            var close = _builder.BuildGlobalStringPtr(" }\n", "rec_close");
-                            return _builder.BuildCall2(_printfType, _printf, new[] { close }, "");
+                            // --- comma between fields ---
+                            if (i < recType.RecordFields.Count - 1)
+                            {
+                                var comma = _builder.BuildGlobalStringPtr(", ", "comma");
+                                _builder.BuildCall2(_printfType, _printf, new[] { comma }, "");
+                            }
                         }
+
+                        // Print " }\n"
+                        var close = _builder.BuildGlobalStringPtr(" }\n", "rec_close");
+                        return _builder.BuildCall2(_printfType, _printf, new[] { close }, "");
 
                     default:
                         throw new Exception($"Unsupported type for printing: {type}");
@@ -2275,6 +2255,8 @@ namespace MyCompiler
         // for(i=0; i<5200000; i++) {x.add({name="Hary potter", age= 10 + random(1,100)}) }
         // this below can't do random inside addRange "Cannot perform + on int and"
         // for(i=0; i<520000; i++) {x.addRange([{name="voldemort", age=random(1,100), cool=true}, {name="dumbledore", age=70, cool=false}])}
+
+        // x.map(d=> {name=d.name})
 
         // x.map(d => d.age + 100)
         // x.map(d => d + {savings=0, future_savings=d.savings *1.5}) // it creates a new column with the name item1
@@ -2482,74 +2464,6 @@ namespace MyCompiler
             program.Nodes.Add(new IdNode(resultVarName));
 
             return program;
-        }
-
-        private string InferFieldName(Node node)
-        {
-            if (node == null) return null;
-
-            // 1. Direct Assignment: x.longitude = 100.0
-            // This is crucial for the Type Checker and the Compiler to know the column name.
-            if (node is RecordFieldAssignNode rfan)
-                return rfan.IdField;
-
-            // 2. Property Access: x.longitude
-            if (node is FieldNode rf)
-                return rf.IdField;
-
-            // 3. Binary Operations: x.longitude - 100.0
-            if (node is BinaryOpNode bin)
-                return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
-
-            // 4. Fallback for ID nodes if necessary
-            if (node is IdNode id)
-                return id.Name;
-
-            return null;
-        }
-
-        // Helper to check if a node tree uses a specific variable
-        private bool IsPure(Node node)
-        {
-            if (node == null) return true;
-            if (node is RandomNode) return false;
-
-            if (node is RecordNode rec)
-            {
-                foreach (var f in rec.Fields)
-                    if (!IsPure(f.Value)) return false;
-            }
-
-            if (node is BinaryOpNode bin)
-                return IsPure(bin.Left) && IsPure(bin.Right);
-
-            return true;
-        }
-
-        private bool NodeContainsId(Node node, string idName)
-        {
-            if (node == null) return false;
-
-            if (node is IdNode id) return id.Name == idName;
-
-            if (node is FieldNode rf)
-                return NodeContainsId(rf.SourceExpression, idName);
-
-            if (node is RecordNode rec)
-            {
-                return rec.Fields.Any(f =>
-                {
-                    // Check the NamedArgumentNode inside the RecordField
-                    if (f.Value is NamedArgumentNode nan)
-                        return NodeContainsId(nan.Value, idName);
-                    return NodeContainsId(f.Value, idName);
-                });
-            }
-
-            if (node is BinaryOpNode bin)
-                return NodeContainsId(bin.Left, idName) || NodeContainsId(bin.Right, idName);
-
-            return false;
         }
 
         public LLVMValueRef VisitCopy(CopyNode expr)
@@ -3291,7 +3205,7 @@ namespace MyCompiler
 
         public TypeLiteralNode GetTypeLiteralNodeFromTypeNode(Type type)
         {
-            Console.WriteLine("Getting type literal node from type: " + type);
+            // Console.WriteLine("Getting type literal node from type: " + type);
 
             return type switch
             {
@@ -4348,7 +4262,6 @@ namespace MyCompiler
         {
             var entry = _context.Get(expr.Name);
             var llvmType = GetLLVMType(entry.Type);
-            if (_debug) Console.WriteLine($"visiting: variable: {expr.Name} (Type: {llvmType})");
 
             LLVMValueRef ptrToLoad;
 
@@ -4394,8 +4307,6 @@ namespace MyCompiler
             return last;
         }
 
-
-
         public LLVMValueRef VisitUnaryOp(UnaryOpNode expr)
         {
             if (expr.Operator == "-") return VisitUnaryMinus(expr);
@@ -4414,6 +4325,7 @@ namespace MyCompiler
             else
                 return _builder.BuildNeg(value, "neg");
         }
+        
         public LLVMValueRef VisitIndexAssign(IndexAssignNode expr)
         {
             var ctx = _module.Context;

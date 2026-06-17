@@ -178,7 +178,6 @@ namespace MyCompiler
             {
                 if (leftType is IntType || rightType is IntType)
                 {
-
                     expr.Left = InsertCast(expr.Left, leftType, new FloatType());
                     expr.Right = InsertCast(expr.Right, rightType, new FloatType());
 
@@ -187,7 +186,6 @@ namespace MyCompiler
                 }
             }
 
-            // Helper to check if a type is numeric (Int or Float)
             bool isLeftNum = leftType is IntType || leftType is FloatType;
             bool isRightNum = rightType is IntType || rightType is FloatType;
 
@@ -206,12 +204,11 @@ namespace MyCompiler
                 }
 
                 // If either side is a string, the result is a string
-                if ((leftType is StringType || rightType is StringType))
+                if (leftType is StringType || rightType is StringType)
                 {
                     expr.SetType(new StringType());
                     return expr.Type;
                 }
-
 
                 if (leftType is RecordType l && rightType is RecordType r)
                 {
@@ -335,7 +332,6 @@ namespace MyCompiler
             var leftType = Visit(expr.Left);
             var rightType = Visit(expr.Right);
 
-            // Helper to check if a type is numeric (Int or Float)
             if (leftType is not BoolType || rightType is not BoolType)
                 throw new Exception($"Both operands must be booleans for logical AND/OR. Left type is {leftType} and right type is {rightType}.");
 
@@ -763,19 +759,14 @@ namespace MyCompiler
             {
                 Type transformType = Visit(expr.TransformExpr);   // {name, age,...}  {name = x.name, age = x.age,...} 
                 Console.WriteLine("1) transformType: " + transformType);
-                expr.TransformExpr.SetType(transformType);
-
-
-                // Record => Dataframe
                 if (transformType is RecordType rec)
                 {
-
                     Console.WriteLine("Record fields:");
 
                     foreach (var f in rec.RecordFields)
                     {
                         Console.WriteLine($"  Label={f.Label}");
-                        Console.WriteLine($"  Type ={f.Type}");
+                        Console.WriteLine($"  Type={f.Type}");
                         Console.WriteLine($"  Value.Type={f.Value?.Type}");
                     }
 
@@ -795,24 +786,6 @@ namespace MyCompiler
                 return arrayType;
             }
             finally { _context = previousContext; }
-        }
-
-        // Helper: Try to infer the field name being assigned in a map operation (e.g. x.age - 10 => "age")
-        private string InferFieldName(Node node)
-        {
-            if (node == null) return null;
-
-            // Handle x.longitude = 100.0
-            if (node is RecordFieldAssignNode rfan) return rfan.IdField;
-
-            // Handle x.longitude
-            if (node is FieldNode rf) return rf.IdField;
-
-            // Handle x.longitude + 1
-            if (node is BinaryOpNode bin)
-                return InferFieldName(bin.Left) ?? InferFieldName(bin.Right);
-
-            return null;
         }
 
         public Type VisitSqrt(SqrtNode expr)
@@ -1128,8 +1101,6 @@ namespace MyCompiler
 
                 if (field.Type == null)
                     throw new Exception($"Could not resolve type for record field '{field.Label}'");
-
-                field.Value.SetType(field.Type);
             }
 
             var recordType = new RecordType(expr.Fields);
