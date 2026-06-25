@@ -34,12 +34,12 @@
 %right ASSIGN PLUS_ASSIGN MINUS_ASSIGN MULT_ASSIGN DIV_ASSIGN
 %left LOGICAL_OR
 %left LOGICAL_AND
+%nonassoc LOWEST
+%nonassoc UNARY
 %left EQ NE
 %left GT LT GE LE
 %left PLUS MINUS
 %left MULT DIV
-%nonassoc LOWEST
-%nonassoc UNARY
 %left DOT
 %left LBRACKET
 

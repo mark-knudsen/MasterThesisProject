@@ -1,20 +1,13 @@
 ; ModuleID = 'repl_module'
 source_filename = "repl_module"
 
-@fmt_int_raw = private unnamed_addr constant [5 x i8] c"%ld\0A\00", align 1
+@x = external global ptr
+@str = private unnamed_addr constant [11 x i8] c"delete.csv\00", align 1
 
-define ptr @main_0() {
+define ptr @main_2() {
 entry:
-  br i8 1, label %then, label %else
-
-then:                                             ; preds = %entry
-  %printf_call = call i32 (ptr, ...) @printf(ptr @fmt_int_raw, i64 8)
-  br label %ifcont
-
-else:                                             ; preds = %entry
-  br label %ifcont
-
-ifcont:                                           ; preds = %else, %then
+  %x_load = load ptr, ptr @x, align 8
+  call void @ToCsvInternal(ptr %x_load, ptr @str)
   %runtime_obj = call ptr @malloc(i64 16)
   %tag_ptr = getelementptr inbounds nuw { i64, ptr }, ptr %runtime_obj, i32 0, i32 0
   store i64 0, ptr %tag_ptr, align 8
@@ -22,5 +15,7 @@ ifcont:                                           ; preds = %else, %then
   store ptr null, ptr %data_ptr, align 8
   ret ptr %runtime_obj
 }
+
+declare void @ToCsvInternal(ptr, ptr)
 
 declare noalias ptr @malloc(i64)

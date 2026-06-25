@@ -652,6 +652,7 @@ namespace MyCompiler
         public ArrayNode Columns { get; internal set; }
         public ArrayNode Rows { get; internal set; }
         public ArrayNode Types { get; internal set; }
+        public ulong? Capacity;
 
         public DataframeNode(List<NamedArgumentNode> args)
         {
