@@ -473,11 +473,11 @@ namespace MyCompiler
             if (structType.Handle == IntPtr.Zero)
             {
                 var fieldTypes = recordType.RecordFields
-                    .Select(f => GetLLVMType(f.Value.Type))
+                    .Select(f => GetLLVMType(f.Type))
                     .ToArray();
 
                 structType = _module.Context.CreateNamedStruct(structName);
-                structType.StructSetBody(fieldTypes, false);
+                structType.StructSetBody(fieldTypes, true);
             }
             return structType;
         }
@@ -752,7 +752,7 @@ namespace MyCompiler
             if (dataPtr == IntPtr.Zero) return "{ empty record }";
 
             var result = new Dictionary<string, object>();
-            int fieldSize = 8;
+            int fieldSize = 0;
 
             if (_debug) Console.WriteLine("Record type: " + record);
 
@@ -764,7 +764,7 @@ namespace MyCompiler
                 Type recType = rec.Type;
                 if (_debug) Console.WriteLine($"Label: {label}, type: {recType}");
 
-                IntPtr fieldLocation = IntPtr.Add(dataPtr, i * fieldSize);
+                IntPtr fieldLocation = IntPtr.Add(dataPtr, fieldSize);
                 IntPtr ptr = fieldLocation;
 
                 switch (recType)
@@ -792,6 +792,8 @@ namespace MyCompiler
                         result[label] = "Unknown Type";
                         break;
                 }
+
+                fieldSize += (recType is BoolType) ? 1 : 8;
             }
 
             // Standardize formatting here using InvariantCulture
@@ -1047,12 +1049,12 @@ namespace MyCompiler
         private List<object> ExtractRecord(IntPtr recordPtr, RecordType recordType)
         {
             var result = new List<object>();
+            int offset = 0;
 
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
                 var field = recordType.RecordFields[i];
                 var fieldType = field.Value?.Type ?? field.Type;
-                int offset = i * 8; // Every field is exactly 8 bytes wide
 
                 if (fieldType is IntType)
                 {
@@ -1079,6 +1081,7 @@ namespace MyCompiler
                     // For nested records/arrays, we still store the pointer
                     result.Add(Marshal.ReadIntPtr(recordPtr, offset));
                 }
+                offset += (fieldType is BoolType) ? 1 : 8;
             }
             return result;
         }
@@ -1680,7 +1683,8 @@ namespace MyCompiler
 
             if (expr.Operator == "+" && leftType is RecordType l && rightType is RecordType r)
             {
-                return BuildRecordMergeInline(expr, l, r);
+                return BuildRecordMergeInline(l, lhs, r, rhs, (RecordType)expr.Type);
+                //return BuildRecordMergeInline(expr, l, r);
             }
 
             throw new InvalidOperationException($"Cannot perform {expr.Operator} on {leftType} and {rightType}");
@@ -1717,31 +1721,77 @@ namespace MyCompiler
             throw new NotImplementedException($"Unsupported cast {node.FromType} -> {node.ToType}");
         }
 
-        private LLVMValueRef LoadField(LLVMValueRef recordPtr, int index)
-        {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
-            var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
+        // private LLVMValueRef LoadField(LLVMValueRef recordPtr, int index)
+        // {
+        //     var ctx = _module.Context;
+        //     var i64 = ctx.Int64Type;
+        //     var i8Ptr = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
 
-            // get slot pointer
-            var slotPtr = _builder.BuildGEP2(
-                i8Ptr,
+        //     // get slot pointer
+        //     var slotPtr = _builder.BuildGEP2(
+        //         i8Ptr,
+        //         recordPtr,
+        //         new[] { LLVMValueRef.CreateConstInt(i64, (ulong)index) }
+        //     );
+
+        //     // load pointer stored in slot
+        //     var loadedPtr = _builder.BuildLoad2(i8Ptr, slotPtr, "loaded_field");
+
+        //     return loadedPtr;
+        // }
+
+        private LLVMValueRef LoadField(LLVMTypeRef structType, LLVMValueRef recordPtr, int index, LLVMTypeRef fieldType)
+        {
+            // Use BuildStructGEP2 to correctly calculate byte offsets for packed layouts
+            var fieldPtr = _builder.BuildStructGEP2(
+                structType,
                 recordPtr,
-                new[] { LLVMValueRef.CreateConstInt(i64, (ulong)index) }
+                (uint)index,
+                $"src_field_{index}"
             );
 
-            // load pointer stored in slot
-            var loadedPtr = _builder.BuildLoad2(i8Ptr, slotPtr, "loaded_field");
-
-            return loadedPtr;
+            // Load the value using its true individual field type (not treating everything as ptr)
+            return _builder.BuildLoad2(fieldType, fieldPtr, "loaded_field");
         }
 
-        public LLVMValueRef BuildRecordMergeInline(BinaryOpNode expr, RecordType lhsType, RecordType rhsType)
-        {
-            var leftVal = Visit(expr.Left);
-            var rightVal = Visit(expr.Right);
+        // public LLVMValueRef BuildRecordMergeInline(BinaryOpNode expr, RecordType lhsType, RecordType rhsType)
+        // {
+        //     var leftVal = Visit(expr.Left);
+        //     var rightVal = Visit(expr.Right);
 
-            var resultType = (RecordType)expr.Type;
+        //     var resultType = (RecordType)expr.Type;
+
+        //     var resultValues = new List<LLVMValueRef>();
+
+        //     var lhsIndex = lhsType.RecordFields
+        //         .Select((f, i) => (f.Label, i))
+        //         .ToDictionary(x => x.Label, x => x.i);
+
+        //     var rhsIndex = rhsType.RecordFields
+        //         .Select((f, i) => (f.Label, i))
+        //         .ToDictionary(x => x.Label, x => x.i);
+
+        //     foreach (var field in resultType.RecordFields)
+        //     {
+        //         if (rhsIndex.TryGetValue(field.Label, out var rIdx))
+        //         {
+        //             resultValues.Add(LoadField(rightVal, rIdx)); // override
+        //         }
+        //         else
+        //         {
+        //             var lIdx = lhsIndex[field.Label];
+        //             resultValues.Add(LoadField(leftVal, lIdx));
+        //         }
+        //     }
+
+        //     return BuildRecordFromValues(resultType, resultValues);
+        // }
+
+        public LLVMValueRef BuildRecordMergeInline(RecordType lhsType, LLVMValueRef lhsVal, RecordType rhsType, LLVMValueRef rhsVal, RecordType resultType)
+        {
+            // Get the structural layout types for both records
+            var leftStructType = GetOrCreateRecordStructType(lhsType);
+            var rightStructType = GetOrCreateRecordStructType(rhsType);
 
             var resultValues = new List<LLVMValueRef>();
 
@@ -1755,18 +1805,62 @@ namespace MyCompiler
 
             foreach (var field in resultType.RecordFields)
             {
+                var fieldLLVMType = GetLLVMType(field.Type);
+
                 if (rhsIndex.TryGetValue(field.Label, out var rIdx))
                 {
-                    resultValues.Add(LoadField(rightVal, rIdx)); // override
+                    // Override with right record field using correct struct types
+                    resultValues.Add(LoadField(rightStructType, rhsVal, rIdx, fieldLLVMType));
                 }
                 else
                 {
+                    // Use left record field using correct struct types
                     var lIdx = lhsIndex[field.Label];
-                    resultValues.Add(LoadField(leftVal, lIdx));
+                    resultValues.Add(LoadField(leftStructType, lhsVal, lIdx, fieldLLVMType));
                 }
             }
 
             return BuildRecordFromValues(resultType, resultValues);
+        }
+        // Internal helper to build a new record from unboxed values, what does this mean?
+        private LLVMValueRef BuildRecordFromValues(RecordType recordType, List<LLVMValueRef> resultValues)
+        {
+            var ctx = _module.Context;
+            var i32 = ctx.Int32Type;
+
+            // 1. Get the struct definition for THIS module
+            var structType = GetOrCreateRecordStructType(recordType);
+
+            // 2. Get malloc and its signature type for THIS context
+            var mallocFunc = GetOrDeclareMalloc();
+
+            // 3. Size calculation (Ensure it is i64 for malloc)
+            var sizeValue = structType.SizeOf;
+
+            // 4. THE CRITICAL CALL: Use the fresh mallocFuncType
+            var instancePtr = _builder.BuildCall2(_mallocType, mallocFunc, new[] { sizeValue }, "record_ptr");
+            var typedPtr = _builder.BuildBitCast(instancePtr, LLVMTypeRef.CreatePointer(structType, 0), "typed_record");
+
+            for (int i = 0; i < recordType.RecordFields.Count; i++)
+            {
+
+                var field = recordType.RecordFields[i];
+                var fieldValue = resultValues[i];
+
+                var fieldPtr = _builder.BuildGEP2(
+                    structType,
+                    typedPtr,
+                    new[] { LLVMValueRef.CreateConstInt(i32, 0), LLVMValueRef.CreateConstInt(i32, (ulong)i) },
+                    $"field_{i}"
+                );
+
+                Console.WriteLine(
+                    $"TEST: {field.Label} : {field.Value.GetType().Name} : {field.Value.Type}"
+                );
+                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Value.Type));
+            }
+
+            return instancePtr;
         }
 
         public LLVMValueRef VisitLogicalOp(LogicalOpNode expr)
@@ -2336,7 +2430,7 @@ namespace MyCompiler
             var dfConstructor = new DataframeNode(new List<NamedArgumentNode> {
                 new NamedArgumentNode("schema", schemaRecord)
             });
-            dfConstructor.SetType(dfType);
+            //dfConstructor.SetType(dfType);
 
             program.Nodes.Add(new AssignNode(resultVarName, dfConstructor));
             program.Nodes.Add(new AssignNode(iVarName, new NumberNode(0)));
@@ -2724,6 +2818,14 @@ namespace MyCompiler
             {
                 var newArgs = ran.Arguments.Select(a => ReplaceIterator(a, iteratorName, replacement)).ToList();
                 return new RandomNode(newArgs);
+            }
+
+            // 12. Round
+            if (node is RoundNode round)
+            {
+                var newValue = ReplaceIterator(round.Value, iteratorName, replacement);
+                var newDecimal = ReplaceIterator(round.Decimals, iteratorName, replacement);
+                return new RoundNode(new List<ExpressionNode>() { newValue, newDecimal });
             }
 
             return node;
@@ -4218,6 +4320,10 @@ namespace MyCompiler
                     $"field_{i}"
                 );
 
+
+                Console.WriteLine(
+                    $"{field.Label} : {field.Value.GetType().Name} : {field.Value.Type}"
+                );
                 _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Value.Type));
             }
 
@@ -4613,72 +4719,7 @@ namespace MyCompiler
             _builder.PositionAtEnd(loopEnd);
         }
 
-        // Internal helper to build a new record from unboxed values, what does this mean?
-        private LLVMValueRef BuildRecordFromValues(RecordType type, List<LLVMValueRef> values)
-        {
-            var ctx = _module.Context;
-            var i64 = ctx.Int64Type;
 
-            // In LLVM 15+, 'ptr' is opaque, but we must tell GEP the size of the element
-            // we are indexing. Since we are storing pointers, the element type is 'ptr'.
-            var ptrType = LLVMTypeRef.CreatePointer(ctx.Int8Type, 0);
-
-            // 1. Allocate the record (array of 8-byte pointers)
-            // Size = count * 8 bytes
-            var recordSize = LLVMValueRef.CreateConstInt(i64, (ulong)(values.Count * 8));
-            var recordPtr = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(), new[] { recordSize }, "rec_ptr");
-
-            for (int i = 0; i < values.Count; i++)
-            {
-                var fieldType = type.RecordFields[i].Type;
-                LLVMValueRef pointerToStore;
-
-                // 2. Handle Boxing for Primitives
-                // If it's a raw LLVM i64/double/i1, it needs a heap-allocated box
-                if (fieldType is IntType || fieldType is FloatType || fieldType is BoolType)
-                {
-                    if (values[i].TypeOf.Kind == LLVMTypeKind.LLVMIntegerTypeKind ||
-                        values[i].TypeOf.Kind == LLVMTypeKind.LLVMDoubleTypeKind)
-                    {
-                        // Allocate 8 bytes for the primitive value
-                        var valMem = _builder.BuildCall2(_mallocType, GetOrDeclareMalloc(),
-                            new[] { LLVMValueRef.CreateConstInt(i64, 8) }, "val_mem");
-
-                        LLVMTypeRef llvmType = fieldType switch
-                        {
-                            IntType => ctx.Int64Type,
-                            FloatType => ctx.DoubleType,
-                            _ => ctx.Int8Type // Bool
-                        };
-
-                        // Store the raw value into the box
-                        var cast = _builder.BuildBitCast(valMem, LLVMTypeRef.CreatePointer(llvmType, 0));
-                        _builder.BuildStore(values[i], cast);
-
-                        pointerToStore = valMem;
-                    }
-                    else
-                        pointerToStore = values[i]; // Already a pointer (already boxed)
-                }
-                else
-                    pointerToStore = values[i]; // Strings, Records, etc., are already pointers
-
-                // 3. THE CRITICAL FIX:
-                // Use ptrType (8 bytes) so the index 'i' multiplies correctly.
-                // This calculates address: recordPtr + (i * 8)
-                var slotPtr = _builder.BuildGEP2(
-                    ptrType,
-                    recordPtr,
-                    new[] { LLVMValueRef.CreateConstInt(i64, (ulong)i) },
-                    $"slot_{i}"
-                );
-
-                // Store the 8-byte pointer into the 8-byte slot
-                _builder.BuildStore(pointerToStore, slotPtr);
-            }
-
-            return recordPtr;
-        }
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
@@ -5246,6 +5287,36 @@ namespace MyCompiler
                     a) One where with one condition: around 0.228 seconds - [0.74 , 0.93, 0.70, 0.68, 0.57, 0.65, 0.67, 0.57, 0.71, 0.67 ] avg 0.74 seconds
                     b) Two where's with one condition each: around 0.254 seconds -  [0.234 , 0.170, 0.130, 0.188, 0.121, 0.202, 0.160, 0.187, 0.177, 0.301 ] avg 0.187 seconds
                     C) One where with two conditions: around 0.116 seconds -  [0.064, 0.067, 0.064, 0.136, 0.64, 0.86, 0.066, 0.070, 0.072, 0.063]  avg 0.116 seconds
+
+
+        #----THE-SHOWCASE----#
+        x="hello"
+        x=10
+        y=-20
+        x+y
+
+        
+        df=dataframe({name: string, age: int})
+        arr=["James", "Larry", "Harry", "Bob", "Jenna", "Jessie", "Kenny"]
+        for(i=0; i<1000000; i++) {df.add({name=arr[random(0,arr.length - 1)], age=10 + random(1,100)})}
+
+
+        # READCSV
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_small.csv") 
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_100K.csv") 
+        df = read_csv("CSV/Fire_Prediction_2023_Bolivia_encoded_FULL.csv") 
+
+        # WHERE
+        df.where(x => x.latitude > -18.0 & x.longitude < -69.0)
+
+        # MAP
+        df.map(x => x.latitude)
+        df2 = df.map(x => x + { temperature-celsius = round(x.surface-air-temperature-mean -272.15, 2) })
+ 
+        df2.select(surface-air-temperature-mean, temperature-celsius)
+
+        # CORR
+        df.surface-air-temperature-min.corr(df.surface-humidity-min)
 
 
         */
