@@ -168,16 +168,16 @@ expr
     /* Built-ins */
     | RANDOM LPAREN expr_list RPAREN                    { $$ = new RandomNode($3); }
     | ROUND LPAREN expr_list RPAREN                     { $$ = new RoundNode($3); }
-    | READCSV LPAREN expr COMMA dataframe_arg RPAREN    { $$ = new ReadCsvNode(new List<Node>{$3, $5 as NamedArgumentNode}); }
+    | READCSV LPAREN expr comma dataframe_arg RPAREN    { $$ = new ReadCsvNode(new List<Node>{$3, $5 as NamedArgumentNode}); }
     | READCSV LPAREN expr RPAREN                        { $$ = new ReadCsvNode(new List<Node>{$3}); }
-    | TOCSV LPAREN expr COMMA expr RPAREN               { $$ = new ToCsvNode($3, $5); }
-    | DATAFRAME LPAREN dataframe_arg_list RPAREN        { $$ = new DataframeNode($3); }
+    | TOCSV LPAREN expr comma expr RPAREN               { $$ = new ToCsvNode($3, $5); }
+    | DATAFRAME LPAREN opt_newlines dataframe_arg_list opt_newlines RPAREN        { $$ = new DataframeNode($4); }
     | record_struct                                     { $$ = $1; }
      
     /* Math & Logic */
     | SQRT LPAREN expr RPAREN               { $$ = new SqrtNode($3); }
     | EXP LPAREN expr RPAREN                { $$ = new ExponentialMathFuncNode($3); }
-    | POW LPAREN expr COMMA expr RPAREN     { $$ = new PowNode($3, $5); }
+    | POW LPAREN expr comma expr RPAREN     { $$ = new PowNode($3, $5); }
     | LOG LPAREN expr RPAREN                { $$ = new LogNode($3); }
     | expr LOGICAL_AND expr                 { $$ = new LogicalOpNode($1, "&&", $3); }
     | expr LOGICAL_OR expr                  { $$ = new LogicalOpNode($1, "||", $3); }
@@ -227,18 +227,18 @@ expr
 
 id_list
     : ID                { $$ = new List<ExpressionNode>{ new IdNode($1) }; }
-    | id_list COMMA ID  { $1.Add(new IdNode($3)); $$ = $1; }
+    | id_list comma ID  { $1.Add(new IdNode($3)); $$ = $1; }
     ;
 
 record_struct
-    : RECORD LPAREN LBRACE record_arg_list RBRACE RPAREN   { $$ = new RecordNode($4); }    /* record({...})  */
-    | LBRACE record_arg_list RBRACE                        { $$ = new RecordNode($2); }    /* ID={...}   */
+    : RECORD LPAREN opt_newlines LBRACE opt_newlines record_arg_list opt_newlines RBRACE RPAREN   { $$ = new RecordNode($6); }    /* record({...})  */
+    | LBRACE opt_newlines record_arg_list opt_newlines RBRACE                        { $$ = new RecordNode($3); }    /* ID={...}   */
     ;
 
 /* --- Dataframe Specific Arguments (Strictly Named mappings or columns) --- */
 dataframe_arg_list
     : dataframe_arg                          { $$ = new List<NamedArgumentNode> { $1 as NamedArgumentNode }; }
-    | dataframe_arg_list COMMA dataframe_arg { $1.Add($3 as NamedArgumentNode); $$ = $1; }
+    | dataframe_arg_list comma dataframe_arg { $1.Add($3 as NamedArgumentNode); $$ = $1; }
     ;
 
 dataframe_arg
@@ -249,7 +249,7 @@ dataframe_arg
 /* --- Record Specific Arguments (Allows positional structural values) --- */
 record_arg_list
     : record_arg                         { $$ = new List<FieldNode> { $1 as FieldNode }; }
-    | record_arg_list COMMA record_arg   { $1.Add($3 as FieldNode); $$ = $1; }
+    | record_arg_list comma record_arg   { $1.Add($3 as FieldNode); $$ = $1; }
     ;
 
 record_arg
@@ -264,10 +264,14 @@ opt_expr
     | expr        { $$ = $1; }
     ;
 
+comma 
+    : COMMA opt_newlines
+    ;
+
 expr_list
     : /* empty*/             { $$ = new List<ExpressionNode>(); }
     | expr                   { $$ = new List<ExpressionNode> { $1 }; }
-    | expr_list COMMA expr   { $1.Add($3); $$ = $1; }
+    | expr_list comma expr   { $1.Add($3); $$ = $1; }
     ;
 
 %%

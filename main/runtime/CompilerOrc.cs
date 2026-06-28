@@ -97,13 +97,15 @@ namespace MyCompiler
                 // Allocate Record Buffer
                 IntPtr recordBuffer = Native.malloc((IntPtr)(parts.Length * 8));
 
+                int offset = 0;
+
                 for (int col = 0; col < parts.Length; col++)
                 {
                     char typeCode = col < schema.Length ? schema[col] : 'S';
                     string rawValue = parts[col].Trim();
 
                     // Calculate the exact offset in the record (8 bytes per slot)
-                    int offset = col * 8;
+                    //int offset = col * 8;
 
                     if (typeCode == 'I')
                     {
@@ -138,6 +140,7 @@ namespace MyCompiler
                         IntPtr strPtr = Marshal.StringToHGlobalAnsi(rawValue);
                         Marshal.WriteIntPtr(recordBuffer, offset, strPtr);
                     }
+                    offset += typeCode == 'B' ? 1: 8;
                 }
                 Marshal.WriteIntPtr(rowsDataBuffer, i * 8, recordBuffer);
             }
@@ -1081,7 +1084,8 @@ namespace MyCompiler
                     // For nested records/arrays, we still store the pointer
                     result.Add(Marshal.ReadIntPtr(recordPtr, offset));
                 }
-                offset += (fieldType is BoolType) ? 1 : 8;
+
+                offset += (fieldType is BoolType) ? 1 : 8; 
             }
             return result;
         }
@@ -1822,6 +1826,7 @@ namespace MyCompiler
 
             return BuildRecordFromValues(resultType, resultValues);
         }
+
         // Internal helper to build a new record from unboxed values, what does this mean?
         private LLVMValueRef BuildRecordFromValues(RecordType recordType, List<LLVMValueRef> resultValues)
         {
@@ -1843,7 +1848,6 @@ namespace MyCompiler
 
             for (int i = 0; i < recordType.RecordFields.Count; i++)
             {
-
                 var field = recordType.RecordFields[i];
                 var fieldValue = resultValues[i];
 
@@ -1857,7 +1861,7 @@ namespace MyCompiler
                 Console.WriteLine(
                     $"TEST: {field.Label} : {field.Value.GetType().Name} : {field.Value.Type}"
                 );
-                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Value.Type));
+                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Type));
             }
 
             return instancePtr;
@@ -2239,6 +2243,8 @@ namespace MyCompiler
         // x=dataframe({name: string, age: int}, [{name="dan", age=30}, {name=30, age=25}])
         // x=dataframe({name: string, age: int, cool: bool}, rows=[{name="dan", age=30, cool=true}, {name="alice", age=25, cool=false}])
 
+        // x=dataframe({name: string, age: int, hasJob: bool, savings: float}, rows=[{name="dan", age=30, hasJob=true, savings=10.5}, {name="alice", age=25, hasJob=false, savings=20.3}])
+
         // x=record({name: "Hary potter", age: 30, rating: 10.5585})
 
         // x.add({name: "Hary potter2", age: 201})
@@ -2256,7 +2262,7 @@ namespace MyCompiler
         // x.map(d=> {name=d.name})
 
         // x.map(d => d.age + 100)
-        // x.map(d => d + {savings=0, future_savings=d.savings *1.5}) // it creates a new column with the name item1
+        // x.map(d => d + {savings=d.savings, future_savings=d.savings *1.5}) // it creates a new column with the name item1
         // x.where(d=> d.age > 50)
         // x.where(d=> d > 9).where(z=> z < 93)
         // x.where(d=> d.age > 91).where(z=> z.age < 93 & z.name=="Hary potter")
@@ -4320,11 +4326,10 @@ namespace MyCompiler
                     $"field_{i}"
                 );
 
-
                 Console.WriteLine(
                     $"{field.Label} : {field.Value.GetType().Name} : {field.Value.Type}"
                 );
-                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Value.Type));
+                _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Type));
             }
 
             return instancePtr;
@@ -4718,8 +4723,6 @@ namespace MyCompiler
 
             _builder.PositionAtEnd(loopEnd);
         }
-
-
 
         LLVMValueRef GetArrayData(LLVMValueRef arrayPtr)
         {
@@ -5162,6 +5165,26 @@ namespace MyCompiler
             data.SetAlignment(8);
             return data;
         }
+
+        /* broken commands
+
+            x/=
+            person.age++       doesn't parse
+   
+
+        */
+
+        /* fixed commands
+
+            x={age:int}
+
+            x=read_csv("CSV/test.csv")      the read_csv still used 8 bytes instead of 1 for booleans
+
+            {
+                x=5
+            }
+
+        */
 
         /*  Command example of how to construct a dataframe in C# that matches the expected memory layout for your LLVM codegen:
 
