@@ -147,6 +147,8 @@ assignment
     }
     | ID INC              { $$ = new IncrementNode(new IdNode($1)); }
     | ID DECR             { $$ = new DecrementNode(new IdNode($1)); }
+    /* | expr DOT ID INC     { $$ = new IncrementNode(new FieldNode($1, $3)); } */
+    /* | expr DOT ID DECR    { $$ = new DecrementNode(new FieldNode($1, $3)); } */
 
     | expr LBRACKET expr RBRACKET ASSIGN expr    { $$ = new IndexAssignNode($1, $3, $6); }
     | expr DOT ID ASSIGN expr                    { $$ = new RecordFieldAssignNode($1, $3, $5); }
@@ -205,7 +207,7 @@ expr
     | expr DOT COLUMNS                      { $$ = new ColumnsNode($1); }
 
     /* Functional methods */
-    | expr DOT ADD LPAREN expr RPAREN             { $$ = new AddNode($1, $5); }   
+    | expr DOT ADD LPAREN expr RPAREN             { $$ = new AddNode($1, $5); }
     | expr DOT ADDRANGE LPAREN expr RPAREN        { $$ = new AddRangeNode($1, $5); }
     | expr DOT REMOVE LPAREN expr RPAREN          { $$ = new RemoveNode($1, $5); }
     | expr DOT REMOVERANGE LPAREN expr RPAREN     { $$ = new RemoveRangeNode($1, $5); }

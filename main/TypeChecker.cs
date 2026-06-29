@@ -758,24 +758,23 @@ namespace MyCompiler
             try
             {
                 Type transformType = Visit(expr.TransformExpr);   // {name, age,...}  {name = x.name, age = x.age,...} 
-                Console.WriteLine("1) transformType: " + transformType);
+                //Console.WriteLine("1) transformType: " + transformType);
                 if (transformType is RecordType rec)
                 {
-                    Console.WriteLine("Record fields:");
-
-                    foreach (var f in rec.RecordFields)
-                    {
-                        Console.WriteLine($"  Label={f.Label}");
-                        Console.WriteLine($"  Type={f.Type}");
-                        Console.WriteLine($"  Value.Type={f.Value?.Type}");
-                    }
+                    //Console.WriteLine("Record fields:");
+                    // foreach (var f in rec.RecordFields)
+                    // {
+                    //     Console.WriteLine($"  Label={f.Label}");
+                    //     Console.WriteLine($"  Type={f.Type}");
+                    //     Console.WriteLine($"  Value.Type={f.Value?.Type}");
+                    // }
 
                     var resultType = new DataframeType(
                         rec.RecordFields.Select(f => f.Label).ToList(),
                         rec.RecordFields.Select(f => f.Type).ToList(),
                         rec
                     );
-                    Console.WriteLine("2) resultType: " + resultType);
+                    //Console.WriteLine("2) resultType: " + resultType);
                     expr.SetType(resultType);
                     return resultType;
                 }

@@ -140,7 +140,7 @@ namespace MyCompiler
                         IntPtr strPtr = Marshal.StringToHGlobalAnsi(rawValue);
                         Marshal.WriteIntPtr(recordBuffer, offset, strPtr);
                     }
-                    offset += typeCode == 'B' ? 1: 8;
+                    offset += typeCode == 'B' ? 1 : 8;
                 }
                 Marshal.WriteIntPtr(rowsDataBuffer, i * 8, recordBuffer);
             }
@@ -275,7 +275,7 @@ namespace MyCompiler
                         writer.WriteLine(string.Join(",", rowValues));
                     }
                 }
-                Console.WriteLine($"--- Success: {rowCount} rows written ---");
+                //Console.WriteLine($"--- Success: {rowCount} rows written ---");
             }
             catch (Exception ex)
             {
@@ -1085,7 +1085,7 @@ namespace MyCompiler
                     result.Add(Marshal.ReadIntPtr(recordPtr, offset));
                 }
 
-                offset += (fieldType is BoolType) ? 1 : 8; 
+                offset += (fieldType is BoolType) ? 1 : 8;
             }
             return result;
         }
@@ -1858,9 +1858,6 @@ namespace MyCompiler
                     $"field_{i}"
                 );
 
-                Console.WriteLine(
-                    $"TEST: {field.Label} : {field.Value.GetType().Name} : {field.Value.Type}"
-                );
                 _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Type));
             }
 
@@ -2320,7 +2317,7 @@ namespace MyCompiler
         {
             var srcVarName = "__where_src";
             var resultVarName = "__where_result";
-            var iVarName = "__where_i";
+            var iVarName = "__where_i";   // "__where_scope_x_{expr.ID.name}"   __scope_
 
             var dfType = sourceType as DataframeType;
 
@@ -2419,7 +2416,7 @@ namespace MyCompiler
             var currentRowVarName = "__current_row";
             var dfType = (DataframeType)expr.Type;
 
-            Console.WriteLine("MAP DF RESULT TYPE: " + dfType);
+            //Console.WriteLine("MAP DF RESULT TYPE: " + dfType);
 
             // 1. Assign Source
             program.Nodes.Add(new AssignNode(srcVarName, expr.SourceExpr));
@@ -4326,9 +4323,6 @@ namespace MyCompiler
                     $"field_{i}"
                 );
 
-                Console.WriteLine(
-                    $"{field.Label} : {field.Value.GetType().Name} : {field.Value.Type}"
-                );
                 _builder.BuildStore(fieldValue, fieldPtr).SetAlignment(GetTypeSize(field.Type));
             }
 
